@@ -74,7 +74,7 @@
 		"get-folder-size": "^5.0.0",
 		"google-auth-library": "^10.5.0",
 		"gray-matter": "^4.0.3",
-		"i18next": "^25.7.4",
+		"i18next": "^26.3.6",
 		"ignore": "^7.0.5",
 		"ink": "^6.6.0",
 		"ink-link": "^5.0.0",

@@ -712,7 +712,7 @@
 		"global-agent": "^3.0.0",
 		"google-auth-library": "^9.15.1",
 		"gray-matter": "^4.0.3",
-		"i18next": "^25.0.0",
+		"i18next": "^26.3.6",
 		"ignore": "^7.0.3",
 		"is-wsl": "^3.1.0",
 		"isbinaryfile": "^5.0.2",
