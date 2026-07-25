@@ -31,7 +31,7 @@ jobs:
               with:
                   ref: ${{ env.GIT_REF }}
             - name: Setup Node.js
-              uses: actions/setup-node@v6
+              uses: actions/setup-node@v7
               with:
                   node-version: ${{ env.NODE_VERSION }}
             - name: Check Published Version
@@ -61,7 +61,7 @@ jobs:
               with:
                   version: ${{ env.PNPM_VERSION }}
             - name: Setup Node.js
-              uses: actions/setup-node@v6
+              uses: actions/setup-node@v7
               with:
                   node-version: ${{ env.NODE_VERSION }}
                   cache: "pnpm"
@@ -110,7 +110,7 @@ jobs:
               with:
                   ref: ${{ env.GIT_REF }}
             - name: Setup Node.js
-              uses: actions/setup-node@v6
+              uses: actions/setup-node@v7
               with:
                   node-version: ${{ env.NODE_VERSION }}
             - name: Update npm
