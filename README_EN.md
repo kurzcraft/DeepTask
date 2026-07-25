@@ -1,4 +1,6 @@
-![](./assets/deeptask-logo-v2.png)
+<p align="center">
+  <img src="./assets/deeptask-logo-v2.png" alt="Deeptask compass logo" width="512" />
+</p>
 
 <h1 align="center">Deeptask</h1>
 
