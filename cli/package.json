@@ -61,7 +61,7 @@
 		"commander": "^14.0.2",
 		"default-shell": "^2.2.0",
 		"delay": "^7.0.0",
-		"diff": "^8.0.2",
+		"diff": "^9.0.0",
 		"diff-match-patch": "^1.0.5",
 		"dotenv": "^17.2.3",
 		"fast-deep-equal": "^3.1.3",
