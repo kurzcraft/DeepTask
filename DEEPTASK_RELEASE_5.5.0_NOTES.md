@@ -3,10 +3,11 @@
 ## Release Artifact
 
 - VSIX: `deeptask-5.5.0.vsix`
-- Mirror copy: `bin/deeptask-5.5.0.vsix`
 - Package identity: `deeptask.deeptask@5.5.0`
-- Size: 42,415,955 bytes
-- SHA-256: `49a58e020dcf1513fab9829ecf77b9fdc266e6ceabe8ffc7a5ae27397667a392`
+- Size: 42,420,612 bytes
+- SHA-256: `89600627d0367971e261599c7be50615107169f7cd10573f598bcb4420f6f2ec`
+- Release: https://github.com/kurzcraft/DeepTask/releases/tag/v5.5.0
+- Download: https://github.com/kurzcraft/DeepTask/releases/download/v5.5.0/deeptask-5.5.0.vsix
 - Platform: universal VS Code extension package, no native platform-specific VSIX split required by the current build.
 
 ## Latest Hotfix (2026-07-20)

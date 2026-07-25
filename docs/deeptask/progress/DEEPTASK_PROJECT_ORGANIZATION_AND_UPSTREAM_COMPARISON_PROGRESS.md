@@ -51,4 +51,9 @@
 - 原 256×256 PNG 是黑色图形加透明背景，在 GitHub 深色主题中即使加载成功也可能近乎不可见。
 - 尝试从复杂 SVG 生成固定背景横幅得到近乎纯黑空图；尝试直接复合灰度 Alpha PNG 得到纯白空图，两者均经视觉检查否证且未推送。
 - 最终显式提取原图 Alpha 通道作为蒙版，在 512×512 固定白色画布上生成黑色实体指北针；像素均值为 0.94331，视觉检查确认图片清晰、无文字、无透明主题依赖。
-- 中英文 README 继续使用稳定路径 `![Deeptask](./assets/deeptask-logo.png)`，仅替换该路径下的图片本体，避免继续改变引用。
+- 提交 `24821cfa` 将中英文 README 切换到空 `alt` 的新路径 `./assets/deeptask-logo-v2.png`；GitHub Markdown API 可生成正确 `<img>`，远端提交对象中的 PNG 也与本地 SHA-256 一致，但真实页面仍加载失败，因此“图片路径缓存”假设被否证。
+- 认证 API 显示账号正常、主邮箱已验证、仓库 `private=false`、`visibility=public`、`disabled=false`；匿名 API、账号主页、仓库页、Raw、Media、Release 和 jsDelivr 却全部返回 HTTP 404，根因确定为 GitHub 账号级公开可见性限制，而不是 README 或图片文件。
+- 登录态 Chrome 中 README 图片节点 `complete=true` 但 `naturalWidth=0`，最终请求为仓库 `/raw/` URL，进一步确认是真实资源请求失败，而不是黑白配色或 CSS 隐藏。
+- GitHub Appeal and Reinstatement 入口明确提示账号已被标记并强制 SMS 验证；国家列表不包含中国大陆 `+86`。不得使用接码平台、虚假地区或抓包篡改号码。
+- 已通过正常备用账号 `@kurzcraft` 提交 GitHub Support 人工审核工单 `#4599744`，标题为 `Flagged account cannot appeal because +86 SMS is unavailable`，状态为 `open`，地址为 `https://support.github.com/ticket/personal/0/4599744`。
+- 后续验收条件：GitHub 人工解除限制后，匿名账号 API、仓库页与 Raw 图片均应返回 200；只有这三项同时通过，才可宣告 README 图片和公开 Release 真正恢复。

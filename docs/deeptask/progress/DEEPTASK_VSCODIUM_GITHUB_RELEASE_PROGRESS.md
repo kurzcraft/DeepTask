@@ -19,6 +19,10 @@
 - Repository is clean at `a39bb9a6` (`docs: 记录 Deeptask VSCodium 安装与发布`) after the prior publish pass.
 - Release helper `scripts_publish_github_release.mjs` targets GitHub release `v5.5.0` and uploads `deeptask-5.5.0.vsix`.
 - Current audit focus: ensure a message sent while/after user interruption cannot be swallowed into stale ask/queue state or leave UI controls gray without model continuation.
+- 2026-07-25 continuation moved the public repository and release to `kurzcraft/DeepTask` because the prior account has an unresolved public-visibility restriction.
+- Local Git commit objects were intact, but `.git/index` and `refs/heads/main` had been lost; both were restored without overwriting the working tree.
+- GitHub rejected the full ancestral history because 353 deleted legacy visual-test LFS objects are unavailable. The published `main` is therefore a no-parent release snapshot whose tree hash exactly matches verified source commit `24821cfa`.
+- Current `main` requires 11 LFS objects; all 11 were uploaded before publishing the snapshot.
 
 ## Decisions
 
@@ -40,7 +44,15 @@
 - 2026-07-10 05:07 CST: `bash scripts_package_deeptask_vsix.sh` passed, generated and verified `deeptask-5.5.0.vsix`, final size 42,404,379 bytes.
 - 2026-07-10 05:08 CST: `codium --install-extension /media/kurz/aleber/vscode/deeptask/deeptask-5.5.0.vsix --force && codium --list-extensions --show-versions | rg '^deeptask\\.deeptask@'` passed, confirmed `deeptask.deeptask@5.5.0`.
 - 2026-07-10 05:12 CST: `node scripts_publish_github_release.mjs` passed, updated GitHub release `v5.5.0`; asset size 42,404,379 bytes; release URL `https://github.com/kurzgesagtcraft/deeptask/releases/tag/v5.5.0`; asset URL `https://github.com/kurzgesagtcraft/deeptask/releases/download/v5.5.0/deeptask-5.5.0.vsix`.
+- 2026-07-25 21:52 CST: uploaded all 11 LFS objects required by current `main` to `kurzcraft/DeepTask` (111 MB total).
+- 2026-07-25 21:57 CST: published remote `main` snapshot commit `314800fc`; source and remote tree hashes both equal `4a8d636137d5feec0f0e3a4c974bfcaf55e5067e`.
+- 2026-07-25 21:58 CST: published `v5.5.0` at `https://github.com/kurzcraft/DeepTask/releases/tag/v5.5.0` with `deeptask-5.5.0.vsix`.
+- 2026-07-25 21:59 CST: downloaded the public Release asset and verified exact equality with the local artifact: 42,420,612 bytes, SHA-256 `89600627d0367971e261599c7be50615107169f7cd10573f598bcb4420f6f2ec`, ZIP integrity passed.
+- 2026-07-25 22:01 CST: updated the GitHub Release body through REST API so public size/hash metadata matches the uploaded artifact.
+- 2026-07-25 22:03 CST: fixed the Chinese and English README hero image alignment by replacing bare Markdown image syntax with a GitHub-compatible `<p align="center">` container and explicit 512 px image width.
+- 2026-07-25 22:03 CST: pushed isolated README-only commit `186a6ed2` to `kurzcraft/DeepTask` without changing the local full-history branch or including unrelated working-tree changes.
+- 2026-07-25 22:05 CST: verified the public GitHub render in real Chrome. The image loaded at natural size 512×512; image center and README article center were both 325.5 px, giving an exact horizontal delta of 0 px.
 
 ## Blockers
 
-- None known yet.
+- Full ancestral Git history cannot be accepted by GitHub while 353 deleted legacy visual-test LFS objects remain unavailable. This does not affect the published current source tree, its 11 current LFS objects, VSCodium installation, or the VSIX Release asset.
