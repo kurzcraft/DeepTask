@@ -1,0 +1,400 @@
+{
+	"onboarding": {
+		"title": "Comment souhaitez-vous commencer ?",
+		"freeModels": {
+			"title": "Modèles gratuits",
+			"description": "Commencez à coder immédiatement"
+		},
+		"premiumModels": {
+			"title": "Modèles premium",
+			"description": "Inscrivez-vous. Les nouveaux utilisateurs reçoivent 5 $ de crédits"
+		},
+		"byok": {
+			"title": "Apportez votre propre clé",
+			"description": "Avancé. Utilisez votre propre compte ou abonnement"
+		}
+	},
+	"welcome": {
+		"greeting": "Bienvenue dans Kilo Code !",
+		"introText1": "Kilo Code est un agent de codage IA gratuit et open source.",
+		"introText2": "Il fonctionne avec les derniers modèles d'IA comme Claude Opus 4.5, Gemini 3 Pro, GPT-5.2, et plus de 450 autres.",
+		"introText3": "Créez un compte gratuit et obtenez 20 $ de crédits bonus lors de votre première recharge.",
+		"ctaButton": "Commencer",
+		"manualModeButton": "Utilisez votre propre clé API",
+		"alreadySignedUp": "Déjà inscrit ?",
+		"loginText": "Connectez-vous ici"
+	},
+	"lowCreditWarning": {
+		"addCredit": "Ajouter du crédit",
+		"lowBalance": "Ton solde Kilo Code est bas",
+		"switchToFreeModel": "Passer à un modèle gratuit"
+	},
+	"pagination": {
+		"previous": "Précédent",
+		"next": "Suivant",
+		"page": "Page {{page}} / {{count}}"
+	},
+	"invalidModel": {
+		"alphaPeriodEnded": "🎉 La période alpha pour {{model}} est terminée ! Changez vers un modèle différent pour continuer.",
+		"notAllowedForTeam": "⚠️ Votre organisation n'autorise pas l'utilisation du modèle {{model}}. Changez vers un modèle différent pour continuer.",
+		"modelUnavailable": "⚠️ Le modèle {{model}} n'est pas disponible. Changez vers un modèle différent pour continuer.",
+		"continueWith": "Continuer avec {{model}}",
+		"continue": "Continuer"
+	},
+	"unauthorizedError": {
+		"title": "Tu dois te connecter pour utiliser le modèle {{modelId}}",
+		"message": "Connecte-toi ou crée un compte pour accéder à plus de 500 modèles, utiliser des crédits au prix coûtant ou apporter ta propre clé.",
+		"loginButton": "Se Connecter"
+	},
+	"pricing": {
+		"costUnknown": "coût inconnu",
+		"costUnknownDescription": "Le fournisseur d'API n'a pas fourni de données de coût ou la demande a été annulée.",
+		"freeModelsLink": "Découvrir les options de modèles gratuits et économiques"
+	},
+	"notifications": {
+		"toolRequest": "Demande d'outil en attente d'approbation",
+		"browserAction": "Action du navigateur en attente d'approbation",
+		"command": "Commande en attente d'approbation"
+	},
+	"settings": {
+		"sections": {
+			"mcp": "Serveurs MCP",
+			"agentBehaviour": "Comportement de l'Agent",
+			"skills": "Compétences"
+		},
+		"provider": {
+			"account": "Compte Kilo Code",
+			"apiKey": "Clé API Kilo Code",
+			"login": "Se connecter à Kilo Code",
+			"logout": "Se déconnecter de Kilo Code",
+			"loginForPremiumModels": "Connecte-toi pour accéder aux modèles et fonctionnalités premium",
+			"providerRouting": {
+				"title": "Routage des fournisseurs",
+				"managedByOrganization": "Gérer le routage des fournisseurs au niveau de l'organisation",
+				"createOrganization": "Créer une organisation pour gérer le routage des fournisseurs",
+				"description": "Kilo Code achemine les demandes vers les meilleurs fournisseurs disponibles pour votre modèle. Par défaut, les demandes sont réparties entre les principaux fournisseurs afin de maximiser le temps de disponibilité. Cependant, vous pouvez choisir un fournisseur spécifique à utiliser pour ce modèle.",
+				"sorting": {
+					"default": "Tri des fournisseurs par défaut",
+					"price": "Préférer les fournisseurs avec un prix plus bas",
+					"throughput": "Préférer les fournisseurs avec un débit plus élevé",
+					"latency": "Préférer les fournisseurs avec une latence plus faible"
+				},
+				"dataCollection": {
+					"default": "Aucune politique de données définie",
+					"allowFree": "Autoriser l'entraînement des prompts (gratuit uniquement)",
+					"allow": "Autoriser l'entraînement des prompts",
+					"deny": "Refuser l'entraînement des prompts",
+					"zdr": "Rétention zéro des données"
+				}
+			}
+		},
+		"modelInfo": {
+			"contextWindow": "Fenêtre de contexte",
+			"providerBreakdown": "Répartition des prix et capacités par fournisseur",
+			"averageKiloCodeCost": "Il s'agit de la dépense réelle moyenne pour Kilo Code utilisant ce modèle au cours de la semaine dernière. Elle peut être inférieure au prix affiché en raison de l'utilisation du cache de prompts.",
+			"table": {
+				"provider": "Fournisseur",
+				"context": "Le point de terminaison peut traiter ce nombre de tokens (entrée + sortie).",
+				"inputPrice": "Coût par million de tokens pour le prompt.",
+				"outputPrice": "Coût par million de tokens pour la complétion.",
+				"cacheReadPrice": "Coût par million de tokens pour lire depuis le cache.",
+				"cacheWritePrice": "Coût par million de tokens pour écrire dans le cache."
+			}
+		},
+		"contextManagement": {
+			"allowVeryLargeReads": {
+				"label": "Autoriser les lectures de fichiers très volumineux",
+				"description": "Lorsque cette option est activée, Kilo Code effectuera des lectures de fichiers ou de sorties MCP très volumineuses même s'il existe une forte probabilité de dépasser la fenêtre de contexte (taille du contenu >80% de la fenêtre de contexte)."
+			}
+		},
+		"systemNotifications": {
+			"label": "Activer les notifications système",
+			"description": "Lorsque cette option est activée, Kilo Code enverra des notifications système pour les événements importants comme la fin des tâches ou les erreurs.",
+			"testButton": "Tester la notification",
+			"testTitle": "Kilo Code",
+			"testMessage": "Ceci est une notification de test de Kilo Code."
+		},
+		"terminal": {
+			"commandGenerator": {
+				"provider": "Fournisseur de Générateur de Commandes Terminal",
+				"apiConfigId": {
+					"description": "Sélectionnez quelle configuration d'API utiliser pour générer des commandes de terminal. Laissez sur 'Utiliser la configuration actuelle' pour utiliser vos paramètres par défaut.",
+					"current": "Utiliser la configuration actuelle",
+					"label": "Configuration de l'API"
+				}
+			}
+		},
+		"codeIndex": {
+			"embeddingBatchSizeLabel": "Taille du lot d'embedding",
+			"embeddingBatchSizeDescription": "Nombre de segments de code à regrouper pour la génération d'embeddings et les upserts de stockage vectoriel. Des valeurs plus élevées peuvent améliorer la vitesse d'indexation mais peuvent augmenter l'utilisation de la mémoire. Des valeurs plus faibles réduisent l'utilisation de la mémoire mais peuvent ralentir l'indexation.",
+			"scannerMaxBatchRetriesLabel": "Nombre max. de tentatives de lot du scanner",
+			"scannerMaxBatchRetriesDescription": "Nombre maximum de tentatives pour un lot échoué lors de l'analyse de répertoire. Des valeurs plus élevées augmentent la résilience aux erreurs transitoires mais peuvent ralentir l'indexation si les erreurs persistent. Des valeurs plus faibles échouent plus rapidement mais peuvent ignorer du contenu en cas de problèmes temporaires."
+		}
+	},
+	"toolCallStyle": {
+		"title": "Style d'Appel d'Outil",
+		"description": "Choisissez comment les appels d'outils sont formatés dans le prompt système. JSON est actuellement expérimental et principalement destiné aux utilisateurs intéressés à contribuer à son développement.",
+		"automatic": "Laisser Kilo décider",
+		"xml": "XML",
+		"json": "JSON"
+	},
+	"chat": {
+		"condense": {
+			"wantsToCondense": "Kilo Code souhaite condenser votre conversation",
+			"condenseConversation": "Condenser la Conversation"
+		},
+		"seeNewChanges": "Afficher les nouvelles modifications",
+		"revertNewChanges": "Annuler les nouvelles modifications",
+		"confirmRevertChanges": "Confirmer l'annulation des modifications",
+		"cancelRevertChanges": "Annuler l'annulation des modifications"
+	},
+	"newTaskPreview": {
+		"task": "Tâche"
+	},
+	"profile": {
+		"title": "Profil",
+		"dashboard": "Tableau de bord",
+		"logOut": "Se déconnecter",
+		"currentBalance": "SOLDE ACTUEL",
+		"loading": "Chargement...",
+		"organization": "Organisation",
+		"personal": "Personnel",
+		"shop": {
+			"title": "Acheter des Crédits",
+			"popular": "Populaire",
+			"credits": "crédits",
+			"action": "Acheter Maintenant",
+			"viewAll": "Voir toutes les options de prix"
+		},
+		"detailedUsage": "Utilisation détaillée",
+		"createOrganization": "Créer une organisation pour suivre l'utilisation détaillée"
+	},
+	"docs": "Documentation",
+	"rules": {
+		"tooltip": "Gérer le comportement de l'agent ({{types}})",
+		"agentBehaviourTypes": {
+			"rules": "Règles",
+			"workflows": "Flux de Travail",
+			"mcps": "MCPs",
+			"modes": "Modes",
+			"skills": "Compétences"
+		},
+		"ariaLabel": "Règles Kilo Code",
+		"tabs": {
+			"rules": "Règles",
+			"workflows": "Flux de Travail"
+		},
+		"description": {
+			"rules": "Les règles vous permettent de fournir à Kilo Code des instructions qu'il doit suivre dans tous les modes et pour tous les prompts. Elles sont un moyen persistant d'inclure du contexte et des préférences pour toutes les conversations dans votre espace de travail ou globalement.",
+			"workflows": "Les flux de travail sont un modèle préparé pour une conversation. Les flux de travail vous permettent de définir des prompts que vous utilisez fréquemment, et peuvent inclure une série d'étapes pour guider Kilo Code à travers des tâches répétitives, comme déployer un service ou soumettre une PR. Pour invoquer un flux de travail, tapez",
+			"workflowsInChat": "dans le chat."
+		},
+		"sections": {
+			"globalRules": "Règles Globales",
+			"workspaceRules": "Règles de l'Espace de Travail",
+			"globalWorkflows": "Flux de Travail Globaux",
+			"workspaceWorkflows": "Flux de Travail de l'Espace de Travail"
+		},
+		"validation": {
+			"invalidFileExtension": "Seules les extensions .md, .txt, ou aucune extension sont autorisées"
+		},
+		"placeholders": {
+			"workflowName": "nom-flux-travail (.md, .txt, ou sans extension)",
+			"ruleName": "nom-règle (.md, .txt, ou sans extension)"
+		},
+		"newFile": {
+			"newWorkflowFile": "Nouveau fichier de flux de travail...",
+			"newRuleFile": "Nouveau fichier de règle..."
+		}
+	},
+	"taskTimeline": {
+		"tooltip": {
+			"clickToScroll": "Voir {{messageType}} (#{{messageNumber}})",
+			"messageTypes": {
+				"browser_action_result": "résultat de l'action du navigateur",
+				"browser_action_launch": "lancement du navigateur",
+				"browser_action": "action du navigateur",
+				"completion_result": "résultat de complétion",
+				"command_output": "sortie de commande",
+				"checkpoint_saved": "point de sauvegarde enregistré",
+				"condense_context": "condenser le contexte",
+				"command": "exécution de commande",
+				"error": "message d'erreur",
+				"followup": "question complémentaire",
+				"mcp_server_response": "Réponse du serveur MCP",
+				"text": "Réponse de l'IA",
+				"unknown": "type de message inconnu",
+				"reasoning": "Raisonnement de l'IA",
+				"use_mcp_server": "Utilisation du serveur MCP",
+				"tool": "utilisation d'outils",
+				"user": "commentaires des utilisateurs"
+			}
+		}
+	},
+	"userFeedback": {
+		"editCancel": "Annuler",
+		"send": "Envoyer",
+		"restoreAndSend": "Restaurer et Envoyer"
+	},
+	"ideaSuggestionsBox": {
+		"newHere": "Nouveau ici ?",
+		"tryOneOfThese": "Essaie une de ces idées pour commencer :",
+		"suggestionText": "<suggestionButton>Cliquez ici</suggestionButton> pour une idée géniale, puis appuyez sur <sendIcon /> et regardez-moi faire de la magie !",
+		"ideas": {
+			"idea1": "Créez une sphère 3D rotative et brillante qui répond aux mouvements de la souris. Faites fonctionner l'application dans le navigateur.",
+			"idea2": "Créez un site web de portfolio pour un développeur logiciel Python",
+			"idea3": "Créez une maquette d'application financière dans le navigateur. Puis testez si elle fonctionne",
+			"idea4": "Créez un site web répertoire contenant les meilleurs modèles de génération vidéo IA actuellement",
+			"idea5": "Créez un générateur de dégradés CSS qui exporte des feuilles de style personnalisées et affiche un aperçu en direct",
+			"idea6": "Générez des cartes qui révèlent magnifiquement du contenu dynamique au survol",
+			"idea7": "Créez un champ d'étoiles interactif apaisant qui se déplace avec les gestes de la souris"
+		}
+	},
+	"ghost": {
+		"title": "Autocomplétion",
+		"settings": {
+			"codeEditorSuggestions": "Suggestions de l'éditeur de code",
+			"chatSuggestions": "Suggestions du chat",
+			"model": "Modèle",
+			"provider": "Fournisseur",
+			"enableAutoTrigger": {
+				"label": "Déclencher automatiquement les suggestions",
+				"description": "Afficher automatiquement des suggestions de code en ligne lorsque tu fais une pause dans la saisie."
+			},
+			"autoTriggerDelay": {
+				"label": "Délai de Déclenchement Automatique",
+				"description": "Le délai en secondes avant que les suggestions n'apparaissent après une pause de frappe. Un délai plus court signifie des suggestions plus rapides, mais peut être plus gourmand en ressources."
+			},
+			"enableSmartInlineTaskKeybinding": {
+				"label": "Déclencher par raccourci clavier ({{keybinding}})",
+				"description": "Appuie sur {{keybinding}} pour demander une suggestion de code à la position du curseur. <DocsLink>Modifier le raccourci</DocsLink>"
+			},
+			"enableChatAutocomplete": {
+				"label": "Activer l'autocomplétion du chat",
+				"description": "Afficher les suggestions pendant la saisie dans le champ de chat. Appuie sur Tab pour accepter les suggestions."
+			},
+			"snooze": {
+				"label": "Mettre en pause les suggestions",
+				"description": "Mettre temporairement en pause les suggestions pour une durée spécifiée.",
+				"button": "Mettre en pause",
+				"unsnooze": "Réactiver",
+				"currentlySnoozed": "Les suggestions sont actuellement en pause.",
+				"duration": {
+					"1min": "1 minute",
+					"5min": "5 minutes",
+					"15min": "15 minutes",
+					"30min": "30 minutes",
+					"1hour": "1 heure"
+				}
+			},
+			"keybindingNotFound": "introuvable",
+			"noModelConfigured": {
+				"title": "Aucun modèle d'autocomplétion configuré",
+				"description": "Pour activer l'autocomplétion, ajoute un profil avec l'un de ces fournisseurs pris en charge :",
+				"learnMore": "En savoir plus sur la configuration de l'autocomplétion →"
+			},
+			"noCredits": {
+				"title": "Aucun crédit sur ton compte",
+				"description": "Ton compte Kilo Code n'a pas de crédits. Pour utiliser l'autocomplétion, ajoute des crédits à ton compte.",
+				"buyCredits": "Acheter des crédits →"
+			},
+			"configureAutocompleteProfile": "Utilise n'importe quel modèle en allant dans les profils et en configurant un Profil du Type de Profil Autocomplétion."
+		}
+	},
+	"virtualProvider": {
+		"title": "Paramètres du fournisseur de secours pour quota virtuel",
+		"description": "Configurez une liste de profils, chacun avec ses propres limites de quota. Lorsque les limites de quota d'un fournisseur sont atteintes, le profil suivant dans la liste sera utilisé jusqu'à ce qu'il n'en reste plus aucun.",
+		"profileLabel": "Profil {{number}}",
+		"primaryProfileLabel": "Profil {{number}} (Principal)",
+		"moveProfileUp": "Déplacer le profil vers le haut",
+		"moveProfileDown": "Déplacer le profil vers le bas",
+		"removeProfile": "Supprimer le profil",
+		"selectProfilePlaceholder": "Sélectionner le profil...",
+		"addProfile": "Ajouter un profil",
+		"noProfilesAvailable": "Aucun profil disponible. Veuillez configurer d'abord au moins un profil de fournisseur non virtuel.",
+		"dangerZoneTitle": "Zone de Danger",
+		"dangerZoneDescription": "Ces actions sont destructives et ne peuvent pas être annulées.",
+		"clearUsageData": "Effacer les Données d'Utilisation",
+		"confirmClearTitle": "Êtes-vous sûr ?",
+		"confirmClearDescription": "Cela supprimera définitivement toutes les données d'utilisation stockées pour les fournisseurs virtuels. Cette action ne peut pas être annulée.",
+		"tokensLabel": "Jetons",
+		"perHour": "Par heure",
+		"perMinute": "Par minute",
+		"requestsLabel": "Demandes",
+		"perDay": "Par jour"
+	},
+	"memoryWarning": {
+		"message": "L'utilisation de la mémoire est à {{percentage}}%. Veuillez redémarrer votre IDE pour éviter les plantages."
+	},
+	"imageWarnings": {
+		"modelNoImageSupport": "Les images ne sont pas prises en charge par le modèle actuel.",
+		"maxImagesReached": "Maximum de 20 images par message. Supprimez quelques images pour en ajouter d'autres.",
+		"imagesRemovedNoSupport": "Images supprimées, non prises en charge par le modèle."
+	},
+	"marketplace": {
+		"mcp": {
+			"description": "Ces serveurs MCP sont maintenus par la communauté. Cliquez <1>ici</1> pour modifier vos propres paramètres MCP."
+		},
+		"modes": {
+			"description": "Ces modes sont disponibles auprès de la communauté. Cliquez <1>ici</1> pour modifier vos propres modes personnalisés."
+		},
+		"skills": {
+			"description": "Parcourez et découvrez des compétences de la communauté. Les compétences fournissent des instructions spécialisées pour des tâches spécifiques."
+		}
+	},
+	"modes": {
+		"shareModesNewBanner": "Nouveau : Partagez des modes en créant une organisation"
+	},
+	"deviceAuth": {
+		"title": "Se connecter à Kilo Code",
+		"step1": "Ouvre l'URL suivante dans ton navigateur",
+		"step2": "Vérifie le code et autorise cet appareil dans ton navigateur",
+		"scanQr": "Ou scanne ce code QR avec ton téléphone",
+		"openBrowser": "Ouvrir le navigateur",
+		"copyUrl": "Copier l'URL",
+		"waiting": "En attente d'autorisation...",
+		"timeRemaining": "Le code expire dans {{time}}",
+		"success": "Connexion réussie !",
+		"authenticatedAs": "Authentifié en tant que {{email}}",
+		"error": "Erreur d'authentification",
+		"unknownError": "Une erreur s'est produite. Réessaye.",
+		"cancel": "Annuler",
+		"retry": "Réessayer",
+		"tryAgain": "Réessayer",
+		"cancelled": "Authentification annulée",
+		"initiating": "Démarrage de l'authentification..."
+	},
+	"speechToText": {
+		"startRecording": "Démarrer la saisie vocale",
+		"stopRecording": "Arrêter la saisie vocale",
+		"setupPopover": {
+			"title": "Reconnaissance vocale",
+			"description": "La reconnaissance vocale est indisponible. La reconnaissance vocale nécessite à la fois FFmpeg et un fournisseur OpenAI valide configuré. <moreInfoLink>Cliquez ici pour plus d'informations</moreInfoLink>.",
+			"openAiReason": "Vous avez besoin d'un fournisseur OpenAI valide avec une clé API pour utiliser la transcription vocale.",
+			"ffmpegReason": "Vous devez installer FFmpeg. <ffmpegLink>Cliquez ici</ffmpegLink> pour que Kilo vous aide à installer FFmpeg.",
+			"ffmpegMessage": "Aidez-moi à installer FFmpeg"
+		},
+		"misconfiguredState": "Indisponible en raison de la configuration",
+		"errorState": "Indisponible en raison d'une erreur",
+		"microphone": {
+			"label": "Microphone",
+			"description": "Sélectionnez le périphérique microphone pour la reconnaissance vocale",
+			"loading": "Chargement des périphériques microphone...",
+			"noDevices": "Aucun périphérique de microphone trouvé",
+			"defaultOption": "Paramètre par défaut du système",
+			"refresh": "Actualiser"
+		}
+	},
+	"skills": {
+		"description": "Les compétences fournissent des instructions spécialisées pour des tâches spécifiques. Elles sont automatiquement appliquées lorsqu'elles sont pertinentes pour ta demande.",
+		"noSkills": "Aucune compétence installée",
+		"projectSkills": "Compétences du Projet",
+		"globalSkills": "Compétences Globales",
+		"deleteDialog": {
+			"title": "Supprimer la Compétence",
+			"description": "Es-tu sûr de vouloir supprimer la compétence \"{{skillName}}\" ? Cette action est irréversible.",
+			"cancel": "Annuler",
+			"delete": "Supprimer"
+		}
+	}
+}

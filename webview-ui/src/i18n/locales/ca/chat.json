@@ -1,0 +1,514 @@
+{
+	"greeting": "Què pot fer Kilo Code per tu?",
+	"task": {
+		"title": "Tasca",
+		"expand": "Expandir tasca",
+		"collapse": "Replegar tasca",
+		"seeMore": "Veure més",
+		"seeLess": "Veure menys",
+		"tokens": "Tokens",
+		"cache": "Caché",
+		"apiCost": "Cost d'API",
+		"changes": "Canvis",
+		"size": "Mida",
+		"contextWindow": "Finestra de context",
+		"closeAndStart": "Tancar tasca i iniciar-ne una de nova",
+		"export": "Exportar historial de tasques",
+		"delete": "Eliminar tasca (Shift + Clic per ometre confirmació)",
+		"condenseContext": "Condensar context de forma intel·ligent",
+		"share": "Compartir tasca",
+		"shareWithOrganization": "Compartir amb l'organització",
+		"shareWithOrganizationDescription": "Només els membres de la teva organització poden accedir",
+		"sharePublicly": "Compartir públicament",
+		"sharePubliclyDescription": "Qualsevol amb l'enllaç pot accedir",
+		"connectToCloud": "Connecta al núvol",
+		"connectToCloudDescription": "Inicia sessió a Kilo Code Cloud per compartir tasques",
+		"sharingDisabledByOrganization": "Compartició deshabilitada per l'organització",
+		"shareSuccessOrganization": "Enllaç d'organització copiat al porta-retalls",
+		"shareSuccessPublic": "Enllaç públic copiat al porta-retalls",
+		"openInCloud": "Obrir tasca a Roo Code Cloud",
+		"openInCloudIntro": "Continua monitoritzant o interactuant amb Roo des de qualsevol lloc. Escaneja, fes clic o copia per obrir.",
+		"openApiHistory": "Obrir historial d'API",
+		"openUiHistory": "Obrir historial d'UI"
+	},
+	"history": {
+		"title": "Historial"
+	},
+	"unpin": "Desfixar",
+	"pin": "Fixar",
+	"tokenProgress": {
+		"availableSpace": "Espai disponible: {{amount}} tokens",
+		"tokensUsed": "Tokens utilitzats: {{used}} de {{total}}",
+		"reservedForResponse": "Reservat per a resposta del model: {{amount}} tokens"
+	},
+	"retry": {
+		"title": "Tornar a intentar",
+		"tooltip": "Torna a provar l'operació"
+	},
+	"startNewTask": {
+		"title": "Començar una nova tasca",
+		"tooltip": "Comença una nova tasca"
+	},
+	"reportBug": {
+		"title": "Informa d'un error"
+	},
+	"proceedAnyways": {
+		"title": "Continuar de totes maneres",
+		"tooltip": "Continua mentre s'executa l'ordre"
+	},
+	"save": {
+		"title": "Desar",
+		"tooltip": "Desa els canvis del missatge"
+	},
+	"reject": {
+		"title": "Rebutjar",
+		"tooltip": "Rebutja aquesta acció"
+	},
+	"completeSubtaskAndReturn": "Completar la subtasca i tornar",
+	"approve": {
+		"title": "Aprovar",
+		"tooltip": "Aprova aquesta acció"
+	},
+	"runCommand": {
+		"title": "Ordre",
+		"tooltip": "Executa aquesta ordre"
+	},
+	"proceedWhileRunning": {
+		"title": "Continuar mentre s'executa",
+		"tooltip": "Continua malgrat els advertiments"
+	},
+	"killCommand": {
+		"title": "Atura l'ordre",
+		"tooltip": "Atura l'ordre actual"
+	},
+	"resumeTask": {
+		"title": "Reprendre la tasca",
+		"tooltip": "Repren la tasca actual"
+	},
+	"terminate": {
+		"title": "Finalitzar",
+		"tooltip": "Finalitza la tasca actual"
+	},
+	"stop": {
+		"title": "Atura",
+		"tooltip": "Atura la tasca actual"
+	},
+	"cancel": {
+		"title": "Cancel·lar",
+		"tooltip": "Cancel·la l'operació actual"
+	},
+	"enqueueMessage": "Afegeix el missatge a la cua (s'enviarà quan acabi la tasca actual)",
+	"scrollToBottom": "Desplaça't al final del xat",
+	"about": "Genera, refactoritza i depura codi amb l'ajuda de la IA. Consulta la nostra <DocsLink>documentació</DocsLink> per a més informació.",
+	"docs": "Consulta els nostres <DocsLink>documents</DocsLink> per a més informació.",
+	"onboarding": "<strong> La vostra llista de tasques en aquest espai de treball està buida. </strong> Comença escrivint una tasca a continuació. \nNo esteu segur per on començar? \nMés informació sobre què pot fer Kilo Code als documents.",
+	"rooTips": {
+		"customizableModes": {
+			"title": "Modes personalitzables",
+			"description": "Persones especialitzades que es mantenen en la tasca i compleixen."
+		},
+		"modelAgnostic": {
+			"title": "Porta el teu propi model",
+			"description": "Fes servir la teva pròpia clau de proveïdor o fins i tot executa inferència local — sense sobrepreus, sense bloquejos, sense restriccions"
+		}
+	},
+	"selectMode": "Selecciona el mode d'interacció",
+	"selectApiConfig": "Seleccioneu la configuració de l'API",
+	"selectModelConfig": "Seleccioneu el model",
+	"enhancePrompt": "Millora la sol·licitud amb context addicional",
+	"addImages": "Afegeix imatges al missatge",
+	"sendMessage": "Envia el missatge",
+	"pressToSend": "Prem {{keyCombination}} per enviar",
+	"stopTts": "Atura la síntesi de veu",
+	"typeMessage": "Escriu un missatge...",
+	"typeTask": "Escriu la teva tasca aquí...",
+	"addContext": "@ per afegir context, / per a comandes",
+	"dragFiles": "manté premut shift per arrossegar fitxers",
+	"dragFilesImages": "manté premut shift per arrossegar fitxers/imatges",
+	"enhancePromptDescription": "El botó 'Millora la sol·licitud' ajuda a millorar la teva sol·licitud proporcionant context addicional, aclariments o reformulacions. Prova d'escriure una sol·licitud aquí i fes clic al botó de nou per veure com funciona.",
+	"modeSelector": {
+		"title": "Modes",
+		"marketplace": "Marketplace de Modes",
+		"settings": "Configuració de Modes",
+		"description": "Personalitats especialitzades que adapten el comportament de Kilo Code.",
+		"searchPlaceholder": "Cerca modes...",
+		"noResults": "No s'han trobat resultats",
+		"organizationModes": "Modes d'organització"
+	},
+	"errorReadingFile": "Error en llegir el fitxer",
+	"noValidImages": "No s'ha processat cap imatge vàlida",
+	"separator": "Separador",
+	"edit": "Edita...",
+	"forNextMode": "per al següent mode",
+	"forPreviousMode": "per al mode anterior",
+	"error": "Error",
+	"diffError": {
+		"title": "Edició fallida"
+	},
+	"troubleMessage": "Kilo Code està tenint problemes...",
+	"apiRequest": {
+		"title": "Sol·licitud API",
+		"failed": "Sol·licitud API ha fallat",
+		"streaming": "Sol·licitud API...",
+		"cancelled": "Sol·licitud API cancel·lada",
+		"streamingFailed": "Transmissió API ha fallat",
+		"rateLimitWait": "Limitació de taxa",
+		"errorTitle": "Error de proveïdor {{code}}",
+		"errorMessage": {
+			"docs": "Documentació",
+			"goToSettings": "Configuració",
+			"400": "El proveïdor no ha pogut processar la sol·licitud tal com es va fer. Interromp la tasca i prova una abordatge diferent.",
+			"401": "No s'ha pogut autenticar amb el proveïdor. Si us plau, verifica la teva configuració de clau API.",
+			"402": "Sembla que se t'han acabat els fons/crèdits al teu compte. Vés al teu proveïdor i afegeix més per continuar.",
+			"403": "No autoritzat. La teva clau API és vàlida, però el proveïdor ha rebutjat completar aquesta sol·licitud.",
+			"429": "Massa sol·licituds. Estàs sent limitat pel proveïdor. Si us plau espera una mica abans de la teva propera crida API.",
+			"500": "Error del servidor del proveïdor. Quelcom va malament del costat del proveïdor, no hi ha res de malament amb la teva sol·licitud.",
+			"connection": "Error de connexió. Assegureu-vos que teniu una connexió a Internet funcional.",
+			"claudeCodeNotAuthenticated": "Has d'iniciar sessió per utilitzar Claude Code. Vés a Configuració i fes clic a \"Iniciar sessió a Claude Code\" per autenticar-te.",
+			"unknown": "Error API desconegut, fes clic a Detalls per a més informació."
+		}
+	},
+	"checkpoint": {
+		"regular": "Punt de control",
+		"initializingWarning": "Encara s'està inicialitzant el punt de control... Si això triga massa, pots desactivar els punts de control a la <settingsLink>configuració</settingsLink> i reiniciar la teva tasca.",
+		"menu": {
+			"viewDiff": "Veure diferències",
+			"more": "Més opcions",
+			"viewDiffFromInit": "Veure tots els canvis",
+			"viewDiffWithCurrent": "Veure els canvis des d'aquest punt de control",
+			"restore": "Restaurar punt de control",
+			"restoreFiles": "Restaurar arxius",
+			"restoreFilesDescription": "Restaura els arxius del teu projecte a una instantània presa en aquest punt.",
+			"restoreFilesAndTask": "Restaurar arxius i tasca",
+			"confirm": "Confirmar",
+			"cancel": "Cancel·lar",
+			"cannotUndo": "Aquesta acció no es pot desfer.",
+			"restoreFilesAndTaskDescription": "Restaura els arxius del teu projecte a una instantània presa en aquest punt i elimina tots els missatges posteriors a aquest punt."
+		},
+		"current": "Actual"
+	},
+	"instructions": {
+		"wantsToFetch": "Kilo Code vol obtenir instruccions detallades per ajudar amb la tasca actual."
+	},
+	"fileOperations": {
+		"wantsToRead": "Kilo Code vol llegir aquest fitxer",
+		"wantsToReadOutsideWorkspace": "Kilo Code vol llegir aquest fitxer fora de l'espai de treball",
+		"didRead": "Kilo Code ha llegit aquest fitxer",
+		"wantsToEdit": "Kilo Code vol editar aquest fitxer",
+		"wantsToEditOutsideWorkspace": "Kilo Code vol editar aquest fitxer fora de l'espai de treball",
+		"wantsToEditProtected": "Kilo Code vol editar un fitxer de configuració protegit",
+		"wantsToCreate": "Kilo Code vol crear un nou fitxer",
+		"wantsToSearchReplace": "Kilo Code vol realitzar cerca i substitució en aquest fitxer",
+		"didSearchReplace": "Kilo Code ha realitzat cerca i substitució en aquest fitxer",
+		"wantsToInsert": "Kilo Code vol inserir contingut en aquest fitxer",
+		"wantsToInsertWithLineNumber": "Kilo Code vol inserir contingut a la línia {{lineNumber}} d'aquest fitxer",
+		"wantsToInsertAtEnd": "Kilo Code vol afegir contingut al final d'aquest fitxer",
+		"wantsToReadAndXMore": "En Kilo Code vol llegir aquest fitxer i {{count}} més",
+		"wantsToReadMultiple": "Kilo Code vol llegir diversos fitxers",
+		"wantsToApplyBatchChanges": "Kilo Code vol aplicar canvis a múltiples fitxers",
+		"wantsToGenerateImage": "Kilo Code vol generar una imatge",
+		"wantsToGenerateImageOutsideWorkspace": "Kilo Code vol generar una imatge fora de l'espai de treball",
+		"wantsToGenerateImageProtected": "Kilo Code vol generar una imatge en una ubicació protegida",
+		"didGenerateImage": "Kilo Code ha generat una imatge",
+		"wantsToDelete": "Kilo Code vol eliminar aquest fitxer",
+		"wantsToDeleteDirectory": "Kilo Code vol eliminar aquest directori"
+	},
+	"directoryOperations": {
+		"wantsToViewTopLevel": "Kilo Code vol veure els fitxers de nivell superior en aquest directori",
+		"didViewTopLevel": "Kilo Code ha vist els fitxers de nivell superior en aquest directori",
+		"wantsToViewRecursive": "Kilo Code vol veure recursivament tots els fitxers en aquest directori",
+		"didViewRecursive": "Kilo Code ha vist recursivament tots els fitxers en aquest directori",
+		"wantsToViewDefinitions": "Kilo Code vol veure noms de definicions de codi font utilitzats en aquest directori",
+		"didViewDefinitions": "Kilo Code ha vist noms de definicions de codi font utilitzats en aquest directori",
+		"wantsToSearch": "Kilo Code vol cercar en aquest directori <code>{{regex}}</code>",
+		"didSearch": "Kilo Code ha cercat en aquest directori <code>{{regex}}</code>",
+		"wantsToSearchOutsideWorkspace": "Kilo Code vol cercar en aquest directori (fora de l'espai de treball) <code>{{regex}}</code>",
+		"didSearchOutsideWorkspace": "Kilo Code ha cercat en aquest directori (fora de l'espai de treball) <code>{{regex}}</code>",
+		"wantsToViewTopLevelOutsideWorkspace": "Kilo Code vol veure els fitxers de nivell superior en aquest directori (fora de l'espai de treball)",
+		"didViewTopLevelOutsideWorkspace": "Kilo Code ha vist els fitxers de nivell superior en aquest directori (fora de l'espai de treball)",
+		"wantsToViewRecursiveOutsideWorkspace": "Kilo Code vol veure recursivament tots els fitxers en aquest directori (fora de l'espai de treball)",
+		"didViewRecursiveOutsideWorkspace": "Kilo Code ha vist recursivament tots els fitxers en aquest directori (fora de l'espai de treball)",
+		"wantsToViewDefinitionsOutsideWorkspace": "Kilo Code vol veure noms de definicions de codi font utilitzats en aquest directori (fora de l'espai de treball)",
+		"didViewDefinitionsOutsideWorkspace": "Kilo Code ha vist noms de definicions de codi font utilitzats en aquest directori (fora de l'espai de treball)"
+	},
+	"commandOutput": "Sortida de la comanda",
+	"commandExecution": {
+		"abort": "Avortar",
+		"running": "En execució",
+		"pid": "PID: {{pid}}",
+		"exitStatus": "S'ha sortit amb l'estat {{exitCode}}",
+		"manageCommands": "Comandes aprovades automàticament",
+		"addToAllowed": "Afegeix a la llista permesa",
+		"removeFromAllowed": "Elimina de la llista permesa",
+		"addToDenied": "Afegeix a la llista denegada",
+		"removeFromDenied": "Elimina de la llista denegada",
+		"abortCommand": "Interrompre l'execució de l'ordre",
+		"expandOutput": "Amplia la sortida",
+		"collapseOutput": "Redueix la sortida",
+		"expandManagement": "Amplia la secció de gestió de comandaments",
+		"collapseManagement": "Redueix la secció de gestió de comandaments"
+	},
+	"response": "Resposta",
+	"arguments": "Arguments",
+	"text": {
+		"rooSaid": "En Kilo ha dit"
+	},
+	"feedback": {
+		"youSaid": "Has dit"
+	},
+	"mcp": {
+		"wantsToUseTool": "Kilo Code vol utilitzar una eina al servidor MCP {{serverName}}",
+		"wantsToAccessResource": "Kilo Code vol accedir a un recurs al servidor MCP {{serverName}}"
+	},
+	"modes": {
+		"wantsToSwitch": "Kilo Code vol canviar a mode <code>{{mode}}</code>",
+		"wantsToSwitchWithReason": "Kilo Code vol canviar a mode <code>{{mode}}</code> perquè: {{reason}}",
+		"didSwitch": "Kilo Code ha canviat a mode <code>{{mode}}</code>",
+		"didSwitchWithReason": "Kilo Code ha canviat a mode <code>{{mode}}</code> perquè: {{reason}}"
+	},
+	"subtasks": {
+		"wantsToCreate": "Kilo Code vol crear una nova subtasca en mode <code>{{mode}}</code>",
+		"wantsToFinish": "Kilo Code vol finalitzar aquesta subtasca",
+		"newTaskContent": "Instruccions de la subtasca",
+		"completionContent": "Subtasca completada",
+		"resultContent": "Resultats de la subtasca",
+		"defaultResult": "Si us plau, continua amb la següent tasca.",
+		"completionInstructions": "Subtasca completada! Pots revisar els resultats i suggerir correccions o següents passos. Si tot sembla correcte, confirma per tornar el resultat a la tasca principal."
+	},
+	"questions": {
+		"hasQuestion": "Kilo Code té una pregunta"
+	},
+	"taskCompleted": "Tasca completada",
+	"modelResponseIncomplete": "Resposta del model incompleta",
+	"modelResponseErrors": {
+		"noToolsUsed": "El model no ha utilitzat cap eina en la seva resposta. Això sol passar quan el model només proporciona text/raonament sense cridar les eines necessàries per completar la tasca.",
+		"noToolsUsedDetails": "El model ha proporcionat text/raonament però no ha cridat cap de les eines necessàries. Això sol indicar que el model ha entès malament la tasca o té dificultats per determinar quina eina utilitzar. El model ha estat sol·licitat automàticament per tornar-ho a provar amb l'ús adequat de les eines.",
+		"noAssistantMessages": "El model no ha proporcionat cap contingut de resposta. Això pot indicar un problema amb l'API o la sortida del model.",
+		"noAssistantMessagesDetails": "El model de llenguatge ha retornat una resposta buida sense text ni crides a eines. Això pot passar a causa de problemes d'API, limitació de velocitat o problemes específics del model. El model ha estat sol·licitat automàticament per tornar-ho a provar."
+	},
+	"errorDetails": {
+		"link": "Detalls",
+		"title": "Detalls de l'error",
+		"copyToClipboard": "Copiar al porta-retalls",
+		"copied": "Copiat!",
+		"diagnostics": "Obtenir informació d'error detallada",
+		"proxyProvider": "Sembla que estàs utilitzant un proveïdor basat en proxy. Assegura't de comprovar els seus registres i de garantir que no estàs reescrivint les sol·licituds de Roo."
+	},
+	"powershell": {
+		"issues": "Sembla que estàs tenint problemes amb Windows PowerShell, si us plau consulta aquesta documentació per a més informació."
+	},
+	"autoApprove": {
+		"tooltipManage": "Gestiona la configuració d'aprovació automàtica",
+		"tooltipStatus": "Aprovació automàtica activada per a: {{toggles}}",
+		"title": "Aprovació automàtica",
+		"toggle": "Commuta l'aprovació automàtica",
+		"all": "Tot",
+		"none": "Cap",
+		"description": "Executa aquestes accions sense demanar permís. Activa-ho només per a accions de confiança.",
+		"selectOptionsFirst": "Selecciona almenys una opció a continuació per activar l'aprovació automàtica",
+		"toggleAriaLabel": "Commuta l'aprovació automàtica",
+		"disabledAriaLabel": "Aprovació automàtica desactivada - selecciona primer les opcions",
+		"triggerLabelOff": "Aprovació automàtica desactivada",
+		"triggerLabelOffShort": "Off",
+		"triggerLabel_zero": "0 aprovacions automàtiques",
+		"triggerLabel_one": "1 aprovació automàtica",
+		"triggerLabel_other": "{{count}} aprovacions automàtiques",
+		"triggerLabelAll": "BRRR"
+	},
+	"reasoning": {
+		"thinking": "Pensant",
+		"seconds": "{{count}}s"
+	},
+	"contextManagement": {
+		"tokens": "tokens",
+		"condensation": {
+			"title": "Context condensat",
+			"inProgress": "Condensant context...",
+			"errorHeader": "Error en condensar el context"
+		},
+		"truncation": {
+			"title": "Context truncat",
+			"inProgress": "Truncant context...",
+			"messagesRemoved": "{{count}} missatge eliminat",
+			"messagesRemoved_other": "{{count}} missatges eliminats",
+			"description": "S'han eliminat missatges més antics de la conversa per mantenir-se dins del límit de la finestra de context. Aquest és un enfocament ràpid però menys conservador del context en comparació amb la condensació."
+		}
+	},
+	"followUpSuggest": {
+		"copyToInput": "Copiar a l'entrada (o Shift + clic)",
+		"timerPrefix": "Aprovació automàtica habilitada. Seleccionant en {{seconds}}s…"
+	},
+	"announcement": {
+		"title": "Roo Code {{version}} Llançat",
+		"support": "Si us plau, dona suport a Roo Code fent una estrella al nostre <githubLink>GitHub</githubLink>.",
+		"stealthModel": {
+			"feature": "<bold>Model stealth GRATUÏT per temps limitat</bold> - Code Supernova: Ara actualitzat amb una <bold>finestra de context d'1M tokens</bold>! Un model de codificació agèntica versàtil que suporta entrades d'imatges, disponible a través de Roo Code Cloud.",
+			"note": "(Nota: els prompts i completacions són registrats pel creador del model i utilitzats per millorar-lo)",
+			"connectButton": "Connectar a Roo Code Cloud",
+			"selectModel": "Selecciona <code>roo/code-supernova</code> del proveïdor Roo Code Cloud a Configuració per començar.",
+			"goToSettingsButton": "Anar a Configuració"
+		},
+		"release": {
+			"heading": "Què hi ha de nou:",
+			"openaiCodexProvider": "S'ha afegit el Proveïdor OpenAI - ChatGPT Plus/Pro que ofereix accés basat en subscripció als models Codex sense costos per token.",
+			"gpt52codexModel": "S'ha afegit el nou model gpt-5.2-codex al Roo Code Router, al proveïdor estàndard OpenAI i més.",
+			"bugFixes": "S'han corregit fuites de memòria que causaven pantalles grises, problemes de signatura de pensament de Gemini i més millores d'estabilitat."
+		},
+		"cloudAgents": {
+			"heading": "Novetats al núvol:",
+			"specialized": "Presentem <bold>Explainer</bold>, <bold>Planner</bold> i <bold>Coder</bold> - tres agents al núvol especialitzats per millorar els teus fluxos de treball.",
+			"description": "Els agents treballen junts al núvol i es poden activar des del web o mitjançant Slack.",
+			"tryButton": "Prova els Agents al Núvol"
+		},
+		"careers": "A més, <careersLink>estem contractant!</careersLink>",
+		"socialLinks": "Uneix-te a nosaltres a <xLink>X</xLink>, <discordLink>Discord</discordLink>, o <redditLink>r/KiloCode</redditLink> 🚀"
+	},
+	"costs": {
+		"totalWithSubtasks": "Cost total (subtasques incloses): ${{cost}}",
+		"total": "Cost total: ${{cost}}",
+		"includesSubtasks": "Inclou els costos de les subtasques"
+	},
+	"browser": {
+		"session": "Sessió del navegador",
+		"active": "Actiu",
+		"rooWantsToUse": "Kilo Code vol utilitzar el navegador",
+		"consoleLogs": "Registres de consola",
+		"noNewLogs": "(Cap registre nou)",
+		"screenshot": "Captura de pantalla del navegador",
+		"cursor": "cursor",
+		"navigation": {
+			"step": "Pas {{current}} de {{total}}",
+			"previous": "Anterior",
+			"next": "Següent"
+		},
+		"sessionStarted": "Sessió de navegador iniciada",
+		"actions": {
+			"title": "Acció del navegador: ",
+			"launched": "Navegador iniciat",
+			"launch": "Iniciar navegador a {{url}}",
+			"clicked": "Fet clic ({{coordinate}})",
+			"click": "Clic ({{coordinate}})",
+			"typed": "Escrit: {{text}}",
+			"type": "Escriure \"{{text}}\"",
+			"pressed": "Premut: {{key}}",
+			"press": "Prem {{key}}",
+			"scrolledDown": "Desplaçat avall",
+			"scrollDown": "Desplaçar avall",
+			"scrolledUp": "Desplaçat amunt",
+			"scrollUp": "Desplaçar amunt",
+			"hovered": "Planat sobre ({{coordinate}})",
+			"hover": "Plana sobre ({{coordinate}})",
+			"resized": "Mida canviada a: {{size}}",
+			"resize": "Canvia la mida a {{size}}",
+			"screenshotSaved": "Captura de pantalla guardada",
+			"screenshot": "Guarda la captura de pantalla a {{path}}",
+			"closed": "Navegador tancat",
+			"close": "Tancar navegador"
+		}
+	},
+	"codeblock": {
+		"tooltips": {
+			"expand": "Expandir bloc de codi",
+			"collapse": "Contraure bloc de codi",
+			"enable_wrap": "Activar ajust de línia",
+			"disable_wrap": "Desactivar ajust de línia",
+			"copy_code": "Copiar codi"
+		}
+	},
+	"systemPromptWarning": "ADVERTÈNCIA: S'ha activat una substitució personalitzada d'instruccions del sistema. Això pot trencar greument la funcionalitat i causar un comportament impredictible.",
+	"profileViolationWarning": "El perfil actual no és compatible amb la configuració de la teva organització",
+	"shellIntegration": {
+		"title": "Advertència d'execució d'ordres",
+		"description": "La teva ordre s'està executant sense la integració de shell del terminal VSCode. Per suprimir aquest advertiment, pots desactivar la integració de shell a la secció <strong>Terminal</strong> de la <settingsLink>configuració de Kilo Code</settingsLink> o solucionar problemes d'integració del terminal VSCode utilitzant l'enllaç a continuació.",
+		"troubleshooting": "Fes clic aquí per a la documentació d'integració de shell."
+	},
+	"ask": {
+		"autoApprovedRequestLimitReached": {
+			"title": "S'ha arribat al límit de sol·licituds aprovades automàticament",
+			"description": "Kilo Code ha arribat al límit aprovat automàticament de {{count}} sol·licitud(s) d'API. Vols reiniciar el comptador i continuar amb la tasca?",
+			"button": "Reiniciar i continuar"
+		},
+		"autoApprovedCostLimitReached": {
+			"title": "S'ha arribat al límit de cost d'aprovació automàtica",
+			"button": "Restableix i continua",
+			"description": "Kilo Code ha arribat al límit de cost aprovat automàticament de ${{count}}. Vols restablir el cost i continuar amb la tasca?"
+		}
+	},
+	"codebaseSearch": {
+		"wantsToSearch": "Kilo Code vol cercar a la base de codi <code>{{query}}</code>",
+		"wantsToSearchWithPath": "Kilo Code vol cercar a la base de codi <code>{{query}}</code> a <code>{{path}}</code>",
+		"didSearch_one": "S'ha trobat 1 resultat",
+		"didSearch_other": "S'han trobat {{count}} resultats",
+		"resultTooltip": "Puntuació de similitud: {{score}} (fes clic per obrir el fitxer)"
+	},
+	"read-batch": {
+		"approve": {
+			"title": "Aprovar tot"
+		},
+		"deny": {
+			"title": "Denegar tot"
+		}
+	},
+	"indexingStatus": {
+		"ready": "Índex preparat",
+		"indexing": "Indexant {{percentage}}%",
+		"indexed": "Indexat",
+		"error": "Error d'índex",
+		"status": "Estat de l'índex"
+	},
+	"versionIndicator": {
+		"ariaLabel": "Versió {{version}} - Feu clic per veure les notes de llançament"
+	},
+	"rooCloudCTA": {
+		"title": "Roo Code Cloud està evolucionant!",
+		"description": "Executa agents remots al núvol, accedeix a les teves tasques des de qualsevol lloc, col·labora amb altres i molt més.",
+		"joinWaitlist": "Registra't per rebre les últimes actualitzacions."
+	},
+	"editMessage": {
+		"placeholder": "Edita el teu missatge..."
+	},
+	"command": {
+		"triggerDescription": "Activa la comanda {{name}}"
+	},
+	"slashCommands": {
+		"tooltip": "Gestionar ordres de barra",
+		"title": "Ordres de Barra",
+		"description": "Utilitza ordres de barra integrades o crea personalitzades per accedir ràpidament a indicacions i fluxos de treball utilitzats amb freqüència. <DocsLink>Documentació</DocsLink>",
+		"manageCommands": "Gestiona les ordres de barra a la configuració",
+		"builtInCommands": "Ordres Integrades",
+		"globalCommands": "Ordres Globals",
+		"workspaceCommands": "Ordres de l'Espai de Treball",
+		"globalCommand": "Ordre global",
+		"editCommand": "Editar ordre",
+		"deleteCommand": "Eliminar ordre",
+		"newGlobalCommandPlaceholder": "Nova ordre global...",
+		"newWorkspaceCommandPlaceholder": "Nova ordre de l'espai de treball...",
+		"deleteDialog": {
+			"title": "Eliminar Ordre",
+			"description": "Estàs segur que vols eliminar l'ordre \"{{name}}\"? Aquesta acció no es pot desfer.",
+			"cancel": "Cancel·lar",
+			"confirm": "Eliminar"
+		}
+	},
+	"queuedMessages": {
+		"title": "Missatges en cua",
+		"clickToEdit": "Feu clic per editar el missatge"
+	},
+	"slashCommand": {
+		"wantsToRun": "Kilo Code vol executar una comanda slash",
+		"didRun": "Kilo Code ha executat una comanda slash"
+	},
+	"contextMenu": {
+		"noResults": "Sense resultats",
+		"problems": "Problemes",
+		"terminal": "Terminal",
+		"url": "Enganxa la URL per obtenir-ne el contingut"
+	},
+	"todo": {
+		"partial": "{{completed}} de {{total}} tasques pendents fetes",
+		"complete": "{{total}} tasques pendents fetes",
+		"updated": "S'ha actualitzat la llista de tasques pendents",
+		"completed": "Completat",
+		"started": "Iniciat"
+	}
+}

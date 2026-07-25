@@ -1,0 +1,401 @@
+{
+	"onboarding": {
+		"title": "Jak chcesz zacząć?",
+		"freeModels": {
+			"title": "Darmowe modele",
+			"description": "Zacznij kodować od razu"
+		},
+		"premiumModels": {
+			"title": "Modele premium",
+			"description": "Zarejestruj się. Nowi użytkownicy otrzymują 5 $ kredytu"
+		},
+		"byok": {
+			"title": "Użyj własnego klucza",
+			"description": "Zaawansowane. Użyj własnego konta lub subskrypcji"
+		}
+	},
+	"welcome": {
+		"greeting": "Witaj w Kilo Code!",
+		"introText1": "Kilo Code to darmowy, otwartoźródłowy agent kodowania AI.",
+		"introText2": "Współpracuje z najnowszymi modelami AI, takimi jak Claude Opus 4.5, Gemini 3 Pro, GPT-5.2 i ponad 450 innymi.",
+		"introText3": "Stwórz darmowe konto i otrzymaj $20 bonusowych kredytów przy pierwszym doładowaniu.",
+		"ctaButton": "Rozpocznij",
+		"manualModeButton": "Użyj własnego klucza API",
+		"alreadySignedUp": "Już zarejestrowany?",
+		"loginText": "Zaloguj się tutaj"
+	},
+	"lowCreditWarning": {
+		"addCredit": "Dodaj kredyt",
+		"lowBalance": "Twój stan konta Kilo Code jest niski",
+		"switchToFreeModel": "Przełącz na darmowy model"
+	},
+	"pagination": {
+		"previous": "Poprzednia",
+		"next": "Następna",
+		"page": "Strona {{page}} / {{count}}"
+	},
+	"unauthorizedError": {
+		"title": "Musisz się zalogować, aby użyć modelu {{modelId}}",
+		"message": "Zaloguj się lub utwórz konto, aby uzyskać dostęp do ponad 500 modeli, korzystać z kredytów po cenie kosztowej lub przynieść własny klucz.",
+		"loginButton": "Zaloguj się"
+	},
+	"pricing": {
+		"costUnknown": "koszt nieznany",
+		"costUnknownDescription": "Dostawca API nie podał żadnych danych o kosztach lub żądanie zostało anulowane.",
+		"freeModelsLink": "Odkryj opcje darmowych modeli i modeli budżetowych"
+	},
+	"notifications": {
+		"toolRequest": "Żądanie narzędzia oczekuje na zatwierdzenie",
+		"browserAction": "Akcja przeglądarki oczekuje na zatwierdzenie",
+		"command": "Polecenie oczekuje na zatwierdzenie"
+	},
+	"settings": {
+		"sections": {
+			"mcp": "Serwery MCP",
+			"agentBehaviour": "Zachowanie agenta",
+			"skills": "Umiejętności"
+		},
+		"provider": {
+			"account": "Konto Kilo Code",
+			"apiKey": "Klucz API Kilo Code",
+			"login": "Zaloguj się do Kilo Code",
+			"logout": "Wyloguj się z Kilo Code",
+			"loginForPremiumModels": "Zaloguj się, aby uzyskać dostęp do modeli i funkcji premium",
+			"providerRouting": {
+				"title": "Routing dostawców",
+				"managedByOrganization": "Zarządzaj routingiem dostawców na poziomie organizacji",
+				"createOrganization": "Utwórz organizację, aby zarządzać routingiem dostawców",
+				"description": "Kilo Code kieruje żądania do najlepszych dostępnych dostawców dla Twojego modelu. Domyślnie żądania są równoważone obciążeniem między najlepszymi dostawcami, aby zmaksymalizować czas działania. Możesz jednak wybrać konkretnego dostawcę do użycia dla tego modelu.",
+				"sorting": {
+					"default": "Domyślne sortowanie dostawców",
+					"price": "Preferuj dostawców z niższą ceną",
+					"throughput": "Preferuj dostawców z wyższą przepustowością",
+					"latency": "Preferuj dostawców z niższym opóźnieniem"
+				},
+				"dataCollection": {
+					"default": "Brak ustawionej polityki danych",
+					"allowFree": "Zezwól na trening promptów (tylko darmowe)",
+					"allow": "Zezwól na trening promptów",
+					"deny": "Zabroń treningu promptów",
+					"zdr": "Zerowe przechowywanie danych"
+				}
+			}
+		},
+		"modelInfo": {
+			"contextWindow": "Okno kontekstu",
+			"providerBreakdown": "Zestawienie Cen i Możliwości Dostawcy",
+			"averageKiloCodeCost": "To jest średni rzeczywisty koszt za korzystanie z Kilo Code z tym modelem w ciągu ostatniego tygodnia. Może być niższy niż podana cena ze względu na wykorzystanie pamięci podręcznej promptów.",
+			"table": {
+				"provider": "Dostawca",
+				"context": "Punkt końcowy może przetworzyć tę liczbę tokenów (wejście + wyjście).",
+				"inputPrice": "Koszt za milion tokenów dla promptu.",
+				"outputPrice": "Koszt za milion tokenów dla uzupełnienia.",
+				"cacheReadPrice": "Koszt za milion tokenów dla odczytu z pamięci podręcznej.",
+				"cacheWritePrice": "Koszt za milion tokenów dla zapisu do pamięci podręcznej."
+			}
+		},
+		"contextManagement": {
+			"allowVeryLargeReads": {
+				"label": "Zezwól na odczyt bardzo dużych plików",
+				"description": "Gdy włączone, Kilo Code będzie wykonywać odczyty bardzo dużych plików lub wyjść MCP, nawet jeśli istnieje duże prawdopodobieństwo przepełnienia okna kontekstu (rozmiar zawartości >80% okna kontekstu)."
+			}
+		},
+		"systemNotifications": {
+			"label": "Włącz powiadomienia systemowe",
+			"description": "Gdy włączone, Kilo Code będzie wysyłać powiadomienia systemowe o ważnych wydarzeniach, takich jak zakończenie zadania lub błędy.",
+			"testButton": "Testuj powiadomienie",
+			"testTitle": "Kilo Code",
+			"testMessage": "To jest testowe powiadomienie z Kilo Code."
+		},
+		"terminal": {
+			"commandGenerator": {
+				"provider": "Dostawca Generatora Poleceń Terminala",
+				"apiConfigId": {
+					"label": "Konfiguracja API",
+					"description": "Wybierz, której konfiguracji API użyć do generowania poleceń terminalowych. Pozostaw jako 'Użyj bieżącej konfiguracji', aby zastosować domyślne ustawienia.",
+					"current": "Użyj bieżącej konfiguracji"
+				}
+			}
+		},
+		"codeIndex": {
+			"embeddingBatchSizeLabel": "Rozmiar Partii Embeddingów",
+			"embeddingBatchSizeDescription": "Liczba segmentów kodu grupowanych razem do generowania embeddingów i aktualizacji magazynu wektorów. Wyższe wartości mogą przyspieszyć indeksowanie, ale mogą zwiększyć zużycie pamięci. Niższe wartości zmniejszają zużycie pamięci, ale mogą spowolnić indeksowanie.",
+			"scannerMaxBatchRetriesLabel": "Maksymalna Liczba Ponowień Partii Skanera",
+			"scannerMaxBatchRetriesDescription": "Maksymalna liczba ponowień nieudanej partii podczas skanowania katalogów. Wyższe wartości zwiększają odporność na przejściowe błędy, ale mogą spowolnić indeksowanie, jeśli błędy się utrzymują. Niższe wartości kończą się szybciej niepowodzeniem, ale mogą pominąć zawartość przy tymczasowych problemach."
+		}
+	},
+	"toolCallStyle": {
+		"title": "Styl Wywołań Narzędzi",
+		"description": "Wybierz sposób formatowania wywołań narzędzi w prompcie systemowym. JSON jest obecnie eksperymentalny i przeznaczony głównie dla użytkowników zainteresowanych wkładem w jego rozwój.",
+		"automatic": "Pozwól Kilo zdecydować",
+		"xml": "XML",
+		"json": "JSON"
+	},
+	"chat": {
+		"condense": {
+			"wantsToCondense": "Kilo Code chce skondensować Twoją rozmowę",
+			"condenseConversation": "Skondensuj Rozmowę"
+		},
+		"seeNewChanges": "Pokaż nowe zmiany",
+		"revertNewChanges": "Cofnij nowe zmiany",
+		"confirmRevertChanges": "Potwierdź cofnięcie zmian",
+		"cancelRevertChanges": "Anuluj cofnięcie zmian"
+	},
+	"newTaskPreview": {
+		"task": "Zadanie"
+	},
+	"profile": {
+		"title": "Profil",
+		"dashboard": "Panel kontrolny",
+		"logOut": "Wyloguj się",
+		"currentBalance": "AKTUALNY STAN KONTA",
+		"loading": "Ładowanie...",
+		"organization": "Organizacja",
+		"personal": "Osobiste",
+		"shop": {
+			"title": "Kup Kredyty",
+			"popular": "Popularne",
+			"credits": "kredyty",
+			"action": "Kup Teraz",
+			"viewAll": "Zobacz wszystkie opcje cenowe"
+		},
+		"detailedUsage": "Szczegółowe użycie",
+		"createOrganization": "Utwórz organizację, aby śledzić szczegółowe użycie"
+	},
+	"docs": "Dokumentacja",
+	"rules": {
+		"tooltip": "Zarządzaj zachowaniem agenta ({{types}})",
+		"agentBehaviourTypes": {
+			"rules": "Reguły",
+			"workflows": "Przepływy Pracy",
+			"mcps": "MCPs",
+			"modes": "Tryby",
+			"skills": "Umiejętności"
+		},
+		"ariaLabel": "Reguły Kilo Code",
+		"tabs": {
+			"rules": "Reguły",
+			"workflows": "Przepływy Pracy"
+		},
+		"description": {
+			"rules": "Reguły pozwalają dostarczyć Kilo Code instrukcje, których powinien przestrzegać we wszystkich trybach i dla wszystkich promptów. To trwały sposób dołączania kontekstu i preferencji dla wszystkich rozmów w twoim obszarze roboczym lub globalnie.",
+			"workflows": "Przepływy pracy to przygotowany szablon dla rozmowy. Przepływy pracy pozwalają zdefiniować prompty, których często używasz, i mogą zawierać serię kroków, aby poprowadzić Kilo Code przez powtarzalne zadania, takie jak wdrażanie usługi lub przesyłanie PR. Aby wywołać przepływ pracy, wpisz",
+			"workflowsInChat": "w czacie."
+		},
+		"sections": {
+			"globalRules": "Reguły Globalne",
+			"workspaceRules": "Reguły Obszaru Roboczego",
+			"globalWorkflows": "Przepływy Pracy Globalne",
+			"workspaceWorkflows": "Przepływy Pracy Obszaru Roboczego"
+		},
+		"validation": {
+			"invalidFileExtension": "Dozwolone są tylko rozszerzenia .md, .txt lub brak rozszerzenia"
+		},
+		"placeholders": {
+			"workflowName": "nazwa-przepływu-pracy (.md, .txt lub bez rozszerzenia)",
+			"ruleName": "nazwa-reguły (.md, .txt lub bez rozszerzenia)"
+		},
+		"newFile": {
+			"newWorkflowFile": "Nowy plik przepływu pracy...",
+			"newRuleFile": "Nowy plik reguły..."
+		}
+	},
+	"taskTimeline": {
+		"tooltip": {
+			"clickToScroll": "Wyświetl {{messageType}} (nr {{messageNumber}})",
+			"messageTypes": {
+				"browser_action_result": "wynik działania przeglądarki",
+				"browser_action": "akcja przeglądarki",
+				"checkpoint_saved": "punkt kontrolny zapisany",
+				"browser_action_launch": "uruchomienie przeglądarki",
+				"command": "wykonanie polecenia",
+				"command_output": "wynik polecenia",
+				"completion_result": "wynik wykonania",
+				"condense_context": "skondensuj kontekst",
+				"followup": "pytanie uzupełniające",
+				"mcp_server_response": "Odpowiedź serwera MCP",
+				"reasoning": "Rozumowanie AI",
+				"error": "komunikat o błędzie",
+				"unknown": "nieznany typ wiadomości",
+				"text": "Odpowiedź AI",
+				"tool": "użycie narzędzi",
+				"use_mcp_server": "Użycie serwera MCP",
+				"user": "opinia użytkownika"
+			}
+		}
+	},
+	"userFeedback": {
+		"editCancel": "Anuluj",
+		"send": "Wyślij",
+		"restoreAndSend": "Przywróć i Wyślij"
+	},
+	"ideaSuggestionsBox": {
+		"newHere": "Nowy tutaj?",
+		"tryOneOfThese": "Wypróbuj jeden z tych pomysłów, aby zacząć:",
+		"suggestionText": "<suggestionButton>Kliknij tutaj</suggestionButton> dla fajnego pomysłu, następnie dotknij <sendIcon /> i zobacz, jak robię magię!",
+		"ideas": {
+			"idea1": "Stwórz obracającą się, świecącą kulę 3D, która reaguje na ruchy myszy. Spraw, aby aplikacja działała w przeglądarce.",
+			"idea2": "Stwórz stronę portfolio dla programisty Python",
+			"idea3": "Stwórz makietę aplikacji finansowej w przeglądarce. Następnie sprawdź, czy działa",
+			"idea4": "Stwórz stronę katalogową zawierającą najlepsze obecnie modele generowania wideo AI",
+			"idea5": "Stwórz generator gradientów CSS, który eksportuje niestandardowe arkusze stylów i pokazuje podgląd na żywo",
+			"idea6": "Wygeneruj karty, które pięknie ujawniają dynamiczną zawartość po najechaniu myszą",
+			"idea7": "Stwórz uspokajające interaktywne pole gwiazd, które porusza się wraz z gestami myszy"
+		}
+	},
+	"ghost": {
+		"title": "Autocomplete",
+		"settings": {
+			"codeEditorSuggestions": "Sugestie Edytora Kodu",
+			"chatSuggestions": "Sugestie Czatu",
+			"keybindingDescription": "Funkcje Autocomplete mogą być wyzwalane przez polecenia. Możesz skonfigurować <DocsLink>Skróty Klawiszowe tutaj</DocsLink>.",
+			"enableAutoTrigger": {
+				"label": "Włącz Autocomplete",
+				"description": "Gdy włączone, Kilo Code automatycznie wyzwoli Autocomplete, gdy przestaniesz pisać. Może to być przydatne do szybkich poprawek i sugestii."
+			},
+			"autoTriggerDelay": {
+				"label": "Opóźnienie Automatycznego Wyzwalania",
+				"description": "Opóźnienie w sekundach przed tym, jak Kilo Code wyzwoli Autocomplete po tym, jak przestaniesz pisać. Krótsze opóźnienie oznacza szybsze sugestie, ale może być bardziej zasobożerne."
+			},
+			"enableSmartInlineTaskKeybinding": {
+				"label": "Ręczne uzupełnianie ({{keybinding}})",
+				"description": "Potrzebujesz szybkiej poprawki, uzupełnienia lub refaktoryzacji? Kilo użyje otaczającego kontekstu, aby zaoferować natychmiastowe ulepszenia, utrzymując cię w przepływie. <DocsLink>Zobacz skrót</DocsLink>"
+			},
+			"keybindingNotFound": "nie znaleziono",
+			"configureAutocompleteProfile": "Użyj dowolnego modelu, przechodząc do profili i konfigurując Profil typu Autouzupełnianie.",
+			"model": "Model",
+			"provider": "Dostawca",
+			"enableChatAutocomplete": {
+				"label": "Automatyczne uzupełnianie wpisów czatu",
+				"description": "Po włączeniu, Kilo Code będzie sugerować uzupełnienia podczas pisania w oknie czatu. Naciśnij Tab, aby zaakceptować sugestie."
+			},
+			"snooze": {
+				"label": "Wstrzymaj Autocomplete",
+				"description": "Tymczasowo wstrzymaj sugestie autouzupełniania na określony czas.",
+				"button": "Wstrzymaj",
+				"unsnooze": "Wznów",
+				"currentlySnoozed": "Autouzupełnianie jest obecnie wstrzymane.",
+				"duration": {
+					"1min": "1 minuta",
+					"5min": "5 minut",
+					"15min": "15 minut",
+					"30min": "30 minut",
+					"1hour": "1 godzina"
+				}
+			},
+			"noModelConfigured": {
+				"title": "Nie skonfigurowano modelu autouzupełniania",
+				"description": "Aby włączyć autouzupełnianie, dodaj profil z jednym z tych obsługiwanych dostawców:",
+				"learnMore": "Dowiedz się więcej o konfiguracji autouzupełniania →"
+			},
+			"noCredits": {
+				"title": "Brak kredytów na koncie",
+				"description": "Twoje konto Kilo Code nie ma kredytów. Aby korzystać z autouzupełniania, dodaj kredyty do swojego konta.",
+				"buyCredits": "Kup kredyty →"
+			}
+		}
+	},
+	"virtualProvider": {
+		"title": "Ustawienia Wirtualnego Dostawcy Zapasowego Limitu",
+		"description": "Skonfiguruj listę profili, każdy z własnymi limitami przydziału. Gdy limity przydziału jednego dostawcy zostaną wyczerpane, użyty zostanie następny profil z listy, aż do wyczerpania wszystkich dostępnych.",
+		"profileLabel": "Profil {{number}}",
+		"primaryProfileLabel": "Profil {{number}} (Podstawowy)",
+		"moveProfileUp": "Przesuń profil do góry",
+		"moveProfileDown": "Przenieś profil w dół",
+		"removeProfile": "Usuń profil",
+		"selectProfilePlaceholder": "Wybierz profil...",
+		"addProfile": "Dodaj profil",
+		"noProfilesAvailable": "Brak dostępnych profili. Najpierw skonfiguruj co najmniej jeden profil dostawcy niewirtualnego.",
+		"dangerZoneTitle": "Strefa Niebezpieczna",
+		"dangerZoneDescription": "Te działania są destrukcyjne i nie można ich cofnąć.",
+		"clearUsageData": "Wyczyść Dane Użytkowania",
+		"confirmClearTitle": "Czy jesteś pewien?",
+		"confirmClearDescription": "To trwale usunie wszystkie przechowywane dane użytkowania dla wirtualnych dostawców. Tej akcji nie można cofnąć.",
+		"perMinute": "Na minutę",
+		"tokensLabel": "Tokeny",
+		"perDay": "Dziennie",
+		"perHour": "Za godzinę",
+		"requestsLabel": "Prośby"
+	},
+	"imageWarnings": {
+		"modelNoImageSupport": "Obrazy nie są obsługiwane przez aktualny model.",
+		"maxImagesReached": "Maksymalnie 20 obrazów na wiadomość. Usuń niektóre obrazy, aby dodać więcej.",
+		"imagesRemovedNoSupport": "Obrazy usunięte, nieobsługiwane przez model."
+	},
+	"invalidModel": {
+		"alphaPeriodEnded": "🎉 Okres alfa dla {{model}} się zakończył! Zmień na inny model, aby kontynuować.",
+		"notAllowedForTeam": "⚠️ Twoja organizacja nie zezwala na używanie modelu {{model}}. Zmień na inny model, aby kontynuować.",
+		"modelUnavailable": "⚠️ Model {{model}} jest niedostępny. Zmień na inny model, aby kontynuować.",
+		"continueWith": "Kontynuuj z {{model}}",
+		"continue": "Kontynuuj"
+	},
+	"memoryWarning": {
+		"message": "Użycie pamięci wynosi {{percentage}}%. Uruchom ponownie IDE, aby zapobiec awariom."
+	},
+	"marketplace": {
+		"mcp": {
+			"description": "Te serwery MCP są utrzymywane przez społeczność. Kliknij <1>tutaj</1>, aby edytować własne ustawienia MCP."
+		},
+		"modes": {
+			"description": "Te tryby są dostępne ze społeczności. Kliknij <1>tutaj</1>, aby edytować swoje własne niestandardowe tryby."
+		},
+		"skills": {
+			"description": "Przeglądaj i odkrywaj umiejętności od społeczności. Umiejętności zapewniają specjalistyczne instrukcje dla konkretnych zadań."
+		}
+	},
+	"modes": {
+		"shareModesNewBanner": "Nowość: Udostępniaj tryby tworząc organizację"
+	},
+	"deviceAuth": {
+		"title": "Zaloguj się do Kilo Code",
+		"step1": "Otwórz następujący adres URL w przeglądarce",
+		"step2": "Zweryfikuj kod i autoryzuj to urządzenie w przeglądarce",
+		"scanQr": "Lub zeskanuj ten kod QR telefonem",
+		"openBrowser": "Otwórz przeglądarkę",
+		"copyUrl": "Kopiuj URL",
+		"waiting": "Oczekiwanie na autoryzację...",
+		"timeRemaining": "Kod wygasa za {{time}}",
+		"success": "Pomyślnie zalogowano!",
+		"authenticatedAs": "Uwierzytelniono jako {{email}}",
+		"error": "Błąd uwierzytelniania",
+		"unknownError": "Wystąpił błąd. Spróbuj ponownie.",
+		"cancel": "Anuluj",
+		"retry": "Spróbuj ponownie",
+		"tryAgain": "Spróbuj ponownie",
+		"cancelled": "Uwierzytelnianie anulowane",
+		"initiating": "Rozpoczynanie uwierzytelniania..."
+	},
+	"speechToText": {
+		"startRecording": "Rozpocznij wprowadzanie głosowe",
+		"stopRecording": "Zatrzymaj wprowadzanie głosowe",
+		"setupPopover": {
+			"title": "Zamiana mowy na tekst",
+			"description": "Zamiana mowy na tekst jest niedostępna. Zamiana mowy na tekst wymaga zarówno FFmpeg, jak i skonfigurowanego prawidłowego dostawcy OpenAI. <moreInfoLink>Kliknij tutaj, aby uzyskać więcej informacji</moreInfoLink>.",
+			"openAiReason": "Aby korzystać z transkrypcji głosowej, potrzebujesz ważnego dostawcy OpenAI z kluczem API.",
+			"ffmpegReason": "Musisz mieć zainstalowany FFmpeg. <ffmpegLink>Kliknij tutaj</ffmpegLink>, aby Kilo pomógł Ci zainstalować FFmpeg.",
+			"ffmpegMessage": "Pomóż mi zainstalować FFmpeg"
+		},
+		"misconfiguredState": "Niedostępne z powodu konfiguracji",
+		"errorState": "Niedostępne z powodu błędu",
+		"microphone": {
+			"label": "Mikrofon",
+			"description": "Wybierz urządzenie mikrofonu do przetwarzania mowy na tekst",
+			"defaultOption": "Domyślny system",
+			"loading": "Ładowanie urządzeń mikrofonowych...",
+			"refresh": "Odśwież",
+			"noDevices": "Nie znaleziono urządzeń mikrofonowych"
+		}
+	},
+	"skills": {
+		"description": "Umiejętności dostarczają specjalistyczne instrukcje dla konkretnych zadań. Są automatycznie stosowane, gdy są istotne dla twojego zapytania.",
+		"noSkills": "Brak zainstalowanych umiejętności",
+		"projectSkills": "Umiejętności Projektu",
+		"globalSkills": "Umiejętności Globalne",
+		"deleteDialog": {
+			"title": "Usuń Umiejętność",
+			"description": "Czy na pewno chcesz usunąć umiejętność \"{{skillName}}\"? Tej akcji nie można cofnąć.",
+			"cancel": "Anuluj",
+			"delete": "Usuń"
+		}
+	}
+}

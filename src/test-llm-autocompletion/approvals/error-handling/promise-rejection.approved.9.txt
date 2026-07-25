@@ -1,0 +1,8 @@
+fetchUser(userId)
+	.then(user => {
+		return processUser(user);
+	})
+	.catch(err => {
+		return fetchAdmin(userId);
+	})
+	.then(showUser);

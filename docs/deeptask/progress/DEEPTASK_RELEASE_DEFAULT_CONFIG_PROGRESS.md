@@ -1,0 +1,103 @@
+# Deeptask 默认配置与 VSIX 发布进度
+
+- [x] 查询 universe-memory 相关记忆
+- [x] 建立并恢复可持续更新的任务进度清单
+- [x] 定位当前 VSCodium Deeptask 配置来源
+- [x] 定位初始化界面跳转与默认配置判定逻辑
+- [x] 实现新用户默认 OpenAI Compatible 配置，不内置 API base URI 和 key
+- [x] 补充或更新测试覆盖
+- [x] 定位 VSCode 中默认配置未加载的原因
+- [x] 修复默认配置加载链路并补充测试
+- [x] 评估并实现 OpenAI Compatible 上下文长度自动检测按钮
+- [x] 将 Agent Manager 图标改为 Deeptask 图标
+- [x] 运行相关目标测试
+- [x] 更新 README，说明项目结构规范与改进亮点
+- [x] 构建 VSIX 发布包
+- [x] 安装到 VS Code 进行基本验证
+- [x] 整理 release 产物与发布说明
+- [x] 修复 VS Code 中已有 active settings 但 profile 元数据未同步导致的默认配置不显示问题
+- [x] 补充默认 profile 元数据同步回归测试
+- [x] 修复默认 profile seed 后 ContextProxy secrets cache 未刷新导致的 VS Code 配置不显示问题
+- [x] 补充 ContextProxy secrets cache 刷新回归测试
+- [x] 重新构建并安装 VSIX 验证最新修复
+- [x] 存储本次任务经验到 universe-memory
+
+## 当前观察
+
+- 已按要求优先读取 universe-memory skill。
+- 已搜索 Obsidian 宇宙记忆，常规搜索未命中；随后直接读取已打开的 Deeptask 项目记忆恢复上下文。
+- 本任务需要避免保存用户当前模型 API base URI 和 key 到源码默认配置。
+- 已确认新用户 provider profile seed 位于 `src/core/config/ProviderSettingsManager.ts`。
+- 已确认普通欢迎页由 `src/shared/checkExistApiConfig.ts` 判定配置是否存在。
+- 已确认 Kilo onboarding 由 `webview-ui/src/App.tsx` 读取 `hasCompletedOnboarding` 控制。
+- 已将新用户默认 profile 改为 OpenAI Compatible，并仅保留非敏感默认字段。
+- 已将新安装状态默认视为完成 onboarding，直接进入普通使用界面。
+- 已补充默认 profile 和配置存在性判断的测试。
+- 已从 `src` 工作区运行目标测试：2 个测试文件、55 个测试通过。
+- 已运行新增启动同步用例：`ClineProvider.spec.ts` 中 `initializes seeded OpenAI Compatible profile into active state` 单测通过。
+- 已从 `webview-ui` 工作区运行 OpenAI Compatible 设置页测试：1 个测试文件、11 个测试通过。
+- 已更新 README，补充 release highlights、source layout、code quality notes 与验证命令。
+- 已更新 release notes，覆盖默认配置启动同步、上下文窗口检测按钮、Agent Manager Deeptask 图标与验证情况。
+- 已解决新增待处理问题：VSCode 安装后未加载默认配置、OpenAI Compatible 设置页上下文长度旁自动检测按钮、Agent Manager 图标替换为 Deeptask 图标。
+- 已知限制：完整 `src/core/webview/__tests__/ClineProvider.spec.ts` 仍有编辑消息/清理期望相关失败，和本次新增启动同步用例无关；新增用例已单独通过。
+- 已重新构建 `deeptask-5.5.0.vsix` 与 `bin/deeptask-5.5.0.vsix`，打包脚本校验通过，最新包大小 43,741,967 bytes。
+- 已安装到 VS Code：`deeptask.deeptask@5.5.0`。
+- 已解包验证 VSIX：包含 `assets/icons/logo-outline-black.png`，并在 `dist/extension.js` 中包含默认配置启动同步、Agent Manager 图标注入；在 webview build 中包含 OpenAI Compatible 检测按钮文案引用。
+- 修正了 Agent Manager 图标资源路径：不再引用未被 VSIX 包含的仓库根目录 `deeptask.jpg`，改用已包含的 `assets/icons/logo-outline-black.png`。
+- 用户反馈真实 VS Code 中配置仍未自动加载，Agent Manager 图标也未加载而是显示被截断文字；已确认此前静态检查不足以证明运行时 UI 生效。
+- 已修复配置加载竞态：`getState()` 现在会先同步默认 provider profile 到活动状态，并将缺省 provider fallback 改为 OpenAI Compatible，避免首帧返回 `kilocode`。
+- 已修复 Agent Manager fallback：图片加载失败时不再显示可能被截断的文字，而是渲染稳定的内联 Deeptask 图形。
+- 已重新安装最新 VSIX 到 VS Code：`deeptask.deeptask@5.5.0`。
+- 已解包验证最新 VSIX：`dist/extension.js` 包含 `ensureDefaultProviderProfileInActiveState` 与 OpenAI Compatible fallback；`agent-manager.js` 包含图片 `onError` 与内联 SVG fallback。
+- 本次未重新安装依赖，因此无需更新 `requirements.txt`。
+- 继续处理用户反馈“VS Code 里面没有加载配置”：确认此前只检查 active provider settings 不足以覆盖已有 provider 字段但 profile metadata/current profile 缺失的状态。
+- 已将默认配置同步改为单例 promise 防并发，并在 `getState()` 首帧强制确保 secrets 中的默认 OpenAI Compatible profile、`currentApiConfigName`、`listApiConfigMeta` 与 active provider settings 同步。
+- 已去掉 `getState()` 中重复调用默认配置同步的冗余逻辑。
+- 已新增回归用例：当 active provider settings 已存在但 `currentApiConfigName` 与 `listApiConfigMeta` 缺失时，`getState()` 会补齐默认 profile 元数据，且仍不写入 `openAiBaseUrl`/`openAiApiKey`。
+- 已运行目标测试：`cd src && pnpm test core/webview/__tests__/ClineProvider.spec.ts -t "initializes seeded OpenAI Compatible profile into active state|syncs default profile metadata even when provider settings already exist"`，2 个测试通过。
+- 已重新运行 `./scripts_package_deeptask_vsix.sh`，生成 `deeptask-5.5.0.vsix` 与 `bin/deeptask-5.5.0.vsix`，脚本验证通过，最新根目录 VSIX 大小 43,742,275 bytes。
+- 已安装最新 VSIX 到 VS Code：`deeptask.deeptask@5.5.0`。
+- 已解包验证最新 VSIX：`dist/extension.js` 包含 `activateDefaultProviderProfileIfNeeded` 与 `hasSyncedProfileList` 逻辑。
+- 继续处理用户反馈“VS Code 里面没有加载配置”：确认 `ContextProxy` 在启动时缓存 secrets，而默认 profile seed 发生在 `ProviderSettingsManager.initialize()` 内；如果 seed 后不刷新 `ContextProxy`，`getState()` 仍可能从旧缓存组装空/旧配置。
+- 已在 `activateDefaultProviderProfileIfNeeded()` 中等待 provider profile 初始化后调用 `contextProxy.refreshSecrets()`，确保刚写入 secrets 的默认 OpenAI Compatible profile 能被后续 active state 同步读取。
+- 已新增回归用例：`refreshes context secrets after seeding the default provider profile`，覆盖默认 profile seed 后刷新 context secrets cache 的路径。
+- 已运行目标测试：`cd src && pnpm test core/webview/__tests__/ClineProvider.spec.ts -t "initializes seeded OpenAI Compatible profile into active state|syncs default profile metadata even when provider settings already exist|refreshes context secrets after seeding the default provider profile"`，3 个测试通过，95 个同文件测试按过滤条件跳过。
+- 已重新运行 `./scripts_package_deeptask_vsix.sh`，生成 `deeptask-5.5.0.vsix` 与 `bin/deeptask-5.5.0.vsix`，脚本验证通过，最新根目录 VSIX 大小 43,742,294 bytes。
+- 已解包验证最新 VSIX：`dist/extension.js` 包含 `refreshSecrets`、`activateDefaultProviderProfileIfNeeded`、`openai` 与 `gpt-4o`。
+- 已安装最新 VSIX 到 VS Code：`code --install-extension deeptask-5.5.0.vsix --force` 成功，`code --list-extensions --show-versions` 显示 `deeptask.deeptask@5.5.0`。
+- 已将本次 `ContextProxy.secretCache` stale 经验追加到 universe-memory 项目记忆：`/home/kurz/Obsidian/宇宙/记忆/项目记忆/2026-07-04-Deeptask默认OpenAICompatible与VSIX发布.md`。
+- 用户继续反馈“没有加载配置”后复查真实安装目录：VS Code 目录 `/home/kurz/.vscode/extensions/deeptask.deeptask-5.5.0` 已包含 `refreshSecrets` 与 `activateDefaultProviderProfileIfNeeded`，但 VSCodium 目录 `/home/kurz/.vscode-oss/extensions/deeptask.deeptask-5.5.0` 仍是旧 bundle，缺少 `activateDefaultProviderProfileIfNeeded`。
+- 已执行 `codium --install-extension deeptask-5.5.0.vsix --force`，并确认 `codium --list-extensions --show-versions` 显示 `deeptask.deeptask@5.5.0`。
+- 已复查 VSCodium 安装目录中的 `dist/extension.js`，确认现在也包含 `refreshSecrets`、`activateDefaultProviderProfileIfNeeded`、`openai` 与 `gpt-4o`。
+- 用户纠正问题仍发生在 VS Code 后，直接检查 `/home/kurz/.config/Code/User/globalStorage/state.vscdb`，确认 VS Code active state 仍是旧 `apiProvider: kilocode`、`kilocodeModel: minimax/minimax-m2.1:free`、`listApiConfigMeta` 也是旧 kilocode default。
+- 已修复已有旧默认状态不迁移的问题：把未配置 token 的 legacy bundled `kilocode/minimax-m2.1:free` default profile 视为未配置默认值，迁移为 OpenAI Compatible；真实用户自定义 kilocode/token 配置不覆盖。
+- 已补充回归测试：`ProviderSettingsManager` 迁移旧 bundled Kilocode default profile；`ClineProvider` 迁移 VS Code 真实 active state 形态到 OpenAI Compatible。
+- 已运行目标测试：`ProviderSettingsManager.spec.ts -t "old bundled Kilocode default"` 通过；`ClineProvider.spec.ts -t "migrates legacy bundled Kilocode active state|initializes seeded OpenAI Compatible profile|syncs default profile metadata|refreshes context secrets"` 4 个测试通过。
+- 已重新构建 `deeptask-5.5.0.vsix` 与 `bin/deeptask-5.5.0.vsix`，最新 VSIX 大小 43,742,960 bytes；解包确认包含 `minimax/minimax-m2.1:free`、`refreshSecrets`、`activateDefaultProviderProfileIfNeeded`、`gpt-4o`。
+- 已安装最新 VSIX 到 VS Code 并触发扩展激活；复查 `state.vscdb` 确认 `apiProvider: openai`、`openAiModelId: gpt-4o`、`kilocodeModel: undefined`、`listApiConfigMeta[0].apiProvider: openai`。
+- 继续处理用户反馈：VS Code 已加载 provider，但其他非敏感设置尚未与当前 VSCodium Deeptask 配置一致。
+- [-] 正在对齐 command auto-approval、terminal execution、OpenAI Compatible R1 format、prompt cache support 与 256000 context window。
+- [x] 补充/更新 provider 与全局默认设置回归测试。
+- [x] 重新运行目标测试并构建 VSIX。
+- [x] 安装到 VS Code 并验证 `state.vscdb`。
+- [x] 继续对齐 VSCodium 非敏感默认配置：命令自动执行、外部写入、终端输出限制、禁用浏览器工具、禁用自动存档点、R1 格式、提示词缓存、默认上下文 256000。
+- [x] 修复 OpenAI Compatible 自定义模型“检测上下文”按钮对未知模型回落到 128000 的问题；按钮现在优先使用实际 OpenAI Compatible `/models` API 返回的模型元信息，支持 `context_window`、`context_length`、`max_context_length`、`max_model_len` 等常见字段；API 未返回上下文时再使用 Deeptask 256000 兜底。
+- [x] 修复“点击检测没反应”的前端时序问题：检测按钮现在会主动请求当前 OpenAI Compatible API 的模型列表，并通过 ref 保存待检测模型 ID，避免 message handler 读取旧 state 后不写回配置。
+- [x] 运行后端目标测试：`cd src && pnpm test api/providers/__tests__/openai.spec.ts -t "getOpenAiModels"`，1 个测试文件、12 个测试通过。
+- [x] 运行 UI 目标测试：`cd webview-ui && pnpm exec vitest run src/components/settings/providers/__tests__/OpenAICompatible.spec.tsx`，1 个测试文件、12 个测试通过。
+- [x] 重新打包 VSIX，最新 `deeptask-5.5.0.vsix` 大小 43,746,161 bytes。
+- [x] 已提交并推送检测链路改动到 GitHub：`d62cdb2 fix: improve openai compatible model detection`。
+- [x] 已发布 GitHub release：`https://github.com/kurzgesagtcraft/deeptask/releases/tag/v5.5.0`。
+- [x] 已上传 release VSIX：`https://github.com/kurzgesagtcraft/deeptask/releases/download/v5.5.0/deeptask-5.5.0.vsix`。
+- [x] 后续修复：用户实测检测结果仍为 128000，已定位为前端把没有 API metadata 的模型列表项缓存成 `openAiModelInfoSaneDefaults`，导致检测按钮直接应用 128000。
+- [x] 已修复上下文检测缓存逻辑：检测时只信任后端真实返回的 `openAiModelInfos`；缺少 metadata 时不再写入 128000，检测响应回退到 Deeptask 256000。
+- [x] 已修复模型下拉框回归：`openAiModels` 继续保留 `/models` 返回的所有模型 ID 供下拉框显示，检测逻辑单独读取 `openAiModelInfos`，避免把“模型列表”和“可信元信息”混为一体。
+- [x] 已补充 UI 回归测试：plain API model ID 仍可被模型下拉框显示，且缺少 metadata 时不会把检测结果写成 128000。
+- [x] 已运行 UI 目标测试：`cd webview-ui && pnpm exec vitest run src/components/settings/providers/__tests__/OpenAICompatible.spec.tsx`，1 个测试文件、13 个测试通过。
+- [x] 已运行后端目标测试：`cd src && pnpm test api/providers/__tests__/openai.spec.ts -t "getOpenAiModels"`，1 个测试文件、12 个测试通过、37 个跳过。
+- [x] 已重新打包 VSIX，最新 `deeptask-5.5.0.vsix` 大小 43,746,233 bytes。
+- [x] 已安装最新 VSIX 到 VS Code：`deeptask.deeptask@5.5.0`。
+- [x] 已检查 VS Code 安装目录 sourcemap，确认安装包内为最终逻辑：保留模型下拉列表项，并在检测上下文时只信任真实 `openAiModelInfos`。
+- [x] 已提交并推送最终下拉框修复：`536e32c fix: preserve openai model list during context detection`。
+- [x] 已更新 GitHub release 资产，`assetSize` 为 43,746,233 bytes：`https://github.com/kurzgesagtcraft/deeptask/releases/download/v5.5.0/deeptask-5.5.0.vsix`。
+- [-] 正在将本轮经验存储到 universe-memory。

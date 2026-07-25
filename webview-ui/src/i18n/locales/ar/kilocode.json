@@ -1,0 +1,401 @@
+{
+	"onboarding": {
+		"title": "كيف تريد البدء؟",
+		"freeModels": {
+			"title": "نماذج مجانية",
+			"description": "ابدأ البرمجة فورًا"
+		},
+		"premiumModels": {
+			"title": "نماذج متميزة",
+			"description": "سجّل. المستخدمون الجدد يحصلون على رصيد بقيمة 5 دولارات"
+		},
+		"byok": {
+			"title": "استخدم مفتاحك الخاص",
+			"description": "متقدم. استخدم حسابك أو اشتراكك الخاص"
+		}
+	},
+	"welcome": {
+		"greeting": "مرحبًا بك في Kilo Code!",
+		"introText1": "Kilo Code وكيل برمجة مدعوم بالذكاء ومفتوح المصدر ومجاني.",
+		"introText2": "يعمل مع أحدث نماذج الذكاء الاصطناعي مثل Claude Opus 4.5 وGemini 3 Pro وGPT-5.2 وأكثر من 450 نموذج آخر.",
+		"introText3": "أنشئ حسابًا مجانيًا واحصل على 20 دولارًا كرصيد إضافي عند إضافة رصيد لأول مرة.",
+		"ctaButton": "ابدأ الآن",
+		"manualModeButton": "استخدم مفتاح API الخاص بك",
+		"alreadySignedUp": "مسجل من قبل؟",
+		"loginText": "سجّل دخولك هنا"
+	},
+	"lowCreditWarning": {
+		"addCredit": "شحن الرصيد",
+		"lowBalance": "رصيدك في Kilo Code منخفض",
+		"switchToFreeModel": "التبديل إلى نموذج مجاني بدلاً من ذلك"
+	},
+	"memoryWarning": {
+		"message": "استخدام الذاكرة عند {{percentage}}%. يرجى إعادة تشغيل بيئة التطوير لمنع التعطل."
+	},
+	"pagination": {
+		"previous": "السابق",
+		"next": "التالي",
+		"page": "صفحة {{page}} / {{count}}"
+	},
+	"unauthorizedError": {
+		"title": "يجب عليك تسجيل الدخول لاستخدام نموذج {{modelId}}",
+		"message": "قم بتسجيل الدخول أو إنشاء حساب للوصول إلى أكثر من 500 نموذج، واستخدم الأرصدة بسعر التكلفة، أو أحضر مفتاحك الخاص.",
+		"loginButton": "تسجيل الدخول"
+	},
+	"pricing": {
+		"costUnknown": "التكلفة غير معروفة",
+		"costUnknownDescription": "لم يقدم مزود واجهة برمجة التطبيقات أي بيانات تكلفة أو تم إلغاء الطلب.",
+		"freeModelsLink": "اكتشف خيارات النماذج المجانية والاقتصادية"
+	},
+	"notifications": {
+		"toolRequest": "طلب أداة بانتظار الموافقة",
+		"browserAction": "طلب استخدام المتصفح بانتظار الموافقة",
+		"command": "أمر بانتظار الموافقة"
+	},
+	"settings": {
+		"sections": {
+			"mcp": "خوادم MCP",
+			"agentBehaviour": "سلوك الوكيل",
+			"skills": "المهارات"
+		},
+		"codeIndex": {
+			"embeddingBatchSizeLabel": "حجم دفعة التضمين",
+			"embeddingBatchSizeDescription": "عدد أجزاء الكود التي سيتم تجميعها معاً لتوليد التضمين وتحديث المخزن المتجه. القيم الأعلى يمكن أن تحسن سرعة الفهرسة لكنها قد تزيد من استخدام الذاكرة. القيم الأقل تقلل استخدام الذاكرة لكنها قد تبطئ الفهرسة.",
+			"scannerMaxBatchRetriesLabel": "الحد الأقصى لإعادة محاولة دفعة الماسح",
+			"scannerMaxBatchRetriesDescription": "الحد الأقصى لعدد المرات التي يتم فيها إعادة محاولة دفعة فاشلة أثناء فحص الدليل. القيم الأعلى تزيد من المرونة ضد الأخطاء المؤقتة لكنها قد تبطئ الفهرسة إذا استمرت الأخطاء. القيم الأقل تفشل بشكل أسرع لكنها قد تتخطى المحتوى عند حدوث مشاكل مؤقتة."
+		},
+		"provider": {
+			"account": "حساب Kilo Code",
+			"apiKey": "مفتاح Kilo Code API",
+			"login": "سجّل دخولك في Kilo Code",
+			"logout": "تسجيل الخروج من Kilo Code",
+			"loginForPremiumModels": "سجّل دخولك للوصول إلى النماذج والميزات المميزة",
+			"providerRouting": {
+				"title": "توجيه المزود",
+				"managedByOrganization": "إدارة توجيه المزود على مستوى المؤسسة",
+				"createOrganization": "إنشاء مؤسسة لإدارة توجيه المزود",
+				"sorting": {
+					"default": "ترتيب المزود الافتراضي",
+					"price": "تفضيل مزودين بأسعار أقل",
+					"throughput": "تفضيل مزودين بإنتاجية أعلى",
+					"latency": "تفضيل مزودين بزمن استجابة أقل"
+				},
+				"dataCollection": {
+					"default": "لم يتم تعيين سياسة للبيانات",
+					"allowFree": "السماح بتدريب الأوامر (مجاني فقط)",
+					"allow": "السماح بتدريب الأوامر",
+					"deny": "رفض تدريب الأوامر",
+					"zdr": "عدم الاحتفاظ بالبيانات"
+				}
+			}
+		},
+		"modelInfo": {
+			"contextWindow": "نافذة السياق",
+			"providerBreakdown": "تفاصيل الأسعار والقدرات حسب المزود",
+			"averageKiloCodeCost": "هذا هو متوسط التكلفة الفعلية لـ Kilo Code عند استخدام هذا النموذج خلال الأسبوع الماضي. قد تكون أقل من السعر المدرج بسبب استخدام تخزين الموجهات المؤقت.",
+			"table": {
+				"provider": "المزود",
+				"context": "يمكن للنقطة النهائية معالجة هذا العدد من الرموز (الإدخال + الإخراج).",
+				"inputPrice": "التكلفة لكل مليون رمز للموجه.",
+				"outputPrice": "التكلفة لكل مليون رمز للإكمال.",
+				"cacheReadPrice": "التكلفة لكل مليون رمز للقراءة من التخزين المؤقت.",
+				"cacheWritePrice": "التكلفة لكل مليون رمز للكتابة في التخزين المؤقت."
+			}
+		},
+		"contextManagement": {
+			"allowVeryLargeReads": {
+				"label": "السماح بقراءة ملفات ضخمة",
+				"description": "إذا تم تفعيله، Kilo Code يقدر يقرأ ملفات ضخمة أو مخرجات MCP حتى لو فيه احتمال يتجاوز حجم السياق (إذا المحتوى تجاوز 80% من حجم السياق)."
+			}
+		},
+		"systemNotifications": {
+			"label": "تفعيل إشعارات النظام",
+			"description": "عند التفعيل، سيرسل Kilo Code إشعارات النظام للأحداث المهمة مثل إكمال المهام أو الأخطاء.",
+			"testButton": "اختبار الإشعار",
+			"testTitle": "Kilo Code",
+			"testMessage": "هذا إشعار اختباري من Kilo Code."
+		},
+		"terminal": {
+			"commandGenerator": {
+				"apiConfigId": {
+					"current": "استخدم الإعدادات الحالية",
+					"label": "إعداد واجهة برمجة التطبيقات",
+					"description": "اختر تكوين واجهة برمجة التطبيقات (API) الذي تريد استخدامه لإنشاء أوامر الطرفية. اترك الإعداد على 'استخدام التكوين الحالي' لاستخدام الإعدادات الافتراضية الخاصة بك."
+				},
+				"provider": "مزود مولّد أوامر الطرفية"
+			}
+		}
+	},
+	"toolCallStyle": {
+		"title": "نمط استدعاء الأداة",
+		"description": "اختر كيفية تنسيق استدعاءات الأدوات في موجه النظام. JSON حالياً تجريبي ومخصص بشكل أساسي للمستخدمين المهتمين بالمساهمة في تطويره.",
+		"automatic": "دع Kilo يقرر",
+		"xml": "XML",
+		"json": "JSON"
+	},
+	"chat": {
+		"condense": {
+			"wantsToCondense": "Kilo Code يقترح تلخيص المحادثة",
+			"condenseConversation": "تلخيص المحادثة"
+		},
+		"seeNewChanges": "عرض التغييرات الجديدة",
+		"revertNewChanges": "التراجع عن التغييرات الجديدة",
+		"confirmRevertChanges": "تأكيد التراجع عن التغييرات",
+		"cancelRevertChanges": "إلغاء التراجع عن التغييرات"
+	},
+	"newTaskPreview": {
+		"task": "مهمة"
+	},
+	"profile": {
+		"title": "الملف الشخصي",
+		"dashboard": "لوحة التحكم",
+		"logOut": "تسجيل الخروج",
+		"currentBalance": "الرصيد الحالي",
+		"loading": "جاري التحميل...",
+		"organization": "المؤسسة",
+		"personal": "شخصي",
+		"shop": {
+			"title": "شراء الرصيد",
+			"popular": "الأكثر شعبية",
+			"credits": "رصيد",
+			"action": "اشتري الآن",
+			"viewAll": "عرض جميع خيارات الأسعار"
+		},
+		"detailedUsage": "الاستخدام التفصيلي",
+		"createOrganization": "إنشاء مؤسسة لتتبع الاستخدام التفصيلي"
+	},
+	"docs": "التوثيق",
+	"rules": {
+		"tooltip": "إدارة سلوك الوكيل ({{types}})",
+		"agentBehaviourTypes": {
+			"rules": "القواعد",
+			"workflows": "سير العمل",
+			"mcps": "MCPs",
+			"modes": "الأوضاع",
+			"skills": "المهارات"
+		},
+		"ariaLabel": "قواعد Kilo Code",
+		"tabs": {
+			"rules": "القواعد",
+			"workflows": "سير العمل"
+		},
+		"description": {
+			"rules": "القواعد تتيح لك تحديد تعليمات يلتزم بها Kilo Code في جميع الأنماط والموجهات. وسيلة ثابتة لإضافة تفضيلاتك وسياقك للمحادثات.",
+			"workflows": "سير العمل هو قالب محادثة جاهز. تقدر تستخدمه لتكرار أوامر أو خطوات مثل رفع خدمة أو تقديم PR. لتشغيل سير عمل، اكتب",
+			"workflowsInChat": "في المحادثة."
+		},
+		"sections": {
+			"globalRules": "قواعد عامة",
+			"workspaceRules": "قواعد مساحة العمل",
+			"globalWorkflows": "سير العمل العام",
+			"workspaceWorkflows": "سير عمل مساحة العمل"
+		},
+		"validation": {
+			"invalidFileExtension": "فقط الملفات بصيغة .md أو .txt أو بدون صيغة مسموحة"
+		},
+		"placeholders": {
+			"workflowName": "اسم-سير-العمل (.md أو .txt أو بدون صيغة)",
+			"ruleName": "اسم-القاعدة (.md أو .txt أو بدون صيغة)"
+		},
+		"newFile": {
+			"newWorkflowFile": "ملف سير عمل جديد...",
+			"newRuleFile": "ملف قاعدة جديدة..."
+		}
+	},
+	"taskTimeline": {
+		"tooltip": {
+			"clickToScroll": "عرض {{messageType}} (رقم {{messageNumber}})",
+			"messageTypes": {
+				"browser_action_launch": "تشغيل المتصفح",
+				"browser_action_result": "نتيجة المتصفح",
+				"browser_action": "إجراء المتصفح",
+				"checkpoint_saved": "تم حفظ نقطة التوقف",
+				"command": "تنفيذ الأمر",
+				"command_output": "ناتج الأمر",
+				"completion_result": "نتيجة الإكمال",
+				"condense_context": "تلخيص السياق",
+				"error": "رسالة خطأ",
+				"followup": "سؤال لاحق",
+				"mcp_server_response": "رد خادم MCP",
+				"reasoning": "تحليل الذكاء",
+				"text": "رد الذكاء",
+				"tool": "استخدام أداة",
+				"user": "رد المستخدم",
+				"unknown": "نوع رسالة غير معروف",
+				"use_mcp_server": "استخدام خادم MCP"
+			}
+		}
+	},
+	"userFeedback": {
+		"editCancel": "إلغاء",
+		"send": "إرسال",
+		"restoreAndSend": "استرجاع وإرسال"
+	},
+	"ideaSuggestionsBox": {
+		"newHere": "جديد هنا؟",
+		"tryOneOfThese": "جرب إحدى هذه الأفكار للبدء:",
+		"suggestionText": "<suggestionButton>اضغط هنا</suggestionButton> للحصول على فكرة رائعة، ثم انقر على <sendIcon /> وشاهدني أعمل السحر!",
+		"ideas": {
+			"idea1": "اصنع كرة ثلاثية الأبعاد دوارة ومتوهجة تتفاعل مع حركات الماوس. اجعل التطبيق يعمل في المتصفح.",
+			"idea2": "إنشاء موقع محفظة أعمال لمطور برمجيات Python",
+			"idea3": "إنشاء نموذج تطبيق مالي في المتصفح. ثم اختبر ما إذا كان يعمل",
+			"idea4": "إنشاء موقع دليل يحتوي على أفضل نماذج توليد الفيديو بالذكاء الاصطناعي حالياً",
+			"idea5": "إنشاء مولد تدرجات CSS يصدر أوراق أنماط مخصصة ويعرض معاينة مباشرة",
+			"idea6": "إنتاج بطاقات تكشف محتوى ديناميكي بشكل جميل عند التمرير فوقها",
+			"idea7": "إنشاء حقل نجوم تفاعلي هادئ يتحرك مع إيماءات الماوس"
+		}
+	},
+	"ghost": {
+		"title": "Autocomplete",
+		"settings": {
+			"codeEditorSuggestions": "اقتراحات محرر الكود",
+			"chatSuggestions": "اقتراحات الدردشة",
+			"model": "النموذج",
+			"provider": "المزود",
+			"enableAutoTrigger": {
+				"label": "تفعيل الاقتراحات تلقائياً",
+				"description": "عرض اقتراحات الكود المضمنة تلقائيًا عند التوقف عن الكتابة."
+			},
+			"autoTriggerDelay": {
+				"label": "تأخير التشغيل التلقائي",
+				"description": "التأخير بالثواني قبل ظهور الاقتراحات بعد التوقف عن الكتابة. التأخير الأقصر يعني اقتراحات أسرع، لكن قد يكون أكثر استهلاكاً للموارد."
+			},
+			"enableSmartInlineTaskKeybinding": {
+				"label": "التفعيل باختصار لوحة المفاتيح ({{keybinding}})",
+				"description": "اضغط {{keybinding}} لطلب اقتراح كود عند موضع المؤشر. <DocsLink>تعديل الاختصار</DocsLink>"
+			},
+			"enableChatAutocomplete": {
+				"label": "تفعيل الإكمال التلقائي للدردشة",
+				"description": "عرض الإكمالات أثناء الكتابة في مدخل الدردشة. اضغط Tab لقبول الاقتراحات."
+			},
+			"snooze": {
+				"label": "تأجيل الاقتراحات",
+				"description": "إيقاف الاقتراحات مؤقتاً لفترة محددة.",
+				"button": "تأجيل",
+				"unsnooze": "إلغاء التأجيل",
+				"currentlySnoozed": "الاقتراحات مؤجلة حالياً.",
+				"duration": {
+					"1min": "دقيقة واحدة",
+					"5min": "5 دقائق",
+					"15min": "15 دقيقة",
+					"30min": "30 دقيقة",
+					"1hour": "ساعة واحدة"
+				}
+			},
+			"noModelConfigured": {
+				"title": "لم يتم تكوين نموذج للإكمال التلقائي",
+				"description": "لتفعيل الإكمال التلقائي، أضف ملفًا شخصيًا مع أحد هذه المزودين المدعومين:",
+				"learnMore": "تعرف على المزيد حول إعداد الإكمال التلقائي ←"
+			},
+			"noCredits": {
+				"title": "لا يوجد رصيد في حسابك",
+				"description": "حساب Kilo Code الخاص بك لا يحتوي على رصيد. لاستخدام الإكمال التلقائي، يرجى إضافة رصيد إلى حسابك.",
+				"buyCredits": "شراء رصيد ←"
+			},
+			"keybindingNotFound": "غير موجود",
+			"configureAutocompleteProfile": "استخدم أي نموذج بالانتقال إلى الملفات الشخصية وتكوين ملف شخصي من نوع الإكمال التلقائي."
+		}
+	},
+	"virtualProvider": {
+		"title": "إعدادات مزود الاحتياطي للحصة الافتراضية",
+		"description": "قم بتكوين قائمة من الملفات الشخصية حيث يكون لكل ملف حدود الحصص الخاصة به. عندما يتم الوصول إلى حدود الحصص لأحد المزودين، سيتم استخدام الملف الشخصي التالي في القائمة حتى لا يتبقى أي منها.",
+		"profileLabel": "الملف الشخصي {{number}}",
+		"primaryProfileLabel": "الملف الشخصي {{number}} (الرئيسي)",
+		"moveProfileUp": "نقل الملف الشخصي للأعلى",
+		"moveProfileDown": "نقل الملف الشخصي لأسفل",
+		"removeProfile": "إزالة الملف الشخصي",
+		"selectProfilePlaceholder": "حدد الملف الشخصي...",
+		"addProfile": "إضافة ملف تعريفي",
+		"noProfilesAvailable": "لا توجد ملفات تعريف متاحة. يرجى إعداد ملف تعريف واحد على الأقل لمزود غير افتراضي أولاً.",
+		"dangerZoneTitle": "منطقة الخطر",
+		"dangerZoneDescription": "هذه الإجراءات مدمرة ولا يمكن التراجع عنها.",
+		"clearUsageData": "مسح بيانات الاستخدام",
+		"confirmClearTitle": "هل أنت متأكد؟",
+		"confirmClearDescription": "سيؤدي هذا إلى حذف جميع بيانات الاستخدام المخزنة للمزودين الافتراضيين نهائياً. لا يمكن التراجع عن هذا الإجراء.",
+		"requestsLabel": "طلبات",
+		"perMinute": "في الدقيقة",
+		"perDay": "في اليوم",
+		"tokensLabel": "الرموز",
+		"perHour": "في الساعة"
+	},
+	"invalidModel": {
+		"alphaPeriodEnded": "🎉 انتهت فترة الألفا لـ {{model}}! غيّر إلى نموذج مختلف للمتابعة.",
+		"notAllowedForTeam": "⚠️ مؤسستك لا تسمح باستخدام نموذج {{model}}. غيّر إلى نموذج مختلف للمتابعة.",
+		"modelUnavailable": "⚠️ النموذج {{model}} غير متاح. غيّر إلى نموذج مختلف للمتابعة.",
+		"continueWith": "المتابعة مع {{model}}",
+		"continue": "متابعة"
+	},
+	"imageWarnings": {
+		"modelNoImageSupport": "الصور غير مدعومة بواسطة النموذج الحالي.",
+		"maxImagesReached": "الحد الأقصى 20 صورة لكل رسالة. قم بإزالة بعض الصور لإضافة المزيد.",
+		"imagesRemovedNoSupport": "تمت إزالة الصور، غير مدعومة من قِبل النموذج."
+	},
+	"marketplace": {
+		"modes": {
+			"description": "هذه الأوضاع متاحة من المجتمع. انقر <1>هنا</1> لتحرير الأوضاع المخصصة الخاصة بك."
+		},
+		"mcp": {
+			"description": "يتم صيانة خوادم MCP هذه من قبل المجتمع. انقر <1>هنا</1> لتعديل إعدادات MCP الخاصة بك."
+		},
+		"skills": {
+			"description": "تصفح واكتشف المهارات من المجتمع. توفر المهارات تعليمات متخصصة لمهام محددة."
+		}
+	},
+	"modes": {
+		"shareModesNewBanner": "جديد: مشاركة الأوضاع عن طريق إنشاء منظمة"
+	},
+	"deviceAuth": {
+		"title": "تسجيل الدخول إلى Kilo Code",
+		"step1": "افتح الرابط التالي في متصفحك",
+		"step2": "تحقق من الرمز وصرّح لهذا الجهاز في متصفحك",
+		"scanQr": "أو امسح رمز QR هذا بهاتفك",
+		"openBrowser": "فتح المتصفح",
+		"copyUrl": "نسخ الرابط",
+		"waiting": "في انتظار التصريح...",
+		"timeRemaining": "ينتهي الرمز خلال {{time}}",
+		"success": "تم تسجيل الدخول بنجاح!",
+		"authenticatedAs": "تم المصادقة كـ {{email}}",
+		"error": "خطأ في المصادقة",
+		"unknownError": "حدث خطأ. يرجى المحاولة مرة أخرى.",
+		"cancel": "إلغاء",
+		"retry": "حاول مرة أخرى",
+		"tryAgain": "حاول مرة أخرى",
+		"cancelled": "تم إلغاء المصادقة",
+		"initiating": "جاري بدء المصادقة..."
+	},
+	"speechToText": {
+		"stopRecording": "إيقاف الإدخال الصوتي",
+		"startRecording": "ابدأ الإدخال الصوتي",
+		"setupPopover": {
+			"title": "تحويل الكلام إلى نص",
+			"ffmpegHelp": "تحتاج إلى FFmpeg. <ffmpegLink>انقر هنا</ffmpegLink> للحصول على مساعدة Kilo في تثبيت FFmpeg.",
+			"openAiHelp": "انقر هنا لمزيد من المعلومات",
+			"ffmpegMessage": "ساعدني في تثبيت FFmpeg",
+			"openAiReason": "تحتاج إلى مزود OpenAI صالح مع مفتاح API لاستخدام نسخ الصوت.",
+			"description": "تحويل الكلام إلى نص غير متاح. يتطلب تحويل الكلام إلى نص كلاً من FFmpeg وموفر OpenAI صالح تم تكوينه. <moreInfoLink>انقر هنا لمزيد من المعلومات</moreInfoLink>.",
+			"ffmpegReason": "تحتاج إلى تثبيت FFmpeg. <ffmpegLink>انقر هنا</ffmpegLink> لمساعدتك من Kilo في تثبيت FFmpeg."
+		},
+		"misconfiguredState": "غير متاح بسبب الإعدادات",
+		"errorState": "غير متاح بسبب خطأ",
+		"microphone": {
+			"label": "ميكروفون",
+			"noDevices": "لم يتم العثور على أجهزة ميكروفون",
+			"defaultOption": "النظام الافتراضي",
+			"loading": "جارٍ تحميل أجهزة الميكروفون...",
+			"description": "حدد جهاز الميكروفون لتحويل الكلام إلى نص",
+			"refresh": "تحديث"
+		}
+	},
+	"skills": {
+		"description": "توفر المهارات تعليمات متخصصة لمهام محددة. يتم تطبيقها تلقائيًا عندما تكون ذات صلة بطلبك.",
+		"noSkills": "لا توجد مهارات مثبتة",
+		"projectSkills": "مهارات المشروع",
+		"globalSkills": "المهارات العامة",
+		"deleteDialog": {
+			"title": "حذف المهارة",
+			"description": "هل أنت متأكد أنك تريد حذف المهارة \"{{skillName}}\"؟ لا يمكن التراجع عن هذا الإجراء.",
+			"cancel": "إلغاء",
+			"delete": "حذف"
+		}
+	}
+}

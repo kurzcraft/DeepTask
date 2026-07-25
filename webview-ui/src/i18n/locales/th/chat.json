@@ -1,0 +1,584 @@
+{
+	"greeting": "Kilo Code สามารถทำอะไรให้คุณได้บ้าง?",
+	"costs": {
+		"totalWithSubtasks": "ค่าใช้จ่ายรวม (รวมงานย่อย): ${{cost}}",
+		"total": "ค่าใช้จ่ายรวม: ${{cost}}",
+		"includesSubtasks": "รวมค่าใช้จ่ายงานย่อย"
+	},
+	"task": {
+		"title": "งาน",
+		"seeMore": "ดูเพิ่มเติม",
+		"seeLess": "ดูน้อยลง",
+		"tokens": "โทเค็น:",
+		"cache": "แคช:",
+		"apiCost": "ค่าใช้จ่าย API:",
+		"changes": "การเปลี่ยนแปลง",
+		"size": "ขนาด",
+		"condenseContext": "ย่อบริบทอย่างชาญฉลาด",
+		"contextWindow": "ความยาวบริบท:",
+		"closeAndStart": "ปิดงานและเริ่มใหม่",
+		"export": "ส่งออกประวัติงาน",
+		"share": "แชร์งาน",
+		"delete": "ลบงาน (Shift + คลิกเพื่อข้ามการยืนยัน)",
+		"shareWithOrganization": "แชร์กับองค์กร",
+		"shareWithOrganizationDescription": "เฉพาะสมาชิกขององค์กรของคุณเท่านั้นที่สามารถเข้าถึงได้",
+		"sharePublicly": "แชร์แบบสาธารณะ",
+		"sharePubliclyDescription": "ทุกคนที่มีลิงก์สามารถเข้าถึงได้",
+		"connectToCloud": "เชื่อมต่อกับ Cloud",
+		"connectToCloudDescription": "เข้าสู่ระบบ Kilo Code Cloud เพื่อแชร์งาน",
+		"sharingDisabledByOrganization": "การแชร์ถูกปิดใช้งานโดยองค์กร",
+		"shareSuccessOrganization": "คัดลอกลิงก์องค์กรไปยังคลิปบอร์ดแล้ว",
+		"shareSuccessPublic": "คัดลอกลิงก์สาธารณะไปยังคลิปบอร์ดแล้ว",
+		"expand": "ขยายงาน",
+		"collapse": "ย่องาน",
+		"openInCloud": "เปิดงานใน Roo Code Cloud",
+		"openInCloudIntro": "ติดตามหรือโต้ตอบกับ Roo ได้จากทุกที่ สแกน คลิก หรือคัดลอกเพื่อเปิด",
+		"openApiHistory": "เปิดประวัติ API",
+		"openUiHistory": "เปิดประวัติ UI"
+	},
+	"history": {
+		"title": "ประวัติ"
+	},
+	"unpin": "ยกเลิกการปักหมุด",
+	"pin": "ปักหมุด",
+	"retry": {
+		"title": "ลองใหม่",
+		"tooltip": "ลองดำเนินการอีกครั้ง"
+	},
+	"startNewTask": {
+		"title": "เริ่มงานใหม่",
+		"tooltip": "เริ่มงานใหม่"
+	},
+	"reportBug": {
+		"title": "รายงานข้อผิดพลาด"
+	},
+	"proceedAnyways": {
+		"title": "ดำเนินการต่อ",
+		"tooltip": "ดำเนินการต่อขณะที่คำสั่งกำลังทำงาน"
+	},
+	"save": {
+		"title": "บันทึก",
+		"tooltip": "บันทึกการเปลี่ยนแปลงไฟล์"
+	},
+	"tokenProgress": {
+		"availableSpace": "พื้นที่ว่าง: {{amount}} โทเค็น",
+		"tokensUsed": "โทเค็นที่ใช้: {{used}} จาก {{total}}",
+		"reservedForResponse": "สงวนไว้สำหรับการตอบสนองของโมเดล: {{amount}} โทเค็น"
+	},
+	"reject": {
+		"title": "ปฏิเสธ",
+		"tooltip": "ปฏิเสธการดำเนินการนี้"
+	},
+	"completeSubtaskAndReturn": "เสร็จสิ้นงานย่อยและกลับ",
+	"approve": {
+		"title": "อนุมัติ",
+		"tooltip": "อนุมัติการดำเนินการนี้"
+	},
+	"read-batch": {
+		"approve": {
+			"title": "อนุมัติทั้งหมด"
+		},
+		"deny": {
+			"title": "ปฏิเสธทั้งหมด"
+		}
+	},
+	"runCommand": {
+		"title": "รันคำสั่ง",
+		"tooltip": "ดำเนินการคำสั่งนี้"
+	},
+	"proceedWhileRunning": {
+		"title": "ดำเนินการต่อขณะทำงาน",
+		"tooltip": "ดำเนินการต่อแม้จะมีคำเตือน"
+	},
+	"stop": {
+		"title": "หยุด",
+		"tooltip": "หยุดงานปัจจุบัน"
+	},
+	"killCommand": {
+		"title": "หยุดคำสั่ง",
+		"tooltip": "หยุดคำสั่งปัจจุบัน"
+	},
+	"resumeTask": {
+		"title": "ดำเนินงานต่อ",
+		"tooltip": "ดำเนินงานปัจจุบันต่อ"
+	},
+	"terminate": {
+		"title": "ยุติ",
+		"tooltip": "ยุติงานปัจจุบัน"
+	},
+	"cancel": {
+		"title": "ยกเลิก",
+		"tooltip": "ยกเลิกการดำเนินการปัจจุบัน"
+	},
+	"editMessage": {
+		"placeholder": "แก้ไขข้อความของคุณ..."
+	},
+	"scrollToBottom": "เลื่อนไปด้านล่างของแชท",
+	"about": "สร้าง รีแฟคเตอร์ และดีบักโค้ดด้วยความช่วยเหลือจาก AI ดู<DocsLink>เอกสาร</DocsLink>ของเราเพื่อเรียนรู้เพิ่มเติม",
+	"docs": "ตรวจสอบ<DocsLink>เอกสาร</DocsLink>ของเราเพื่อเริ่มต้นใช้งาน",
+	"onboarding": "รายการงานของคุณในเวิร์กสเปซนี้ว่างเปล่า",
+	"rooTips": {
+		"boomerangTasks": {
+			"title": "การจัดการงาน",
+			"description": "แบ่งงานเป็นส่วนเล็กๆ ที่จัดการได้ง่าย"
+		},
+		"stickyModels": {
+			"title": "โมเดลติดหนึบ",
+			"description": "แต่ละโหมดจดจำโมเดลที่คุณใช้ล่าสุด"
+		},
+		"tools": {
+			"title": "เครื่องมือ",
+			"description": "อนุญาตให้ AI แก้ปัญหาโดยการเรียกดูเว็บ รันคำสั่ง และอื่นๆ"
+		},
+		"customizableModes": {
+			"title": "โหมดที่ปรับแต่งได้",
+			"description": "บุคลิกพิเศษที่มีพฤติกรรมและโมเดลของตัวเอง"
+		},
+		"modelAgnostic": {
+			"title": "นำโมเดลของคุณเอง ไม่มีมาร์กอัปหรือการล็อค",
+			"description": "ใช้คีย์ของผู้ให้บริการของคุณเองหรือแม้แต่รันการอนุมานภายในเครื่อง — Roo ไม่คิดค่าใช้จ่ายสำหรับสิ่งนี้"
+		}
+	},
+	"selectMode": "เลือกโหมดสำหรับการโต้ตอบ",
+	"selectApiConfig": "เลือกการกำหนดค่า API",
+	"selectModelConfig": "เลือกโมเดล",
+	"enhancePrompt": "ปรับปรุงพรอมต์ด้วยบริบทเพิ่มเติม",
+	"enhancePromptDescription": "ปุ่ม 'ปรับปรุงพรอมต์' ช่วยปรับปรุงพรอมต์ของคุณโดยให้บริบทเพิ่มเติม ชี้แจง หรือเขียนใหม่ ลองพิมพ์พรอมต์ที่นี่และคลิกปุ่มอีกครั้งเพื่อดูว่ามันทำงานอย่างไร",
+	"modeSelector": {
+		"title": "โหมด",
+		"marketplace": "ตลาดโหมด",
+		"settings": "การตั้งค่าโหมด",
+		"description": "บุคลิกพิเศษที่ปรับแต่งพฤติกรรมของ Kilo Code",
+		"searchPlaceholder": "ค้นหาโหมด...",
+		"noResults": "ไม่พบผลลัพธ์",
+		"organizationModes": "โหมดขององค์กร"
+	},
+	"addImages": "เพิ่มรูปภาพในข้อความ",
+	"sendMessage": "ส่งข้อความ",
+	"enqueueMessage": "เพิ่มข้อความเข้าคิว (จะถูกส่งหลังงานปัจจุบันเสร็จสิ้น)",
+	"pressToSend": "กด {{keyCombination}} เพื่อส่ง",
+	"stopTts": "หยุดการอ่านเสียง",
+	"typeMessage": "พิมพ์ข้อความ...",
+	"typeTask": "สร้าง ค้นหา ถามอะไรก็ได้",
+	"addContext": "@ เพื่อเพิ่มบริบท, / เพื่อเปลี่ยนโหมด",
+	"dragFiles": "กด shift ค้างเพื่อลากไฟล์",
+	"dragFilesImages": "กด shift ค้างเพื่อลากไฟล์/รูปภาพ",
+	"errorReadingFile": "ข้อผิดพลาดในการอ่านไฟล์:",
+	"noValidImages": "ไม่มีรูปภาพที่ถูกต้องถูกประมวลผล",
+	"separator": "ตัวแบ่ง",
+	"edit": "แก้ไข...",
+	"forNextMode": "สำหรับโหมดถัดไป",
+	"forPreviousMode": "สำหรับโหมดก่อนหน้า",
+	"apiRequest": {
+		"title": "คำขอ API",
+		"failed": "คำขอ API ล้มเหลว",
+		"streaming": "คำขอ API...",
+		"cancelled": "ยกเลิกคำขอ API",
+		"streamingFailed": "การสตรีม API ล้มเหลว",
+		"rateLimitWait": "การจำกัดอัตรา",
+		"errorTitle": "ข้อผิดพลาดผู้ให้บริการ {{code}}",
+		"errorMessage": {
+			"docs": "เอกสาร",
+			"goToSettings": "การตั้งค่า",
+			"400": "ผู้ให้บริการไม่สามารถประมวลผลคำขอได้ หยุดงานและลองวิธีอื่น",
+			"401": "ไม่สามารถยืนยันตัวตนกับผู้ให้บริการได้ โปรดตรวจสอบการกำหนดค่า API key ของคุณ",
+			"402": "ดูเหมือนว่าคุณจะหมดเงิน/เครดิตในบัญชีของคุณ ไปที่ผู้ให้บริการของคุณและเพิ่มเพื่อดำเนินการต่อ",
+			"403": "ไม่ได้รับอนุญาต API key ของคุณถูกต้อง แต่ผู้ให้บริการปฏิเสธที่จะดำเนินการคำขอนี้ให้เสร็จสิ้น",
+			"429": "คำขอมากเกินไป คุณกำลังถูกจำกัดอัตราโดยผู้ให้บริการ โปรดรอสักครู่ก่อนเรียก API ครั้งถัดไป",
+			"500": "ข้อผิดพลาดเซิร์ฟเวอร์ของผู้ให้บริการ มีบางอย่างผิดพลาดทางฝั่งผู้ให้บริการ ไม่มีอะไรผิดพลาดกับคำขอของคุณ",
+			"connection": "ข้อผิดพลาดการเชื่อมต่อ ตรวจสอบให้แน่ใจว่าคุณมีการเชื่อมต่ออินเทอร์เน็ตที่ใช้งานได้",
+			"claudeCodeNotAuthenticated": "คุณต้องเข้าสู่ระบบเพื่อใช้ Claude Code ไปที่การตั้งค่าและคลิก \"เข้าสู่ระบบ Claude Code\" เพื่อยืนยันตัวตน",
+			"unknown": "ข้อผิดพลาด API ที่ไม่รู้จัก คลิกรายละเอียดเพื่อดูข้อมูลเพิ่มเติม"
+		}
+	},
+	"checkpoint": {
+		"initial": "จุดตรวจเริ่มต้น",
+		"regular": "จุดตรวจ",
+		"initializingWarning": "ยังคงเริ่มต้นจุดตรวจ... หากใช้เวลานานเกินไป คุณสามารถปิดจุดตรวจใน<settingsLink>การตั้งค่า</settingsLink>และรีสตาร์ทงานของคุณ",
+		"menu": {
+			"viewDiff": "ดูความแตกต่าง",
+			"viewDiffFromInit": "ดูการเปลี่ยนแปลงทั้งหมด",
+			"viewDiffWithCurrent": "ดูการเปลี่ยนแปลงตั้งแต่จุดตรวจนี้",
+			"restore": "คืนค่าจุดตรวจ",
+			"restoreFiles": "คืนค่าไฟล์",
+			"restoreFilesDescription": "คืนค่าไฟล์โปรเจ็กต์ของคุณกลับไปยังสแนปช็อตที่ถ่ายไว้ ณ จุดนี้",
+			"restoreFilesAndTask": "คืนค่าไฟล์และงาน",
+			"confirm": "ยืนยัน",
+			"cancel": "ยกเลิก",
+			"cannotUndo": "ไม่สามารถยกเลิกการดำเนินการนี้ได้",
+			"restoreFilesAndTaskDescription": "คืนค่าไฟล์โปรเจ็กต์ของคุณกลับไปยังสแนปช็อตที่ถ่ายไว้ ณ จุดนี้และลบข้อความทั้งหมดหลังจากจุดนี้",
+			"more": "ตัวเลือกเพิ่มเติม"
+		},
+		"current": "ปัจจุบัน"
+	},
+	"contextManagement": {
+		"tokens": "tokens",
+		"condensation": {
+			"title": "บริบทถูกย่อแล้ว",
+			"inProgress": "กำลังย่อบริบท...",
+			"errorHeader": "ไม่สามารถย่อบริบทได้",
+			"details": "การแจกแจงเนื้อหาในบริบท",
+			"disabled": "ปิดใช้งานการย่อบริบทอัจฉริยะแล้ว"
+		},
+		"truncation": {
+			"title": "บริบทถูกตัดทอน",
+			"inProgress": "กำลังตัดทอนบริบท...",
+			"messagesRemoved": "ลบ {{count}} ข้อความแล้ว",
+			"messagesRemoved_other": "ลบ {{count}} ข้อความแล้ว",
+			"description": "ข้อความเก่าถูกลบออกจากการสนทนาเพื่อไม่ให้เกินขีดจำกัดหน้าต่างบริบท วิธีนี้เร็วแต่รักษาบริบทได้น้อยกว่าการย่อบริบท",
+			"details": "รายละเอียดการตัดทอน",
+			"removedMessages": "ลบ {{count}} ข้อความแล้ว",
+			"disabled": "ปิดใช้งานการตัดทอนบริบทแล้ว"
+		}
+	},
+	"contextCondense": {
+		"title": "ย่อบริบทแล้ว",
+		"condensing": "กำลังย่อบริบท...",
+		"errorHeader": "ไม่สามารถย่อบริบทได้",
+		"tokens": "โทเค็น"
+	},
+	"instructions": {
+		"wantsToFetch": "Kilo Code ต้องการดึงคำแนะนำโดยละเอียดเพื่อช่วยในงานปัจจุบัน"
+	},
+	"fileOperations": {
+		"wantsToRead": "Kilo Code ต้องการอ่านไฟล์นี้:",
+		"wantsToReadMultiple": "Kilo Code ต้องการอ่านหลายไฟล์:",
+		"wantsToReadAndXMore": "Kilo Code ต้องการอ่านไฟล์นี้และอีก {{count}} ไฟล์:",
+		"wantsToReadOutsideWorkspace": "Kilo Code ต้องการอ่านไฟล์นี้นอกเวิร์กสเปซ:",
+		"didRead": "Kilo Code อ่านไฟล์นี้:",
+		"wantsToEdit": "Kilo Code ต้องการแก้ไขไฟล์นี้:",
+		"wantsToEditOutsideWorkspace": "Kilo Code ต้องการแก้ไขไฟล์นี้นอกเวิร์กสเปซ:",
+		"wantsToEditProtected": "Kilo Code ต้องการแก้ไขไฟล์กำหนดค่าที่ได้รับการป้องกัน:",
+		"wantsToApplyBatchChanges": "Kilo Code ต้องการใช้การเปลี่ยนแปลงกับหลายไฟล์:",
+		"wantsToGenerateImage": "Kilo Code ต้องการสร้างภาพ:",
+		"wantsToGenerateImageOutsideWorkspace": "Kilo Code ต้องการสร้างภาพนอกพื้นที่ทำงาน:",
+		"wantsToGenerateImageProtected": "Kilo Code ต้องการสร้างภาพในตำแหน่งที่ได้รับการป้องกัน:",
+		"didGenerateImage": "Kilo Code ได้สร้างภาพแล้ว:",
+		"wantsToCreate": "Kilo Code ต้องการสร้างไฟล์ใหม่:",
+		"wantsToSearchReplace": "Kilo Code ต้องการค้นหาและแทนที่ในไฟล์นี้:",
+		"didSearchReplace": "Kilo Code ทำการค้นหาและแทนที่ในไฟล์นี้:",
+		"wantsToInsert": "Kilo Code ต้องการแทรกเนื้อหาลงในไฟล์นี้:",
+		"wantsToInsertWithLineNumber": "Kilo Code ต้องการแทรกเนื้อหาลงในไฟล์นี้ที่บรรทัด {{lineNumber}}:",
+		"wantsToInsertAtEnd": "Kilo Code ต้องการเพิ่มเนื้อหาที่ท้ายไฟล์นี้:",
+		"wantsToDelete": "Kilo Code ต้องการลบไฟล์นี้:",
+		"wantsToDeleteDirectory": "Kilo Code ต้องการลบไดเรกทอรีนี้:"
+	},
+	"directoryOperations": {
+		"wantsToViewTopLevel": "Kilo Code ต้องการดูไฟล์ระดับบนสุดในไดเรกทอรีนี้:",
+		"didViewTopLevel": "Kilo Code ดูไฟล์ระดับบนสุดในไดเรกทอรีนี้:",
+		"wantsToViewTopLevelOutsideWorkspace": "Kilo Code ต้องการดูไฟล์ระดับบนสุดในไดเรกทอรีนี้ (นอกเวิร์กสเปซ):",
+		"didViewTopLevelOutsideWorkspace": "Kilo Code ดูไฟล์ระดับบนสุดในไดเรกทอรีนี้ (นอกเวิร์กสเปซ):",
+		"wantsToViewRecursive": "Kilo Code ต้องการดูไฟล์ทั้งหมดในไดเรกทอรีนี้แบบเรียกซ้ำ:",
+		"didViewRecursive": "Kilo Code ดูไฟล์ทั้งหมดในไดเรกทอรีนี้แบบเรียกซ้ำ:",
+		"wantsToViewRecursiveOutsideWorkspace": "Kilo Code ต้องการดูไฟล์ทั้งหมดในไดเรกทอรีนี้แบบเรียกซ้ำ (นอกเวิร์กสเปซ):",
+		"didViewRecursiveOutsideWorkspace": "Kilo Code ดูไฟล์ทั้งหมดในไดเรกทอรีนี้แบบเรียกซ้ำ (นอกเวิร์กสเปซ):",
+		"wantsToViewDefinitions": "Kilo Code ต้องการดูชื่อนิยามซอร์สโค้ดที่ใช้ในไดเรกทอรีนี้:",
+		"didViewDefinitions": "Kilo Code ดูชื่อนิยามซอร์สโค้ดที่ใช้ในไดเรกทอรีนี้:",
+		"wantsToViewDefinitionsOutsideWorkspace": "Kilo Code ต้องการดูชื่อนิยามซอร์สโค้ดที่ใช้ในไดเรกทอรีนี้ (นอกเวิร์กสเปซ):",
+		"didViewDefinitionsOutsideWorkspace": "Kilo Code ดูชื่อนิยามซอร์สโค้ดที่ใช้ในไดเรกทอรีนี้ (นอกเวิร์กสเปซ):",
+		"wantsToSearch": "Kilo Code ต้องการค้นหาในไดเรกทอรีนี้สำหรับ <code>{{regex}}</code>:",
+		"didSearch": "Kilo Code ค้นหาในไดเรกทอรีนี้สำหรับ <code>{{regex}}</code>:",
+		"wantsToSearchOutsideWorkspace": "Kilo Code ต้องการค้นหาในไดเรกทอรีนี้ (นอกเวิร์กสเปซ) สำหรับ <code>{{regex}}</code>:",
+		"didSearchOutsideWorkspace": "Kilo Code ค้นหาในไดเรกทอรีนี้ (นอกเวิร์กสเปซ) สำหรับ <code>{{regex}}</code>:"
+	},
+	"codebaseSearch": {
+		"wantsToSearch": "Kilo Code ต้องการค้นหาในโค้ดเบสสำหรับ <code>{{query}}</code>:",
+		"wantsToSearchWithPath": "Kilo Code ต้องการค้นหาในโค้ดเบสสำหรับ <code>{{query}}</code> ใน <code>{{path}}</code>:",
+		"didSearch_one": "พบ 1 ผลลัพธ์",
+		"didSearch_other": "พบ {{count}} ผลลัพธ์",
+		"resultTooltip": "คะแนนความคล้ายคลึง: {{score}} (คลิกเพื่อเปิดไฟล์)"
+	},
+	"commandOutput": "ผลลัพธ์คำสั่ง",
+	"commandExecution": {
+		"abort": "ยกเลิก",
+		"running": "กำลังทำงาน",
+		"exitStatus": "ออกด้วยสถานะ {{exitCode}}",
+		"pid": "PID: {{pid}}",
+		"exited": "ออกแล้ว ({{exitCode}})",
+		"manageCommands": "จัดการสิทธิ์คำสั่ง",
+		"commandManagementDescription": "จัดการสิทธิ์คำสั่ง: คลิก ✓ เพื่ออนุญาตให้ทำงานอัตโนมัติ ✗ เพื่อปฏิเสธการทำงาน รูปแบบสามารถเปิด/ปิดหรือลบออกจากรายการได้ <settingsLink>ดูการตั้งค่าทั้งหมด</settingsLink>",
+		"addToAllowed": "เพิ่มลงในรายการที่อนุญาต",
+		"removeFromAllowed": "ลบออกจากรายการที่อนุญาต",
+		"addToDenied": "เพิ่มลงในรายการที่ปฏิเสธ",
+		"removeFromDenied": "ลบออกจากรายการที่ปฏิเสธ",
+		"abortCommand": "ยกเลิกการทำงานของคำสั่ง",
+		"expandOutput": "ขยายผลลัพธ์",
+		"collapseOutput": "ยุบผลลัพธ์",
+		"expandManagement": "ขยายส่วนจัดการคำสั่ง",
+		"collapseManagement": "ยุบส่วนจัดการคำสั่ง"
+	},
+	"response": "การตอบสนอง",
+	"arguments": "อาร์กิวเมนต์",
+	"text": {
+		"rooSaid": "Kilo กล่าว"
+	},
+	"feedback": {
+		"youSaid": "คุณกล่าว"
+	},
+	"mcp": {
+		"wantsToUseTool": "Kilo Code ต้องการใช้เครื่องมือบนเซิร์ฟเวอร์ MCP {{serverName}}:",
+		"wantsToAccessResource": "Kilo Code ต้องการเข้าถึงทรัพยากรบนเซิร์ฟเวอร์ MCP {{serverName}}:"
+	},
+	"modes": {
+		"wantsToSwitch": "Kilo Code ต้องการเปลี่ยนเป็นโหมด {{mode}}",
+		"wantsToSwitchWithReason": "Kilo Code ต้องการเปลี่ยนเป็นโหมด {{mode}} เพราะ: {{reason}}",
+		"didSwitch": "Kilo Code เปลี่ยนเป็นโหมด {{mode}}",
+		"didSwitchWithReason": "Kilo Code เปลี่ยนเป็นโหมด {{mode}} เพราะ: {{reason}}"
+	},
+	"subtasks": {
+		"wantsToCreate": "Kilo Code ต้องการสร้างงานย่อยใหม่ในโหมด {{mode}}:",
+		"wantsToFinish": "Kilo Code ต้องการเสร็จสิ้นงานย่อยนี้",
+		"newTaskContent": "คำแนะนำงานย่อย",
+		"completionContent": "งานย่อยเสร็จสมบูรณ์",
+		"resultContent": "ผลลัพธ์งานย่อย",
+		"defaultResult": "โปรดดำเนินการต่อไปยังงานถัดไป",
+		"completionInstructions": "งานย่อยเสร็จสมบูรณ์! คุณสามารถตรวจสอบผลลัพธ์และแนะนำการแก้ไขหรือขั้นตอนถัดไป หากทุกอย่างดูดี ยืนยันเพื่อส่งผลลัพธ์กลับไปยังงานหลัก"
+	},
+	"questions": {
+		"hasQuestion": "Kilo Code มีคำถาม:"
+	},
+	"taskCompleted": "งานเสร็จสมบูรณ์",
+	"error": "ข้อผิดพลาด",
+	"modelResponseIncomplete": "การตอบสนองของโมเดลไม่สมบูรณ์",
+	"modelResponseErrors": {
+		"noToolsUsed": "โมเดลล้มเหลวในการใช้เครื่องมือใดๆ ในการตอบสนอง สิ่งนี้มักเกิดขึ้นเมื่อโมเดลให้เฉพาะข้อความ/การให้เหตุผลโดยไม่เรียกใช้เครื่องมือที่จำเป็นเพื่อทำงานให้เสร็จสมบูรณ์",
+		"noToolsUsedDetails": "โมเดลให้ข้อความ/การให้เหตุผลแต่ไม่เรียกใช้เครื่องมือที่จำเป็น สิ่งนี้มักบ่งชี้ว่าโมเดลเข้าใจผิดเกี่ยวกับงานหรือมีปัญหาในการกำหนดเครื่องมือที่จะใช้ โมเดลได้รับการแจ้งให้ลองใหม่ด้วยการใช้เครื่องมือที่เหมาะสมโดยอัตโนมัติแล้ว",
+		"noAssistantMessages": "โมเดลไม่ได้ให้เนื้อหาการตอบสนองใดๆ สิ่งนี้อาจบ่งชี้ถึงปัญหาเกี่ยวกับ API หรือการแสดงผลของโมเดล",
+		"noAssistantMessagesDetails": "โมเดลภาษาส่งคืนการตอบสนองที่ว่างเปล่าโดยไม่มีข้อความหรือการเรียกใช้เครื่องมือ สิ่งนี้อาจเกิดขึ้นเนื่องจากปัญหา API การจำกัดอัตรา หรือปัญหาเฉพาะโมเดล โมเดลได้รับการแจ้งให้ลองใหม่โดยอัตโนมัติแล้ว"
+	},
+	"errorDetails": {
+		"link": "รายละเอียด",
+		"title": "รายละเอียดข้อผิดพลาด",
+		"copyToClipboard": "คัดลอกข้อมูลข้อผิดพลาดพื้นฐาน",
+		"copied": "คัดลอกแล้ว!",
+		"diagnostics": "รับข้อมูลข้อผิดพลาดโดยละเอียด",
+		"proxyProvider": "ดูเหมือนว่าคุณกำลังใช้ผู้ให้บริการที่ใช้พร็อกซี ตรวจสอบบันทึกและให้แน่ใจว่าไม่ได้เขียนคำขอของ Roo ใหม่"
+	},
+	"diffError": {
+		"title": "การแก้ไขไม่สำเร็จ"
+	},
+	"troubleMessage": "Kilo Code กำลังมีปัญหา...",
+	"powershell": {
+		"issues": "ดูเหมือนว่าคุณกำลังมีปัญหากับ Windows PowerShell โปรดดูนี่"
+	},
+	"autoApprove": {
+		"title": "อนุมัติอัตโนมัติ:",
+		"none": "ไม่มี",
+		"description": "การอนุมัติอัตโนมัติอนุญาตให้ Kilo Code ดำเนินการโดยไม่ต้องขออนุญาต เปิดใช้งานเฉพาะสำหรับการดำเนินการที่คุณเชื่อถืออย่างเต็มที่ การกำหนดค่าโดยละเอียดเพิ่มเติมมีใน<settingsLink>การตั้งค่า</settingsLink>",
+		"selectOptionsFirst": "เลือกอย่างน้อยหนึ่งตัวเลือกด้านล่างเพื่อเปิดใช้งานการอนุมัติอัตโนมัติ",
+		"toggleAriaLabel": "สลับการอนุมัติอัตโนมัติ",
+		"disabledAriaLabel": "การอนุมัติอัตโนมัติปิดใช้งาน - เลือกตัวเลือกก่อน",
+		"tooltip": "อนุมัติคำขอใช้เครื่องมืออัตโนมัติ",
+		"tooltipManage": "จัดการการตั้งค่าการอนุมัติอัตโนมัติ",
+		"tooltipStatus": "การอนุมัติอัตโนมัติเปิดใช้งานสำหรับ: {{toggles}}",
+		"all": "ทั้งหมด",
+		"triggerLabel_zero": "อนุมัติอัตโนมัติ: ปิด",
+		"triggerLabel_one": "อนุมัติอัตโนมัติ: 1",
+		"triggerLabel_other": "อนุมัติอัตโนมัติ: {{count}}",
+		"triggerLabelAll": "อนุมัติอัตโนมัติ: YOLO",
+		"triggerLabelOff": "ปิดการอนุมัติอัตโนมัติ",
+		"triggerLabelOffShort": "ปิด"
+	},
+	"announcement": {
+		"support": "โปรดสนับสนุน Roo Code โดยให้ดาวแก่เราบน <githubLink>GitHub</githubLink>",
+		"title": "🎉 เปิดตัว Roo Code {{version}}",
+		"description": "Kilo Code {{version}} นำเสนอฟีเจอร์ใหม่ที่สำคัญและการปรับปรุงตามคำติชมของคุณ",
+		"whatsNew": "มีอะไรใหม่",
+		"feature1": "<bold>เปิดตัว Kilo Code Marketplace</bold>: ตลาดกลางเปิดให้บริการแล้ว! ค้นพบและติดตั้งโหมดและ MCP ได้ง่ายกว่าที่เคย",
+		"feature2": "<bold>โมเดล Gemini 2.5</bold>: เพิ่มการรองรับโมเดล Gemini 2.5 Pro, Flash และ Flash Lite ใหม่",
+		"feature3": "<bold>รองรับไฟล์ Excel และอื่นๆ</bold>: เพิ่มการรองรับไฟล์ Excel (.xlsx) และการแก้ไขข้อผิดพลาดและการปรับปรุงมากมาย!",
+		"hideButton": "ซ่อนประกาศ",
+		"detailsDiscussLinks": "ดูรายละเอียดเพิ่มเติมและพูดคุยใน <discordLink>Discord</discordLink> และ <redditLink>Reddit</redditLink> 🚀",
+		"learnMore": "เรียนรู้เพิ่มเติม",
+		"visitCloudButton": "เยี่ยมชม Roo Code Cloud",
+		"socialLinks": "ติดตามเรา",
+		"stealthModel": {
+			"feature": "<bold>โมเดลแฝงฟรีในเวลาจำกัด</bold> - โมเดลการให้เหตุผลที่รวดเร็วซึ่งเชี่ยวชาญในการเขียนโค้ดแบบ agentic ด้วย context window 262k พร้อมใช้งานผ่าน Roo Code Cloud",
+			"note": "(หมายเหตุ: พรอมต์และผลลัพธ์จะถูกบันทึกโดยผู้สร้างโมเดลเพื่อปรับปรุงโมเดล)",
+			"connectButton": "เชื่อมต่อกับ Roo Code Cloud",
+			"selectModel": "เลือก <code>roo/code-supernova</code> จากผู้ให้บริการ Roo Code Cloud ใน<settingsLink>การตั้งค่า</settingsLink> เพื่อเริ่มต้น",
+			"goToSettingsButton": "ไปที่การตั้งค่า"
+		},
+		"release": {
+			"heading": "ใหม่ในส่วนขยาย:",
+			"skills": "Roo ตอนนี้รองรับ <skillsLink>Agent Skills</skillsLink> - แพ็คเกจที่นำกลับมาใช้ใหม่ได้ของพรอมต์ เครื่องมือ และทรัพยากรเพื่อขยายความสามารถของ Roo",
+			"nativeToolCalling": "การเรียกใช้เครื่องมือแบบเนทีฟจำเป็นสำหรับงานใหม่ทั้งหมดแล้ว <blogLink>อ่านเพิ่มเติม</blogLink>เกี่ยวกับแรงจูงใจและสิ่งที่ต้องทำหากคุณพบปัญหา",
+			"contextRewind": "การย่อบริบทที่ได้รับการปรับปรุงตอนนี้ช่วยให้คุณสามารถกลับไปยังบริบทก่อนหน้าทั้งหมดได้เมื่อย้อนกลับไปยังจุดตรวจ",
+			"rooProvider": "ผู้ให้บริการ Roo Code Cloud ตอนนี้รักษาเนื้อหาการให้เหตุผลและใช้เครื่องมือแบบดั้งเดิมเป็นค่าเริ่มต้นเพื่อประสิทธิภาพที่ดีขึ้น",
+			"openRouterEmbeddings": "รองรับโมเดล embedding ของ OpenRouter",
+			"chutesDynamic": "Chutes โหลดโมเดลล่าสุดแบบไดนามิก",
+			"queuedMessagesFix": "แก้ไขปัญหาข้อความในคิวที่สูญหาย",
+			"browserUse": "Browser Use 2.0 ยกระดับประสบการณ์การท่องเว็บในแชทด้วยเซสชันคงอยู่ ข้อเสนอแนะที่ชัดเจนยิ่งขึ้น แผงเบราว์เซอร์เฉพาะ และคำอธิบายการดำเนินการที่เป็นธรรมชาติมากขึ้น",
+			"cloudPaid": "ผู้ให้บริการ Roo Code Cloud ตอนนี้เสนอโมเดลแบบเสียเงิน: ซื้อเครดิตและใช้สำหรับทั้งเอเจนต์คลาวด์และการอนุมาน",
+			"openaiCodexProvider": "เพิ่มผู้ให้บริการ OpenAI - ChatGPT Plus/Pro ที่ให้การเข้าถึงโมเดล Codex แบบสมาชิกโดยไม่มีค่าใช้จ่ายต่อโทเค็น",
+			"gpt52codexModel": "เพิ่มโมเดล gpt-5.2-codex ใหม่ใน Roo Code Router, ผู้ให้บริการ OpenAI มาตรฐาน และอื่นๆ",
+			"bugFixes": "แก้ไขปัญหาหน่วยความจำรั่วที่ทำให้หน้าจอสีเทา ปัญหาลายเซ็นการคิดของ Gemini และการปรับปรุงเสถียรภาพอื่นๆ"
+		},
+		"cloudAgents": {
+			"heading": "ใหม่ใน Cloud:",
+			"prFixer": "ขอแนะนำ <bold>PR Fixer</bold> cloud agent เพื่อเสริม PR Reviewer",
+			"prFixerDescription": "PR Fixer ใช้การเปลี่ยนแปลงคุณภาพสูงกับ PR ของคุณ ตรงจาก GitHub เรียกใช้ผ่านความคิดเห็น PR และจะอ่านประวัติความคิดเห็นทั้งหมดเพื่อเข้าใจบริบท ข้อตกลง และการแลกเปลี่ยน - จากนั้นดำเนินการแก้ไขที่ถูกต้อง",
+			"tryPrFixerButton": "ลอง PR Fixer",
+			"specialized": "ขอแนะนำ <bold>Explainer</bold>, <bold>Planner</bold>, และ <bold>Coder</bold> - เอเจนต์คลาวด์เฉพาะทางสามตัวเพื่อยกระดับเวิร์กโฟลว์ของคุณ",
+			"description": "เอเจนต์เหล่านี้ทำงานร่วมกันในคลาวด์และสามารถเรียกใช้งานได้จากเว็บหรือผ่าน Slack",
+			"tryButton": "ลองเอเจนต์คลาวด์"
+		},
+		"careers": "นอกจากนี้ <careersLink>เรากำลังรับสมัครงาน!</careersLink>"
+	},
+	"reasoning": {
+		"thinking": "กำลังคิด",
+		"seconds": "{{count}} วินาที"
+	},
+	"followUpSuggest": {
+		"timerPrefix": "เปิดใช้งานการอนุมัติอัตโนมัติแล้ว กำลังเลือกใน {{seconds}}s…",
+		"copyToInput": "คัดลอกไปยังอินพุต (เหมือนกับ shift + คลิก)",
+		"autoSelectCountdown": "เลือกอัตโนมัติใน {{count}} วินาที",
+		"countdownDisplay": "{{count}} วินาที"
+	},
+	"browser": {
+		"browserAnnouncement": "🌐 การโต้ตอบกับเบราว์เซอร์ 2.0",
+		"browserAnnouncementDesc": "ปรับปรุงประสบการณ์การท่องเว็บในแชทด้วยเซสชันคงอยู่ ความคิดเห็นที่ชัดเจนยิ่งขึ้น แผงเบราว์เซอร์เฉพาะ และคำอธิบายการดำเนินการที่เป็นธรรมชาติมากขึ้น",
+		"browserSession": "เซสชันเบราว์เซอร์",
+		"session": "เซสชันเบราว์เซอร์",
+		"browserActionPress": "กดปุ่ม",
+		"browserActionPressDesc": "กด {{key}}",
+		"browserActionHover": "วางเมาส์",
+		"browserActionHoverDesc": "วางเมาส์ ({{coordinate}})",
+		"rooCloudAnnouncement": "🚀 ประกาศ Roo Code Cloud",
+		"rooWantsToUse": "Kilo Code ต้องการใช้เบราว์เซอร์:",
+		"consoleLogs": "บันทึกคอนโซล",
+		"noNewLogs": "(ไม่มีบันทึกใหม่)",
+		"screenshot": "ภาพหน้าจอเบราว์เซอร์",
+		"cursor": "เคอร์เซอร์",
+		"navigation": {
+			"step": "ขั้นตอน {{current}} จาก {{total}}",
+			"previous": "ก่อนหน้า",
+			"next": "ถัดไป"
+		},
+		"sessionStarted": "เริ่มเซสชันเบราว์เซอร์",
+		"active": "ใช้งานอยู่",
+		"actions": {
+			"title": "การดำเนินการเรียกดู: ",
+			"launched": "เปิดเบราว์เซอร์แล้ว",
+			"launch": "เปิดเบราว์เซอร์ที่ {{url}}",
+			"clicked": "คลิกที่: {{coordinate}}",
+			"click": "คลิก ({{coordinate}})",
+			"typed": "พิมพ์: {{text}}",
+			"type": "พิมพ์ \"{{text}}\"",
+			"pressed": "กดปุ่ม: {{key}}",
+			"press": "กด {{key}}",
+			"scrolledDown": "เลื่อนลงแล้ว",
+			"scrollDown": "เลื่อนลง",
+			"scrolledUp": "เลื่อนขึ้นแล้ว",
+			"scrollUp": "เลื่อนขึ้น",
+			"hovered": "วางเมาส์ที่: {{coordinate}}",
+			"hover": "วางเมาส์ ({{coordinate}})",
+			"resized": "ปรับขนาดเป็น: {{size}}",
+			"resize": "ปรับขนาดเป็น {{size}}",
+			"screenshotSaved": "บันทึกภาพหน้าจอแล้ว",
+			"screenshot": "บันทึกภาพหน้าจอไปที่ {{path}}",
+			"closed": "ปิดเบราว์เซอร์แล้ว",
+			"close": "ปิดเบราว์เซอร์",
+			"goBack": "ย้อนกลับ",
+			"goForward": "ไปข้างหน้า",
+			"reload": "โหลดใหม่",
+			"clickElement": "คลิกที่องค์ประกอบ",
+			"hoverElement": "วางเมาส์ที่องค์ประกอบ",
+			"typeText": "พิมพ์ข้อความ",
+			"takeScreenshot": "ถ่ายภาพหน้าจอ",
+			"closeBrowser": "ปิดเบราว์เซอร์",
+			"fillDone": "กรอกเสร็จสิ้น",
+			"fillNotDone": "ยังไม่ได้กรอก",
+			"navigate": "นำทาง",
+			"openUrl": "เปิด URL"
+		}
+	},
+	"codeblock": {
+		"tooltips": {
+			"expand": "ขยายบล็อกโค้ด",
+			"collapse": "ยุบบล็อกโค้ด",
+			"enable_wrap": "เปิดใช้งานการตัดคำ",
+			"disable_wrap": "ปิดใช้งานการตัดคำ",
+			"copy_code": "คัดลอกโค้ด"
+		}
+	},
+	"systemPromptWarning": "คำเตือน: การแทนที่พรอมต์ระบบแบบกำหนดเองเปิดใช้งานอยู่ สิ่งนี้อาจทำให้ฟังก์ชันการทำงานเสียหายอย่างรุนแรงและทำให้เกิดพฤติกรรมที่ไม่สามารถคาดเดาได้",
+	"profileViolationWarning": "โปรไฟล์ปัจจุบันละเมิดการตั้งค่าขององค์กรของคุณ",
+	"shellIntegration": {
+		"title": "คำเตือนการดำเนินการคำสั่ง",
+		"description": "คำสั่งของคุณกำลังถูกดำเนินการโดยไม่มีการรวม shell ของ VSCode terminal เพื่อปิดคำเตือนนี้ คุณสามารถปิดการรวม shell ในส่วน <strong>Terminal</strong> ของ<settingsLink>การตั้งค่า Kilo Code</settingsLink>หรือแก้ไขปัญหาการรวม VSCode terminal โดยใช้ลิงก์ด้านล่าง",
+		"troubleshooting": "คลิกที่นี่สำหรับเอกสารการรวม shell"
+	},
+	"ask": {
+		"autoApprovedRequestLimitReached": {
+			"title": "ถึงขีดจำกัดคำขอที่อนุมัติอัตโนมัติ",
+			"description": "Kilo Code ถึงขีดจำกัดการอนุมัติอัตโนมัติของ {{count}} คำขอ API คุณต้องการรีเซ็ตจำนวนและดำเนินการต่อกับงานหรือไม่?",
+			"button": "รีเซ็ตและดำเนินการต่อ"
+		},
+		"autoApprovedCostLimitReached": {
+			"title": "ถึงขีดจำกัดค่าใช้จ่ายที่อนุมัติอัตโนมัติแล้ว",
+			"description": "Kilo Code ถึงขีดจำกัดค่าใช้จ่ายที่อนุมัติอัตโนมัติ ${{count}} แล้ว คุณต้องการรีเซ็ตค่าใช้จ่ายและดำเนินงานต่อหรือไม่?",
+			"button": "รีเซ็ตและดำเนินการต่อ"
+		}
+	},
+	"indexingStatus": {
+		"ready": "ดัชนีพร้อม",
+		"indexing": "กำลังสร้างดัชนี {{percentage}}%",
+		"indexed": "สร้างดัชนีแล้ว",
+		"error": "ข้อผิดพลาดดัชนี",
+		"status": "สถานะดัชนี"
+	},
+	"versionIndicator": {
+		"ariaLabel": "เวอร์ชัน {{version}} - คลิกเพื่อดูบันทึกการเปลี่ยนแปลง"
+	},
+	"rooCloudCTA": {
+		"title": "Roo Code Cloud เปิดตัวเร็วๆ นี้!",
+		"description": "รันเอเจนต์ Roomote ในคลาวด์ เข้าถึงงานของคุณจากทุกที่ ทำงานร่วมกับผู้อื่น และอื่นๆ อีกมากมาย",
+		"joinWaitlist": "เข้าร่วมรายชื่อรอเพื่อรับสิทธิ์เข้าถึงก่อนใคร"
+	},
+	"command": {
+		"triggerDescription": "เรียกใช้คำสั่ง {{name}}"
+	},
+	"slashCommands": {
+		"tooltip": "จัดการคำสั่งแบบ slash",
+		"manageCommands": "จัดการคำสั่งแบบ slash ในการตั้งค่า",
+		"title": "คำสั่งแบบ Slash",
+		"description": "สร้างคำสั่งแบบ slash ที่กำหนดเองเพื่อเข้าถึงพรอมต์และเวิร์กโฟลว์ที่ใช้บ่อยได้อย่างรวดเร็ว <DocsLink>เอกสาร</DocsLink>",
+		"builtInCommands": "คำสั่งที่มีอยู่แล้ว",
+		"globalCommands": "คำสั่งทั่วไป",
+		"workspaceCommands": "คำสั่งเวิร์กสเปซ",
+		"globalCommand": "คำสั่งทั่วไป",
+		"editCommand": "แก้ไขคำสั่ง",
+		"deleteCommand": "ลบคำสั่ง",
+		"newGlobalCommandPlaceholder": "คำสั่งทั่วไปใหม่...",
+		"newWorkspaceCommandPlaceholder": "คำสั่งเวิร์กสเปซใหม่...",
+		"deleteDialog": {
+			"title": "ลบคำสั่ง",
+			"description": "คุณแน่ใจหรือไม่ว่าต้องการลบคำสั่ง \"{{name}}\"? การดำเนินการนี้ไม่สามารถยกเลิกได้",
+			"cancel": "ยกเลิก",
+			"confirm": "ลบ"
+		}
+	},
+	"queuedMessages": {
+		"title": "ข้อความในคิว:",
+		"clickToEdit": "คลิกเพื่อแก้ไขข้อความ"
+	},
+	"generateCommitMessage": "สร้างข้อความ Commit",
+	"slashCommand": {
+		"wantsToRun": "Kilo Code ต้องการรันคำสั่ง slash:",
+		"didRun": "Kilo Code รันคำสั่ง slash แล้ว:"
+	},
+	"contextMenu": {
+		"noResults": "ไม่มีผลลัพธ์",
+		"problems": "ปัญหา",
+		"terminal": "เทอร์มินัล",
+		"url": "วาง URL เพื่อดึงเนื้อหา"
+	},
+	"todo": {
+		"partial": "ทำเสร็จ {{completed}} จาก {{total}} รายการ",
+		"complete": "ทำเสร็จทั้งหมด {{total}} รายการ",
+		"updated": "อัปเดตรายการสิ่งที่ต้องทำแล้ว",
+		"completed": "เสร็จสมบูรณ์",
+		"started": "เริ่มแล้ว"
+	}
+}

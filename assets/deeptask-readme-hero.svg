@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="480" viewBox="0 0 1440 480" role="img" aria-labelledby="title desc">
+  <title id="title">Deeptask — focused AI coding agent</title>
+  <desc id="desc">A futuristic cyan and violet Deeptask compass emblem over a dark circuit-grid background.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#050816"/>
+      <stop offset="0.52" stop-color="#0a1028"/>
+      <stop offset="1" stop-color="#130b2b"/>
+    </linearGradient>
+    <linearGradient id="cyanViolet" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#49f6ff"/>
+      <stop offset="0.5" stop-color="#42a5ff"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="wordmark" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e8fdff"/>
+      <stop offset="0.55" stop-color="#8beeff"/>
+      <stop offset="1" stop-color="#c79cff"/>
+    </linearGradient>
+    <radialGradient id="halo">
+      <stop offset="0" stop-color="#35d8ff" stop-opacity="0.34"/>
+      <stop offset="0.55" stop-color="#694dff" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#050816" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#4db7ff" stroke-opacity="0.08" stroke-width="1"/>
+      <circle cx="0" cy="0" r="1.6" fill="#75eaff" fill-opacity="0.2"/>
+    </pattern>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="frame"><rect width="1440" height="480" rx="30"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#frame)">
+    <rect width="1440" height="480" fill="url(#background)"/>
+    <rect width="1440" height="480" fill="url(#grid)"/>
+    <ellipse cx="355" cy="240" rx="390" ry="330" fill="url(#halo)"/>
+    <ellipse cx="1120" cy="230" rx="470" ry="310" fill="url(#halo)" opacity="0.52"/>
+
+    <g fill="none" stroke-linecap="round">
+      <path d="M0 116H118l38 38h94" stroke="#38dcff" stroke-opacity="0.24" stroke-width="2"/>
+      <path d="M0 373h168l43-43h91" stroke="#8b5cff" stroke-opacity="0.22" stroke-width="2"/>
+      <path d="M1440 92h-142l-45 45h-102" stroke="#a875ff" stroke-opacity="0.2" stroke-width="2"/>
+      <path d="M1440 391h-205l-35-35h-88" stroke="#3ce8ff" stroke-opacity="0.22" stroke-width="2"/>
+      <circle cx="157" cy="154" r="5" stroke="#43eaff" stroke-opacity="0.55" stroke-width="2"/>
+      <circle cx="1253" cy="137" r="5" stroke="#a86cff" stroke-opacity="0.48" stroke-width="2"/>
+      <circle cx="211" cy="330" r="5" stroke="#9d68ff" stroke-opacity="0.48" stroke-width="2"/>
+      <circle cx="1200" cy="356" r="5" stroke="#43eaff" stroke-opacity="0.48" stroke-width="2"/>
+    </g>
+
+    <g transform="translate(135 66)">
+      <circle cx="174" cy="174" r="148" fill="#071326" fill-opacity="0.75" stroke="url(#cyanViolet)" stroke-opacity="0.28" stroke-width="2"/>
+      <circle cx="174" cy="174" r="119" fill="none" stroke="#5deeff" stroke-opacity="0.16" stroke-width="1" stroke-dasharray="5 13"/>
+      <path d="M174 22L81 318L174 264L174 22Z" fill="#071326" stroke="url(#cyanViolet)" stroke-width="12" stroke-linejoin="round" filter="url(#softGlow)"/>
+      <path d="M174 22L267 318L174 264V22Z" fill="url(#cyanViolet)" filter="url(#glow)"/>
+      <path d="M174 72V230" stroke="#d9fcff" stroke-opacity="0.82" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="174" cy="174" r="13" fill="#e9feff" filter="url(#softGlow)"/>
+      <circle cx="174" cy="174" r="4" fill="#4a8cff"/>
+      <g fill="#6ceeff">
+        <circle cx="174" cy="8" r="3"/><circle cx="174" cy="340" r="3"/>
+        <circle cx="8" cy="174" r="3"/><circle cx="340" cy="174" r="3"/>
+      </g>
+    </g>
+
+    <g transform="translate(560 142)">
+      <text x="0" y="106" fill="url(#wordmark)" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="112" font-weight="800" letter-spacing="8">DEEPTASK</text>
+      <rect x="2" y="137" width="672" height="2" rx="1" fill="url(#cyanViolet)" opacity="0.72"/>
+      <text x="4" y="184" fill="#9db7cf" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="23" font-weight="500" letter-spacing="5">FOCUSED · RESILIENT · VERIFIABLE</text>
+    </g>
+
+    <path d="M565 296h212" stroke="#42e8ff" stroke-opacity="0.2" stroke-width="1"/>
+    <path d="M1048 296h174" stroke="#a46cff" stroke-opacity="0.2" stroke-width="1"/>
+    <rect x="1" y="1" width="1438" height="478" rx="29" fill="none" stroke="url(#cyanViolet)" stroke-opacity="0.35" stroke-width="2"/>
+  </g>
+</svg>

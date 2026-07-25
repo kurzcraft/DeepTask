@@ -1,0 +1,19 @@
+{
+  "repository": "kurzgesagtcraft/deeptask",
+  "branch": "main",
+  "localHead": "5816a180c824afc526f10731fcbae9d4c89c04ee",
+  "remoteHead": "5816a180c824afc526f10731fcbae9d4c89c04ee",
+  "commitUrl": "https://github.com/kurzgesagtcraft/deeptask/commit/5816a180c824afc526f10731fcbae9d4c89c04ee",
+  "readmeUrl": "https://github.com/kurzgesagtcraft/deeptask#readme",
+  "englishReadmeUrl": "https://github.com/kurzgesagtcraft/deeptask/blob/main/README_EN.md",
+  "checks": {
+    "headsMatch": true,
+    "defaultIsChinese": true,
+    "chineseLinksEnglish": true,
+    "englishExists": true,
+    "englishLinksChinese": true,
+    "chineseIconPresent": true,
+    "englishIconPresent": true
+  },
+  "passed": true
+}

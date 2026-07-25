@@ -1,0 +1,401 @@
+{
+	"onboarding": {
+		"title": "Bạn muốn bắt đầu như thế nào?",
+		"freeModels": {
+			"title": "Mô hình miễn phí",
+			"description": "Bắt đầu lập trình ngay"
+		},
+		"premiumModels": {
+			"title": "Mô hình cao cấp",
+			"description": "Đăng ký. Người dùng mới nhận $5 tín dụng"
+		},
+		"byok": {
+			"title": "Sử dụng khóa của bạn",
+			"description": "Nâng cao. Sử dụng tài khoản hoặc đăng ký của bạn"
+		}
+	},
+	"welcome": {
+		"greeting": "Chào mừng bạn đến với Kilo Code!",
+		"introText1": "Kilo Code là một agent lập trình AI miễn phí và mã nguồn mở.",
+		"introText2": "Hoạt động với các mô hình AI mới nhất như Claude Opus 4.5, Gemini 3 Pro, GPT-5.2, và hơn 450 mô hình khác.",
+		"introText3": "Tạo tài khoản miễn phí và nhận $20 tín dụng thưởng khi nạp tiền lần đầu.",
+		"ctaButton": "Bắt đầu",
+		"manualModeButton": "Sử dụng khóa API của riêng bạn",
+		"alreadySignedUp": "Đã đăng ký?",
+		"loginText": "Đăng nhập tại đây"
+	},
+	"lowCreditWarning": {
+		"addCredit": "Thêm tín dụng",
+		"lowBalance": "Số dư Kilo Code của bạn thấp",
+		"switchToFreeModel": "Chuyển sang mô hình miễn phí"
+	},
+	"pagination": {
+		"previous": "Trước",
+		"next": "Tiếp",
+		"page": "Trang {{page}} / {{count}}"
+	},
+	"invalidModel": {
+		"alphaPeriodEnded": "🎉 Giai đoạn alpha cho {{model}} đã kết thúc! Chuyển sang mô hình khác để tiếp tục.",
+		"notAllowedForTeam": "⚠️ Tổ chức của bạn không cho phép sử dụng mô hình {{model}}. Chuyển sang mô hình khác để tiếp tục.",
+		"modelUnavailable": "⚠️ Mô hình {{model}} không khả dụng. Chuyển sang mô hình khác để tiếp tục.",
+		"continueWith": "Tiếp tục với {{model}}",
+		"continue": "Tiếp tục"
+	},
+	"unauthorizedError": {
+		"title": "Bạn cần đăng nhập để sử dụng mô hình {{modelId}}",
+		"message": "Đăng nhập hoặc tạo tài khoản để truy cập hơn 500 mô hình, sử dụng tín dụng với giá gốc hoặc sử dụng khóa của riêng bạn.",
+		"loginButton": "Đăng Nhập"
+	},
+	"pricing": {
+		"costUnknown": "chi phí không xác định",
+		"costUnknownDescription": "Nhà cung cấp API không cung cấp dữ liệu chi phí hoặc yêu cầu đã bị hủy.",
+		"freeModelsLink": "Khám phá các tùy chọn mô hình miễn phí"
+	},
+	"notifications": {
+		"toolRequest": "Yêu cầu công cụ đang chờ phê duyệt",
+		"browserAction": "Hành động trình duyệt đang chờ phê duyệt",
+		"command": "Lệnh đang chờ phê duyệt"
+	},
+	"settings": {
+		"sections": {
+			"mcp": "Máy chủ MCP",
+			"agentBehaviour": "Hành vi của Agent",
+			"skills": "Kỹ năng"
+		},
+		"contextManagement": {
+			"allowVeryLargeReads": {
+				"label": "Cho phép đọc tệp rất lớn",
+				"description": "Khi bật, Kilo Code sẽ thực hiện đọc tệp hoặc đầu ra MCP rất lớn ngay cả khi có khả năng cao làm tràn cửa sổ ngữ cảnh (kích thước nội dung >80% cửa sổ ngữ cảnh)."
+			}
+		},
+		"codeIndex": {
+			"embeddingBatchSizeLabel": "Kích Thước Lô Embedding",
+			"embeddingBatchSizeDescription": "Số lượng đoạn mã được nhóm lại với nhau để tạo embedding và cập nhật vector store. Giá trị cao hơn có thể cải thiện tốc độ lập chỉ mục nhưng có thể tăng mức sử dụng bộ nhớ. Giá trị thấp hơn giảm sử dụng bộ nhớ nhưng có thể làm chậm quá trình lập chỉ mục.",
+			"scannerMaxBatchRetriesLabel": "Số Lần Thử Lại Tối Đa Của Lô Quét",
+			"scannerMaxBatchRetriesDescription": "Số lần tối đa thử lại một lô thất bại trong quá trình quét thư mục. Giá trị cao hơn tăng khả năng phục hồi trước các lỗi tạm thời nhưng có thể làm chậm lập chỉ mục nếu lỗi vẫn tồn tại. Giá trị thấp hơn thất bại nhanh hơn nhưng có thể bỏ qua nội dung khi gặp vấn đề tạm thời."
+		},
+		"provider": {
+			"account": "Tài khoản Kilo Code",
+			"apiKey": "Khóa API Kilo Code",
+			"login": "Đăng nhập vào Kilo Code",
+			"logout": "Đăng xuất khỏi Kilo Code",
+			"loginForPremiumModels": "Đăng nhập để truy cập các mô hình và tính năng premium",
+			"providerRouting": {
+				"title": "Định tuyến nhà cung cấp",
+				"managedByOrganization": "Quản lý Định tuyến nhà cung cấp cấp tổ chức",
+				"createOrganization": "Tạo tổ chức để quản lý Định tuyến nhà cung cấp",
+				"description": "Kilo Code định tuyến các yêu cầu đến các nhà cung cấp tốt nhất có sẵn cho mô hình của bạn. Theo mặc định, các yêu cầu được cân bằng tải trên các nhà cung cấp hàng đầu để tối đa hóa thời gian hoạt động. Tuy nhiên, bạn có thể chọn một nhà cung cấp cụ thể để sử dụng cho mô hình này.",
+				"sorting": {
+					"default": "Sắp xếp nhà cung cấp mặc định",
+					"price": "Ưu tiên nhà cung cấp có giá thấp hơn",
+					"throughput": "Ưu tiên nhà cung cấp có thông lượng cao hơn",
+					"latency": "Ưu tiên nhà cung cấp có độ trễ thấp hơn"
+				},
+				"dataCollection": {
+					"default": "Không thiết lập chính sách dữ liệu",
+					"allowFree": "Cho phép huấn luyện prompt (chỉ miễn phí)",
+					"allow": "Cho phép huấn luyện prompt",
+					"deny": "Từ chối huấn luyện prompt",
+					"zdr": "Không lưu trữ dữ liệu"
+				}
+			}
+		},
+		"modelInfo": {
+			"contextWindow": "Cửa sổ ngữ cảnh",
+			"providerBreakdown": "Phân tích Giá và Khả năng của Nhà cung cấp",
+			"averageKiloCodeCost": "Đây là chi phí thực tế trung bình mà Kilo Code đã chi tiêu khi sử dụng mô hình này trong tuần qua. Chi phí này có thể thấp hơn giá niêm yết do việc sử dụng bộ nhớ đệm prompt.",
+			"table": {
+				"provider": "Nhà cung cấp",
+				"context": "Điểm cuối có thể xử lý số lượng token này (đầu vào + đầu ra).",
+				"inputPrice": "Chi phí cho một triệu token đối với prompt.",
+				"outputPrice": "Chi phí cho một triệu token đối với completion.",
+				"cacheReadPrice": "Chi phí cho một triệu token để đọc từ bộ nhớ đệm.",
+				"cacheWritePrice": "Chi phí cho một triệu token để ghi vào bộ nhớ đệm."
+			}
+		},
+		"systemNotifications": {
+			"label": "Bật thông báo hệ thống",
+			"description": "Khi bật, Kilo Code sẽ gửi thông báo hệ thống cho các sự kiện quan trọng như hoàn thành nhiệm vụ hoặc lỗi.",
+			"testButton": "Kiểm tra thông báo",
+			"testTitle": "Kilo Code",
+			"testMessage": "Đây là thông báo kiểm tra từ Kilo Code."
+		},
+		"terminal": {
+			"commandGenerator": {
+				"provider": "Nhà Cung Cấp Trình Tạo Lệnh Dòng Lệnh",
+				"apiConfigId": {
+					"description": "Chọn cấu hình API nào để sử dụng cho việc tạo lệnh terminal. Để là 'Sử Dụng Cấu Hình Hiện Tại' để dùng cài đặt mặc định của bạn.",
+					"current": "Sử dụng Cấu hình Hiện tại",
+					"label": "Cấu hình API"
+				}
+			}
+		}
+	},
+	"chat": {
+		"condense": {
+			"wantsToCondense": "Kilo Code muốn tóm tắt cuộc trò chuyện của bạn",
+			"condenseConversation": "Tóm tắt cuộc trò chuyện"
+		},
+		"seeNewChanges": "Hiển thị thay đổi mới",
+		"revertNewChanges": "Hoàn tác thay đổi mới",
+		"confirmRevertChanges": "Xác nhận hoàn tác thay đổi",
+		"cancelRevertChanges": "Hủy hoàn tác thay đổi"
+	},
+	"newTaskPreview": {
+		"task": "Nhiệm vụ"
+	},
+	"profile": {
+		"title": "Hồ sơ",
+		"dashboard": "Bảng điều khiển",
+		"logOut": "Đăng xuất",
+		"currentBalance": "SỐ DƯ HIỆN TẠI",
+		"loading": "Đang tải...",
+		"organization": "Tổ chức",
+		"personal": "Cá nhân",
+		"shop": {
+			"title": "Mua Tín dụng",
+			"popular": "Phổ biến",
+			"credits": "tín dụng",
+			"action": "Mua Ngay",
+			"viewAll": "Xem tất cả tùy chọn giá"
+		},
+		"detailedUsage": "Sử dụng chi tiết",
+		"createOrganization": "Tạo tổ chức để theo dõi sử dụng chi tiết"
+	},
+	"docs": "Tài liệu",
+	"rules": {
+		"tooltip": "Quản lý hành vi của agent ({{types}})",
+		"agentBehaviourTypes": {
+			"rules": "Quy tắc",
+			"workflows": "Quy trình làm việc",
+			"mcps": "MCPs",
+			"modes": "Chế độ",
+			"skills": "Kỹ năng"
+		},
+		"ariaLabel": "Quy tắc Kilo Code",
+		"tabs": {
+			"rules": "Quy tắc",
+			"workflows": "Quy trình làm việc"
+		},
+		"description": {
+			"rules": "Quy tắc cho phép bạn cung cấp hướng dẫn cho Kilo Code mà nó phải tuân theo trong tất cả các chế độ và cho tất cả các prompt. Chúng là một cách bền vững để bao gồm ngữ cảnh và tùy chọn cho tất cả các cuộc trò chuyện trong workspace của bạn hoặc toàn cầu.",
+			"workflows": "Quy trình làm việc là một mẫu được chuẩn bị cho một cuộc trò chuyện. Quy trình làm việc cho phép bạn xác định các prompt mà bạn sử dụng thường xuyên, và có thể bao gồm một loạt các bước để hướng dẫn Kilo Code thông qua các tác vụ lặp đi lặp lại, chẳng hạn như triển khai dịch vụ hoặc gửi PR. Để gọi quy trình làm việc, hãy nhập",
+			"workflowsInChat": "trong chat."
+		},
+		"sections": {
+			"globalRules": "Quy tắc Toàn cầu",
+			"workspaceRules": "Quy tắc Workspace",
+			"globalWorkflows": "Quy trình làm việc Toàn cầu",
+			"workspaceWorkflows": "Quy trình làm việc Workspace"
+		},
+		"validation": {
+			"invalidFileExtension": "Chỉ cho phép phần mở rộng .md, .txt hoặc không có phần mở rộng"
+		},
+		"placeholders": {
+			"workflowName": "tên-quy-trình-làm-việc (.md, .txt hoặc không có phần mở rộng)",
+			"ruleName": "tên-quy-tắc (.md, .txt hoặc không có phần mở rộng)"
+		},
+		"newFile": {
+			"newWorkflowFile": "Tệp quy trình làm việc mới...",
+			"newRuleFile": "Tệp quy tắc mới..."
+		}
+	},
+	"taskTimeline": {
+		"tooltip": {
+			"messageTypes": {
+				"browser_action_launch": "khởi chạy trình duyệt",
+				"browser_action": "hành động trình duyệt",
+				"browser_action_result": "kết quả hành động trình duyệt",
+				"checkpoint_saved": "đã lưu điểm kiểm tra",
+				"command_output": "kết quả lệnh",
+				"command": "thực thi lệnh",
+				"completion_result": "kết quả hoàn thành",
+				"error": "thông báo lỗi",
+				"followup": "câu hỏi tiếp theo",
+				"condense_context": "thu gọn ngữ cảnh",
+				"mcp_server_response": "Phản hồi từ máy chủ MCP",
+				"reasoning": "Suy luận AI",
+				"unknown": "loại tin nhắn không xác định",
+				"tool": "sử dụng công cụ",
+				"text": "Phản hồi của AI",
+				"use_mcp_server": "Sử dụng máy chủ MCP",
+				"user": "phản hồi của người dùng"
+			},
+			"clickToScroll": "Xem {{messageType}} (#{{messageNumber}})"
+		}
+	},
+	"userFeedback": {
+		"editCancel": "Hủy",
+		"send": "Gửi",
+		"restoreAndSend": "Khôi phục & Gửi"
+	},
+	"ideaSuggestionsBox": {
+		"newHere": "Mới ở đây?",
+		"tryOneOfThese": "Thử một trong những ý tưởng này để bắt đầu:",
+		"suggestionText": "<suggestionButton>Nhấp vào đây</suggestionButton> để có một ý tưởng tuyệt vời, sau đó chạm vào <sendIcon /> và xem tôi làm phép thuật!",
+		"ideas": {
+			"idea1": "Tạo một hình cầu 3D quay và phát sáng phản ứng với chuyển động chuột. Làm cho ứng dụng hoạt động trong trình duyệt.",
+			"idea2": "Tạo một trang web portfolio cho nhà phát triển phần mềm Python",
+			"idea3": "Tạo một bản mô phỏng ứng dụng tài chính trong trình duyệt. Sau đó kiểm tra xem nó có hoạt động không",
+			"idea4": "Tạo một trang web thư mục chứa các mô hình tạo video AI tốt nhất hiện tại",
+			"idea5": "Tạo một trình tạo gradient CSS xuất các stylesheet tùy chỉnh và hiển thị bản xem trước trực tiếp",
+			"idea6": "Tạo các thẻ tiết lộ nội dung động một cách đẹp mắt khi di chuột qua",
+			"idea7": "Tạo một trường sao tương tác êm dịu di chuyển theo cử chỉ chuột"
+		}
+	},
+	"ghost": {
+		"title": "Autocomplete",
+		"settings": {
+			"codeEditorSuggestions": "Gợi ý Trình soạn thảo Mã",
+			"chatSuggestions": "Gợi ý Trò chuyện",
+			"keybindingDescription": "Các tính năng Autocomplete có thể được kích hoạt bằng lệnh. Bạn có thể cấu hình <DocsLink>Phím Tắt ở đây</DocsLink>.",
+			"enableAutoTrigger": {
+				"label": "Bật Autocomplete",
+				"description": "Khi được bật, Kilo Code sẽ tự động kích hoạt Autocomplete khi bạn ngừng gõ. Điều này có thể hữu ích cho các sửa chữa nhanh và gợi ý."
+			},
+			"autoTriggerDelay": {
+				"label": "Độ Trễ Kích Hoạt Tự Động",
+				"description": "Độ trễ tính bằng giây trước khi Kilo Code kích hoạt Autocomplete sau khi bạn ngừng gõ. Độ trễ ngắn hơn có nghĩa là gợi ý nhanh hơn, nhưng có thể tốn nhiều tài nguyên hơn."
+			},
+			"enableSmartInlineTaskKeybinding": {
+				"label": "Tự động hoàn thành thủ công ({{keybinding}})",
+				"description": "Cần sửa chữa nhanh, hoàn thành, hoặc tái cấu trúc? Kilo sẽ sử dụng ngữ cảnh xung quanh để cung cấp cải tiến ngay lập tức, giữ bạn trong luồng làm việc. <DocsLink>Xem phím tắt</DocsLink>"
+			},
+			"keybindingNotFound": "không tìm thấy",
+			"configureAutocompleteProfile": "Sử dụng bất kỳ mô hình nào bằng cách vào hồ sơ và cấu hình Hồ sơ có Loại Hồ sơ là Tự động hoàn thành.",
+			"model": "Mô hình",
+			"provider": "Nhà cung cấp",
+			"enableChatAutocomplete": {
+				"label": "Gợi ý Tự động Hoàn thành Trong Trò chuyện",
+				"description": "Khi được bật, Kilo Code sẽ đề xuất các gợi ý hoàn thành khi bạn nhập trong ô chat. Nhấn Tab để chấp nhận các gợi ý."
+			},
+			"snooze": {
+				"label": "Tạm dừng Autocomplete",
+				"description": "Tạm thời dừng gợi ý tự động hoàn thành trong một khoảng thời gian nhất định.",
+				"button": "Tạm dừng",
+				"unsnooze": "Bỏ tạm dừng",
+				"currentlySnoozed": "Autocomplete hiện đang bị tạm dừng.",
+				"duration": {
+					"1min": "1 phút",
+					"5min": "5 phút",
+					"15min": "15 phút",
+					"30min": "30 phút",
+					"1hour": "1 giờ"
+				}
+			},
+			"noModelConfigured": {
+				"title": "Chưa cấu hình mô hình tự động hoàn thành",
+				"description": "Để bật tự động hoàn thành, hãy thêm hồ sơ với một trong các nhà cung cấp được hỗ trợ sau:",
+				"learnMore": "Tìm hiểu thêm về cách thiết lập tự động hoàn thành →"
+			},
+			"noCredits": {
+				"title": "Tài khoản của bạn không có tín dụng",
+				"description": "Tài khoản Kilo Code của bạn không có tín dụng. Để sử dụng tự động hoàn thành, vui lòng nạp tín dụng vào tài khoản.",
+				"buyCredits": "Mua tín dụng →"
+			}
+		}
+	},
+	"virtualProvider": {
+		"title": "Cài đặt Nhà Cung Cấp Dự Phòng Hạn Ngạch Ảo",
+		"description": "Định cấu hình danh sách các hồ sơ, mỗi hồ sơ có giới hạn hạn ngạch riêng. Khi một nhà cung cấp đạt đến giới hạn hạn ngạch, hồ sơ tiếp theo trong danh sách sẽ được sử dụng cho đến khi không còn hồ sơ nào.",
+		"profileLabel": "Hồ sơ {{number}}",
+		"primaryProfileLabel": "Hồ sơ {{number}} (Chính)",
+		"moveProfileUp": "Di chuyển hồ sơ lên trên",
+		"moveProfileDown": "Di chuyển hồ sơ xuống",
+		"removeProfile": "Xóa hồ sơ",
+		"selectProfilePlaceholder": "Chọn hồ sơ...",
+		"addProfile": "Thêm hồ sơ",
+		"noProfilesAvailable": "Không có hồ sơ nào. Vui lòng cấu hình ít nhất một hồ sơ nhà cung cấp không ảo trước.",
+		"dangerZoneTitle": "Vùng Nguy hiểm",
+		"dangerZoneDescription": "Những hành động này có tính phá hoại và không thể hoàn tác.",
+		"clearUsageData": "Xóa Dữ liệu Sử dụng",
+		"confirmClearTitle": "Bạn có chắc chắn?",
+		"confirmClearDescription": "Điều này sẽ xóa vĩnh viễn tất cả dữ liệu sử dụng đã lưu trữ cho các nhà cung cấp ảo. Hành động này không thể hoàn tác.",
+		"tokensLabel": "Token",
+		"perDay": "Mỗi Ngày",
+		"perMinute": "Mỗi Phút",
+		"perHour": "Một Giờ",
+		"requestsLabel": "Yêu cầu"
+	},
+	"toolCallStyle": {
+		"title": "Kiểu Gọi Công Cụ",
+		"description": "Chọn cách định dạng các lệnh gọi công cụ trong system prompt. JSON hiện đang ở giai đoạn thử nghiệm và chủ yếu dành cho người dùng quan tâm đến việc đóng góp vào phát triển của nó.",
+		"automatic": "Để Kilo quyết định",
+		"xml": "XML",
+		"json": "JSON"
+	},
+	"imageWarnings": {
+		"modelNoImageSupport": "Hình ảnh không được hỗ trợ bởi mô hình hiện tại.",
+		"maxImagesReached": "Tối đa 20 hình ảnh cho mỗi tin nhắn. Hãy xóa một số hình ảnh để thêm được nhiều hơn.",
+		"imagesRemovedNoSupport": "Hình ảnh đã bị xóa, không được mô hình hỗ trợ."
+	},
+	"memoryWarning": {
+		"message": "Mức sử dụng bộ nhớ đang ở {{percentage}}%. Vui lòng khởi động lại IDE của bạn để tránh sự cố."
+	},
+	"marketplace": {
+		"mcp": {
+			"description": "Những máy chủ MCP này được duy trì bởi cộng đồng. Nhấp <1>vào đây</1> để chỉnh sửa cài đặt MCP của riêng bạn."
+		},
+		"modes": {
+			"description": "Những chế độ này được cung cấp từ cộng đồng. Nhấp <1>vào đây</1> để chỉnh sửa chế độ tùy chỉnh của riêng bạn."
+		},
+		"skills": {
+			"description": "Duyệt và khám phá các kỹ năng từ cộng đồng. Kỹ năng cung cấp hướng dẫn chuyên biệt cho các tác vụ cụ thể."
+		}
+	},
+	"modes": {
+		"shareModesNewBanner": "Mới: Chia sẻ chế độ bằng cách tạo một tổ chức"
+	},
+	"deviceAuth": {
+		"title": "Đăng nhập vào Kilo Code",
+		"step1": "Mở URL sau trên trình duyệt của bạn",
+		"step2": "Xác minh mã và ủy quyền thiết bị này trên trình duyệt của bạn",
+		"scanQr": "Hoặc quét mã QR này bằng điện thoại của bạn",
+		"openBrowser": "Mở trình duyệt",
+		"copyUrl": "Sao chép URL",
+		"waiting": "Đang chờ ủy quyền...",
+		"timeRemaining": "Mã hết hạn sau {{time}}",
+		"success": "Đăng nhập thành công!",
+		"authenticatedAs": "Đã xác thực với tư cách {{email}}",
+		"error": "Lỗi xác thực",
+		"unknownError": "Đã xảy ra lỗi. Vui lòng thử lại.",
+		"cancel": "Hủy",
+		"retry": "Thử lại",
+		"tryAgain": "Thử lại",
+		"cancelled": "Đã hủy xác thực",
+		"initiating": "Đang bắt đầu xác thực..."
+	},
+	"speechToText": {
+		"stopRecording": "Dừng nhập giọng nói",
+		"startRecording": "Bắt đầu nhập liệu bằng giọng nói",
+		"setupPopover": {
+			"title": "Chuyển giọng nói thành văn bản",
+			"description": "Chuyển giọng nói thành văn bản không khả dụng. Chuyển giọng nói thành văn bản yêu cầu cả FFmpeg và nhà cung cấp OpenAI hợp lệ được cấu hình. <moreInfoLink>Nhấp vào đây để biết thêm thông tin</moreInfoLink>.",
+			"openAiReason": "Bạn cần một nhà cung cấp OpenAI hợp lệ với API key để sử dụng chức năng phiên âm giọng nói.",
+			"ffmpegMessage": "Giúp tôi cài đặt FFmpeg",
+			"ffmpegReason": "Bạn cần cài đặt FFmpeg. <ffmpegLink>Nhấp vào đây</ffmpegLink> để Kilo giúp bạn cài đặt FFmpeg."
+		},
+		"misconfiguredState": "Không khả dụng do cấu hình",
+		"errorState": "Không khả dụng do lỗi",
+		"microphone": {
+			"label": "Micro",
+			"defaultOption": "Mặc định hệ thống",
+			"noDevices": "Không tìm thấy thiết bị micro nào",
+			"loading": "Đang tải các thiết bị microphone...",
+			"description": "Chọn thiết bị microphone cho chuyển giọng nói thành văn bản",
+			"refresh": "Làm mới"
+		}
+	},
+	"skills": {
+		"description": "Kỹ năng cung cấp hướng dẫn chuyên biệt cho các tác vụ cụ thể. Chúng được tự động áp dụng khi liên quan đến yêu cầu của bạn.",
+		"noSkills": "Chưa cài đặt kỹ năng nào",
+		"projectSkills": "Kỹ năng Dự án",
+		"globalSkills": "Kỹ năng Toàn cầu",
+		"deleteDialog": {
+			"title": "Xóa Kỹ năng",
+			"description": "Bạn có chắc chắn muốn xóa kỹ năng \"{{skillName}}\"? Hành động này không thể hoàn tác.",
+			"cancel": "Hủy",
+			"delete": "Xóa"
+		}
+	}
+}

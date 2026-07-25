@@ -1,0 +1,575 @@
+{
+	"greeting": "وش يقدر Kilo Code يسوّي لك؟",
+	"task": {
+		"title": "المهمة",
+		"seeMore": "عرض المزيد",
+		"seeLess": "عرض أقل",
+		"tokens": "Tokens:",
+		"cache": "Cache:",
+		"apiCost": "API Cost:",
+		"changes": "التغييرات",
+		"size": "الحجم",
+		"condenseContext": "تلخيص السياق بذكاء",
+		"contextWindow": "طول السياق:",
+		"closeAndStart": "أغلق المهمة وابدأ جديدة",
+		"export": "تصدير سجل المهمة",
+		"share": "شارك المهمة",
+		"delete": "احذف المهمة (Shift + انقر لتجاوز التأكيد)",
+		"shareWithOrganization": "مشاركة مع المنظمة",
+		"shareWithOrganizationDescription": "فقط أعضاء منظمتك يقدرون الوصول",
+		"sharePublicly": "مشاركة للجميع",
+		"sharePubliclyDescription": "أي أحد عنده الرابط يقدر يشوف",
+		"connectToCloud": "اتصل بالسحابة",
+		"connectToCloudDescription": "سجّل دخولك لـ Kilo Code Cloud لمشاركة المهام",
+		"sharingDisabledByOrganization": "المشاركة معطّلة من قِبَل المنظمة",
+		"shareSuccessOrganization": "تم نسخ رابط المنظمة للحافظة",
+		"shareSuccessPublic": "تم نسخ الرابط العام للحافظة",
+		"expand": "توسيع المهمة",
+		"collapse": "طي المهمة",
+		"openInCloud": "افتح في السحابة",
+		"openInCloudIntro": "راقب وأدر هذه المهمة عن بُعد",
+		"openApiHistory": "افتح سجل API",
+		"openUiHistory": "افتح سجل الواجهة"
+	},
+	"history": {
+		"title": "السجل"
+	},
+	"unpin": "إلغاء التثبيت",
+	"pin": "تثبيت",
+	"retry": {
+		"title": "أعد المحاولة",
+		"tooltip": "حاول العملية من جديد"
+	},
+	"startNewTask": {
+		"title": "ابدأ مهمة جديدة",
+		"tooltip": "إنشاء مهمة جديدة"
+	},
+	"reportBug": {
+		"title": "أبلغ عن خطأ"
+	},
+	"proceedAnyways": {
+		"title": "استمر على أي حال",
+		"tooltip": "تابع أثناء تنفيذ الأمر"
+	},
+	"save": {
+		"title": "حفظ",
+		"tooltip": "احفظ تغييرات الملف"
+	},
+	"tokenProgress": {
+		"availableSpace": "المساحة المتاحة: {{amount}} توكن",
+		"tokensUsed": "التوكينات المستخدمة: {{used}} من {{total}}",
+		"reservedForResponse": "محجوز للاستجابة: {{amount}} توكن"
+	},
+	"reject": {
+		"title": "رفض",
+		"tooltip": "ارفض هذا الإجراء"
+	},
+	"completeSubtaskAndReturn": "إنهاء المهمة الفرعية والعودة",
+	"approve": {
+		"title": "موافقة",
+		"tooltip": "وافق على هذا الإجراء"
+	},
+	"read-batch": {
+		"approve": {
+			"title": "الموافقة على الكل"
+		},
+		"deny": {
+			"title": "رفض الكل"
+		}
+	},
+	"runCommand": {
+		"title": "شغّل الأمر",
+		"tooltip": "نفّذ هذا الأمر"
+	},
+	"proceedWhileRunning": {
+		"title": "تابع أثناء التشغيل",
+		"tooltip": "استمر رغم التحذيرات"
+	},
+	"killCommand": {
+		"title": "أوقف الأمر",
+		"tooltip": "أوقف الأمر الجاري"
+	},
+	"resumeTask": {
+		"title": "استئناف المهمة",
+		"tooltip": "تابع المهمة الحالية"
+	},
+	"terminate": {
+		"title": "إنهاء",
+		"tooltip": "إنهاء المهمة الحالية"
+	},
+	"cancel": {
+		"title": "إلغاء",
+		"tooltip": "إلغاء العملية الحالية"
+	},
+	"stop": {
+		"title": "إيقاف",
+		"tooltip": "أوقف المهمة الحالية"
+	},
+	"enqueueMessage": "أضف الرسالة للطابور (سيتم إرسالها بعد اكتمال المهمة الحالية)",
+	"editMessage": {
+		"placeholder": "عدّل رسالتك..."
+	},
+	"scrollToBottom": "انزل لنهاية المحادثة",
+	"about": "أنشئ، أعِد هيكلة، واصلِح الأكواد بمساعدة الذكاء الاصطناعي. اطّلع على <DocsLink>التوثيق</DocsLink> لتعرف أكثر.",
+	"docs": "راجع <DocsLink>التوثيق</DocsLink> للبدء",
+	"onboarding": "قائمة المهام فاضية في هالمساحة.",
+	"rooTips": {
+		"boomerangTasks": {
+			"title": "تنظيم المهام",
+			"description": "قسّم المهمة لأجزاء أصغر يسهل إدارتها"
+		},
+		"stickyModels": {
+			"title": "نماذج ثابتة",
+			"description": "كل نمط يتذكّر آخر نموذج استخدمته"
+		},
+		"tools": {
+			"title": "الأدوات",
+			"description": "خلّ الذكاء يحل المشاكل بتصفح الويب، تشغيل الأوامر، وغيرها"
+		},
+		"customizableModes": {
+			"title": "أنماط قابلة للتخصيص",
+			"description": "شخصيات متخصصة لها سلوكها ونماذجها الخاصة"
+		},
+		"modelAgnostic": {
+			"title": "استخدم نموذجك الخاص، بدون رسوم أو قيود",
+			"description": "استخدم مفتاح موفّرك الخاص أو حتى شغّل الاستنتاج محلياً — Kilo Code ما يفرض رسوم عليه"
+		}
+	},
+	"selectMode": "اختر نمط التفاعل",
+	"selectApiConfig": "اختر إعدادات API",
+	"selectModelConfig": "اختر النموذج",
+	"enhancePrompt": "حسّن الموجه بإضافة سياق",
+	"modeSelector": {
+		"title": "الأنماط",
+		"marketplace": "سوق الأنماط",
+		"settings": "إعدادات الأنماط",
+		"description": "شخصيات متخصصة تضبط سلوك Kilo Code.",
+		"searchPlaceholder": "ابحث في الأنماط...",
+		"noResults": "لا توجد نتائج",
+		"organizationModes": "أنماط المنظمة"
+	},
+	"enhancePromptDescription": "زر «حسّن الموجه» يطوّر موجهك بإضافة سياق أو توضيح أو إعادة صياغة. جرّب اكتب موجه هنا ثم اضغط الزر مرة ثانية وشوف النتيجة.",
+	"addImages": "أضف صور للرسالة",
+	"sendMessage": "أرسل الرسالة",
+	"pressToSend": "اضغط {{keyCombination}} للإرسال",
+	"stopTts": "أوقف النطق الآلي",
+	"typeMessage": "اكتب رسالة...",
+	"typeTask": "ابنِ، ابحث، اسأل عن شي",
+	"addContext": "@ لإضافة سياق، / للتبديل بين الأنماط",
+	"dragFiles": "اضغط Shift واسحب الملفات",
+	"dragFilesImages": "اضغط Shift واسحب الملفات/الصور",
+	"errorReadingFile": "خطأ في قراءة الملف:",
+	"noValidImages": "ما تمت معالجة أي صور صالحة",
+	"separator": "فاصل",
+	"edit": "تحرير...",
+	"forNextMode": "للنمط التالي",
+	"forPreviousMode": "للنمط السابق",
+	"apiRequest": {
+		"title": "طلب API",
+		"failed": "فشل طلب API",
+		"streaming": "جاري طلب API...",
+		"cancelled": "تم إلغاء طلب API",
+		"streamingFailed": "فشل بث API",
+		"rateLimitWait": "تحديد معدل الطلب",
+		"errorTitle": "خطأ API {{code}}",
+		"errorMessage": {
+			"docs": "التوثيق",
+			"goToSettings": "الإعدادات",
+			"400": "الموفر ما قدر يعالج الطلب كما هو. أوقف المهمة وحاول مقاربة ثانية.",
+			"401": "فشلت المصادقة مع الموفر. تحقق من إعدادات مفتاح API.",
+			"402": "يبدو أنك استنفدت الرصيد/الأرصدة في حسابك. روح للموفر وأضف أكثر للمتابعة.",
+			"403": "غير مصرّح. مفتاح API صحيح، لكن الموفر رفض إتمام الطلب.",
+			"429": "طلبات كثيرة. الموفر حدد معدل طلباتك. انتظر شوي قبل طلب API الجاي.",
+			"500": "خطأ في خادم الموفر. فيه مشكلة عند الموفر، ما فيه شي غلط في طلبك.",
+			"connection": "خطأ في الاتصال. تأكد أن عندك اتصال إنترنت شغّال.",
+			"claudeCodeNotAuthenticated": "تحتاج تسجيل دخول لاستخدام Claude Code. اذهب للإعدادات واضغط \"تسجيل الدخول إلى Claude Code\" للمصادقة.",
+			"unknown": "خطأ API غير معروف، اضغط على التفاصيل لمزيد من المعلومات."
+		}
+	},
+	"checkpoint": {
+		"initial": "نقطة حفظ أولية",
+		"regular": "نقطة حفظ",
+		"initializingWarning": "لا يزال يتم إنشاء نقطة الحفظ... إذا طولت، تقدر تطفّي نقاط الحفظ من <settingsLink>الإعدادات</settingsLink> وتعيد تشغيل المهمة.",
+		"menu": {
+			"viewDiff": "عرض الفرق",
+			"viewDiffFromInit": "عرض كل التغييرات",
+			"viewDiffWithCurrent": "عرض التغييرات منذ هذه النقطة",
+			"restore": "استرجاع نقطة الحفظ",
+			"restoreFiles": "استرجاع الملفات",
+			"restoreFilesDescription": "يعيد ملفات مشروعك لنسخة محفوظة عند هذي النقطة.",
+			"restoreFilesAndTask": "استرجاع الملفات والمهمة",
+			"confirm": "تأكيد",
+			"cancel": "إلغاء",
+			"cannotUndo": "هذا الإجراء ما تقدر تتراجع عنه.",
+			"restoreFilesAndTaskDescription": "يعيد ملفات مشروعك لنسخة محفوظة عند هذي النقطة ويحذف كل الرسائل بعدها.",
+			"more": "خيارات إضافية"
+		},
+		"current": "الحالية"
+	},
+	"contextManagement": {
+		"tokens": "توكينات",
+		"condensation": {
+			"title": "تم تلخيص السياق",
+			"inProgress": "جاري تلخيص السياق...",
+			"errorHeader": "فشل تلخيص السياق"
+		},
+		"truncation": {
+			"title": "تم اقتطاع السياق",
+			"inProgress": "جاري اقتطاع السياق...",
+			"messagesRemoved": "تمت إزالة {{count}} رسالة",
+			"messagesRemoved_other": "تمت إزالة {{count}} رسالة",
+			"description": "تمت إزالة الرسائل القديمة من المحادثة للبقاء ضمن حد نافذة السياق. هذه طريقة سريعة لكن أقل حفاظاً على السياق مقارنة بالتلخيص."
+		}
+	},
+	"contextCondense": {
+		"title": "تم تلخيص السياق",
+		"condensing": "جاري تلخيص السياق...",
+		"errorHeader": "فشل تلخيص السياق",
+		"tokens": "توكينات"
+	},
+	"instructions": {
+		"wantsToFetch": "Kilo Code يريد جلب تعليمات تفصيلية للمهمة الحالية"
+	},
+	"fileOperations": {
+		"wantsToRead": "Kilo Code يريد قراءة هذا الملف:",
+		"wantsToReadMultiple": "Kilo Code يريد قراءة عدة ملفات:",
+		"wantsToReadAndXMore": "Kilo Code يريد قراءة هذا الملف و{{count}} غيره:",
+		"wantsToReadOutsideWorkspace": "Kilo Code يريد قراءة ملف خارج مساحة العمل:",
+		"didRead": "Kilo Code قرأ هذا الملف:",
+		"wantsToEdit": "Kilo Code يريد تعديل هذا الملف:",
+		"wantsToEditOutsideWorkspace": "Kilo Code يريد تعديل ملف خارج مساحة العمل:",
+		"wantsToEditProtected": "Kilo Code يريد تعديل ملف إعدادات محمي:",
+		"wantsToApplyBatchChanges": "Kilo Code يريد تطبيق تغييرات على عدة ملفات:",
+		"wantsToGenerateImage": "Kilo Code يريد إنشاء صورة:",
+		"wantsToGenerateImageOutsideWorkspace": "Kilo Code يريد إنشاء صورة خارج مساحة العمل:",
+		"wantsToGenerateImageProtected": "Kilo Code يريد إنشاء صورة في موقع محمي:",
+		"didGenerateImage": "Kilo Code أنشأ صورة:",
+		"wantsToCreate": "Kilo Code يريد إنشاء ملف جديد:",
+		"wantsToSearchReplace": "Kilo Code يريد البحث والاستبدال في هذا الملف:",
+		"didSearchReplace": "Kilo Code أجرى بحثًا واستبدالًا في هذا الملف:",
+		"wantsToInsert": "Kilo Code يريد إدراج محتوى في هذا الملف:",
+		"wantsToInsertWithLineNumber": "Kilo Code يريد إدراج محتوى في هذا الملف عند السطر {{lineNumber}}:",
+		"wantsToInsertAtEnd": "Kilo Code يريد إضافة محتوى في نهاية هذا الملف:",
+		"wantsToDelete": "Kilo Code يريد حذف هذا الملف",
+		"wantsToDeleteDirectory": "Kilo Code يريد حذف هذا المجلد"
+	},
+	"directoryOperations": {
+		"wantsToViewTopLevel": "Kilo Code يريد عرض الملفات العلوية في هذا المجلد:",
+		"didViewTopLevel": "Kilo Code عرض الملفات العلوية في هذا المجلد:",
+		"wantsToViewTopLevelOutsideWorkspace": "Kilo Code يريد عرض الملفات العلوية في هذا المجلد (خارج مساحة العمل):",
+		"didViewTopLevelOutsideWorkspace": "Kilo Code عرض الملفات العلوية في هذا المجلد (خارج مساحة العمل):",
+		"wantsToViewRecursive": "Kilo Code يريد استعراض كل الملفات في هذا المجلد بشكل متعمق:",
+		"didViewRecursive": "Kilo Code استعرض كل الملفات في هذا المجلد:",
+		"wantsToViewRecursiveOutsideWorkspace": "Kilo Code يريد استعراض كل الملفات في هذا المجلد (خارج مساحة العمل):",
+		"didViewRecursiveOutsideWorkspace": "Kilo Code استعرض كل الملفات في هذا المجلد (خارج مساحة العمل):",
+		"wantsToViewDefinitions": "Kilo Code يريد عرض أسماء التعريفات البرمجية المستخدمة في هذا المجلد:",
+		"didViewDefinitions": "Kilo Code عرض أسماء التعريفات البرمجية المستخدمة في هذا المجلد:",
+		"wantsToViewDefinitionsOutsideWorkspace": "Kilo Code يريد عرض أسماء التعريفات في هذا المجلد (خارج مساحة العمل):",
+		"didViewDefinitionsOutsideWorkspace": "Kilo Code عرض أسماء التعريفات في هذا المجلد (خارج مساحة العمل):",
+		"wantsToSearch": "Kilo Code يريد البحث في هذا المجلد عن <code>{{regex}}</code>:",
+		"didSearch": "Kilo Code بحث في هذا المجلد عن <code>{{regex}}</code>:",
+		"wantsToSearchOutsideWorkspace": "Kilo Code يريد البحث في هذا المجلد (خارج مساحة العمل) عن <code>{{regex}}</code>:",
+		"didSearchOutsideWorkspace": "Kilo Code بحث في هذا المجلد (خارج مساحة العمل) عن <code>{{regex}}</code>:"
+	},
+	"codebaseSearch": {
+		"wantsToSearch": "Kilo Code يريد البحث في الكود عن <code>{{query}}</code>:",
+		"wantsToSearchWithPath": "Kilo Code يريد البحث في الكود عن <code>{{query}}</code> في <code>{{path}}</code>:",
+		"didSearch_one": "تم العثور على نتيجة واحدة",
+		"didSearch_other": "تم العثور على {{count}} نتيجة",
+		"resultTooltip": "درجة التشابه: {{score}} (انقر لفتح الملف)"
+	},
+	"searchResults": {
+		"title": "نتائج البحث",
+		"noResults": "لا توجد نتائج"
+	},
+	"commandOutput": "مخرجات الأمر",
+	"commandExecution": {
+		"abort": "إجهاض",
+		"running": "قيد التشغيل",
+		"exitStatus": "خرج بحالة {{exitCode}}",
+		"pid": "معرف العملية: {{pid}}",
+		"exited": "تم الإنهاء ({{exitCode}})",
+		"manageCommands": "أدارة صلاحيات الأوامر",
+		"commandManagementDescription": "أدارة صلاحيات الأوامر: انقر ✓ للسماح بالتنفيذ التلقائي، ✗ لرفض التنفيذ. يمكن تشغيل/إيقاف الأنماط أو حذفها من القوائم. <settingsLink>عرض جميع الإعدادات</settingsLink>",
+		"addToAllowed": "أضف إلى قائمة المسموح",
+		"removeFromAllowed": "احذف من قائمة المسموح",
+		"addToDenied": "أضف إلى قائمة المرفوض",
+		"removeFromDenied": "احذف من قائمة المرفوض",
+		"abortCommand": "إلغاء تنفيذ الأمر",
+		"expandOutput": "توسيع المخرجات",
+		"collapseOutput": "طي المخرجات",
+		"expandManagement": "توسيع قسم إدارة الأوامر",
+		"collapseManagement": "طي قسم إدارة الأوامر"
+	},
+	"response": "الاستجابة",
+	"arguments": "المعطيات",
+	"mcp": {
+		"wantsToUseTool": "Kilo Code يريد استخدام أداة على خادم MCP {{serverName}}:",
+		"wantsToAccessResource": "Kilo Code يريد الوصول إلى مورد على خادم MCP {{serverName}}:"
+	},
+	"modes": {
+		"wantsToSwitch": "Kilo Code يريد التبديل إلى النمط {{mode}}",
+		"wantsToSwitchWithReason": "Kilo Code يريد التبديل إلى النمط {{mode}} لأن: {{reason}}",
+		"didSwitch": "Kilo Code انتقل إلى النمط {{mode}}",
+		"didSwitchWithReason": "Kilo Code انتقل إلى النمط {{mode}} لأن: {{reason}}"
+	},
+	"subtasks": {
+		"wantsToCreate": "Kilo Code يريد إنشاء مهمة فرعية جديدة في النمط {{mode}}:",
+		"wantsToFinish": "Kilo Code يريد إنهاء هذه المهمة الفرعية",
+		"newTaskContent": "تعليمات المهمة الفرعية",
+		"completionContent": "المهمة الفرعية انتهت",
+		"resultContent": "نتائج المهمة الفرعية",
+		"defaultResult": "يرجى الانتقال للمهمة التالية.",
+		"completionInstructions": "تمت المهمة الفرعية! راجع النتائج واقترح تصحيحات أو خطوات لاحقة. إذا كل شي تمام، أكّد للرجوع للمهمة الأم."
+	},
+	"questions": {
+		"hasQuestion": "Kilo Code عنده سؤال:"
+	},
+	"taskCompleted": "المهمة انتهت",
+	"error": "خطأ",
+	"modelResponseIncomplete": "استجابة النموذج غير مكتملة",
+	"modelResponseErrors": {
+		"noToolsUsed": "فشل النموذج في استخدام أي أدوات في استجابته. هذا عادة يحدث عندما يقدم النموذج نص/استنتاج فقط بدون استدعاء الأدوات المطلوبة لإكمال المهمة.",
+		"noToolsUsedDetails": "النموذج قدم نص/استنتاج لكن ما استدعى أي من الأدوات المطلوبة. هذا عادة يشير إلى أن النموذج أساء فهم المهمة أو يواجه صعوبة في تحديد الأداة المستخدمة. تم طلب إعادة المحاولة تلقائياً مع استخدام صحيح للأدوات.",
+		"noAssistantMessages": "النموذج ما قدم أي محتوى استجابة. قد يشير هذا لمشكلة في API أو مخرجات النموذج.",
+		"noAssistantMessagesDetails": "نموذج اللغة أرجع استجابة فارغة بدون نص أو استدعاءات أدوات. قد يحدث هذا بسبب مشاكل API، أو تحديد معدل، أو مشاكل خاصة بالنموذج. تم طلب إعادة المحاولة تلقائياً."
+	},
+	"errorDetails": {
+		"link": "التفاصيل",
+		"title": "تفاصيل الخطأ",
+		"copyToClipboard": "نسخ معلومات الخطأ الأساسية",
+		"copied": "تم النسخ!",
+		"diagnostics": "احصل على معلومات تفصيلية للخطأ",
+		"proxyProvider": "يبدو أنك تستخدم موفر يعمل بنظام البروكسي. تأكد من فحص سجلاته والتحقق من أنه لا يعيد كتابة طلبات Roo."
+	},
+	"diffError": {
+		"title": "التعديل لم ينجح"
+	},
+	"troubleMessage": "Kilo Code يواجه مشكلة...",
+	"powershell": {
+		"issues": "يبدو أنك تواجه مشاكل مع Windows PowerShell، اطلع هنا"
+	},
+	"autoApprove": {
+		"tooltipManage": "إدارة إعدادات الموافقة التلقائية",
+		"tooltipStatus": "الموافقة التلقائية مفعّلة لـ: {{toggles}}",
+		"triggerLabelOff": "الموافقة التلقائية مغلقة",
+		"title": "الموافقة التلقائية:",
+		"none": "لا شيء",
+		"description": "الموافقة التلقائية تسمح لـ Kilo Code بتنفيذ إجراءات دون طلب إذن. فعّلها فقط للإجراءات اللي تثق فيها تماماً. إعدادات تفصيلية أكثر متوفرة في <settingsLink>الإعدادات</settingsLink>.",
+		"selectOptionsFirst": "اختر خيار واحد على الأقل أدناه لتفعيل الموافقة التلقائية",
+		"toggleAriaLabel": "تبديل الموافقة التلقائية",
+		"disabledAriaLabel": "الموافقة التلقائية معطّلة - اختر الخيارات أولاً",
+		"triggerLabelOffShort": "مطفأة",
+		"tooltip": "الموافقة التلقائية على طلبات استخدام الأدوات",
+		"all": "الكل",
+		"triggerLabel_zero": "الموافقة التلقائية: مطفأة",
+		"triggerLabel_one": "الموافقة التلقائية: 1",
+		"triggerLabel_other": "الموافقة التلقائية: {{count}}",
+		"triggerLabelAll": "الموافقة التلقائية: YOLO"
+	},
+	"autoApproval": {
+		"approveAll": "الموافقة على الكل",
+		"approveAllTooltip": "وافق على كل الإجراءات تلقائياً"
+	},
+	"announcement": {
+		"title": "🎉 Kilo Code {{version}} تم إطلاقه",
+		"support": "من فضلك ادعم Roo Code بإضافة نجمة لنا على <githubLink>GitHub</githubLink>.",
+		"stealthModel": {
+			"feature": "<bold>نموذج سري مجاني لفترة محدودة</bold> - نموذج تفكير سريع جداً يتفوق في البرمجة الذكية مع نافذة سياق 262k، متاح عبر Roo Code Cloud.",
+			"goToSettingsButton": "اذهب للإعدادات",
+			"note": "(ملاحظة: يتم تسجيل المحادثات والاستجابات من قِبل منشئ النموذج لتحسينه)",
+			"connectButton": "اتصل بـ Roo Code Cloud",
+			"selectModel": "اختر <code>roo/sonic</code> من موفر Roo Code Cloud في<br/><settingsLink>الإعدادات</settingsLink> لتبدأ"
+		},
+		"release": {
+			"heading": "الجديد في الإضافة:",
+			"skills": "Roo الآن يدعم <skillsLink>مهارات الوكيل</skillsLink> - حزم قابلة لإعادة الاستخدام من الموجهات والأدوات والموارد لتوسيع قدرات Roo.",
+			"nativeToolCalling": "استدعاء الأدوات الأصلية الآن مطلوب لكل المهام الجديدة. <blogLink>اقرأ أكثر</blogLink> عن الدافع وماذا تفعل إذا واجهت مشاكل.",
+			"openRouterEmbeddings": "دعم نماذج التضمين من OpenRouter",
+			"chutesDynamic": "Chutes الآن يحمّل أحدث النماذج ديناميكياً",
+			"queuedMessagesFix": "إصلاحات لمشكلة فقدان الرسائل في الطابور",
+			"browserUse": "Browser Use 2.0 يطوّر تجربة التصفح في الدردشة بجلسات دائمة وتغذية راجعة أوضح ولوحة متصفح مخصصة ووصف أوضح للإجراءات",
+			"cloudPaid": "موفر Roo Code Cloud الآن يقدّم نماذج مدفوعة: اشترِ رصيداً واستخدمه للوكلاء السحابيين والاستنتاج",
+			"contextRewind": "تحسين تلخيص السياق يخليك تسترجع السياق الكامل السابق عند الرجوع لنقطة حفظ",
+			"rooProvider": "موفر Roo Code Cloud الآن يحفظ محتوى التفكير ويستخدم الأدوات الأصلية افتراضياً للأداء الأفضل",
+			"openaiCodexProvider": "تمت إضافة موفر OpenAI - ChatGPT Plus/Pro اللي يوفر وصول قائم على الاشتراك لنماذج Codex بدون تكاليف لكل token.",
+			"gpt52codexModel": "تمت إضافة نموذج gpt-5.2-codex الجديد لـ Roo Code Router وموفر OpenAI العادي وغيرها.",
+			"bugFixes": "تم إصلاح تسريبات الذاكرة اللي تسبب شاشات رمادية، مشاكل تواقيع التفكير في Gemini، والمزيد من تحسينات الاستقرار."
+		},
+		"cloudAgents": {
+			"heading": "الجديد في السحابة:",
+			"prFixer": "نقدّم وكيل <bold>PR Fixer</bold> السحابي لاستكمال PR Reviewer.",
+			"prFixerDescription": "PR Fixer يطبّق تغييرات عالية الجودة على طلبات السحب مباشرة من GitHub. فعّله عبر تعليق في PR وسيقرأ كامل سجل التعليقات لفهم السياق والاتفاقات والمقايضات - ثم ينفّذ الإصلاح المناسب.",
+			"tryPrFixerButton": "جرّب PR Fixer",
+			"specialized": "نقدّم <bold>الشارح</bold> و<bold>المخطط</bold> و<bold>المبرمج</bold> - ثلاثة وكلاء سحابيين متخصصين لتطوير سير عملك.",
+			"description": "الوكلاء يعملون معاً في السحابة ويمكن تشغيلهم من الويب أو عبر Slack.",
+			"tryButton": "جرّب الوكلاء السحابيين"
+		},
+		"careers": "أيضاً، <careersLink>نحن نوظّف!</careersLink>",
+		"description": "Kilo Code {{version}} يجلب ميزات وتحسينات كبيرة بناءً على ملاحظاتكم.",
+		"whatsNew": "الجديد",
+		"feature1": "<bold>إطلاق سوق Kilo Code</bold>: السوق صار متاح! اكتشف وثبّت الأنماط و MCPs بسهولة.",
+		"feature2": "<bold>نماذج Gemini 2.5</bold>: دعم نماذج Gemini 2.5 Pro و Flash و Flash Lite.",
+		"feature3": "<bold>دعم ملفات Excel والمزيد</bold>: دعم ملفات .xlsx بالإضافة لكثير من الإصلاحات والتحسينات!",
+		"hideButton": "إخفاء الإعلان",
+		"detailsDiscussLinks": "للتفاصيل والنقاش زرونا في <discordLink>ديسكورد</discordLink> و <redditLink>ريديت</redditLink> 🚀",
+		"learnMore": "اعرف أكثر",
+		"visitCloudButton": "زر Roo Code Cloud",
+		"socialLinks": "تابعنا"
+	},
+	"reasoning": {
+		"thinking": "يفكّر",
+		"seconds": "{{count}}ث"
+	},
+	"followUpSuggest": {
+		"copyToInput": "انسخ إلى الإدخال (Shift + انقر)",
+		"timerPrefix": "الموافقة التلقائية مفعّلة. الاختيار خلال {{seconds}}ث...",
+		"autoSelectCountdown": "سيتم الاختيار تلقائياً خلال {{count}}ث",
+		"countdownDisplay": "{{count}}ث"
+	},
+	"costs": {
+		"totalWithSubtasks": "التكلفة الإجمالية (بما في ذلك المهام الفرعية): ${{cost}}",
+		"total": "التكلفة الإجمالية: ${{cost}}",
+		"includesSubtasks": "يشمل تكاليف المهام الفرعية"
+	},
+	"browserAnnouncement": "تحديث Browser Use 2.0 يُحسِّن تجربة التصفح في الدردشة بجلسات دائمة، تغذية راجعة أوضح، لوحة متصفح مخصصة، ووصف أوضح للإجراءات",
+	"browserAnnouncementDesc": "الآن يمكنك الحفاظ على جلسات المتصفح بين الطلبات، تتبع أفعال المتصفح بشكل أفضل، والحصول على تجربة تصفح أكثر سلاسة",
+	"browserSession": "جلسة المتصفح",
+	"browserActionPress": "ضغط المفتاح",
+	"browserActionPressDesc": "ضغط مفتاح معين في لوحة المفاتيح",
+	"browserActionHover": "التمرير فوق",
+	"browserActionHoverDesc": "تحريك الماوس فوق عنصر",
+	"rooCloudAnnouncement": "موفر Roo Code Cloud الآن يقدم نماذج مدفوعة: اشترِ رصيداً واستخدمه للوكلاء السحابيين والاستنتاج",
+	"browser": {
+		"session": "جلسة المتصفح",
+		"active": "نشط",
+		"rooWantsToUse": "Kilo Code يريد استخدام المتصفح:",
+		"consoleLogs": "سجلات الكونسول",
+		"noNewLogs": "(لا توجد سجلات جديدة)",
+		"screenshot": "لقطة شاشة للمتصفح",
+		"cursor": "المؤشر",
+		"navigation": {
+			"step": "خطوة {{current}} من {{total}}",
+			"previous": "السابق",
+			"next": "التالي"
+		},
+		"sessionStarted": "بدأت جلسة التصفح",
+		"actions": {
+			"title": "إجراء تصفح: ",
+			"launched": "تم فتح المتصفح",
+			"launch": "فتح المتصفح على {{url}}",
+			"clicked": "نقرة عند: {{coordinate}}",
+			"click": "نقرة ({{coordinate}})",
+			"typed": "تم كتابة: {{text}}",
+			"type": "كتابة \"{{text}}\"",
+			"pressed": "تم ضغط المفتاح: {{key}}",
+			"press": "ضغط {{key}}",
+			"scrolledDown": "تم التمرير لأسفل",
+			"scrollDown": "تمرير لأسفل",
+			"scrolledUp": "تم التمرير لأعلى",
+			"scrollUp": "تمرير لأعلى",
+			"hovered": "تم التمرير عند: {{coordinate}}",
+			"hover": "تمرير ({{coordinate}})",
+			"resized": "تم تغيير الحجم إلى: {{size}}",
+			"resize": "تغيير الحجم إلى {{size}}",
+			"screenshotSaved": "تم حفظ لقطة الشاشة",
+			"screenshot": "حفظ لقطة شاشة في {{path}}",
+			"closed": "تم إغلاق المتصفح",
+			"close": "إغلاق المتصفح"
+		}
+	},
+	"codeblock": {
+		"tooltips": {
+			"expand": "توسيع كتلة الكود",
+			"collapse": "طي كتلة الكود",
+			"enable_wrap": "تفعيل لف الكلمات",
+			"disable_wrap": "إيقاف لف الكلمات",
+			"copy_code": "نسخ الكود"
+		}
+	},
+	"systemPromptWarning": "تحذير: يوجد تجاوز مخصص للموجه النظامي. قد يسبب مشاكل غير متوقعة.",
+	"profileViolationWarning": "الملف الحالي يخالف إعدادات منظمتك",
+	"shellIntegration": {
+		"title": "تحذير تنفيذ الأوامر",
+		"description": "يتم تنفيذ الأمر خارج تكامل الشل في VS Code. لإيقاف هذا التحذير عطّل تكامل الشل من قسم <strong>Terminal</strong> في <settingsLink>إعدادات Kilo Code</settingsLink> أو اطّلع على الدليل أدناه.",
+		"troubleshooting": "اضغط هنا لدليل تكامل الشل."
+	},
+	"ask": {
+		"autoApprovedRequestLimitReached": {
+			"title": "تم بلوغ حد الطلبات الموافق عليها تلقائياً",
+			"description": "Kilo Code وصل لحد {{count}} طلب API موافَق عليه تلقائيًا. تبي تعيد العداد وتكمل المهمة؟",
+			"button": "إعادة الضبط والمتابعة"
+		},
+		"autoApprovedCostLimitReached": {
+			"title": "تم الوصول لحد التكلفة المعتمدة تلقائياً",
+			"description": "Kilo Code وصل لحد التكلفة المعتمدة تلقائياً ${{count}}. تبي تعيد التكلفة وتكمل المهمة؟",
+			"button": "أعد التعيين وكمّل"
+		}
+	},
+	"indexingStatus": {
+		"ready": "الفهرس جاهز",
+		"indexing": "جاري الفهرسة {{percentage}}%",
+		"indexed": "تمت الفهرسة",
+		"error": "خطأ في الفهرسة",
+		"status": "حالة الفهرسة"
+	},
+	"versionIndicator": {
+		"ariaLabel": "الإصدار {{version}} - انقر لعرض ملاحظات الإصدار"
+	},
+	"rooCloudCTA": {
+		"title": "Roo Code Cloud قريباً!",
+		"description": "شغّل وكلاء Roomote في السحابة، اوصل لمهامك من أي مكان، تعاون مع الآخرين، والمزيد.",
+		"joinWaitlist": "انضم لقائمة الانتظار للحصول على وصول مبكر."
+	},
+	"command": {
+		"triggerDescription": "تشغيل الأمر {{name}}"
+	},
+	"slashCommands": {
+		"tooltip": "إدارة أوامر الشرطة المائلة",
+		"manageCommands": "إدارة أوامر الشرطة المائلة في الإعدادات",
+		"title": "أوامر الشرطة المائلة",
+		"description": "أنشئ أوامر شرطة مائلة مخصصة للوصول السريع للموجهات وسير العمل المستخدمة بكثرة. <DocsLink>التوثيق</DocsLink>",
+		"builtInCommands": "الأوامر المدمجة",
+		"globalCommands": "الأوامر العامة",
+		"workspaceCommands": "أوامر مساحة العمل",
+		"globalCommand": "أمر عام",
+		"editCommand": "تعديل الأمر",
+		"deleteCommand": "حذف الأمر",
+		"newGlobalCommandPlaceholder": "أمر عام جديد...",
+		"newWorkspaceCommandPlaceholder": "أمر مساحة عمل جديد...",
+		"deleteDialog": {
+			"title": "حذف الأمر",
+			"description": "متأكد تبي تحذف الأمر \"{{name}}\"؟ هذا الإجراء ما يمكن التراجع عنه.",
+			"cancel": "إلغاء",
+			"confirm": "حذف"
+		}
+	},
+	"slashCommand": {
+		"wantsToRun": "Kilo Code يريد تشغيل أمر شرطة مائلة:",
+		"didRun": "Kilo Code شغّل أمر شرطة مائلة:"
+	},
+	"queuedMessages": {
+		"title": "الرسائل في الطابور:",
+		"clickToEdit": "انقر لتعديل الرسالة"
+	},
+	"contextMenu": {
+		"noResults": "لا توجد نتائج",
+		"problems": "المشاكل",
+		"terminal": "الطرفية",
+		"url": "لصق الرابط لجلب المحتوى"
+	},
+	"text": {
+		"rooSaid": "قال Kilo"
+	},
+	"feedback": {
+		"youSaid": "قلت"
+	},
+	"generateCommitMessage": "إنشاء رسالة الالتزام",
+	"todo": {
+		"partial": "{{completed}} من {{total}} مهام مكتملة",
+		"complete": "{{total}} مهام مكتملة",
+		"updated": "تم تحديث قائمة المهام",
+		"completed": "مكتملة",
+		"started": "بدأت"
+	}
+}

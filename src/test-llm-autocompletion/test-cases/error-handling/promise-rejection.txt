@@ -1,0 +1,7 @@
+#### Description: Should complete promise rejection handling
+#### Filename: user-service.js
+fetchUser(userId)
+	.then(user => {
+		return processUser(user);
+	})
+	.catch(<<<AUTOCOMPLETE_HERE>>>
