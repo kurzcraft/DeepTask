@@ -16,8 +16,8 @@
 - [x] 构建并审计新 VSIX
 - [x] 安装到 VSCodium/VS Code 并验证运行时
 - [x] 由用户执行真实 SCM 图标验收（用户明确反馈“能用”）
-- [-] 更新 changelog/changeset、提交与发行
-- [ ] 系统性存储 universe-memory 与错误学习
+- [x] 更新 changelog/changeset、提交与发行
+- [x] 系统性存储 universe-memory 与错误学习
 
 ## 当前发现
 
@@ -58,4 +58,15 @@
 
 - 用户已在实际使用中确认 Git Commit 建议功能“能用”。
 - 该反馈取代自动化 GUI 点击计划；不再重复操作用户桌面。
-- 当前剩余工作仅为提交、推送、GitHub Release 与系统性记忆存储。
+- 不再重复操作用户桌面。
+
+## 最终发布验收
+
+- 修复提交：`5aefa911`（已在 `origin/main`）
+- 验收文档提交：`b28828e8`（已在 `origin/main`）
+- GitHub Release：`https://github.com/kurzcraft/DeepTask/releases/tag/v5.5.6`
+- Release 状态：非草稿、非预发布，目标提交 `b28828e845bd2c8c96ed00c48549bb1305dfcd88`
+- 远端资产状态：`uploaded`
+- 认证下载逐字节比较：本地与远端均为 `42427550` bytes
+- 远端资产 SHA-256：`5f79dde87787ad184933c2ba412dff1aec8a59d6e0f6866369cfd92e38a14eba`
+- Universe Memory：`2026-07-27-Deeptask-GitCommit推理Relay流式优先与真实验收.md`
