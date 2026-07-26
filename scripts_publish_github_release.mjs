@@ -2,8 +2,8 @@ import fs from "node:fs"
 import path from "node:path"
 import { execFileSync } from "node:child_process"
 
-const owner = "kurzgesagtcraft"
-const repo = "deeptask"
+const owner = "kurzcraft"
+const repo = "DeepTask"
 const packageJson = JSON.parse(fs.readFileSync(path.resolve("src/package.json"), "utf8"))
 const version = packageJson.version
 const tagName = `v${version}`
