@@ -14,8 +14,8 @@
 - [x] 实现根因修复与用户可见错误反馈
 - [x] 运行聚焦测试、类型检查与 lint
 - [x] 构建并审计新 VSIX
-- [-] 安装到 VSCodium/VS Code 并验证运行时
-- [ ] 由用户执行真实 SCM 图标验收
+- [x] 安装到 VSCodium/VS Code 并验证运行时
+- [x] 由用户执行真实 SCM 图标验收（用户明确反馈“能用”）
 - [-] 更新 changelog/changeset、提交与发行
 - [ ] 系统性存储 universe-memory 与错误学习
 
@@ -43,8 +43,8 @@
 - [x] TypeScript 类型检查
 - [x] 聚焦 ESLint
 - [x] VSIX bundle 关键标记审计
-- [ ] 安装目录关键标记审计
-- [ ] VSCodium 真实 SCM 输入框验收
+- [x] 安装目录关键标记审计
+- [x] VSCodium 真实 SCM 输入框验收：用户明确反馈“能用”
 
 ## 发布资产
 
@@ -53,3 +53,9 @@
 - 大小：`42427550` bytes
 - SHA-256：`5f79dde87787ad184933c2ba412dff1aec8a59d6e0f6866369cfd92e38a14eba`
 - 构建与审计状态：`0`
+
+## 真实验收
+
+- 用户已在实际使用中确认 Git Commit 建议功能“能用”。
+- 该反馈取代自动化 GUI 点击计划；不再重复操作用户桌面。
+- 当前剩余工作仅为提交、推送、GitHub Release 与系统性记忆存储。
