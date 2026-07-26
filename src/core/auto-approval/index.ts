@@ -122,12 +122,11 @@ export async function checkAutoApproval({
 			return { decision: "ask" }
 		}
 
-		// kilocode_change start
-		const allowedCommands = state.allowedCommands || []
-		const hasWildcardCommand = allowedCommands.some((command: string) => command.trim() === "*")
-
-		if (state.alwaysAllowExecute === true || hasWildcardCommand) {
-			const decision = getCommandDecision(text, allowedCommands, state.deniedCommands || [])
+		// kilocode_change start - execute permission is the master gate for command auto-approval
+		// allowedCommands (including "*") only defines scope while execution auto-approval is enabled.
+		// It must never override an explicit user choice to disable the Execute permission.
+		if (state.alwaysAllowExecute === true) {
+			const decision = getCommandDecision(text, state.allowedCommands || [], state.deniedCommands || [])
 			// kilocode_change end
 
 			if (decision === "auto_approve") {

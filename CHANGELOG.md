@@ -1,5 +1,11 @@
 # Deeptask
 
+## 5.5.5
+
+### Patch Changes
+
+- Respect the Execute auto-approval permission even when the allowed command list contains a wildcard, so disabling Execute reliably restores manual command approval.
+
 ## 5.5.4
 
 ### Patch Changes

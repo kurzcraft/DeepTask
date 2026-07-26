@@ -181,3 +181,42 @@ Windows 依旧不能用
 - See Also: ERR-20260726-001
 
 ---
+
+## [ERR-20260727-001] vsix-changelog-entry-case
+
+**Logged**: 2026-07-27T00:44:06+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+独立 VSIX 审计器假定 changelog ZIP 条目保留源文件大写，导致成功构建被误报为审计失败。
+
+### Error
+
+```text
+KeyError: "There is no item named 'extension/CHANGELOG.md' in the archive"
+```
+
+### Context
+
+- `vsce package` 已成功生成并完成内置品牌/身份审计的 `deeptask-5.5.5.vsix`。
+- `vsce` 文件清单明确显示实际条目为 `extension/changelog.md`。
+- 失败只在新增的独立审计器读取错误大小写时发生，不代表产物构建失败。
+
+### Suggested Fix
+
+VSIX 审计应以 ZIP 中实际规范化条目名为准，或建立大小写不敏感的条目映射；修复后只重跑轻量审计，避免重复完整构建。
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: EXTRA/bash/audit-execute-permission-vsix-5.5.5.py
+
+### Resolution
+
+- **Resolved**: 2026-07-27T00:44:58+08:00
+- **Notes**: 审计器改为大小写不敏感 ZIP 条目映射；未重复构建，直接对既有 5.5.5 VSIX 轻量复验通过。
+
+---

@@ -4,11 +4,41 @@ import type { ExtensionState } from "@roo-code/types"
 import { checkAutoApproval } from "../index"
 
 describe("checkAutoApproval", () => {
-	it("approves commands when allowedCommands contains wildcard even if alwaysAllowExecute is disabled", async () => {
+	it("asks for approval when Execute is disabled even if allowedCommands contains wildcard", async () => {
 		const result = await checkAutoApproval({
 			state: {
 				autoApprovalEnabled: true,
 				alwaysAllowExecute: false,
+				allowedCommands: ["*"],
+				deniedCommands: [],
+			} as unknown as ExtensionState,
+			ask: "command",
+			text: "echo test",
+		})
+
+		expect(result).toEqual({ decision: "ask" })
+	})
+
+	it("returns command decisions to manual approval when Execute is disabled", async () => {
+		const result = await checkAutoApproval({
+			state: {
+				autoApprovalEnabled: true,
+				alwaysAllowExecute: false,
+				allowedCommands: ["*"],
+				deniedCommands: ["rm"],
+			} as unknown as ExtensionState,
+			ask: "command",
+			text: "rm file.txt",
+		})
+
+		expect(result).toEqual({ decision: "ask" })
+	})
+
+	it("approves wildcard commands when Execute is enabled", async () => {
+		const result = await checkAutoApproval({
+			state: {
+				autoApprovalEnabled: true,
+				alwaysAllowExecute: true,
 				allowedCommands: ["*"],
 				deniedCommands: [],
 			} as unknown as ExtensionState,
@@ -23,7 +53,7 @@ describe("checkAutoApproval", () => {
 		const result = await checkAutoApproval({
 			state: {
 				autoApprovalEnabled: true,
-				alwaysAllowExecute: false,
+				alwaysAllowExecute: true,
 				allowedCommands: ["*"],
 				deniedCommands: ["rm"],
 			} as unknown as ExtensionState,
