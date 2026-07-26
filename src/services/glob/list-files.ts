@@ -43,22 +43,28 @@ export async function listFiles(dirPath: string, recursive: boolean, limit: numb
 		return specialResult
 	}
 
-	// Get ripgrep path
+	const ignoreInstance = await createIgnoreInstance(dirPath)
+	// kilocode_change start: keep task startup functional when the editor does not ship ripgrep
 	const rgPath = await getRipgrepPath()
+	let files: string[]
+
+	try {
+		files = rgPath
+			? await listFilesWithRipgrep(rgPath, dirPath, recursive, limit)
+			: await listFilesWithNode(dirPath, recursive, limit, ignoreInstance)
+	} catch (error) {
+		console.warn(`ripgrep unavailable, using filesystem fallback: ${error}`)
+		files = await listFilesWithNode(dirPath, recursive, limit, ignoreInstance)
+	}
+	// kilocode_change end
 
 	if (!recursive) {
-		// For non-recursive, use the existing approach
-		const files = await listFilesWithRipgrep(rgPath, dirPath, false, limit)
-		const ignoreInstance = await createIgnoreInstance(dirPath)
-		// Calculate remaining limit for directories
 		const remainingLimit = Math.max(0, limit - files.length)
 		const directories = await listFilteredDirectories(dirPath, false, ignoreInstance, remainingLimit)
 		return formatAndCombineResults(files, directories, limit)
 	}
 
-	// For recursive mode, use the original approach but ensure first-level directories are included
-	const files = await listFilesWithRipgrep(rgPath, dirPath, true, limit)
-	const ignoreInstance = await createIgnoreInstance(dirPath)
+	// For recursive mode, ensure first-level directories are included.
 	// Calculate remaining limit for directories
 	const remainingLimit = Math.max(0, limit - files.length)
 	const directories = await listFilteredDirectories(dirPath, true, ignoreInstance, remainingLimit)
@@ -181,18 +187,72 @@ async function handleSpecialDirectories(dirPath: string): Promise<[string[], boo
 }
 
 /**
- * Get the path to the ripgrep binary
+ * Get the path to the ripgrep binary. Missing ripgrep is recoverable because listFiles has a Node fallback.
  */
-async function getRipgrepPath(): Promise<string> {
-	const vscodeAppRoot = vscode.env.appRoot
-	const rgPath = await getBinPath(vscodeAppRoot)
+async function getRipgrepPath(): Promise<string | undefined> {
+	return getBinPath(vscode.env.appRoot)
+}
 
-	if (!rgPath) {
-		throw new Error("Could not find ripgrep binary")
+// kilocode_change start: keep task startup functional when the editor does not ship ripgrep
+async function listFilesWithNode(
+	dirPath: string,
+	recursive: boolean,
+	limit: number,
+	ignoreInstance: ReturnType<typeof ignore>,
+): Promise<string[]> {
+	const absolutePath = path.resolve(dirPath)
+	const files: string[] = []
+	const explicitHiddenTarget = path.basename(absolutePath).startsWith(".")
+
+	async function scanDirectory(currentPath: string, insideExplicitHiddenTarget: boolean): Promise<void> {
+		if (files.length >= limit) {
+			return
+		}
+
+		let entries: fs.Dirent[]
+		try {
+			entries = await fs.promises.readdir(currentPath, { withFileTypes: true })
+		} catch (error) {
+			console.warn(`Could not read directory ${currentPath}: ${error}`)
+			return
+		}
+
+		for (const entry of entries) {
+			if (files.length >= limit) {
+				return
+			}
+
+			const fullPath = path.join(currentPath, entry.name)
+			const relativePath = path.relative(absolutePath, fullPath).replace(/\\/g, "/")
+			if (entry.isFile()) {
+				if (!ignoreInstance.ignores(relativePath)) {
+					files.push(fullPath)
+				}
+				continue
+			}
+
+			if (!recursive || !entry.isDirectory() || entry.isSymbolicLink()) {
+				continue
+			}
+
+			const isHidden = entry.name.startsWith(".")
+			const isCritical = CRITICAL_IGNORE_PATTERNS.has(entry.name)
+			const isIgnored = isDirectoryExplicitlyIgnored(entry.name) || ignoreInstance.ignores(`${relativePath}/`)
+			if (isCritical || (!insideExplicitHiddenTarget && isIgnored)) {
+				continue
+			}
+			if (isHidden && !insideExplicitHiddenTarget && !explicitHiddenTarget) {
+				continue
+			}
+
+			await scanDirectory(fullPath, insideExplicitHiddenTarget || explicitHiddenTarget)
+		}
 	}
 
-	return rgPath
+	await scanDirectory(absolutePath, explicitHiddenTarget)
+	return files
 }
+// kilocode_change end
 
 /**
  * List files using ripgrep with appropriate arguments

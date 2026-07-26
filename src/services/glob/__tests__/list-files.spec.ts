@@ -1,5 +1,6 @@
 import * as path from "path"
 import * as childProcess from "child_process"
+import { getBinPath } from "../../ripgrep" // kilocode_change
 import { listFiles } from "../list-files"
 
 vi.mock("child_process")
@@ -28,6 +29,46 @@ describe("listFiles", () => {
 
 		expect(result).toEqual([[], false])
 	})
+
+	// kilocode_change start: missing ripgrep must not abort task startup
+	it("should fall back to filesystem scanning when ripgrep is unavailable", async () => {
+		vi.mocked(getBinPath).mockResolvedValueOnce(undefined)
+		vi.mocked(fs.promises.readdir).mockResolvedValueOnce([
+			{
+				name: "src",
+				isDirectory: () => true,
+				isFile: () => false,
+				isSymbolicLink: () => false,
+			},
+			{
+				name: "README.md",
+				isDirectory: () => false,
+				isFile: () => true,
+				isSymbolicLink: () => false,
+			},
+		] as any)
+		vi.mocked(fs.promises.readdir).mockResolvedValueOnce([
+			{
+				name: "src",
+				isDirectory: () => true,
+				isFile: () => false,
+				isSymbolicLink: () => false,
+			},
+			{
+				name: "README.md",
+				isDirectory: () => false,
+				isFile: () => true,
+				isSymbolicLink: () => false,
+			},
+		] as any)
+
+		const [results, limitReached] = await listFiles("/test/path", false, 100)
+
+		expect(results).toEqual([expect.stringMatching(/[/\\]test[/\\]path[/\\]src\/$/), "/test/path/README.md"])
+		expect(limitReached).toBe(false)
+		expect(childProcess.spawn).not.toHaveBeenCalled()
+	})
+	// kilocode_change end
 })
 
 // Mock ripgrep to avoid filesystem dependencies

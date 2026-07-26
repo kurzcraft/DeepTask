@@ -50,8 +50,12 @@ rel/path/to/helper.ts
 │----
 */
 
-const isWindows = process.platform.startsWith("win")
-const binName = isWindows ? "rg.exe" : "rg"
+interface RipgrepPathOptions {
+	platform?: NodeJS.Platform
+	arch?: string
+	ripgrepPath?: string
+	pathEnv?: string
+}
 
 interface SearchFileResult {
 	file: string
@@ -82,21 +86,59 @@ export function truncateLine(line: string, maxLength: number = MAX_LINE_LENGTH):
 	return line.length > maxLength ? line.substring(0, maxLength) + " [truncated...]" : line
 }
 /**
- * Get the path to the ripgrep binary within the VSCode installation
+ * Get a usable ripgrep binary from explicit configuration, the editor, the extension, or PATH.
  */
-export async function getBinPath(vscodeAppRoot: string): Promise<string | undefined> {
-	const checkPath = async (pkgFolder: string) => {
-		const fullPath = path.join(vscodeAppRoot, pkgFolder, binName)
-		return (await fileExistsAtPath(fullPath)) ? fullPath : undefined
+export async function getBinPath(
+	vscodeAppRoot: string,
+	options: RipgrepPathOptions = {},
+): Promise<string | undefined> {
+	const platform = options.platform ?? process.platform
+	const arch = options.arch ?? process.arch
+	const pathApi = platform === "win32" ? path.win32 : path
+	const binName = platform === "win32" ? "rg.exe" : "rg"
+	const checkPath = async (candidate?: string) =>
+		candidate && (await fileExistsAtPath(candidate)) ? candidate : undefined
+
+	const explicitPath = await checkPath(options.ripgrepPath ?? process.env.RIPGREP_PATH)
+	if (explicitPath) {
+		return explicitPath
 	}
 
-	return (
-		(await checkPath("node_modules/@vscode/ripgrep/bin/")) ||
-		(await checkPath("node_modules/vscode-ripgrep/bin")) ||
-		(await checkPath("node_modules.asar.unpacked/vscode-ripgrep/bin/")) ||
-		(await checkPath("node_modules.asar.unpacked/@vscode/ripgrep/bin/")) ||
-		(await checkBunPath(vscodeAppRoot, binName)) // kilocode_change
-	)
+	const editorCandidates = [
+		"node_modules/@vscode/ripgrep/bin/",
+		"node_modules/vscode-ripgrep/bin",
+		"node_modules.asar.unpacked/vscode-ripgrep/bin/",
+		"node_modules.asar.unpacked/@vscode/ripgrep/bin/",
+	]
+	for (const pkgFolder of editorCandidates) {
+		const editorPath = await checkPath(pathApi.join(vscodeAppRoot, pkgFolder, binName))
+		if (editorPath) {
+			return editorPath
+		}
+	}
+
+	// kilocode_change start: packaged fallback and documented PATH support
+	const bundledPath = await checkPath(pathApi.join(__dirname, "ripgrep", `${platform}-${arch}`, binName))
+	if (bundledPath) {
+		return bundledPath
+	}
+
+	const bunPath = await checkBunPath(vscodeAppRoot, binName)
+	if (bunPath) {
+		return bunPath
+	}
+
+	const pathSeparator = platform === "win32" ? ";" : path.delimiter
+	const pathEntries = (options.pathEnv ?? process.env.PATH ?? "").split(pathSeparator).filter(Boolean)
+	for (const pathEntry of pathEntries) {
+		const systemPath = await checkPath(pathApi.join(pathEntry, binName))
+		if (systemPath) {
+			return systemPath
+		}
+	}
+	// kilocode_change end
+
+	return undefined
 }
 
 async function execRipgrep(bin: string, args: string[]): Promise<string> {

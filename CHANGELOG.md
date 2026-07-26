@@ -1,5 +1,11 @@
 # Deeptask
 
+## 5.5.4
+
+### Patch Changes
+
+- Keep task startup working when VS Code or VSCodium does not include a ripgrep binary by automatically falling back to native filesystem scanning.
+
 ## 5.5.3
 
 ### Patch Changes

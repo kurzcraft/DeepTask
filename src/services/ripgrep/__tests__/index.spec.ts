@@ -115,14 +115,37 @@ describe("getBinPath", () => {
 
 	it("should return undefined when ripgrep is not found anywhere", async () => {
 		const vscodeAppRoot = "/path/to/nonexistent"
-
-		// Mock all paths not existing
 		mockFileExists.mockResolvedValue(false)
 
-		const result = await getBinPath(vscodeAppRoot)
+		const result = await getBinPath(vscodeAppRoot, { ripgrepPath: "", pathEnv: "" })
 
-		// Should return undefined when no paths exist and require.resolve fails
 		expect(result).toBeUndefined()
+	})
+
+	it("should prioritize an explicit RIPGREP_PATH equivalent", async () => {
+		const explicitPath = "/tools/custom-rg"
+		mockFileExists.mockImplementation(async (filePath: string) => filePath === explicitPath)
+
+		const result = await getBinPath("/path/to/vscode", {
+			ripgrepPath: explicitPath,
+			pathEnv: "",
+		})
+
+		expect(result).toBe(explicitPath)
+	})
+
+	it("should resolve rg.exe from a Windows PATH without relying on the test host platform", async () => {
+		const expectedPath = String.raw`C:\Tools\ripgrep\rg.exe`
+		mockFileExists.mockImplementation(async (filePath: string) => filePath === expectedPath)
+
+		const result = await getBinPath(String.raw`C:\VSCode`, {
+			platform: "win32",
+			arch: "x64",
+			ripgrepPath: "",
+			pathEnv: String.raw`C:\Windows\System32;C:\Tools\ripgrep`,
+		})
+
+		expect(result).toBe(expectedPath)
 	})
 
 	it("should prioritize traditional paths over require.resolve", async () => {
