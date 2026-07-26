@@ -306,6 +306,38 @@ const renderChatView = (props: Partial<ChatViewProps> = {}) => {
 	)
 }
 
+// kilocode_change start: prominent GitHub Star entry on the Deeptask home screen
+describe("ChatView - GitHub Star entry", () => {
+	beforeEach(() => vi.clearAllMocks())
+
+	it("shows the Star action on the empty home screen and opens the canonical repository", async () => {
+		const { getByRole } = renderChatView()
+		mockPostMessage({ clineMessages: [], taskHistory: [] })
+
+		const starButton = await waitFor(() =>
+			getByRole("button", { name: "Star Deeptask on GitHub" }),
+		)
+		fireEvent.click(starButton)
+
+		expect(vscode.postMessage).toHaveBeenCalledWith({
+			type: "openExternal",
+			url: "https://github.com/kurzcraft/DeepTask",
+		})
+	})
+
+	it("does not occupy the active task view", async () => {
+		const { queryByRole } = renderChatView()
+		mockPostMessage({
+			clineMessages: [{ type: "say", say: "task", ts: Date.now(), text: "Active task" }],
+		})
+
+		await waitFor(() => {
+			expect(queryByRole("button", { name: "Star Deeptask on GitHub" })).not.toBeInTheDocument()
+		})
+	})
+})
+// kilocode_change end
+
 describe("ChatView - Sound Playing Tests", () => {
 	beforeEach(() => vi.clearAllMocks())
 

@@ -12,6 +12,7 @@ import { vscode } from "@/utils/vscode"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui"
 
+import { GitHubStarButton, DEEPTASK_GITHUB_URL } from "../common/GitHubStarButton" // kilocode_change
 import { SectionHeader } from "./SectionHeader"
 import { Section } from "./Section"
 
@@ -58,7 +59,7 @@ export const About = ({
 						<Trans
 							i18nKey="settings:footer.telemetry.description"
 							components={{
-								privacyLink: <VSCodeLink href="https://github.com/deeptask/deeptask" />,
+								privacyLink: <VSCodeLink href={DEEPTASK_GITHUB_URL} />,
 							}}
 						/>
 					</p>
@@ -68,12 +69,21 @@ export const About = ({
 					<Trans
 						i18nKey="settings:footer.feedback"
 						components={{
-							githubLink: <VSCodeLink href="https://github.com/deeptask/deeptask" />,
-							redditLink: <VSCodeLink href="https://github.com/deeptask/deeptask" />,
-							discordLink: <VSCodeLink href="https://github.com/deeptask/deeptask" />,
+							githubLink: <VSCodeLink href={DEEPTASK_GITHUB_URL} />,
+							redditLink: <VSCodeLink href={DEEPTASK_GITHUB_URL} />,
+							discordLink: <VSCodeLink href={DEEPTASK_GITHUB_URL} />,
 						}}
 					/>
 				</div>
+
+				{/* kilocode_change start: persistent Star entry in About settings */}
+				<div className="mt-3 rounded border border-vscode-button-background bg-vscode-editorWidget-background p-3">
+					<p className="mt-0 mb-2 text-sm text-vscode-foreground">
+						Enjoying Deeptask? Star the project to support development and help others discover it.
+					</p>
+					<GitHubStarButton className="font-semibold" />
+				</div>
+				{/* kilocode_change end */}
 
 				<div className="flex flex-wrap items-center gap-2 mt-2">
 					<Button onClick={() => vscode.postMessage({ type: "exportSettings" })} className="w-28">

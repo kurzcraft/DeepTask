@@ -39,6 +39,7 @@ import { OrganizationSelector } from "../kilocode/common/OrganizationSelector"
 // import { CloudUpsellDialog } from "@src/components/cloud/CloudUpsellDialog" // kilocode_change: unused
 
 import TelemetryBanner from "../common/TelemetryBanner"
+import { GitHubStarButton } from "../common/GitHubStarButton" // kilocode_change
 import HistoryPreview from "../history/HistoryPreview"
 import Announcement from "./Announcement"
 import BrowserActionRow from "./BrowserActionRow"
@@ -2093,6 +2094,11 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 									}}
 								/>
 							</p>
+							{/* kilocode_change start: prominent repository Star CTA */}
+							<div className="flex justify-center my-1">
+								<GitHubStarButton className="min-w-[210px] justify-center font-semibold" />
+							</div>
+							{/* kilocode_change end */}
 							<IdeaSuggestionsBox /> {/* kilocode_change */}
 							{/*<div className="mb-2.5">
 								{cloudIsAuthenticated || taskHistory.length < 4 ? <RooTips /> : <RooCloudCTA />}

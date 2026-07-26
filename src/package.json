@@ -21,9 +21,12 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/deeptask/deeptask.git"
+		"url": "https://github.com/kurzcraft/DeepTask.git"
 	},
-	"homepage": "https://github.com/deeptask/deeptask",
+	"homepage": "https://github.com/kurzcraft/DeepTask",
+	"bugs": {
+		"url": "https://github.com/kurzcraft/DeepTask/issues"
+	},
 	"categories": [
 		"AI",
 		"Chat",
