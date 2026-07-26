@@ -1,5 +1,11 @@
 # Deeptask
 
+## 5.5.3
+
+### Patch Changes
+
+- Automatically refresh available DeepSeek, Groq, Mistral, and Cerebras models while safely preserving the last known catalog when discovery fails.
+
 ## 5.5.2
 
 ### Patch Changes

@@ -56,6 +56,12 @@ export const dynamicProviders = [
 	"inception",
 	"synthetic",
 	"sap-ai-core",
+	// Dedicated vendors with authenticated model-directory APIs. These retain
+	// bundled model metadata as an offline fallback in the extension UI.
+	"deepseek",
+	"groq",
+	"mistral",
+	"cerebras",
 	// kilocode_change end
 	"deepinfra",
 	"io-intelligence",

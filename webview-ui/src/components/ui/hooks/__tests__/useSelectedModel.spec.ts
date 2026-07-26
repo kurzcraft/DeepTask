@@ -9,6 +9,7 @@ import {
 	ProviderSettings,
 	ModelInfo,
 	BEDROCK_1M_CONTEXT_MODEL_IDS,
+	deepSeekDefaultModelId,
 	litellmDefaultModelInfo,
 	openAiModelInfoSaneDefaults,
 } from "@roo-code/types"
@@ -826,6 +827,54 @@ describe("useSelectedModel", () => {
 			expect(result.current.info).toEqual({ ...nativeToolDefaults, ...customModelInfo })
 			expect(result.current.info?.supportsNativeTools).toBe(true)
 			expect(result.current.info?.defaultToolProtocol).toBe("native")
+		})
+
+		describe("authoritative vendor model directories", () => {
+			it("migrates DeepSeek away from removed configured and default models", () => {
+				const currentModelInfo: ModelInfo = {
+					maxTokens: 16_384,
+					contextWindow: 128_000,
+					supportsImages: false,
+					supportsPromptCache: false,
+				}
+				mockUseRouterModels.mockReturnValue({
+					data: {
+						deepseek: {
+							"z-current-model": currentModelInfo,
+							"a-current-model": currentModelInfo,
+						},
+					},
+					isLoading: false,
+					isError: false,
+				} as any)
+
+				const apiConfiguration: ProviderSettings = {
+					apiProvider: "deepseek",
+					apiModelId: "removed-configured-model",
+				}
+				const wrapper = createWrapper()
+				const { result } = renderHook(() => useSelectedModel(apiConfiguration), { wrapper })
+
+				expect(result.current.id).toBe("a-current-model")
+				expect(result.current.info).toEqual(
+					expect.objectContaining({ contextWindow: 128_000, supportsNativeTools: true }),
+				)
+			})
+
+			it("uses the static DeepSeek default only when the remote directory is empty", () => {
+				mockUseRouterModels.mockReturnValue({
+					data: { deepseek: {} },
+					isLoading: false,
+					isError: false,
+				} as any)
+
+				const apiConfiguration: ProviderSettings = { apiProvider: "deepseek" }
+				const wrapper = createWrapper()
+				const { result } = renderHook(() => useSelectedModel(apiConfiguration), { wrapper })
+
+				expect(result.current.id).toBe(deepSeekDefaultModelId)
+				expect(result.current.info).toBeDefined()
+			})
 		})
 
 		it("should allow custom model info to override native tool defaults", () => {

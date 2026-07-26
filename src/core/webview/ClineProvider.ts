@@ -3537,9 +3537,14 @@ export class ClineProvider
 			throw new OrganizationAllowListViolationError(t("common:errors.violated_organization_allowlist"))
 		}
 
-		const task = new Task({
+		// kilocode_change start
+		// A Task constructor cannot safely fire-and-forget startTask(): an early
+		// persistence, prompt, or provider failure would leave a half-created task
+		// in the stack while the webview stays busy forever. Keep the long-running
+		// loop asynchronous, but make its rejection an owned provider transaction.
+		const [task, taskStartup] = Task.create({
 			provider: this,
-			context: this.context, // kilocode_change
+			context: this.context,
 			apiConfiguration,
 			enableDiff,
 			enableCheckpoints,
@@ -3558,11 +3563,50 @@ export class ClineProvider
 			...options,
 		})
 
-		await this.addClineToStack(task)
+		let finishRegistration!: () => void
+		const registrationFinished = new Promise<void>((resolve) => {
+			finishRegistration = resolve
+		})
+		let rolledBack = false
+		const rollbackFailedStartup = async (error: unknown) => {
+			await registrationFinished
+			const message = error instanceof Error ? error.message : String(error)
+			this.log(
+				`[DEEPTASK_STARTUP_TRANSACTION_V1] task ${task.taskId}.${task.instanceId} failed: ${message}`,
+			)
 
-		this.log(
-			`[createTask] ${task.parentTask ? "child" : "parent"} task ${task.taskId}.${task.instanceId} instantiated`,
-		)
+			// A newer continuation or task must never be removed by an older loop's
+			// delayed rejection. Roll back only the exact instance that owns it.
+			if (rolledBack || this.getCurrentTask() !== task) {
+				return
+			}
+
+			rolledBack = true
+			task.abortReason = "streaming_failed"
+			task.abandoned = true
+			task.cancelCurrentRequest()
+			await this.removeClineFromStack()
+			await this.postStateToWebview()
+			await this.postMessageToWebview({ type: "invoke", invoke: "newChat" })
+			vscode.window.showErrorMessage(`Task failed to start: ${message}`)
+		}
+
+		// Attach the rejection owner before registration awaits any provider work.
+		void taskStartup.catch(rollbackFailedStartup)
+
+		try {
+			await this.addClineToStack(task)
+			this.log(
+				`[DEEPTASK_STARTUP_TRANSACTION_V1] ${task.parentTask ? "child" : "parent"} task ${task.taskId}.${task.instanceId} started`,
+			)
+		} catch (error) {
+			finishRegistration()
+			await rollbackFailedStartup(error)
+			throw error
+		} finally {
+			finishRegistration()
+		}
+		// kilocode_change end
 
 		return task
 	}

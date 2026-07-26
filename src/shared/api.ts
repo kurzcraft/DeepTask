@@ -180,6 +180,12 @@ type CommonFetchParams = {
 // until a corresponding entry is added here.
 const dynamicProviderExtras = {
 	gemini: {} as { apiKey?: string; baseUrl?: string }, // kilocode_change
+	// kilocode_change start: authenticated dedicated vendor model directories
+	deepseek: {} as { apiKey?: string; baseUrl?: string },
+	groq: {} as { apiKey?: string; baseUrl?: string },
+	mistral: {} as { apiKey?: string; baseUrl?: string },
+	cerebras: {} as { apiKey?: string; baseUrl?: string },
+	// kilocode_change end
 	openrouter: {} as {}, // eslint-disable-line @typescript-eslint/no-empty-object-type
 	"vercel-ai-gateway": {} as {}, // eslint-disable-line @typescript-eslint/no-empty-object-type
 	huggingface: {} as {}, // eslint-disable-line @typescript-eslint/no-empty-object-type

@@ -5,6 +5,7 @@ import { VSCodeLink } from "@vscode/webview-ui-toolkit/react"
 // import { ExternalLinkIcon } from "@radix-ui/react-icons" // kilocode_change
 
 import {
+	type ModelRecord,
 	type ProviderName,
 	type ProviderSettings,
 	DEFAULT_CONSECUTIVE_MISTAKE_LIMIT,
@@ -234,6 +235,11 @@ const ApiOptions = ({
 		deepInfraApiKey: apiConfiguration?.deepInfraApiKey,
 		geminiApiKey: apiConfiguration?.geminiApiKey,
 		googleGeminiBaseUrl: apiConfiguration?.googleGeminiBaseUrl,
+		deepSeekApiKey: apiConfiguration?.deepSeekApiKey,
+		deepSeekBaseUrl: apiConfiguration?.deepSeekBaseUrl,
+		groqApiKey: apiConfiguration?.groqApiKey,
+		mistralApiKey: apiConfiguration?.mistralApiKey,
+		cerebrasApiKey: apiConfiguration?.cerebrasApiKey,
 		chutesApiKey: apiConfiguration?.chutesApiKey,
 		syntheticApiKey: apiConfiguration?.syntheticApiKey,
 	})
@@ -325,7 +331,9 @@ const ApiOptions = ({
 	}, [apiConfiguration, routerModels, organizationAllowList, setErrorMessage])
 
 	const selectedProviderModels = useMemo(() => {
-		const models = MODELS_BY_PROVIDER[selectedProvider]
+		const staticModels = MODELS_BY_PROVIDER[selectedProvider]
+		const remoteModels = routerModels?.[selectedProvider as keyof typeof routerModels] as ModelRecord | undefined
+		const models = remoteModels && Object.keys(remoteModels).length > 0 ? remoteModels : staticModels
 
 		if (!models) return []
 
@@ -348,7 +356,7 @@ const ApiOptions = ({
 			: []
 
 		return availableModels
-	}, [selectedProvider, organizationAllowList, selectedModelId])
+	}, [selectedProvider, organizationAllowList, selectedModelId, routerModels])
 
 	const onProviderChange = useCallback(
 		(value: ProviderName) => {

@@ -61,6 +61,11 @@ type RouterModelsQueryKey = {
 	deepInfraApiKey?: string
 	geminiApiKey?: string
 	googleGeminiBaseUrl?: string
+	deepSeekApiKey?: string
+	deepSeekBaseUrl?: string
+	groqApiKey?: string
+	mistralApiKey?: string
+	cerebrasApiKey?: string
 	chutesApiKey?: string
 	nanoGptApiKey?: string
 	nanoGptModelList?: "all" | "personalized" | "subscription"

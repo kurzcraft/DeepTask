@@ -33,6 +33,7 @@ import { getGeminiModels } from "./gemini"
 import { getInceptionModels } from "./inception"
 import { getSyntheticModels } from "./synthetic"
 import { getSapAiCoreModels } from "./sap-ai-core"
+import { getVendorModels } from "./vendor-models"
 // kilocode_change end
 
 import { getDeepInfraModels } from "./deepinfra"
@@ -122,6 +123,12 @@ async function fetchModelsFromProvider(options: GetModelsOptions): Promise<Model
 				apiKey: options.apiKey,
 				baseUrl: options.baseUrl,
 			})
+			break
+		case "deepseek":
+		case "groq":
+		case "mistral":
+		case "cerebras":
+			models = await getVendorModels(provider, options.apiKey, options.baseUrl)
 			break
 		// kilocode_change end
 		case "ollama":

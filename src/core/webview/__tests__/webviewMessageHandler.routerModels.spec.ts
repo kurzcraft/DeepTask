@@ -87,6 +87,8 @@ describe("webviewMessageHandler - requestRouterModels provider filter", () => {
 				// kilocode_change end
 				case "unbound":
 					return { "unbound/model": { contextWindow: 8192, supportsPromptCache: false } }
+				case "deepseek":
+					return { "deepseek-current": { contextWindow: 128000, supportsPromptCache: false } }
 				case "vercel-ai-gateway":
 					return { "vercel/model": { contextWindow: 8192, supportsPromptCache: false } }
 				case "io-intelligence":
@@ -171,6 +173,41 @@ describe("webviewMessageHandler - requestRouterModels provider filter", () => {
 
 		const providersCalled = getModelsMock.mock.calls.map((c: any[]) => c[0]?.provider)
 		expect(providersCalled).toEqual(["openrouter"])
+	})
+
+	it("fetches and atomically refreshes only DeepSeek with stored credentials", async () => {
+		mockProvider.getState.mockResolvedValue({
+			apiConfiguration: {
+				deepSeekApiKey: "deepseek-key",
+				deepSeekBaseUrl: "https://relay.example/v1",
+			},
+		})
+
+		await webviewMessageHandler(
+			mockProvider as any,
+			{
+				type: "requestRouterModels",
+				values: { provider: "deepseek", refresh: true },
+			} as any,
+		)
+
+		const options = {
+			provider: "deepseek",
+			apiKey: "deepseek-key",
+			baseUrl: "https://relay.example/v1",
+		}
+		expect(flushModelsMock).toHaveBeenCalledWith(options, true)
+		expect(getModelsMock).toHaveBeenCalledTimes(1)
+		expect(getModelsMock).toHaveBeenCalledWith(options)
+		expect(mockProvider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "routerModels",
+			routerModels: {
+				deepseek: {
+					"deepseek-current": { contextWindow: 128000, supportsPromptCache: false },
+				},
+			},
+			values: { provider: "deepseek" },
+		})
 	})
 
 	it("flushes cache when LiteLLM credentials are provided in message values", async () => {

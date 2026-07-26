@@ -4,11 +4,13 @@ import { execFileSync } from "node:child_process"
 
 const owner = "kurzgesagtcraft"
 const repo = "deeptask"
-const tagName = "v5.5.0"
+const packageJson = JSON.parse(fs.readFileSync(path.resolve("src/package.json"), "utf8"))
+const version = packageJson.version
+const tagName = `v${version}`
 const targetCommitish = "main"
-const releaseName = "Deeptask 5.5.0"
-const assetPath = path.resolve("deeptask-5.5.0.vsix")
-const notesPath = path.resolve("DEEPTASK_RELEASE_5.5.0_NOTES.md")
+const releaseName = `Deeptask ${version}`
+const assetPath = path.resolve(`deeptask-${version}.vsix`)
+const notesPath = path.resolve(`DEEPTASK_RELEASE_${version}_NOTES.md`)
 
 function getGitHubToken() {
   const input = "protocol=https\nhost=github.com\n\n"

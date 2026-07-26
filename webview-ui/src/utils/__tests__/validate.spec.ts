@@ -81,6 +81,10 @@ describe("Model Validation Functions", () => {
 		// kilocode_change start
 		ovhcloud: {},
 		gemini: {},
+		deepseek: {},
+		groq: {},
+		mistral: {},
+		cerebras: {},
 		inception: {},
 		synthetic: {},
 		"sap-ai-core": {},

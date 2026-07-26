@@ -4,7 +4,7 @@ import * as vscode from "vscode"
 import { ClineProvider } from "../ClineProvider"
 import { Task } from "../../task/Task"
 import { ContextProxy } from "../../config/ContextProxy"
-import type { ProviderSettings, HistoryItem } from "@roo-code/types"
+import { ORGANIZATION_ALLOW_ALL, type ProviderSettings, type HistoryItem } from "@roo-code/types"
 
 // Mock dependencies
 vi.mock("vscode", () => {
@@ -157,6 +157,7 @@ describe("ClineProvider flicker-free cancel", () => {
 		// Mock provider methods
 		provider.getState = vi.fn().mockResolvedValue({
 			apiConfiguration: mockApiConfig,
+			organizationAllowList: ORGANIZATION_ALLOW_ALL,
 			mode: "code",
 		})
 
@@ -298,6 +299,78 @@ describe("ClineProvider flicker-free cancel", () => {
 		expect(provider.postMessageToWebview).toHaveBeenCalledWith({
 			type: "action",
 			action: "chatButtonClicked",
+		})
+		expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
+	})
+
+	it("rolls back the exact half-created task when its owned startup promise rejects", async () => {
+		let rejectStartup!: (error: Error) => void
+		const startup = new Promise<void>((_resolve, reject) => {
+			rejectStartup = reject
+		})
+		const startupTask = {
+			...mockTask1,
+			taskId: "startup-task",
+			instanceId: "startup-instance",
+			parentTask: undefined,
+			abortReason: undefined,
+			abandoned: false,
+		}
+		vi.mocked(Task.create).mockReturnValue([startupTask as any, startup])
+		provider.postMessageToWebview = vi.fn().mockResolvedValue(undefined)
+
+		await expect(provider.createTask("reply 1")).resolves.toBe(startupTask)
+		expect((provider as any).clineStack).toEqual([startupTask])
+
+		rejectStartup(new Error("Windows startup persistence failed"))
+
+		await vi.waitFor(() => {
+			expect((provider as any).clineStack).toEqual([])
+		})
+		expect(startupTask.abortReason).toBe("streaming_failed")
+		expect(startupTask.abandoned).toBe(true)
+		expect(startupTask.cancelCurrentRequest).toHaveBeenCalledTimes(1)
+		expect(provider.postStateToWebview).toHaveBeenCalled()
+		expect(provider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "invoke",
+			invoke: "newChat",
+		})
+		expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+			"Task failed to start: Windows startup persistence failed",
+		)
+	})
+
+	it("does not remove a newer task when an older startup promise rejects late", async () => {
+		let rejectStartup!: (error: Error) => void
+		const startup = new Promise<void>((_resolve, reject) => {
+			rejectStartup = reject
+		})
+		const oldTask = {
+			...mockTask1,
+			taskId: "old-task",
+			instanceId: "old-instance",
+			parentTask: undefined,
+			abortReason: undefined,
+			abandoned: false,
+		}
+		const newerTask = {
+			...mockTask2,
+			taskId: "new-task",
+			instanceId: "new-instance",
+		}
+		vi.mocked(Task.create).mockReturnValue([oldTask as any, startup])
+		provider.postMessageToWebview = vi.fn().mockResolvedValue(undefined)
+
+		await provider.createTask("reply 1")
+		;(provider as any).clineStack = [newerTask]
+		rejectStartup(new Error("late old failure"))
+		await new Promise((resolve) => setTimeout(resolve, 0))
+
+		expect((provider as any).clineStack).toEqual([newerTask])
+		expect(oldTask.cancelCurrentRequest).not.toHaveBeenCalled()
+		expect(provider.postMessageToWebview).not.toHaveBeenCalledWith({
+			type: "invoke",
+			invoke: "newChat",
 		})
 		expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
 	})

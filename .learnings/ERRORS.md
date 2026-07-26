@@ -71,7 +71,7 @@ BrokenPipeError: [Errno 32] Broken pipe
 
 **Logged**: 2026-07-26T11:45:31Z
 **Priority**: medium
-**Status**: in_progress
+**Status**: resolved
 **Area**: tests
 
 ### Summary
@@ -95,5 +95,89 @@ Tests: 1 failed | 10 passed
 ### Metadata
 - Reproducible: yes
 - Related Files: src/integrations/terminal/ExecaTerminalProcess.ts, src/integrations/terminal/__tests__/ExecaTerminalProcess.spec.ts
+
+### Resolution
+- **Resolved**: 2026-07-26T11:53:36Z
+- **Notes**: 已更新为 shell 路径透传、Win32 环境与有界 taskkill 契约测试，49 项聚焦测试全部通过。
+
+---
+
+## [ERR-20260726-002] gh-release-create-flag-drift
+
+**Logged**: 2026-07-26T12:07:28Z
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+
+本机 GitHub CLI 的 `gh release create` 不支持预期的 `--verify-tag` 参数。
+
+### Error
+
+```text
+unknown flag: --verify-tag
+```
+
+### Context
+
+- 命令在参数解析阶段失败，未创建远端标签、Release 或资产。
+- 本机帮助输出确认支持 `--target`、`--title`、`--notes-file`，不支持 `--verify-tag`。
+- 不同 GitHub CLI 版本的子命令参数集合不能由新版本文档反推。
+
+### Suggested Fix
+
+在发布自动化中先以本机 `gh release create --help` 为能力真源；仅使用已确认支持的参数，并在创建后通过 `gh release view` 独立验证标签、目标提交和资产。
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: DEEPTASK_RELEASE_5.5.2_NOTES.md
+
+### Resolution
+
+- **Resolved**: 2026-07-26T12:07:44Z
+- **Notes**: 已从本机帮助输出确认参数集合，发布将移除不支持的参数并采用创建后验证。
+
+---
+
+## [ERR-20260726-003] windows-simulation-misclassified-as-product-fix
+
+**Logged**: 2026-07-26T13:27:53Z
+**Priority**: critical
+**Status**: in_progress
+**Area**: tests
+
+### Summary
+
+在没有真实 Windows 验收和故障阶段证据时，把 Linux 上的 Win32 模拟测试与 Universal VSIX
+静态审计过早解释为 Windows 产品问题已修复；用户实机反馈“Windows 依旧不能用”已否证该结论。
+
+### Error
+
+```text
+Windows 依旧不能用
+```
+
+### Context
+
+- 专项进度明确记录真实 Windows 主机不可用，验收项仍为 pending。
+- 49 个聚焦测试只证明 mock 下的 shell、taskkill 和 fail-soft 契约，不证明真实 Windows
+  Extension Host、PowerShell/CMD、任务存储、ripgrep、provider 请求或 Webview 时序正常。
+- 现有持久化日志只有 Linux 模拟质量门，没有 Windows VS Code/VSCodium 实机输出。
+- 历史证据表明“发送后不能用”还可能发生在终端执行之前，例如 ripgrep 资源缺失、半写入任务、
+  provider 参数无效或 Agent Runtime 子进程退出；不能由操作系统相关性直接锁定终端层。
+
+### Suggested Fix
+
+先获得最小实机症状分流与 Windows Extension Host/Deeptask 输出尾部，再根据首个失败边界建立回归；
+在 Windows VS Code 与 VSCodium 双编辑器真实验收通过前，不得将模拟测试标记为产品修复完成或发布。
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: DEEPTASK_WINDOWS_VSCODE_VSCODIUM_FREEZE_FIX_PROGRESS.md,
+  EXTRA/output/windows-terminal-compat-quality.log
+- See Also: ERR-20260726-001
 
 ---

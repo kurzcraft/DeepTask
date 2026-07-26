@@ -36,9 +36,23 @@
 - 用户明确要求两个市场的首次发布版本为 `5.5.0`，不升到 `5.5.1`。两个市场当前均返回 404，因此 `deeptask.deeptask@5.5.0` 尚未占用；市场首发的 5.5.0 包将包含本轮新增 Star UI。
 - 产品内 Star 入口必须通过受控外链打开 GitHub 仓库，并有测试覆盖。
 
+## 5.5.3 更新轮次
+
+- [x] 确认扩展标识保持 `deeptask.deeptask`，版本为 `5.5.3`
+- [x] 完成后端与 Webview TypeScript 检查及 `git diff --check`
+- [ ] 构建并审计 `deeptask-5.5.3.vsix`
+- [ ] 安装到 VSCodium 并验证运行时版本与关键修复标记
+- [ ] 提交并推送 `5.5.3` 源码
+- [ ] 创建 GitHub Release `v5.5.3` 并校验资产
+- [ ] 更新 Visual Studio Marketplace 并验证公开版本
+- [x] Open VSX 不在本轮范围内（用户明确要求只更新 VS Code Marketplace）
+- [ ] 存储本轮发布经验与残余风险
+
+更新约束：本轮只更新 Visual Studio Marketplace。已有扩展必须更新原标识，禁止通过修改 publisher/name 创建重复扩展；上传前必须验证 VSIX 版本、大小与 SHA-256，上传后必须从公开接口确认服务端版本。
+
 ## 阻塞项
 
-- 无发布阻塞项。
+- 当前无已确认发布阻塞项；发布凭据和市场服务状态需在提交时实测。
 - Open VSX 的 `deeptask` namespace 尚未完成官方 ownership verification；扩展已正常公开并可下载，但页面暂时显示未验证发布者警告。后续可通过 Claim Ownership 流程消除警告。
 
 ## 验证状态

@@ -1110,13 +1110,17 @@ export const webviewMessageHandler = async (
 			const shouldRefresh = message?.values?.refresh === true
 
 			const routerModels: Record<RouterName, ModelRecord> = providerFilter
-				? ({} as Record<RouterName, ModelRecord>)
+				? ({ [providerFilter]: {} } as Record<RouterName, ModelRecord>)
 				: {
 						// kilocode_change start
 						ovhcloud: {},
 						inception: {},
 						kilocode: {},
 						gemini: {},
+						deepseek: {},
+						groq: {},
+						mistral: {},
+						cerebras: {},
 						// kilocode_change end
 						openrouter: {},
 						"vercel-ai-gateway": {},
@@ -1237,6 +1241,37 @@ export const webviewMessageHandler = async (
 					options: { provider: "chutes", apiKey: apiConfiguration.chutesApiKey },
 				},
 			]
+			// kilocode_change end
+
+			// kilocode_change start: authenticated dedicated vendor model directories
+			if (apiConfiguration.deepSeekApiKey) {
+				candidates.push({
+					key: "deepseek",
+					options: {
+						provider: "deepseek",
+						apiKey: apiConfiguration.deepSeekApiKey,
+						baseUrl: apiConfiguration.deepSeekBaseUrl,
+					},
+				})
+			}
+			if (apiConfiguration.groqApiKey) {
+				candidates.push({
+					key: "groq",
+					options: { provider: "groq", apiKey: apiConfiguration.groqApiKey },
+				})
+			}
+			if (apiConfiguration.mistralApiKey) {
+				candidates.push({
+					key: "mistral",
+					options: { provider: "mistral", apiKey: apiConfiguration.mistralApiKey },
+				})
+			}
+			if (apiConfiguration.cerebrasApiKey) {
+				candidates.push({
+					key: "cerebras",
+					options: { provider: "cerebras", apiKey: apiConfiguration.cerebrasApiKey },
+				})
+			}
 			// kilocode_change end
 
 			// IO Intelligence is conditional on api key

@@ -10,9 +10,11 @@
 ## 当前观测
 
 - 用户确认：Linux 上 VS Code 与 VSCodium 均正常；Windows 上两者均卡死。
-- 共同变量是操作系统而非编辑器发行版，根因位于共享 extension host 终端执行层。
-- 已确认确定性矛盾：系统提示词通过 `getShell()` 按 VS Code 默认 profile 生成 PowerShell/CMD 命令，
-  但 Execa 的 `shell: true` 在 Windows 固定使用 `cmd.exe`；同一命令的生成语法与执行语法不一致。
+- 2026-07-26 实机复现进一步确认：发送不需要终端的普通消息后立即永久转圈、聊天区无模型文字且无报错；点击取消才显示 `task file not found`。
+- 该证据否证“根因位于终端执行层”的过早判断：故障发生在任何终端命令之前。
+- 代码确认 `ClineProvider.createTask()` 通过构造器启动 Task；`Task` 构造器 fire-and-forget 调用异步 `startTask()`，没有 `await` 或顶层 `catch`。启动早期持久化、系统提示或 API 初始化任一步拒绝，Provider 仍把半初始化 Task 留在栈中并返回成功，UI 因而永久 busy；取消随后读取尚未落盘的任务文件，暴露派生错误。
+- 另有已确认确定性矛盾：系统提示词通过 `getShell()` 按 VS Code 默认 profile 生成 PowerShell/CMD 命令，
+  但旧 Execa 的 `shell: true` 在 Windows 固定使用 `cmd.exe`；该问题仍需保留修复，但不是当前普通消息卡死的首个根因。
 - 产品默认、状态返回与命令工具后备值曾不一致；状态未 hydrate 时会从 VS Code terminal 瞬时切到 Execa。
 - Windows 取消路径依赖 POSIX `SIGKILL` 和全系统 `ps-list`，缺少有界 Windows 进程树终止契约。
 - Universal VSIX 内没有 Linux `.node` 或 Linux 可执行文件，已否证“Linux 原生依赖误发”主因。
@@ -34,10 +36,11 @@
 
 ## 假说更新
 
-- H1（0.93，已支持）：提示词 shell 与 Execa 实际 shell 不一致，加上 POSIX 取消语义，构成 Windows 独有故障链。
+- H1（0.10，已否证为首因）：提示词 shell 与 Execa 实际 shell 不一致确实存在，但普通消息在任何终端命令前已卡死，不能解释当前首个失败边界。
 - H2（0.25，暂未支持）：本轮没有发现盘符、反斜杠或 UNC 是共同卡死的首个根因；保留真实 Windows 验收。
-- H3（0.88，部分支持）：启动/流读取异常过去可能留下不稳定状态；现已通过 `finally` 强制完成并释放 busy。
+- H3（0.96，代码证据支持）：新任务启动 Promise 被构造器悬空；启动早期异常无法由 Provider 回滚和 Webview 错误边界消费，直接留下半初始化 Task 与永久 busy。
 - H4（0.08，已基本否证）：Universal VSIX 不含 Linux 原生二进制，extension bundle 可成功构建。
+- H5（0.30，待区分）：Windows 实机可能仍加载旧 bundle；当前源码取消路径已包含缺失持久化时静默清栈逻辑，而用户仍看到 `task file not found`。必须通过新 bundle marker 和实机日志区分旧运行时与其它取消入口。
 
 ## 已实现修复
 
@@ -64,7 +67,7 @@
 
 ## 证伪策略
 
-- 若卡死发生在任何终端命令之前，则降低 H1/H3，优先检查任务创建、配置和 worker。
+- 卡死已确认发生在任何终端命令之前，因此 H1 已降低；当前优先修复任务创建事务和启动异常收口。
 - 若 Windows 模拟测试能完整驱动终端完成状态，则降低 H1。
 - 若所有平台命令都有显式 Windows 分支、超时和 finally 清理，则降低 H1-H3，转向原生依赖/IPC。
 - 只有真实 Windows 双编辑器验收通过，才能宣称彻底修复；Linux 模拟测试不能替代最终验收。
