@@ -17,8 +17,8 @@
 - [x] 构建、审计并校验 VSIX
 - [x] 发布到 Open VSX 并验证公开页面/版本
 - [x] 发布到 Visual Studio Marketplace 并验证公开页面/版本
-- [-] 提交并推送源码更改
-- [ ] 系统性存储发布经验
+- [x] 提交并推送源码更改
+- [x] 系统性存储发布经验
 
 ## 当前发现
 
@@ -51,3 +51,5 @@
 - 2026-07-26：Visual Studio Marketplace 公开页验收成功：`https://marketplace.visualstudio.com/items?itemName=deeptask.deeptask`，安装命令为 `ext install deeptask.deeptask`。
 - 2026-07-26：完成 Eclipse 账号、ECA、GitHub `kurzcraft` 绑定及 Open VSX Publisher Agreement v1.1 签署，创建 `deeptask` namespace。
 - 2026-07-26：Open VSX 公开页验收成功：`https://open-vsx.org/extension/deeptask/deeptask`，显示版本 `5.5.0`、别名 `latest`、唯一标识 `deeptask.deeptask`，下载入口可用。
+- 2026-07-26：Star UI、测试、changeset 与市场元数据已提交为 `82d87bbca9dbace36411bb21db28fca1b1dedea7`，并成功推送到 `origin/main`。
+- 2026-07-26：发布原理与边界已存入 universe-memory 的 `2026-07-26-Deeptask双插件市场首发与Star入口.md`。
