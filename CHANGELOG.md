@@ -1,5 +1,11 @@
 # Deeptask
 
+## 5.5.6
+
+### Patch Changes
+
+- Restore Git commit message suggestions for OpenAI-compatible reasoning models by using the reliable streaming response path with a safe fallback.
+
 ## 5.5.5
 
 ### Patch Changes

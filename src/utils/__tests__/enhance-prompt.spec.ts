@@ -138,6 +138,39 @@ describe("enhancePrompt", () => {
 		expect(result).toBe("fix: 修复仅推理响应")
 	})
 
+	it("prefers the normalized stream without waiting for direct completion when requested", async () => {
+		const completePrompt = vi.fn().mockImplementation(() => new Promise<string>(() => {}))
+		const createMessage = vi.fn().mockReturnValue({
+			async *[Symbol.asyncIterator]() {
+				yield { type: "reasoning", text: "internal analysis" }
+				yield { type: "text", text: "fix: 恢复 Git 提交建议" }
+			},
+		})
+		;(buildApiHandler as any).mockReturnValue({ completePrompt, createMessage })
+
+		const result = await singleCompletionHandler(mockApiConfig, "Test prompt", { preferStream: true })
+
+		expect(result).toBe("fix: 恢复 Git 提交建议")
+		expect(createMessage).toHaveBeenCalledTimes(1)
+		expect(completePrompt).not.toHaveBeenCalled()
+	})
+
+	it("falls back to direct completion when a preferred stream returns no content", async () => {
+		const completePrompt = vi.fn().mockResolvedValue("fix: direct fallback")
+		const createMessage = vi.fn().mockReturnValue({
+			async *[Symbol.asyncIterator]() {
+				yield { type: "usage", inputTokens: 10, outputTokens: 0 }
+			},
+		})
+		;(buildApiHandler as any).mockReturnValue({ completePrompt, createMessage })
+
+		const result = await singleCompletionHandler(mockApiConfig, "Test prompt", { preferStream: true })
+
+		expect(result).toBe("fix: direct fallback")
+		expect(createMessage).toHaveBeenCalledTimes(1)
+		expect(completePrompt).toHaveBeenCalledWith("Test prompt")
+	})
+
 	it("handles streaming errors gracefully in fallback mode", async () => {
 		const mockStream = {
 			async *[Symbol.asyncIterator]() {

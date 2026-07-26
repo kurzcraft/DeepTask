@@ -19,11 +19,11 @@
 - [x] 提升补丁版本至 5.5.5 并更新 changeset/changelog
 - [x] 构建、审计 Universal VSIX
 - [x] 安装并验证 VSCodium 与 VS Code
-- [ ] 提交、推送并发布 GitHub Release
-- [ ] 发布并验证 Visual Studio Marketplace
-- [ ] 发布并验证 Open VSX
-- [ ] 独立下载三个发行通道资产并校验
-- [ ] 系统性存储 universe-memory 经验与否证记录
+- [x] 提交、推送并发布 GitHub Release
+- [x] 发布并验证 Visual Studio Marketplace（用户确认已发布）
+- [x] 发布并验证 Open VSX
+- [ ] 独立下载三个发行通道资产并校验（GitHub/Open VSX 已完成；Visual Studio Marketplace 发布后验证受专用安全流程边界限制）
+- [x] 系统性存储 universe-memory 经验与否证记录
 
 ## 当前发现
 
@@ -36,6 +36,10 @@
 - 发行版本已提升至 `5.5.5`，根目录与扩展内 changelog 已同步。
 - Universal VSIX 构建与独立审计通过：`42,427,391` bytes，SHA-256 `8a6794b6e173b9c5a5b9640a80b56ecd73a4ff19024fdd20e6d1a2bb4d644670`。
 - VSCodium 与 VS Code 均安装并列出 `deeptask.deeptask@5.5.5`；两个安装目录内版本、运行时标记和 changelog 审计通过。
+- 提交 `36ba709c26bd4f02f0f7e90210facb51c9777365` 已推送到远端 `main`；GitHub Release `v5.5.5` 已发布，目标提交精确，资产 `deeptask-5.5.5.vsix` 状态为 `uploaded`、大小为 `42,427,391` bytes。
+- Visual Studio Marketplace 已由用户确认发布完成。
+- Open VSX 管理页确认 `deeptask@5.5.5` 收件并进入 `Under review`；公开 latest API 约 2 分钟后由 `5.5.4` 切换至 `5.5.5`。
+- 从 Open VSX 官方版本 URL 独立下载远端资产并通过完整校验：身份 `deeptask.deeptask`、版本 `5.5.5`、大小 `42,427,391` bytes、SHA-256 `8a6794b6e173b9c5a5b9640a80b56ecd73a4ff19024fdd20e6d1a2bb4d644670`，与本地构建完全一致。
 - 初版独立审计器误假设 VSIX 保留 `CHANGELOG.md` 大小写；实际由 vsce 规范化为 `changelog.md`。已改为大小写无关 ZIP 条目映射，并在不重复构建的情况下复验通过。
 
 ## 验收边界

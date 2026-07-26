@@ -1,7 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { CommitMessageGenerator } from "../CommitMessageGenerator"
 import { ProviderSettingsManager } from "../../../core/config/ProviderSettingsManager"
+import { ContextProxy } from "../../../core/config/ContextProxy"
+import { singleCompletionHandler } from "../../../utils/single-completion-handler"
 import { GenerateMessageParams, ProgressUpdate } from "../types/core"
+
+vi.mock("../../../core/config/ContextProxy")
+vi.mock("../../../utils/single-completion-handler")
+vi.mock("@roo-code/telemetry", () => ({
+	TelemetryService: { instance: { captureEvent: vi.fn() } },
+}))
 
 describe("CommitMessageGenerator", () => {
 	let generator: CommitMessageGenerator
@@ -20,6 +28,24 @@ index 0000000..123
 `
 
 	beforeEach(() => {
+		vi.clearAllMocks()
+
+		Object.defineProperty(ContextProxy, "instance", {
+			get: vi.fn(() => ({
+				isInitialized: true,
+				getProviderSettings: vi.fn().mockReturnValue({
+					apiProvider: "openai",
+					openAiModelId: "gpt-5.6-sol",
+				}),
+				getValue: vi.fn((key: string) => {
+					if (key === "listApiConfigMeta") return []
+					if (key === "customSupportPrompts") return {}
+					return undefined
+				}),
+			})),
+			configurable: true,
+		})
+
 		// Mock ProviderSettingsManager with minimal required methods
 		mockProviderSettingsManager = {
 			getProfile: vi.fn().mockResolvedValue({
@@ -28,6 +54,7 @@ index 0000000..123
 			}),
 		} as any
 
+		vi.mocked(singleCompletionHandler).mockResolvedValue("fix: 恢复 Git 提交建议")
 		generator = new CommitMessageGenerator(mockProviderSettingsManager)
 	})
 
@@ -114,17 +141,35 @@ index 0000000..123
 		})
 	})
 
+	describe("AI completion route", () => {
+		it("uses the normalized stream first for commit message generation", async () => {
+			const result = await generator.generateMessage({
+				workspacePath: "/test/workspace",
+				selectedFiles: ["src/test.ts"],
+				gitContext: mockGitContext,
+			})
+
+			expect(result).toBe("fix: 恢复 Git 提交建议")
+			expect(singleCompletionHandler).toHaveBeenCalledWith(
+				expect.objectContaining({ apiProvider: "openai", openAiModelId: "gpt-5.6-sol" }),
+				expect.stringContaining("Conventional Commit Message Generator"),
+				{ preferStream: true },
+			)
+		})
+	})
+
 	describe("error handling", () => {
 		it("should handle errors in generateMessage gracefully", async () => {
+			vi.mocked(singleCompletionHandler).mockRejectedValueOnce(new Error("AI unavailable"))
 			const invalidParams: GenerateMessageParams = {
 				workspacePath: "",
 				selectedFiles: [],
 				gitContext: "",
 			}
 
-			await expect(async () => {
-				await generator.generateMessage(invalidParams)
-			}).rejects.toThrow()
+			await expect(generator.generateMessage(invalidParams)).rejects.toThrow(
+				"Failed to generate commit message: AI unavailable",
+			)
 		})
 	})
 })

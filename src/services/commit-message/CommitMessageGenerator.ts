@@ -156,7 +156,9 @@ FINAL REMINDER: Your message MUST be COMPLETELY DIFFERENT from the previous mess
 		// kilocode_change start
 		// Provider completion APIs are not uniformly cancellable. Race them against a
 		// bounded lifecycle so a broken relay cannot leave Source Control spinning
-		// forever; ignore any late result after cancellation/timeout.
+		// forever; ignore any late result after cancellation/timeout. Commit generation
+		// uses the normalized chat stream first because OpenAI-compatible reasoning
+		// relays may hang or omit content on their non-streaming endpoint.
 		let timeout: NodeJS.Timeout | undefined
 		let abortHandler: (() => void) | undefined
 		const lifecycle = new Promise<never>((_, reject) => {
@@ -171,7 +173,10 @@ FINAL REMINDER: Your message MUST be COMPLETELY DIFFERENT from the previous mess
 		})
 		let response: string
 		try {
-			response = await Promise.race([singleCompletionHandler(configToUse, prompt), lifecycle])
+			response = await Promise.race([
+				singleCompletionHandler(configToUse, prompt, { preferStream: true }),
+				lifecycle,
+			])
 		} finally {
 			if (timeout) clearTimeout(timeout)
 			if (abortSignal && abortHandler) abortSignal.removeEventListener("abort", abortHandler)

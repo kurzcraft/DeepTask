@@ -2,11 +2,21 @@ import type { ProviderSettings } from "@roo-code/types"
 import { buildApiHandler, SingleCompletionHandler, ApiHandler } from "../api" //kilocode_change
 import { ApiStreamUsageChunk } from "../api/transform/stream" // kilocode_change
 
+// kilocode_change start
+export interface SingleCompletionOptions {
+	/** Prefer the normalized chat stream for relays whose non-stream response may hang or omit content. */
+	preferStream?: boolean
+}
+
 /**
  * Enhances a prompt using the configured API without creating a full Cline instance or task history.
  * This is a lightweight alternative that only uses the API's completion functionality.
  */
-export async function singleCompletionHandler(apiConfiguration: ProviderSettings, promptText: string): Promise<string> {
+export async function singleCompletionHandler(
+	apiConfiguration: ProviderSettings,
+	promptText: string,
+	options: SingleCompletionOptions = {},
+): Promise<string> {
 	if (!promptText) {
 		throw new Error("No prompt text provided")
 	}
@@ -21,21 +31,41 @@ export async function singleCompletionHandler(apiConfiguration: ProviderSettings
 		await handler.initialize()
 	}
 
-	// kilocode_change start
-	// Prefer the provider's lightweight completion, but transparently retry through
-	// the normalized stream path when a reasoning relay reports an empty
-	// `message.content`. This preserves existing provider behavior while recovering
-	// the useful text chunks that those relays only expose during streaming.
-	if ("completePrompt" in handler) {
-		const directResponse = await (handler as SingleCompletionHandler).completePrompt(promptText)
-		if (directResponse.trim()) {
-			return directResponse
+	const completeDirectly = async (): Promise<string> => {
+		if (!("completePrompt" in handler)) {
+			return ""
 		}
+		return (await (handler as SingleCompletionHandler).completePrompt(promptText)).trim()
 	}
-	const streamedResponse = await streamResponseFromHandler(handler, promptText)
-	return streamedResponse.text.trim() || streamedResponse.reasoning?.trim() || ""
-	// kilocode_change end
+	const completeFromStream = async (): Promise<string> => {
+		const response = await streamResponseFromHandler(handler, promptText)
+		return response.text.trim() || response.reasoning?.trim() || ""
+	}
+
+	// Git commit generation opts into the same normalized streaming route as chat.
+	// This avoids waiting on OpenAI-compatible relays that never settle or omit
+	// `message.content` for non-streaming requests. Empty/failed streams retain the
+	// lightweight direct route as a compatibility fallback.
+	if (options.preferStream) {
+		try {
+			const streamedResponse = await completeFromStream()
+			if (streamedResponse) {
+				return streamedResponse
+			}
+		} catch (error) {
+			if (!("completePrompt" in handler)) {
+				throw error
+			}
+		}
+		return completeDirectly()
+	}
+
+	// Preserve the historical direct-first behavior for other lightweight callers,
+	// while recovering text that reasoning relays expose only during streaming.
+	const directResponse = await completeDirectly()
+	return directResponse || completeFromStream()
 }
+// kilocode_change end
 
 // kilocode_change start - Stream responses using createMessage
 export async function streamResponseFromHandler(
