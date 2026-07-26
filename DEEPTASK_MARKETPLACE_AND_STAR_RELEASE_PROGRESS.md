@@ -44,7 +44,7 @@
 - [ ] 安装到 VSCodium 并验证运行时版本与关键修复标记
 - [x] 提交并推送 `5.5.3` 源码
 - [x] 创建 GitHub Release `v5.5.3` 并校验资产
-- [ ] 更新 Visual Studio Marketplace 并验证公开版本
+- [x] 更新 Visual Studio Marketplace 并验证公开版本
 - [x] Open VSX 不在本轮范围内（用户明确要求只更新 VS Code Marketplace）
 - [ ] 存储本轮发布经验与残余风险
 
@@ -71,3 +71,5 @@
 - 2026-07-26：GitHub Release `v5.5.3` 已公开发布：`https://github.com/kurzcraft/DeepTask/releases/tag/v5.5.3`。
 - 2026-07-26：GitHub 远端资产 `deeptask-5.5.3.vsix` 状态为 `uploaded`，远端与本地大小均为 42,426,415 字节，逐字节一致，SHA-256 为 `e8fc5ecad298342d2578b11bc5314ffaf6fecdddbec3b77e4a79fbb30ce760b9`。
 - 2026-07-26：首次发布调用因脚本残留旧仓库 `kurzgesagtcraft/deeptask` 而返回 404；已改为当前远端 `kurzcraft/DeepTask`，并将发布和验收脚本改为从 `src/package.json` 推导版本，防止后续误发布旧 tag。
+- 2026-07-26：Visual Studio Marketplace 管理页显示 `deeptask.deeptask` 版本 `5.5.3`、可见性 `Public`；公开页也显示版本 `5.5.3`、目标 `Universal`，安装命令为 `ext install deeptask.deeptask`。
+- 2026-07-26：市场 Overview 仍含 `5.5.0 legacy source line` 和 `deeptask-5.5.0.vsix` 的旧 README 文案；不影响 `5.5.3` 版本与安装，但应在后续 `5.5.4` 发布前清理，不能通过重复上传同版本修正。
