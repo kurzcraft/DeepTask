@@ -11,9 +11,14 @@ export function checkExistKey(config: ProviderSettings | undefined) {
 			return true
 		}
 
-		// kilocode_change start: OpenAI Compatible is intentionally seeded without base URL or key.
+		// kilocode_change start
+		// A fresh Deeptask install seeds the OpenAI-compatible model metadata so the
+		// settings form has useful defaults, but that metadata is not a callable API
+		// configuration. Keep onboarding visible until the user supplies either an
+		// endpoint (which may intentionally be an unauthenticated local service) or a
+		// key for the standard OpenAI endpoint.
 		if (config.apiProvider === "openai" && config.openAiModelId) {
-			return true
+			return Boolean(config.openAiBaseUrl?.trim() || config.openAiApiKey?.trim())
 		}
 		// kilocode_change end
 	}

@@ -8,6 +8,9 @@ LOG="$LOG_DIR/DEEPTASK_PACKAGE_PROGRESS.log"
 mkdir -p "$LOG_DIR"
 export PATH="$NODE20:/home/kurz/nodejs/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export npm_config_yes=true
+VERSION="$(node -p "require('$ROOT/src/package.json').version")"
+VSIX_NAME="deeptask-${VERSION}.vsix"
+export VERSION VSIX_NAME
 
 step() {
   printf '\n[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG"
@@ -81,6 +84,22 @@ if ! grep -q "notifyTerminalProcessCompleted" src/dist/extension.js; then
   echo "src/dist/extension.js 缺少 notifyTerminalProcessCompleted" | tee -a "$LOG"
   exit 1
 fi
+if ! grep -q "OpenAI Compatible is not configured" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少全新安装配置门禁" | tee -a "$LOG"
+  exit 1
+fi
+if ! grep -q "could not be rehydrated after cancellation" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少取消时持久化缺失自愈路径" | tee -a "$LOG"
+  exit 1
+fi
+if ! grep -q "taskkill" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少 Windows 有界进程树终止路径" | tee -a "$LOG"
+  exit 1
+fi
+if ! grep -q "taskkill failed for PID" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少 Windows 终止失败的 fail-soft 诊断" | tee -a "$LOG"
+  exit 1
+fi
 ls -lh src/dist/extension.js | tee -a "$LOG"
 if compgen -G 'src/webview-ui/build/assets/*.js' > /dev/null; then
   find src/webview-ui/build/assets -maxdepth 1 -name '*.js' | wc -l | awk '{print "webview js assets=" $1}' | tee -a "$LOG"
@@ -125,24 +144,27 @@ PY
 }
 trap restore EXIT
 
-step "7/10 执行 VSIX 打包到 bin/deeptask-5.5.0.vsix"
+step "7/10 执行 VSIX 打包到 bin/$VSIX_NAME"
 mkdir -p bin
-rm -f bin/deeptask-5.5.0.vsix deeptask-5.5.0.vsix
+rm -f "bin/$VSIX_NAME" "$VSIX_NAME"
+cp -f CHANGELOG.md src/CHANGELOG.md
 (
   cd src
-  npx --yes @vscode/vsce package --no-dependencies --out ../bin/deeptask-5.5.0.vsix
+  npx --yes @vscode/vsce package --no-dependencies --out "../bin/$VSIX_NAME"
 ) 2>&1 | tee -a "$LOG"
 
 step "8/10 复制 VSIX 到仓库根目录"
-cp -f bin/deeptask-5.5.0.vsix deeptask-5.5.0.vsix
-ls -lh bin/deeptask-5.5.0.vsix deeptask-5.5.0.vsix | tee -a "$LOG"
+cp -f "bin/$VSIX_NAME" "$VSIX_NAME"
+ls -lh "bin/$VSIX_NAME" "$VSIX_NAME" | tee -a "$LOG"
 
 step "9/10 验证 VSIX 内容与品牌资源"
 python3 - <<'PY' 2>&1 | tee -a "$LOG"
 from pathlib import Path
 from zipfile import ZipFile
 import json
-vsix = Path('deeptask-5.5.0.vsix')
+import os
+version = os.environ['VERSION']
+vsix = Path(os.environ['VSIX_NAME'])
 assert vsix.exists() and vsix.stat().st_size > 1_000_000, vsix
 residue_patterns = [
     'About Kilo Code',
@@ -171,7 +193,7 @@ with ZipFile(vsix) as z:
     print('package:', pkg['name'], pkg['publisher'], pkg['version'], pkg['main'])
     assert pkg['name'] == 'deeptask', pkg['name']
     assert pkg['publisher'] == 'deeptask', pkg['publisher']
-    assert pkg['version'] == '5.5.0', pkg['version']
+    assert pkg['version'] == version, pkg['version']
     required = [
         'extension/dist/extension.js',
         'extension/assets/icons/logo-outline-black.png',
@@ -188,6 +210,10 @@ with ZipFile(vsix) as z:
     assert 'completedTerminalOrder' in extension_js, 'extension bundle missing completed terminal order fix'
     assert 'hasPendingWebviewAskResponse' in extension_js, 'extension bundle missing fast command ask response guard'
     assert 'notifyTerminalProcessCompleted' in extension_js, 'extension bundle missing terminal completion notify'
+    assert 'OpenAI Compatible is not configured' in extension_js, 'extension bundle missing fresh-install guard'
+    assert 'could not be rehydrated after cancellation' in extension_js, 'extension bundle missing cancel recovery'
+    assert 'taskkill' in extension_js, 'extension bundle missing bounded Windows tree termination'
+    assert 'taskkill failed for PID' in extension_js, 'extension bundle missing Windows fail-soft diagnostic'
     # Force-complete prune path must not require prior hasCompletedCommand.
     assert 'hasCompletedCommand&&!e.busy' not in extension_js or 'provider!=="vscode"' in extension_js
     readme = z.read('extension/readme.md').decode(errors='ignore')

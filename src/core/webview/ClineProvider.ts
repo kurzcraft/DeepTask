@@ -1056,7 +1056,7 @@ export class ClineProvider
 		this.getState().then(
 			({
 				terminalShellIntegrationTimeout = Terminal.defaultShellIntegrationTimeout,
-				terminalShellIntegrationDisabled = true, // kilocode_change: default
+				terminalShellIntegrationDisabled = false, // kilocode_change: match product/runtime default
 				terminalCompletedTerminalLimitEnabled = true,
 				terminalCompletedTerminalLimit = 3,
 				terminalCommandDelay = 0,
@@ -2175,16 +2175,22 @@ export class ClineProvider
 					apiConversationHistory,
 				}
 			} else {
+				// kilocode_change start
+				// Missing persistence can occur while a newly-created task is still being
+				// written or after an interrupted write. Keep this an internal diagnostic:
+				// callers such as cancelTask must remain usable as recovery paths and must
+				// never expose storage paths as a red user-facing error.
 				if (kilo_withMessage) {
-					vscode.window.showErrorMessage(
-						`Task file not found for task ID: ${id} (file ${apiConversationHistoryFilePath})`,
-					) //kilocode_change show extra debugging information to debug task not found issues
+					this.log(`Task persistence missing for task ${id}: ${apiConversationHistoryFilePath}`)
 				}
+				// kilocode_change end
 			}
 		} else {
+			// kilocode_change start
 			if (kilo_withMessage) {
-				vscode.window.showErrorMessage(`Task with ID: ${id} not found in history.`) // kilocode_change show extra debugging information to debug task not found issues
+				this.log(`Task ${id} is not present in task history`)
 			}
+			// kilocode_change end
 		}
 
 		// if we tried to get a task that doesn't exist, remove it from state
@@ -3504,6 +3510,20 @@ export class ClineProvider
 			remoteControlEnabled,
 		} = await this.getState()
 
+		// kilocode_change start
+		// The fresh-install OpenAI-compatible profile contains model metadata for the
+		// settings UI, but it is deliberately not callable until an endpoint or key is
+		// supplied. Guard again at the backend boundary so a hydration/UI race cannot
+		// create a half-persisted Task that retries forever and later breaks cancel.
+		if (
+			apiConfiguration.apiProvider === "openai" &&
+			!apiConfiguration.openAiBaseUrl?.trim() &&
+			!apiConfiguration.openAiApiKey?.trim()
+		) {
+			throw new Error("OpenAI Compatible is not configured. Add an API key or custom endpoint in Provider settings.")
+		}
+		// kilocode_change end
+
 		// Single-open-task invariant: always enforce for user-initiated top-level tasks
 		if (!parentTask) {
 			try {
@@ -3567,7 +3587,24 @@ export class ClineProvider
 		task.abortTask()
 		// kilocode_change end
 
-		const { historyItem, uiMessagesFilePath } = await this.getTaskWithId(task.taskId)
+		// kilocode_change start
+		// Cancellation is the emergency exit for a stalled or half-created task. It
+		// must not depend on persistence that may be exactly what failed. Rehydrate
+		// when history is complete; otherwise clear the runtime task and release the
+		// webview without surfacing a secondary "Task not found" error.
+		let historyItem: HistoryItem
+		try {
+			;({ historyItem } = await this.getTaskWithId(task.taskId, false))
+		} catch (error) {
+			this.log(
+				`[cancelTask] Task ${task.taskId} could not be rehydrated after cancellation: ${error instanceof Error ? error.message : String(error)}`,
+			)
+			await this.removeClineFromStack()
+			await this.postStateToWebview()
+			await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
+			return
+		}
+		// kilocode_change end
 
 		// Preserve parent and root task information for history item.
 		const rootTask = task.rootTask

@@ -281,6 +281,27 @@ describe("ClineProvider flicker-free cancel", () => {
 		await cancelPromise
 	})
 
+	it("clears a half-created task without a red error when persistence is missing", async () => {
+		;(provider as any).clineStack = [mockTask1]
+		provider.getTaskWithId = vi.fn().mockRejectedValue(new Error("Task not found"))
+		provider.postMessageToWebview = vi.fn().mockResolvedValue(undefined)
+		const removeClineFromStack = vi.spyOn(provider, "removeClineFromStack").mockImplementation(async () => {
+			;(provider as any).clineStack = []
+		})
+
+		await expect(provider.cancelTask()).resolves.toBeUndefined()
+
+		expect(mockTask1.abortReason).toBe("user_cancelled")
+		expect(mockTask1.cancelCurrentRequest).toHaveBeenCalledTimes(1)
+		expect(removeClineFromStack).toHaveBeenCalledTimes(1)
+		expect(provider.postStateToWebview).toHaveBeenCalledTimes(1)
+		expect(provider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "action",
+			action: "chatButtonClicked",
+		})
+		expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
+	})
+
 	it("injects a cancelled continuation into the single history restoration flow", async () => {
 		;(provider as any).clineStack = [mockTask1]
 		;(provider as any).taskEventListeners = new WeakMap()

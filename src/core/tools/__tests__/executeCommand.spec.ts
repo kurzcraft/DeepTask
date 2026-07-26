@@ -53,6 +53,9 @@ describe("executeCommand", () => {
 				deref: vitest.fn().mockResolvedValue(mockProvider),
 			},
 			say: vitest.fn().mockResolvedValue(undefined),
+			consumePendingCommandOutputFeedback: vitest.fn().mockReturnValue(undefined),
+			consumeCommandOutputFeedbackAlreadyShown: vitest.fn().mockReturnValue(false),
+			processQueuedMessages: vitest.fn().mockResolvedValue(undefined),
 			terminalProcess: undefined,
 		}
 
@@ -294,6 +297,25 @@ describe("executeCommand", () => {
 			// Verify
 			expect(TerminalRegistry.getOrCreateTerminal).toHaveBeenCalledWith(mockTask.cwd, mockTask.taskId, "vscode")
 		})
+
+		// kilocode_change start
+		it("defaults to the VS Code provider when terminal state has not hydrated", async () => {
+			mockTerminal.runCommand.mockImplementation((command: string, callbacks: RooTerminalCallbacks) => {
+				setTimeout(() => {
+					callbacks.onCompleted("Command output", mockProcess)
+					callbacks.onShellExecutionComplete({ exitCode: 0 }, mockProcess)
+				}, 0)
+				return mockProcess
+			})
+
+			await executeCommandInTerminal(mockTask, {
+				executionId: "test-default-provider",
+				command: "echo test",
+			})
+
+			expect(TerminalRegistry.getOrCreateTerminal).toHaveBeenCalledWith(mockTask.cwd, mockTask.taskId, "vscode")
+		})
+		// kilocode_change end
 
 		it("should use execa provider when shell integration is disabled", async () => {
 			mockTerminal.runCommand.mockImplementation((command: string, callbacks: RooTerminalCallbacks) => {

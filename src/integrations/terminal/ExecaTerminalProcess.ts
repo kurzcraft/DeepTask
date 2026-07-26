@@ -2,20 +2,41 @@ import { execa, ExecaError } from "execa"
 import psList from "ps-list"
 import process from "process"
 
+import { getShell } from "../../utils/shell"
 import type { RooTerminal } from "./types"
 import { BaseTerminalProcess } from "./BaseTerminalProcess"
 
 // kilocode_change start
+const PROCESS_LOOKUP_TIMEOUT_MS = 2_000
+
 /**
- * Get child process IDs for a given parent PID
+ * Child discovery is best-effort cleanup and must never block command completion.
+ * Windows termination uses taskkill on the root shell PID and does not need a
+ * full system process listing.
  */
 async function getChildPids(parentPid: number): Promise<number[]> {
-	try {
-		const processes = await psList()
-		return processes.filter((p) => p.ppid === parentPid).map((p) => p.pid)
-	} catch (error) {
-		console.error(`Failed to get child processes for PID ${parentPid}:`, error)
+	if (process.platform === "win32") {
 		return []
+	}
+
+	let timeoutId: NodeJS.Timeout | undefined
+	try {
+		const processes = await Promise.race([
+			psList(),
+			new Promise<never>((_, reject) => {
+				timeoutId = setTimeout(() => reject(new Error("Process lookup timed out")), PROCESS_LOOKUP_TIMEOUT_MS)
+			}),
+		])
+		return processes.filter((candidate) => candidate.ppid === parentPid).map((candidate) => candidate.pid)
+	} catch (error) {
+		console.warn(
+			`Failed to get child processes for PID ${parentPid}: ${error instanceof Error ? error.message : String(error)}`,
+		)
+		return []
+	} finally {
+		if (timeoutId) {
+			clearTimeout(timeoutId)
+		}
 	}
 }
 // kilocode_change end
@@ -25,7 +46,6 @@ export class ExecaTerminalProcess extends BaseTerminalProcess {
 	private aborted = false
 	private pid?: number
 	private subprocess?: ReturnType<typeof execa>
-	private pidUpdatePromise?: Promise<void>
 
 	constructor(terminal: RooTerminal) {
 		super()
@@ -53,42 +73,31 @@ export class ExecaTerminalProcess extends BaseTerminalProcess {
 		try {
 			this.isHot = true
 
+			// kilocode_change start
+			// The prompt and executor must use the same shell. `shell: true` silently
+			// selects cmd.exe on Windows even when VS Code is configured for PowerShell.
+			const shell = getShell()
+			const env =
+				process.platform === "win32"
+					? { ...process.env }
+					: {
+							...process.env,
+							LANG: "en_US.UTF-8",
+							LC_ALL: "en_US.UTF-8",
+						}
+
 			this.subprocess = execa({
-				shell: true,
+				shell,
 				cwd: this.terminal.getCurrentWorkingDirectory(),
 				all: true,
-				// Ignore stdin to ensure non-interactive mode and prevent hanging
 				stdin: "ignore",
-				env: {
-					...process.env,
-					// Ensure UTF-8 encoding for Ruby, CocoaPods, etc.
-					LANG: "en_US.UTF-8",
-					LC_ALL: "en_US.UTF-8",
-				},
+				windowsHide: true,
+				env,
 			})`${command}`
+			// kilocode_change end
 
 			this.pid = this.subprocess.pid
-
-			// When using shell: true, the PID is for the shell, not the actual command
-			// Find the actual command PID after a small delay
-			if (this.pid) {
-				this.pidUpdatePromise = new Promise<void>((resolve) => {
-					// kilocode_change start
-					setTimeout(async () => {
-						try {
-							const childPids = await getChildPids(this.pid!)
-							if (childPids.length > 0) {
-								// Update PID to the first child (the actual command)
-								this.pid = childPids[0]
-							}
-						} catch (error) {
-							console.error(`Failed to update PID:`, error)
-						}
-						resolve()
-					}, 100)
-					// kilocode_change end
-				})
-			}
+			this.emit("shell_execution_started", this.pid)
 
 			const rawStream = this.subprocess.iterable({ from: "all", preserveNewlines: true })
 
@@ -118,39 +127,11 @@ export class ExecaTerminalProcess extends BaseTerminalProcess {
 				this.startHotTimer(line)
 			}
 
-			if (this.aborted) {
-				let timeoutId: NodeJS.Timeout | undefined
-
-				const kill = new Promise<void>((resolve) => {
-					console.log(`[ExecaTerminalProcess#run] SIGKILL -> ${this.pid}`)
-
-					timeoutId = setTimeout(() => {
-						try {
-							this.subprocess?.kill("SIGKILL")
-						} catch (e) {}
-
-						resolve()
-					}, 5_000)
-				})
-
-				try {
-					await Promise.race([this.subprocess, kill])
-				} catch (error) {
-					console.log(
-						`[ExecaTerminalProcess#run] subprocess termination error: ${error instanceof Error ? error.message : String(error)}`,
-					)
-				}
-
-				if (timeoutId) {
-					clearTimeout(timeoutId)
-				}
-			}
-
-			this.emit("shell_execution_complete", { exitCode: 0 })
+			this.emit("shell_execution_complete", { exitCode: this.aborted ? 1 : 0 })
 		} catch (error) {
 			if (error instanceof ExecaError) {
 				console.error(`[ExecaTerminalProcess#run] shell execution error: ${error.message}`)
-				this.emit("shell_execution_complete", { exitCode: error.exitCode ?? 0, signalName: error.signal })
+				this.emit("shell_execution_complete", { exitCode: error.exitCode ?? 1, signalName: error.signal })
 			} else {
 				console.error(
 					`[ExecaTerminalProcess#run] shell execution error: ${error instanceof Error ? error.message : String(error)}`,
@@ -158,15 +139,24 @@ export class ExecaTerminalProcess extends BaseTerminalProcess {
 
 				this.emit("shell_execution_complete", { exitCode: 1 })
 			}
+		} finally {
+			// kilocode_change start
+			// Completion is fail-soft: every startup, stream, and cancellation path
+			// releases the terminal so the task cannot remain permanently busy.
+			try {
+				this.terminal.setActiveStream(undefined)
+			} catch (error) {
+				console.warn(
+					`[ExecaTerminalProcess#run] Failed to clear active stream: ${error instanceof Error ? error.message : String(error)}`,
+				)
+			}
+			this.emitRemainingBufferIfListening()
+			this.stopHotTimer()
+			this.emit("completed", this.fullOutput)
+			this.emit("continue")
 			this.subprocess = undefined
+			// kilocode_change end
 		}
-
-		this.terminal.setActiveStream(undefined)
-		this.emitRemainingBufferIfListening()
-		this.stopHotTimer()
-		this.emit("completed", this.fullOutput)
-		this.emit("continue")
-		this.subprocess = undefined
 	}
 
 	public override continue() {
@@ -178,66 +168,50 @@ export class ExecaTerminalProcess extends BaseTerminalProcess {
 	public override abort() {
 		this.aborted = true
 
-		// Function to perform the kill operations
-		const performKill = () => {
-			// Try to kill using the subprocess object
-			if (this.subprocess) {
-				try {
-					this.subprocess.kill("SIGKILL")
-				} catch (e) {
-					console.warn(
-						`[ExecaTerminalProcess#abort] Failed to kill subprocess: ${e instanceof Error ? e.message : String(e)}`,
-					)
-				}
-			}
-
-			// Kill the stored PID (which should be the actual command after our update)
-			if (this.pid) {
-				try {
-					process.kill(this.pid, "SIGKILL")
-				} catch (e) {
-					console.warn(
-						`[ExecaTerminalProcess#abort] Failed to kill process ${this.pid}: ${e instanceof Error ? e.message : String(e)}`,
-					)
-				}
-			}
+		if (!this.pid) {
+			return
 		}
 
-		// If PID update is in progress, wait for it before killing
-		if (this.pidUpdatePromise) {
-			this.pidUpdatePromise.then(performKill).catch(() => performKill())
-		} else {
-			performKill()
+		const rootPid = this.pid
+
+		// kilocode_change start
+		if (process.platform === "win32") {
+			// Node signals do not reliably terminate descendants on Windows. Do not
+			// kill the root first: taskkill needs that PID to identify the full tree.
+			void execa("taskkill", ["/PID", String(rootPid), "/T", "/F"], {
+				windowsHide: true,
+				timeout: 5_000,
+				reject: false,
+			}).catch((error) => {
+				console.warn(
+					`[ExecaTerminalProcess#abort] taskkill failed for PID ${rootPid}: ${error instanceof Error ? error.message : String(error)}`,
+				)
+			})
+			return
 		}
 
-		// Continue with the rest of the abort logic
-		if (this.pid) {
-			// Also check for any child processes
-			// kilocode_change start
-			;(async () => {
+		// Capture descendants while the shell is still present, then terminate
+		// children before the root. Lookup timeout keeps cancellation bounded.
+		void getChildPids(rootPid).then((childPids) => {
+			for (const childPid of childPids) {
 				try {
-					const childPids = await getChildPids(this.pid!)
-					if (childPids.length > 0) {
-						console.error(`[ExecaTerminalProcess#abort] SIGKILL children -> ${childPids.join(", ")}`)
-
-						for (const pid of childPids) {
-							try {
-								process.kill(pid, "SIGKILL")
-							} catch (e) {
-								console.warn(
-									`[ExecaTerminalProcess#abort] Failed to send SIGKILL to child PID ${pid}: ${e instanceof Error ? e.message : String(e)}`,
-								)
-							}
-						}
-					}
+					process.kill(childPid, "SIGKILL")
 				} catch (error) {
-					console.error(
-						`[ExecaTerminalProcess#abort] Failed to get child processes for PID ${this.pid}: ${error instanceof Error ? error.message : String(error)}`,
+					console.warn(
+						`[ExecaTerminalProcess#abort] Failed to kill child PID ${childPid}: ${error instanceof Error ? error.message : String(error)}`,
 					)
 				}
-			})()
-			// kilocode_change end
-		}
+			}
+
+			try {
+				this.subprocess?.kill("SIGKILL")
+			} catch (error) {
+				console.warn(
+					`[ExecaTerminalProcess#abort] Failed to kill subprocess: ${error instanceof Error ? error.message : String(error)}`,
+				)
+			}
+		})
+		// kilocode_change end
 	}
 
 	public override hasUnretrievedOutput() {

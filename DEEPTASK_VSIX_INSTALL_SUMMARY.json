@@ -1,6 +1,14 @@
 {
-  "size": 42411176,
-  "sha256": "ad4d3178dde70af5b98c220dc566412bf13a6eee2b26d9cd46b0e0e5479e5a50",
-  "package": "deeptask.deeptask@5.5.0",
-  "installedPath": "/home/kurz/.vscode-oss/extensions/deeptask.deeptask-5.5.0"
+  "size": 42423413,
+  "sha256": "dd64a08f0fe0611585b77368ad2296ac1c4994a1c42f73d0ffd27d3fd9fd8fd6",
+  "package": "deeptask.deeptask@5.5.2",
+  "installedPath": "/home/kurz/.vscode-oss/extensions/deeptask.deeptask-5.5.2",
+  "vscodiumVersion": "1.121.03429",
+  "verification": {
+    "universalVsixAudit": "passed",
+    "linuxVscodiumInstall": "passed",
+    "win32ContractTests": "passed",
+    "windowsVscodeRuntime": "pending-real-host",
+    "windowsVscodiumRuntime": "pending-real-host"
+  }
 }

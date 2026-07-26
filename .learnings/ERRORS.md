@@ -66,3 +66,34 @@ BrokenPipeError: [Errno 32] Broken pipe
 - **Notes**: 已在输出循环外捕获 `BrokenPipeError` 并正常返回。
 
 ---
+
+## [ERR-20260726-001] execa-shell-contract-test
+
+**Logged**: 2026-07-26T11:45:31Z
+**Priority**: medium
+**Status**: in_progress
+**Area**: tests
+
+### Summary
+Windows shell 一致性修复后，旧单测仍把 `shell: true` 这一实现细节当作契约。
+
+### Error
+
+```text
+ExecaTerminalProcess.spec.ts: expected shell: true, received shell: "/bin/bash"
+Tests: 1 failed | 10 passed
+```
+
+### Context
+- 扩展 bundle 成功，说明 execa 9.5.2 支持显式 shell 路径与 `windowsHide`。
+- 失败断言来自旧实现；旧实现让 Windows 的提示词按 PowerShell 生成命令，却由 Execa 默认 CMD 执行。
+- 正确契约应是提示词与执行器共享 `getShell()` 的结果，而不是委托给平台默认 shell。
+
+### Suggested Fix
+更新单测以 mock `getShell()`，分别断言 PowerShell/CMD/Unix shell 透传、Windows 不注入 POSIX locale、控制台隐藏及取消使用有界 `taskkill /T /F`。
+
+### Metadata
+- Reproducible: yes
+- Related Files: src/integrations/terminal/ExecaTerminalProcess.ts, src/integrations/terminal/__tests__/ExecaTerminalProcess.spec.ts
+
+---

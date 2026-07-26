@@ -72,7 +72,7 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 			const {
 				terminalOutputLineLimit = 500,
 				terminalOutputCharacterLimit = DEFAULT_TERMINAL_OUTPUT_CHARACTER_LIMIT,
-				terminalShellIntegrationDisabled = true,
+				terminalShellIntegrationDisabled = false, // kilocode_change: match product/runtime default
 			} = providerState ?? {}
 
 			// Get command execution timeout from VSCode configuration (in seconds)
@@ -166,7 +166,7 @@ export async function executeCommandInTerminal(
 		executionId,
 		command,
 		customCwd,
-		terminalShellIntegrationDisabled = true,
+		terminalShellIntegrationDisabled = false, // kilocode_change: match product/runtime default
 		terminalOutputLineLimit = 500,
 		terminalOutputCharacterLimit = DEFAULT_TERMINAL_OUTPUT_CHARACTER_LIMIT,
 		commandExecutionTimeout = 0,

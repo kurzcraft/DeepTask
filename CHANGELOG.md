@@ -1,4 +1,19 @@
-# kilo-code
+# Deeptask
+
+## 5.5.2
+
+### Patch Changes
+
+- Keep command execution responsive on Windows by aligning generated commands with the configured shell, bounding process-tree cancellation, and reliably releasing terminal state after failures.
+
+## 5.5.1
+
+### Patch Changes
+
+- Prevent a fresh installation's seeded OpenAI Compatible model metadata from being treated as a usable API configuration before an API key or custom endpoint is provided.
+- Keep cancellation reliable when a task fails before its API history is persisted: abort the request, clear the runtime task, unlock chat, and retain missing persistence as an internal diagnostic instead of a red error.
+- Add a prominent GitHub Star action to the Deeptask home and About screens.
+- Align Changesets with the `deeptask` package and use deterministic offline changelog maintenance so versioning no longer depends on a personal GitHub token.
 
 ## 5.5.0
 

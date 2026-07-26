@@ -32,6 +32,44 @@ describe("Single-open-task invariant", () => {
 		vi.restoreAllMocks()
 	})
 
+	it("Fresh install: rejects the seeded OpenAI profile before creating a task", async () => {
+		const removeClineFromStack = vi.fn().mockResolvedValue(undefined)
+		const addClineToStack = vi.fn().mockResolvedValue(undefined)
+		const provider = {
+			clineStack: [],
+			setValues: vi.fn(),
+			getState: vi.fn().mockResolvedValue({
+				apiConfiguration: {
+					apiProvider: "openai",
+					openAiModelId: "gpt-5.5",
+					openAiStreamingEnabled: true,
+				},
+				organizationAllowList: "*",
+				diffEnabled: true,
+				enableCheckpoints: true,
+				checkpointTimeout: 60,
+				fuzzyMatchThreshold: 1.0,
+				cloudUserInfo: null,
+				remoteControlEnabled: false,
+			}),
+			removeClineFromStack,
+			addClineToStack,
+			setProviderProfile: vi.fn(),
+			log: vi.fn(),
+			contextProxy: {
+				extensionUri: {},
+				getProviderSettings: vi.fn(() => ({})),
+			},
+		} as unknown as ClineProvider
+
+		await expect((ClineProvider.prototype as any).createTask.call(provider, "First task")).rejects.toThrow(
+			"OpenAI Compatible is not configured",
+		)
+
+		expect(removeClineFromStack).not.toHaveBeenCalled()
+		expect(addClineToStack).not.toHaveBeenCalled()
+	})
+
 	it("User-initiated create: closes existing before opening new", async () => {
 		// Allow profile
 		vi.spyOn(ProfileValidatorMod.ProfileValidator, "isProfileAllowed").mockReturnValue(true)
@@ -102,9 +140,10 @@ describe("Single-open-task invariant", () => {
 				cloudUserInfo: null,
 				taskSyncEnabled: false,
 			}),
-			// Methods used by createTaskWithHistoryItem for pending edit cleanup
+			// Methods used by createTaskWithHistoryItem for pending edit and continuation cleanup
 			getPendingEditOperation: vi.fn().mockReturnValue(undefined),
 			clearPendingEditOperation: vi.fn(),
+			consumePendingCancelledTaskContinuation: vi.fn().mockReturnValue(undefined),
 			context: { extension: { packageJSON: {} }, globalStorageUri: { fsPath: "/tmp" } },
 			contextProxy: {
 				extensionUri: {},

@@ -98,12 +98,32 @@ describe("checkExistKey", () => {
 		expect(checkExistKey(config)).toBe(true)
 	})
 
-	it("should return true for seeded OpenAI Compatible profile without base URL or API key", () => {
+	it("should return false for a fresh OpenAI Compatible profile without endpoint or API key", () => {
 		const config: ProviderSettings = {
 			apiProvider: "openai",
-			openAiModelId: "gpt-4o",
+			openAiModelId: "gpt-5.5",
 			openAiStreamingEnabled: true,
 			includeMaxTokens: true,
+		}
+
+		expect(checkExistKey(config)).toBe(false)
+	})
+
+	it("should return true for an OpenAI Compatible profile with a custom endpoint", () => {
+		const config: ProviderSettings = {
+			apiProvider: "openai",
+			openAiModelId: "local-model",
+			openAiBaseUrl: "http://localhost:11434/v1",
+		}
+
+		expect(checkExistKey(config)).toBe(true)
+	})
+
+	it("should return true for an OpenAI Compatible profile with an API key", () => {
+		const config: ProviderSettings = {
+			apiProvider: "openai",
+			openAiModelId: "gpt-5.5",
+			openAiApiKey: "test-key",
 		}
 
 		expect(checkExistKey(config)).toBe(true)
