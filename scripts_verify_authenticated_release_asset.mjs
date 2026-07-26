@@ -2,11 +2,13 @@ import fs from "node:fs"
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
 
-const owner = "kurzgesagtcraft"
-const repo = "deeptask"
-const tag = "v5.5.0"
-const assetName = "deeptask-5.5.0.vsix"
-const localPath = "deeptask-5.5.0.vsix"
+const owner = "kurzcraft"
+const repo = "DeepTask"
+const packageJson = JSON.parse(fs.readFileSync("src/package.json", "utf8"))
+const version = packageJson.version
+const tag = `v${version}`
+const assetName = `deeptask-${version}.vsix`
+const localPath = assetName
 
 function getToken() {
   const output = execFileSync("git", ["credential", "fill"], {
@@ -55,6 +57,10 @@ async function main() {
 
   console.log(JSON.stringify({
     releaseUrl: release.html_url,
+    tagName: release.tag_name,
+    targetCommitish: release.target_commitish,
+    draft: release.draft,
+    prerelease: release.prerelease,
     assetId: asset.id,
     assetState: asset.state,
     localSize: local.length,

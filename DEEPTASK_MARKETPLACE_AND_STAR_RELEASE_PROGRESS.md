@@ -42,8 +42,8 @@
 - [x] 完成后端与 Webview TypeScript 检查及 `git diff --check`
 - [ ] 构建并审计 `deeptask-5.5.3.vsix`
 - [ ] 安装到 VSCodium 并验证运行时版本与关键修复标记
-- [ ] 提交并推送 `5.5.3` 源码
-- [ ] 创建 GitHub Release `v5.5.3` 并校验资产
+- [x] 提交并推送 `5.5.3` 源码
+- [x] 创建 GitHub Release `v5.5.3` 并校验资产
 - [ ] 更新 Visual Studio Marketplace 并验证公开版本
 - [x] Open VSX 不在本轮范围内（用户明确要求只更新 VS Code Marketplace）
 - [ ] 存储本轮发布经验与残余风险
@@ -67,3 +67,7 @@
 - 2026-07-26：Open VSX 公开页验收成功：`https://open-vsx.org/extension/deeptask/deeptask`，显示版本 `5.5.0`、别名 `latest`、唯一标识 `deeptask.deeptask`，下载入口可用。
 - 2026-07-26：Star UI、测试、changeset 与市场元数据已提交为 `82d87bbca9dbace36411bb21db28fca1b1dedea7`，并成功推送到 `origin/main`。
 - 2026-07-26：发布原理与边界已存入 universe-memory 的 `2026-07-26-Deeptask双插件市场首发与Star入口.md`。
+- 2026-07-26：`5.5.3` 产品修复提交为 `856e2d6b`，发布脚本仓库坐标修复提交为 `38b86abb`，均已推送到 `origin/main`。
+- 2026-07-26：GitHub Release `v5.5.3` 已公开发布：`https://github.com/kurzcraft/DeepTask/releases/tag/v5.5.3`。
+- 2026-07-26：GitHub 远端资产 `deeptask-5.5.3.vsix` 状态为 `uploaded`，远端与本地大小均为 42,426,415 字节，逐字节一致，SHA-256 为 `e8fc5ecad298342d2578b11bc5314ffaf6fecdddbec3b77e4a79fbb30ce760b9`。
+- 2026-07-26：首次发布调用因脚本残留旧仓库 `kurzgesagtcraft/deeptask` 而返回 404；已改为当前远端 `kurzcraft/DeepTask`，并将发布和验收脚本改为从 `src/package.json` 推导版本，防止后续误发布旧 tag。
