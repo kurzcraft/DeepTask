@@ -950,7 +950,12 @@ describe("SYSTEM_PROMPT", () => {
 
 		expect(defaultPrompt).not.toContain("TASK PROGRESS FILE")
 		expect(enabledPrompt).toContain("TASK PROGRESS FILE")
-		expect(enabledPrompt).toContain("create a task-specific progress file")
+		expect(enabledPrompt).toContain("current workspace's EXTRA/task/ directory")
+		expect(enabledPrompt).toContain("create a concise task-specific Markdown progress file under EXTRA/task/")
+		expect(enabledPrompt).toContain("creating the directory when needed")
+		expect(enabledPrompt).toContain("Do not create task progress files in the workspace root")
+		expect(enabledPrompt).toContain("long-command scripts in EXTRA/bash/")
+		expect(enabledPrompt).toContain("durable command output in EXTRA/output/")
 	})
 	// kilocode_change end
 

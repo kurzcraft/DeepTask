@@ -104,6 +104,36 @@ describe("MistralHandler", () => {
 			expect(model.info).toBeDefined()
 			expect(model.info.supportsPromptCache).toBe(false)
 		})
+
+		it("should use the 256K safety context for an unknown model", () => {
+			const handlerWithUnknownModel = new MistralHandler({
+				...mockOptions,
+				apiModelId: "subscription-coding-model",
+			})
+
+			const model = handlerWithUnknownModel.getModel()
+			expect(model.id).toBe("subscription-coding-model")
+			expect(model.info.contextWindow).toBe(256_000)
+		})
+
+		it("should apply model-bound user metadata to an explicitly configured model", () => {
+			const handlerWithOverride = new MistralHandler({
+				...mockOptions,
+				apiModelId: "subscription-coding-model",
+				apiModelInfoModelId: "subscription-coding-model",
+				apiModelInfo: {
+					maxTokens: 32_768,
+					contextWindow: 256_000,
+					supportsImages: false,
+					supportsPromptCache: false,
+				},
+			})
+
+			const model = handlerWithOverride.getModel()
+			expect(model.id).toBe("subscription-coding-model")
+			expect(model.info.contextWindow).toBe(256_000)
+			expect(model.maxTokens).toBe(32_768)
+		})
 	})
 
 	describe("createMessage", () => {

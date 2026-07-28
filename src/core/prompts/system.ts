@@ -59,9 +59,9 @@ function getTaskProgressFileInstructions(): string {
 
 TASK PROGRESS FILE
 
-When starting a task, first look for an existing Markdown progress file in the workspace root whose name clearly matches the task. If it exists, read it and use it to restore prior progress. If it does not exist and the task is non-trivial, create a task-specific progress file in the workspace root before making substantive changes.
+When starting a task, first look in the current workspace's EXTRA/task/ directory for an existing Markdown progress file whose name clearly matches the task. If it exists, read it and use it to restore prior progress. If it does not exist and the task is non-trivial, create a concise task-specific Markdown progress file under EXTRA/task/ before making substantive changes, creating the directory when needed. Do not create task progress files in the workspace root.
 
-The progress file should contain a short checklist of milestones, current findings, decisions, blockers, and verification status. Update it whenever a milestone is completed or the plan changes, so another session can resume the task from that file.`
+The progress file should contain a short checklist of milestones, current findings, decisions, blockers, and verification status. Update it whenever a milestone is completed or the plan changes, so another session can resume the task from that file. This keeps cross-session task state alongside long-command scripts in EXTRA/bash/ and durable command output in EXTRA/output/.`
 }
 
 function getReliableCommandExecutionInstructions(): string {

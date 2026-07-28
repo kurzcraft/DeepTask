@@ -722,6 +722,7 @@ const ApiOptions = ({
 				<Mistral
 					apiConfiguration={apiConfiguration}
 					setApiConfigurationField={setApiConfigurationField}
+					routerModels={routerModels}
 					simplifySettings={fromWelcomeView}
 				/>
 			)}
@@ -785,6 +786,7 @@ const ApiOptions = ({
 				<DeepSeek
 					apiConfiguration={apiConfiguration}
 					setApiConfigurationField={setApiConfigurationField}
+					routerModels={routerModels}
 					simplifySettings={fromWelcomeView}
 				/>
 			)}
@@ -842,7 +844,12 @@ const ApiOptions = ({
 			)}
 
 			{selectedProvider === "groq" && (
-				<Groq apiConfiguration={apiConfiguration} setApiConfigurationField={setApiConfigurationField} />
+				<Groq
+					apiConfiguration={apiConfiguration}
+					setApiConfigurationField={setApiConfigurationField}
+					routerModels={routerModels}
+					simplifySettings={fromWelcomeView}
+				/>
 			)}
 
 			{selectedProvider === "huggingface" && (
@@ -850,7 +857,12 @@ const ApiOptions = ({
 			)}
 
 			{selectedProvider === "cerebras" && (
-				<Cerebras apiConfiguration={apiConfiguration} setApiConfigurationField={setApiConfigurationField} />
+				<Cerebras
+					apiConfiguration={apiConfiguration}
+					setApiConfigurationField={setApiConfigurationField}
+					routerModels={routerModels}
+					simplifySettings={fromWelcomeView}
+				/>
 			)}
 
 			{selectedProvider === "chutes" && (
@@ -962,10 +974,11 @@ const ApiOptions = ({
 			)}
 			{/* kilocode_change end */}
 
-			{/* Skip generic model picker for claude-code/openai-codex since they have their own model pickers */}
+			{/* kilocode_change start: providers with dedicated editable model controls must not render twice */}
 			{selectedProviderModels.length > 0 &&
-				selectedProvider !== "claude-code" &&
-				selectedProvider !== "openai-codex" && (
+				!["claude-code", "openai-codex", "deepseek", "groq", "mistral", "cerebras"].includes(
+					selectedProvider,
+				) && (
 					<>
 						<div>
 							<label className="block font-medium mb-1">{t("settings:providers.model")}</label>

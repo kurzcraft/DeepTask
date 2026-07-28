@@ -226,6 +226,11 @@ const baseProviderSettingsSchema = z.object({
 // Several of the providers share common model config properties.
 const apiModelIdProviderModelSchema = baseProviderSettingsSchema.extend({
 	apiModelId: z.string().optional(),
+	// kilocode_change start: model-bound metadata for dynamically discovered models
+	apiModelInfo: modelInfoSchema.partial().optional(),
+	apiModelInfoModelId: z.string().optional(),
+	apiModelInfoSource: z.enum(["detected", "manual"]).optional(),
+	// kilocode_change end
 })
 
 const anthropicSchema = apiModelIdProviderModelSchema.extend({

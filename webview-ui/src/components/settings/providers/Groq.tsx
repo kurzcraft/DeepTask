@@ -1,19 +1,27 @@
 import { useCallback } from "react"
 import { VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
 
-import type { ProviderSettings } from "@roo-code/types"
+import {
+	type ProviderSettings,
+	type RouterModels,
+	groqDefaultModelId,
+	groqModels,
+} from "@roo-code/types"
 
 import { useAppTranslation } from "@src/i18n/TranslationContext"
 import { VSCodeButtonLink } from "@src/components/common/VSCodeButtonLink"
 
 import { inputEventTransform } from "../transforms"
+import { DynamicVendorModelSettings } from "./DynamicVendorModelSettings"
 
 type GroqProps = {
 	apiConfiguration: ProviderSettings
 	setApiConfigurationField: (field: keyof ProviderSettings, value: ProviderSettings[keyof ProviderSettings]) => void
+	routerModels?: RouterModels
+	simplifySettings?: boolean
 }
 
-export const Groq = ({ apiConfiguration, setApiConfigurationField }: GroqProps) => {
+export const Groq = ({ apiConfiguration, setApiConfigurationField, routerModels }: GroqProps) => {
 	const { t } = useAppTranslation()
 
 	const handleInputChange = useCallback(
@@ -45,6 +53,15 @@ export const Groq = ({ apiConfiguration, setApiConfigurationField }: GroqProps) 
 					{t("settings:providers.getGroqApiKey")}
 				</VSCodeButtonLink>
 			)}
+			<DynamicVendorModelSettings
+				provider="groq"
+				defaultModelId={groqDefaultModelId}
+				staticModels={groqModels}
+				remoteModels={routerModels?.groq}
+				apiKey={apiConfiguration.groqApiKey}
+				apiConfiguration={apiConfiguration}
+				setApiConfigurationField={setApiConfigurationField}
+			/>
 		</>
 	)
 }

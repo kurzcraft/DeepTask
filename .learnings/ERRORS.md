@@ -220,3 +220,46 @@ VSIX 审计应以 ZIP 中实际规范化条目名为准，或建立大小写不�
 - **Notes**: 审计器改为大小写不敏感 ZIP 条目映射；未重复构建，直接对既有 5.5.5 VSIX 轻量复验通过。
 
 ---
+
+## [ERR-20260728-001] dynamic-vendor-settings-prop-contract
+
+**Logged**: 2026-07-28T22:50:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+
+共享厂商模型设置组件删除 `serviceName` 属性后，四个厂商调用点仍传入该属性，导致预构建类型检查失败。
+
+### Error
+
+```text
+TS2322: Property 'serviceName' does not exist on type 'DynamicVendorModelSettingsProps'.
+```
+
+### Context
+
+- 运行四家 handler 聚焦测试时，`pretest` 先执行 Webview 构建并发现契约失配。
+- DeepSeek、Groq、Mistral、Cerebras 四个调用点均残留同一个陈旧属性。
+- 失败发生在测试执行前，不代表运行时上下文兜底断言失败。
+
+### Suggested Fix
+
+组件属性接口收窄时必须同步搜索全部 JSX 调用点，并在聚焦测试前执行或保留 TypeScript 构建门禁。
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: webview-ui/src/components/settings/providers/DynamicVendorModelSettings.tsx,
+  webview-ui/src/components/settings/providers/DeepSeek.tsx,
+  webview-ui/src/components/settings/providers/Groq.tsx,
+  webview-ui/src/components/settings/providers/Mistral.tsx,
+  webview-ui/src/components/settings/providers/Cerebras.tsx
+
+### Resolution
+
+- **Resolved**: 2026-07-28T22:51:00+08:00
+- **Notes**: 删除四个调用点的陈旧 `serviceName` 属性，并以 Webview 类型构建和聚焦测试复验。
+
+---

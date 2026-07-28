@@ -59,6 +59,36 @@ describe("GroqHandler", () => {
 		expect(model.info).toEqual(groqModels[testModelId])
 	})
 
+	it("should use the 256K safety context for an unknown model", () => {
+		const handlerWithUnknownModel = new GroqHandler({
+			apiModelId: "subscription-coding-model",
+			groqApiKey: "test-groq-api-key",
+		})
+
+		const model = handlerWithUnknownModel.getModel()
+		expect(model.id).toBe("subscription-coding-model")
+		expect(model.info.contextWindow).toBe(256_000)
+	})
+
+	it("should apply model-bound user metadata to an explicitly configured model", () => {
+		const handlerWithOverride = new GroqHandler({
+			apiModelId: "subscription-coding-model",
+			groqApiKey: "test-groq-api-key",
+			apiModelInfoModelId: "subscription-coding-model",
+			apiModelInfo: {
+				maxTokens: 32_768,
+				contextWindow: 256_000,
+				supportsImages: false,
+				supportsPromptCache: false,
+			},
+		})
+
+		const model = handlerWithOverride.getModel()
+		expect(model.id).toBe("subscription-coding-model")
+		expect(model.info.contextWindow).toBe(256_000)
+		expect(model.info.maxTokens).toBe(32_768)
+	})
+
 	it("completePrompt method should return text from Groq API", async () => {
 		const expectedResponse = "This is a test response from Groq"
 		mockCreate.mockResolvedValueOnce({ choices: [{ message: { content: expectedResponse } }] })

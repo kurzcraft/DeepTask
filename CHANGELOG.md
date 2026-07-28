@@ -1,5 +1,17 @@
 # Deeptask
 
+## 5.5.7
+
+### Patch Changes
+
+- Refresh DeepSeek, Groq, Mistral, and Cerebras model catalogs with the currently entered account credentials and endpoint.
+- Isolate model catalog caches by account scope so subscription changes cannot reuse another account's model list.
+- Preserve explicitly entered model IDs and allow model-bound context window overrides for dedicated providers.
+- Improve OpenAI-compatible context and output-limit detection for nested subscription catalog metadata.
+- Keep streaming Agent reasoning pinned to the latest output across same-message growth and asynchronous Markdown layout changes.
+- Respect explicit wheel, touch, keyboard, and scrollbar navigation while restoring automatic output following at the bottom.
+- Store cross-session task progress files under `EXTRA/task/`, alongside `EXTRA/bash/` scripts and `EXTRA/output/` logs.
+
 ## 5.5.6
 
 ### Patch Changes

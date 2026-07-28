@@ -793,6 +793,7 @@ describe("useSelectedModel", () => {
 			expect(result.current.provider).toBe("openai")
 			expect(result.current.id).toBe("gpt-4o")
 			expect(result.current.info).toEqual(openAiModelInfoSaneDefaults)
+			expect(result.current.info?.contextWindow).toBe(256_000)
 			expect(result.current.info?.supportsNativeTools).toBe(true)
 			expect(result.current.info?.defaultToolProtocol).toBe("native")
 		})
@@ -829,19 +830,17 @@ describe("useSelectedModel", () => {
 			expect(result.current.info?.defaultToolProtocol).toBe("native")
 		})
 
-		describe("authoritative vendor model directories", () => {
-			it("migrates DeepSeek away from removed configured and default models", () => {
-				const currentModelInfo: ModelInfo = {
-					maxTokens: 16_384,
-					contextWindow: 128_000,
-					supportsImages: false,
-					supportsPromptCache: false,
-				}
+		describe("vendor model directories", () => {
+			it("preserves an explicitly configured DeepSeek model missing from the remote directory", () => {
 				mockUseRouterModels.mockReturnValue({
 					data: {
 						deepseek: {
-							"z-current-model": currentModelInfo,
-							"a-current-model": currentModelInfo,
+							"current-model": {
+								maxTokens: 16_384,
+								contextWindow: 128_000,
+								supportsImages: false,
+								supportsPromptCache: false,
+							},
 						},
 					},
 					isLoading: false,
@@ -850,14 +849,25 @@ describe("useSelectedModel", () => {
 
 				const apiConfiguration: ProviderSettings = {
 					apiProvider: "deepseek",
-					apiModelId: "removed-configured-model",
+					apiModelId: "subscription-coding-model",
+					apiModelInfoModelId: "subscription-coding-model",
+					apiModelInfo: {
+						maxTokens: 32_768,
+						contextWindow: 256_000,
+						supportsImages: false,
+						supportsPromptCache: false,
+					},
 				}
 				const wrapper = createWrapper()
 				const { result } = renderHook(() => useSelectedModel(apiConfiguration), { wrapper })
 
-				expect(result.current.id).toBe("a-current-model")
+				expect(result.current.id).toBe("subscription-coding-model")
 				expect(result.current.info).toEqual(
-					expect.objectContaining({ contextWindow: 128_000, supportsNativeTools: true }),
+					expect.objectContaining({
+						maxTokens: 32_768,
+						contextWindow: 256_000,
+						supportsNativeTools: true,
+					}),
 				)
 			})
 

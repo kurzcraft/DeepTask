@@ -80,7 +80,14 @@ vi.mock("../../ModelPicker", () => ({
 }))
 
 vi.mock("../../R1FormatSetting", () => ({
-	R1FormatSetting: () => <div data-testid="r1-format-setting">R1 Format Setting</div>,
+	R1FormatSetting: ({ openAiR1FormatEnabled, onChange }: any) => (
+		<input
+			type="checkbox"
+			data-testid="r1-format-setting"
+			checked={openAiR1FormatEnabled}
+			onChange={() => onChange(!openAiR1FormatEnabled)}
+		/>
+	),
 }))
 
 vi.mock("../../ThinkingBudget", () => ({
@@ -224,6 +231,29 @@ describe("OpenAICompatible Component - includeMaxTokens checkbox", () => {
 
 			const checkboxInput = screen.getByTestId("checkbox-input-settings:includemaxoutputtokens")
 			expect(checkboxInput).toBeChecked()
+		})
+		it("should default R1 format to checked when the setting is undefined", () => {
+			render(
+				<OpenAICompatible
+					apiConfiguration={{} as ProviderSettings}
+					setApiConfigurationField={mockSetApiConfigurationField}
+					organizationAllowList={mockOrganizationAllowList}
+				/>,
+			)
+
+			expect(screen.getByTestId("r1-format-setting")).toBeChecked()
+		})
+
+		it("should keep R1 format unchecked when the user explicitly disabled it", () => {
+			render(
+				<OpenAICompatible
+					apiConfiguration={{ openAiR1FormatEnabled: false } as ProviderSettings}
+					setApiConfigurationField={mockSetApiConfigurationField}
+					organizationAllowList={mockOrganizationAllowList}
+				/>,
+			)
+
+			expect(screen.getByTestId("r1-format-setting")).not.toBeChecked()
 		})
 	})
 

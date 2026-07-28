@@ -16,4 +16,12 @@ export class GroqHandler extends BaseOpenAiCompatibleProvider<GroqModelId> {
 			defaultTemperature: 0.5,
 		})
 	}
+
+	override getModel() {
+		const id = this.options.apiModelId || groqDefaultModelId
+		const knownInfo = groqModels[id as GroqModelId]
+		const staticInfo = knownInfo ?? { ...groqModels[groqDefaultModelId], contextWindow: 256_000 }
+		const userInfo = this.options.apiModelInfoModelId === id ? this.options.apiModelInfo : undefined
+		return { id, info: { ...staticInfo, ...userInfo } }
+	}
 }

@@ -1,4 +1,5 @@
 import * as path from "path"
+import { createHash } from "crypto"
 import fs from "fs/promises"
 import * as fsSync from "fs"
 
@@ -47,9 +48,27 @@ const memoryCache = new NodeCache({ stdTTL: 5 * 60, checkperiod: 5 * 60 })
 // Zod schema for validating ModelRecord structure from disk cache
 const modelRecordSchema = z.record(z.string(), modelInfoSchema)
 
-// Track in-flight refresh requests to prevent concurrent API calls for the same provider
-// This prevents race conditions where multiple calls might overwrite each other's results
-const inFlightRefresh = new Map<RouterName, Promise<ModelRecord>>()
+// Track in-flight refresh requests per provider and account scope. The irreversible
+// fingerprint prevents credentials from entering cache keys, files, or logs.
+const inFlightRefresh = new Map<string, Promise<ModelRecord>>()
+
+const getModelCacheKey = (options: GetModelsOptions): string => {
+	const apiKey = options.apiKey?.trim()
+	if (!apiKey) {
+		return options.provider
+	}
+
+	const scope = JSON.stringify({
+		provider: options.provider,
+		baseUrl: options.baseUrl?.trim().replace(/\/+$/, "") || "",
+		apiKey,
+		nanoGptModelList: options.provider === "nano-gpt" ? options.nanoGptModelList : undefined,
+	})
+	const fingerprint = createHash("sha256").update(scope).digest("hex").slice(0, 24)
+	return `${options.provider}:${fingerprint}`
+}
+
+const canUseDiskCache = (options: GetModelsOptions): boolean => !options.apiKey?.trim()
 
 export /*kilocode_change*/ async function writeModels(router: RouterName, data: ModelRecord) {
 	const filename = `${router}_models.json`
@@ -204,8 +223,9 @@ async function fetchModelsFromProvider(options: GetModelsOptions): Promise<Model
  */
 export const getModels = async (options: GetModelsOptions): Promise<ModelRecord> => {
 	const { provider } = options
+	const cacheKey = getModelCacheKey(options)
 
-	let models = getModelsFromCache(provider)
+	let models = getModelsFromCache(provider, options)
 
 	if (models) {
 		return models
@@ -215,13 +235,13 @@ export const getModels = async (options: GetModelsOptions): Promise<ModelRecord>
 		models = await fetchModelsFromProvider(options)
 		const modelCount = Object.keys(models).length
 
-		// Only cache non-empty results to prevent persisting failed API responses
-		// Empty results could indicate API failure rather than "no models exist"
+		// Only cache non-empty results to prevent persisting failed API responses.
+		// Authenticated catalogs stay memory-only and account-scoped.
 		if (modelCount > 0) {
-			memoryCache.set(provider, models)
+			memoryCache.set(cacheKey, models)
 
-			// kilocode_change start: prevent eternal caching of kilocode models
-			if (provider !== "kilocode") {
+			// kilocode_change start: prevent eternal or cross-account caching
+			if (provider !== "kilocode" && canUseDiskCache(options)) {
 				await writeModels(provider, models).catch((err) =>
 					console.error(`[MODEL_CACHE] Error writing ${provider} models to file cache:`, err),
 				)
@@ -255,11 +275,10 @@ export const getModels = async (options: GetModelsOptions): Promise<ModelRecord>
  */
 export const refreshModels = async (options: GetModelsOptions): Promise<ModelRecord> => {
 	const { provider } = options
+	const cacheKey = getModelCacheKey(options)
 
-	// Check if there's already an in-flight refresh for this provider
-	// This prevents race conditions where multiple concurrent refreshes might
-	// overwrite each other's results
-	const existingRequest = inFlightRefresh.get(provider)
+	// Reuse only requests for the same provider and account scope.
+	const existingRequest = inFlightRefresh.get(cacheKey)
 	if (existingRequest) {
 		return existingRequest
 	}
@@ -271,8 +290,8 @@ export const refreshModels = async (options: GetModelsOptions): Promise<ModelRec
 			const models = await fetchModelsFromProvider(options)
 			const modelCount = Object.keys(models).length
 
-			// Get existing cached data for comparison
-			const existingCache = getModelsFromCache(provider)
+			// Get existing cached data for this account scope only.
+			const existingCache = getModelsFromCache(provider, options)
 			const existingCount = existingCache ? Object.keys(existingCache).length : 0
 
 			if (modelCount === 0) {
@@ -289,27 +308,27 @@ export const refreshModels = async (options: GetModelsOptions): Promise<ModelRec
 				}
 			}
 
-			// Update memory cache first
-			memoryCache.set(provider, models)
+			// Update the account-scoped memory cache first.
+			memoryCache.set(cacheKey, models)
 
-			// Atomically write to disk (safeWriteJson handles atomic writes)
-			await writeModels(provider, models).catch((err) =>
-				console.error(`[refreshModels] Error writing ${provider} models to disk:`, err),
-			)
+			// Public catalogs may use disk; authenticated catalogs must not leak across accounts.
+			if (canUseDiskCache(options)) {
+				await writeModels(provider, models).catch((err) =>
+					console.error(`[refreshModels] Error writing ${provider} models to disk:`, err),
+				)
+			}
 
 			return models
 		} catch (error) {
-			// Log the error for debugging, then return existing cache if available (graceful degradation)
+			// Log the error for debugging, then return this account's cache if available.
 			console.error(`[refreshModels] Failed to refresh ${provider} models:`, error)
-			return getModelsFromCache(provider) || {}
+			return getModelsFromCache(provider, options) || {}
 		} finally {
-			// Always clean up the in-flight tracking
-			inFlightRefresh.delete(provider)
+			inFlightRefresh.delete(cacheKey)
 		}
 	})()
 
-	// Track the in-flight request
-	inFlightRefresh.set(provider, refreshPromise)
+	inFlightRefresh.set(cacheKey, refreshPromise)
 
 	return refreshPromise
 }
@@ -363,6 +382,7 @@ export async function initializeModelCacheRefresh(): Promise<void> {
  */
 export const flushModels = async (options: GetModelsOptions, refresh: boolean = false): Promise<void> => {
 	const { provider } = options
+	const cacheKey = getModelCacheKey(options)
 	if (refresh) {
 		// Don't delete memory cache - let refreshModels atomically replace it
 		// This prevents a race condition where getModels() might be called
@@ -370,8 +390,7 @@ export const flushModels = async (options: GetModelsOptions, refresh: boolean = 
 		// Await the refresh to ensure the cache is updated before returning
 		await refreshModels(options)
 	} else {
-		// Only delete memory cache when not refreshing
-		memoryCache.del(provider)
+		memoryCache.del(cacheKey)
 	}
 }
 
@@ -383,15 +402,18 @@ export const flushModels = async (options: GetModelsOptions, refresh: boolean = 
  * @param provider - The provider to get models for.
  * @returns Models from memory cache, disk cache, or undefined if not cached.
  */
-export function getModelsFromCache(provider: ProviderName): ModelRecord | undefined {
-	// Check memory cache first (fast)
-	const memoryModels = memoryCache.get<ModelRecord>(provider)
+export function getModelsFromCache(
+	provider: ProviderName,
+	options?: GetModelsOptions,
+): ModelRecord | undefined {
+	const cacheKey = options ? getModelCacheKey(options) : provider
+	const memoryModels = memoryCache.get<ModelRecord>(cacheKey)
 	if (memoryModels) {
 		return memoryModels
 	}
 
-	// kilocode_change start: prevent eternal caching of kilocode models
-	if (provider === "kilocode") {
+	// kilocode_change start: prevent eternal and cross-account disk caching
+	if (provider === "kilocode" || (options && !canUseDiskCache(options))) {
 		return undefined
 	}
 	// kilocode_change end
@@ -424,7 +446,7 @@ export function getModelsFromCache(provider: ProviderName): ModelRecord | undefi
 			}
 
 			// Populate memory cache for future fast access
-			memoryCache.set(provider, validation.data)
+			memoryCache.set(cacheKey, validation.data)
 
 			return validation.data
 		}

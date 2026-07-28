@@ -2,14 +2,14 @@ import type { ProviderSettings } from "@roo-code/types"
 
 import type { RouterModels } from "@/ui/store.js"
 
-const DEFAULT_CONTEXT_WINDOW = 200_000
+const DEFAULT_CONTEXT_WINDOW = 256_000
 
 /**
  * Looks up the context window size for the current model from routerModels.
  *
  * @param routerModels - The router models data containing model info per provider
  * @param apiConfiguration - The current API configuration with provider and model ID
- * @returns The context window size, or DEFAULT_CONTEXT_WINDOW (200K) if not found
+ * @returns The context window size, or DEFAULT_CONTEXT_WINDOW (256K) if not found
  */
 export function getContextWindow(routerModels: RouterModels | null, apiConfiguration: ProviderSettings | null): number {
 	if (!routerModels || !apiConfiguration) {

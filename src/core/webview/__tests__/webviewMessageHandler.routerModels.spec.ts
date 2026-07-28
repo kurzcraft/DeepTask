@@ -210,6 +210,39 @@ describe("webviewMessageHandler - requestRouterModels provider filter", () => {
 		})
 	})
 
+	it("prefers unsaved DeepSeek credentials from the request when switching subscriptions", async () => {
+		mockProvider.getState.mockResolvedValue({
+			apiConfiguration: {
+				deepSeekApiKey: "stored-key",
+				deepSeekBaseUrl: "https://stored.example/v1",
+			},
+		})
+
+		await webviewMessageHandler(
+			mockProvider as any,
+			{
+				type: "requestRouterModels",
+				values: {
+					provider: "deepseek",
+					refresh: true,
+					apiKey: "unsaved-subscription-key",
+					baseUrl: "https://subscription.example/v1",
+				},
+			} as any,
+		)
+
+		const options = {
+			provider: "deepseek",
+			apiKey: "unsaved-subscription-key",
+			baseUrl: "https://subscription.example/v1",
+		}
+		expect(flushModelsMock).toHaveBeenCalledWith(options, true)
+		expect(getModelsMock).toHaveBeenCalledWith(options)
+		expect(getModelsMock).not.toHaveBeenCalledWith(
+			expect.objectContaining({ apiKey: "stored-key" }),
+		)
+	})
+
 	it("flushes cache when LiteLLM credentials are provided in message values", async () => {
 		// Provide LiteLLM credentials via message.values (simulating Refresh Models button)
 		await webviewMessageHandler(

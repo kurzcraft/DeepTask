@@ -1,19 +1,27 @@
 import { useCallback } from "react"
 import { VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
 
-import type { ProviderSettings } from "@roo-code/types"
+import {
+	type ProviderSettings,
+	type RouterModels,
+	cerebrasDefaultModelId,
+	cerebrasModels,
+} from "@roo-code/types"
 
 import { useAppTranslation } from "@src/i18n/TranslationContext"
 import { VSCodeButtonLink } from "@src/components/common/VSCodeButtonLink"
 
 import { inputEventTransform } from "../transforms"
+import { DynamicVendorModelSettings } from "./DynamicVendorModelSettings"
 
 type CerebrasProps = {
 	apiConfiguration: ProviderSettings
 	setApiConfigurationField: (field: keyof ProviderSettings, value: ProviderSettings[keyof ProviderSettings]) => void
+	routerModels?: RouterModels
+	simplifySettings?: boolean
 }
 
-export const Cerebras = ({ apiConfiguration, setApiConfigurationField }: CerebrasProps) => {
+export const Cerebras = ({ apiConfiguration, setApiConfigurationField, routerModels }: CerebrasProps) => {
 	const { t } = useAppTranslation()
 
 	const handleInputChange = useCallback(
@@ -45,6 +53,15 @@ export const Cerebras = ({ apiConfiguration, setApiConfigurationField }: Cerebra
 					{t("settings:providers.getCerebrasApiKey")}
 				</VSCodeButtonLink>
 			)}
+			<DynamicVendorModelSettings
+				provider="cerebras"
+				defaultModelId={cerebrasDefaultModelId}
+				staticModels={cerebrasModels}
+				remoteModels={routerModels?.cerebras}
+				apiKey={apiConfiguration.cerebrasApiKey}
+				apiConfiguration={apiConfiguration}
+				setApiConfigurationField={setApiConfigurationField}
+			/>
 		</>
 	)
 }

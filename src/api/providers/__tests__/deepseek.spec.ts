@@ -247,20 +247,35 @@ describe("DeepSeekHandler", () => {
 			expect((model.info as ModelInfo).preserveReasoning).toBeUndefined()
 		})
 
-		it("should return provided model ID with default model info if model does not exist", () => {
+		it("should use the 256K safety context for an unknown model", () => {
 			const handlerWithInvalidModel = new DeepSeekHandler({
 				...mockOptions,
 				apiModelId: "invalid-model",
 			})
 			const model = handlerWithInvalidModel.getModel()
-			expect(model.id).toBe("invalid-model") // Returns provided ID
+			expect(model.id).toBe("invalid-model")
 			expect(model.info).toBeDefined()
-			// With the current implementation, it's the same object reference when using default model info
-			expect(model.info).toBe(handler.getModel().info)
-			// Should have the same base properties
-			expect(model.info.contextWindow).toBe(handler.getModel().info.contextWindow)
-			// And should have supportsPromptCache set to true
+			expect(model.info.contextWindow).toBe(256_000)
 			expect(model.info.supportsPromptCache).toBe(true)
+		})
+
+		it("should apply model-bound user metadata to an explicitly configured model", () => {
+			const handlerWithOverride = new DeepSeekHandler({
+				...mockOptions,
+				apiModelId: "subscription-coding-model",
+				apiModelInfoModelId: "subscription-coding-model",
+				apiModelInfo: {
+					maxTokens: 32_768,
+					contextWindow: 256_000,
+					supportsImages: false,
+					supportsPromptCache: false,
+				},
+			})
+
+			const model = handlerWithOverride.getModel()
+			expect(model.id).toBe("subscription-coding-model")
+			expect(model.info.contextWindow).toBe(256_000)
+			expect(model.maxTokens).toBe(32_768)
 		})
 
 		it("should return default model if no model ID is provided", () => {

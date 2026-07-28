@@ -9,7 +9,7 @@ type UseRouterModelsOptions = {
 	enabled?: boolean // gate fetching entirely
 }
 
-const getRouterModels = async (provider?: string) =>
+const getRouterModels = async (provider?: string, queryKey: RouterModelsQueryKey = {}) =>
 	new Promise<RouterModels>((resolve, reject) => {
 		const cleanup = () => {
 			window.removeEventListener("message", handler)
@@ -45,7 +45,11 @@ const getRouterModels = async (provider?: string) =>
 
 		window.addEventListener("message", handler)
 		if (provider) {
-			vscode.postMessage({ type: "requestRouterModels", values: { provider } })
+			const providerOptions = getProviderRequestOptions(provider, queryKey)
+			vscode.postMessage({
+				type: "requestRouterModels",
+				values: { provider, refresh: providerOptions.hasCredentials, ...providerOptions.values },
+			})
 		} else {
 			vscode.postMessage({ type: "requestRouterModels" })
 		}
@@ -72,13 +76,34 @@ type RouterModelsQueryKey = {
 	syntheticApiKey?: string
 	// Requesty, Unbound, etc should perhaps also be here, but they already have their own hacks for reloading
 }
+const getProviderRequestOptions = (provider: string, queryKey: RouterModelsQueryKey) => {
+	const values: { apiKey?: string; baseUrl?: string } = {}
+
+	switch (provider) {
+		case "deepseek":
+			values.apiKey = queryKey.deepSeekApiKey
+			values.baseUrl = queryKey.deepSeekBaseUrl
+			break
+		case "groq":
+			values.apiKey = queryKey.groqApiKey
+			break
+		case "mistral":
+			values.apiKey = queryKey.mistralApiKey
+			break
+		case "cerebras":
+			values.apiKey = queryKey.cerebrasApiKey
+			break
+	}
+
+	return { values, hasCredentials: Boolean(values.apiKey?.trim()) }
+}
 // kilocode_change end
 
 export const useRouterModels = (queryKey: RouterModelsQueryKey, opts: UseRouterModelsOptions = {}) => {
 	const provider = opts.provider || undefined
 	return useQuery({
 		queryKey: ["routerModels", provider || "all", queryKey],
-		queryFn: () => getRouterModels(provider),
+		queryFn: () => getRouterModels(provider, queryKey),
 		enabled: opts.enabled !== false,
 	})
 }

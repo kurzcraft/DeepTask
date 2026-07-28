@@ -37,6 +37,10 @@ vi.mock("fs", () => ({
 	readFileSync: vi.fn().mockReturnValue("{}"),
 }))
 
+vi.mock("../../../../utils/safeWriteJson", () => ({
+	safeWriteJson: vi.fn().mockResolvedValue(undefined),
+}))
+
 // Mock all the model fetchers
 vi.mock("../litellm")
 vi.mock("../openrouter")
@@ -69,6 +73,7 @@ import { getGlamaModels } from "../glama" // kilocode_change
 import { getUnboundModels } from "../unbound"
 import { getIOIntelligenceModels } from "../io-intelligence"
 import { getOvhCloudAiEndpointsModels } from "../ovhcloud" // kilocode_change
+import { safeWriteJson } from "../../../../utils/safeWriteJson"
 
 const mockGetLiteLLMModels = getLiteLLMModels as Mock<typeof getLiteLLMModels>
 const mockGetOpenRouterModels = getOpenRouterModels as Mock<typeof getOpenRouterModels>
@@ -515,6 +520,36 @@ describe("empty cache protection", () => {
 			const [result1, result2] = await Promise.all([promise1, promise2])
 			expect(result1).toEqual(mockModels)
 			expect(result2).toEqual(mockModels)
+		})
+
+		it("isolates concurrent authenticated catalogs by credential fingerprint", async () => {
+			const firstModels = {
+				"first/model": { contextWindow: 128000, supportsPromptCache: false },
+			}
+			const secondModels = {
+				"second/model": { contextWindow: 128000, supportsPromptCache: false },
+			}
+			let resolveFirst: (value: typeof firstModels) => void
+			let resolveSecond: (value: typeof secondModels) => void
+			mockGetOpenRouterModels
+				.mockReturnValueOnce(new Promise((resolve) => (resolveFirst = resolve)))
+				.mockReturnValueOnce(new Promise((resolve) => (resolveSecond = resolve)))
+			mockGet.mockReturnValue(undefined)
+
+			const { refreshModels } = await import("../modelCache")
+			const first = refreshModels({ provider: "openrouter", apiKey: "subscription-key-a" })
+			const second = refreshModels({ provider: "openrouter", apiKey: "subscription-key-b" })
+
+			expect(mockGetOpenRouterModels).toHaveBeenCalledTimes(2)
+			resolveFirst!(firstModels)
+			resolveSecond!(secondModels)
+			await expect(Promise.all([first, second])).resolves.toEqual([firstModels, secondModels])
+
+			const cacheKeys = mockSet.mock.calls.map(([key]) => String(key))
+			expect(cacheKeys).toHaveLength(2)
+			expect(new Set(cacheKeys).size).toBe(2)
+			expect(cacheKeys.join(" ")).not.toContain("subscription-key")
+			expect(safeWriteJson).not.toHaveBeenCalled()
 		})
 	})
 })

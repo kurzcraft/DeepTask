@@ -204,7 +204,12 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const [expandedRows, setExpandedRows] = useState<Record<number, boolean>>({})
 	const prevExpandedRowsRef = useRef<Record<number, boolean>>()
 	const scrollContainerRef = useRef<HTMLDivElement>(null)
-	const stickyFollowRef = useRef<boolean>(false)
+	// kilocode_change start: preserve explicit user scroll intent during streaming output
+	const chatScrollerRef = useRef<HTMLElement | null>(null)
+	const stickyFollowRef = useRef<boolean>(true)
+	const followOutputFrameRef = useRef<number>()
+	const lastTouchYRef = useRef<number>()
+	// kilocode_change end
 	const [showScrollToBottom, setShowScrollToBottom] = useState(false)
 	const [isAtBottom, setIsAtBottom] = useState(false)
 	const lastTtsRef = useRef<string>("")
@@ -1637,6 +1642,30 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		})
 	}, [])
 
+	// kilocode_change start: coalesce streaming height changes into one bottom correction per frame
+	const keepFollowingOutput = useCallback(() => {
+		if (!stickyFollowRef.current || followOutputFrameRef.current !== undefined) {
+			return
+		}
+
+		followOutputFrameRef.current = window.requestAnimationFrame(() => {
+			followOutputFrameRef.current = undefined
+			if (stickyFollowRef.current) {
+				scrollToBottomAuto()
+			}
+		})
+	}, [scrollToBottomAuto])
+
+	useEffect(
+		() => () => {
+			if (followOutputFrameRef.current !== undefined) {
+				window.cancelAnimationFrame(followOutputFrameRef.current)
+			}
+		},
+		[],
+	)
+	// kilocode_change end
+
 	// kilocode_change start
 	// Animated "blink" to highlight a specific message. Used by the TaskTimeline
 	const highlightClearTimerRef = useRef<NodeJS.Timeout | undefined>()
@@ -1687,42 +1716,75 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 
 	const handleRowHeightChange = useCallback(
 		(isTaller: boolean) => {
-			if (isAtBottom) {
+			if (stickyFollowRef.current || isAtBottom) {
 				if (isTaller) {
 					scrollToBottomSmooth()
 				} else {
-					setTimeout(() => scrollToBottomAuto(), 0)
+					keepFollowingOutput()
 				}
 			}
 		},
-		[scrollToBottomSmooth, scrollToBottomAuto, isAtBottom],
+		[scrollToBottomSmooth, keepFollowingOutput, isAtBottom],
 	)
 
-	// Disable sticky follow when user scrolls up inside the chat container
-	const handleWheel = useCallback((event: Event) => {
-		const wheelEvent = event as WheelEvent
-		if (wheelEvent.deltaY < 0 && scrollContainerRef.current?.contains(wheelEvent.target as Node)) {
+	// kilocode_change start: only explicit upward input releases following; content
+	// growth can temporarily move Virtuoso away from the bottom without user intent.
+	useEffect(() => {
+		stickyFollowRef.current = true
+	}, [task?.ts])
+
+	const releaseOutputFollowing = useCallback((target: EventTarget | null) => {
+		if (scrollContainerRef.current?.contains(target as Node)) {
 			stickyFollowRef.current = false
 		}
 	}, [])
-	useEvent("wheel", handleWheel, window, { passive: true })
-
-	// Also disable sticky follow when the chat container is scrolled away from bottom
-	useEffect(() => {
-		const el = scrollContainerRef.current
-		if (!el) return
-		const onScroll = () => {
-			// Consider near-bottom within a small threshold consistent with Virtuoso settings
-			const nearBottom = Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 10
-			if (!nearBottom) {
-				stickyFollowRef.current = false
+	const handleWheel = useCallback(
+		(event: Event) => {
+			const wheelEvent = event as WheelEvent
+			if (wheelEvent.deltaY < 0) {
+				releaseOutputFollowing(wheelEvent.target)
 			}
-			// Keep UI button state in sync with scroll position
-			setShowScrollToBottom(!nearBottom)
-		}
-		el.addEventListener("scroll", onScroll, { passive: true })
-		return () => el.removeEventListener("scroll", onScroll)
+		},
+		[releaseOutputFollowing],
+	)
+	const handleTouchStart = useCallback((event: Event) => {
+		lastTouchYRef.current = (event as TouchEvent).touches[0]?.clientY
 	}, [])
+	const handleTouchMove = useCallback(
+		(event: Event) => {
+			const touchY = (event as TouchEvent).touches[0]?.clientY
+			if (touchY !== undefined && lastTouchYRef.current !== undefined && touchY > lastTouchYRef.current) {
+				releaseOutputFollowing(event.target)
+			}
+			lastTouchYRef.current = touchY
+		},
+		[releaseOutputFollowing],
+	)
+	const handlePointerDown = useCallback(
+		(event: Event) => {
+			const pointerEvent = event as PointerEvent
+			const scroller = chatScrollerRef.current
+			if (scroller && pointerEvent.target === scroller && pointerEvent.clientX >= scroller.clientWidth) {
+				releaseOutputFollowing(pointerEvent.target)
+			}
+		},
+		[releaseOutputFollowing],
+	)
+	const handleScrollKey = useCallback(
+		(event: Event) => {
+			const keyboardEvent = event as KeyboardEvent
+			if (["ArrowUp", "PageUp", "Home"].includes(keyboardEvent.key)) {
+				releaseOutputFollowing(keyboardEvent.target)
+			}
+		},
+		[releaseOutputFollowing],
+	)
+	useEvent("wheel", handleWheel, window, { passive: true })
+	useEvent("touchstart", handleTouchStart, window, { passive: true })
+	useEvent("touchmove", handleTouchMove, window, { passive: true })
+	useEvent("pointerdown", handlePointerDown, window, { passive: true })
+	useEvent("keydown", handleScrollKey, window)
+	// kilocode_change end
 
 	//kilocode_change
 	// Effect to clear checkpoint warning when messages appear or task changes
@@ -2142,14 +2204,22 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 						<div className="flex-auto min-h-0">
 							<Virtuoso
 								ref={virtuosoRef}
+								scrollerRef={(element) => {
+									chatScrollerRef.current = element instanceof HTMLElement ? element : null
+								}}
 								key={task.ts}
 								className="scrollable grow overflow-y-scroll mb-1"
 								increaseViewportBy={{ top: 400, bottom: 400 }} // kilocode_change: use more modest numbers to see if they reduce gray screen incidence
 								data={groupedMessages}
 								itemContent={itemContent}
 								followOutput={(isAtBottom: boolean) => isAtBottom || stickyFollowRef.current}
+								// kilocode_change: cover same-message streaming and asynchronous Markdown reflow
+								totalListHeightChanged={keepFollowingOutput}
 								atBottomStateChange={(isAtBottom: boolean) => {
 									setIsAtBottom(isAtBottom)
+									if (isAtBottom) {
+										stickyFollowRef.current = true
+									}
 									// Only show the scroll-to-bottom button if not at bottom
 									setShowScrollToBottom(!isAtBottom)
 								}}
@@ -2282,8 +2352,8 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				onSelectImages={selectImages}
 				shouldDisableImages={shouldDisableImages}
 				onHeightChange={() => {
-					if (isAtBottom) {
-						scrollToBottomAuto()
+					if (stickyFollowRef.current || isAtBottom) {
+						keepFollowingOutput()
 					}
 				}}
 				mode={mode}

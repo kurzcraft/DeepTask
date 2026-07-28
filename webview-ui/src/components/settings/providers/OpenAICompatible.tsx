@@ -224,7 +224,7 @@ export const OpenAICompatible = ({
 			/>
 			<R1FormatSetting
 				onChange={handleInputChange("openAiR1FormatEnabled", noTransform)}
-				openAiR1FormatEnabled={apiConfiguration?.openAiR1FormatEnabled ?? false}
+				openAiR1FormatEnabled={apiConfiguration?.openAiR1FormatEnabled ?? true}
 			/>
 			<Checkbox
 				checked={apiConfiguration?.openAiStreamingEnabled ?? true}

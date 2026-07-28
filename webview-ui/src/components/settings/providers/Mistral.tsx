@@ -1,12 +1,18 @@
 import { useCallback } from "react"
 import { VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
 
-import { type ProviderSettings, type RouterModels, mistralDefaultModelId } from "@roo-code/types"
+import {
+	type ProviderSettings,
+	type RouterModels,
+	mistralDefaultModelId,
+	mistralModels,
+} from "@roo-code/types"
 
 import { useAppTranslation } from "@src/i18n/TranslationContext"
 import { VSCodeButtonLink } from "@src/components/common/VSCodeButtonLink"
 
 import { inputEventTransform } from "../transforms"
+import { DynamicVendorModelSettings } from "./DynamicVendorModelSettings"
 
 type MistralProps = {
 	apiConfiguration: ProviderSettings
@@ -15,7 +21,7 @@ type MistralProps = {
 	simplifySettings?: boolean
 }
 
-export const Mistral = ({ apiConfiguration, setApiConfigurationField }: MistralProps) => {
+export const Mistral = ({ apiConfiguration, setApiConfigurationField, routerModels }: MistralProps) => {
 	const { t } = useAppTranslation()
 
 	const handleInputChange = useCallback(
@@ -63,6 +69,15 @@ export const Mistral = ({ apiConfiguration, setApiConfigurationField }: MistralP
 					</div>
 				</>
 			)}
+			<DynamicVendorModelSettings
+				provider="mistral"
+				defaultModelId={mistralDefaultModelId}
+				staticModels={mistralModels}
+				remoteModels={routerModels?.mistral}
+				apiKey={apiConfiguration.mistralApiKey}
+				apiConfiguration={apiConfiguration}
+				setApiConfigurationField={setApiConfigurationField}
+			/>
 		</>
 	)
 }

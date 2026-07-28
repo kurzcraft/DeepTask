@@ -80,18 +80,46 @@ vi.mock("../AutoApproveMenu", () => ({
 	default: () => null,
 }))
 
-// Mock react-virtuoso to render items directly without virtualization
-// This allows tests to verify items rendered in the chat list
+const mockVirtuosoScrollTo = vi.fn()
+const mockVirtuosoScrollToIndex = vi.fn()
+let latestVirtuosoProps: {
+	atBottomStateChange?: (isAtBottom: boolean) => void
+	totalListHeightChanged?: (height: number) => void
+}
+
+// Mock react-virtuoso to render items directly without virtualization while
+// retaining the scrolling callbacks needed for output-following tests.
 vi.mock("react-virtuoso", () => ({
-	Virtuoso: function MockVirtuoso({
-		data,
-		itemContent,
-	}: {
-		data: ClineMessage[]
-		itemContent: (index: number, item: ClineMessage) => React.ReactNode
-	}) {
+	Virtuoso: React.forwardRef(function MockVirtuoso(
+		{
+			data,
+			itemContent,
+			atBottomStateChange,
+			totalListHeightChanged,
+			className,
+		}: {
+			data: ClineMessage[]
+			itemContent: (index: number, item: ClineMessage) => React.ReactNode
+			atBottomStateChange?: (isAtBottom: boolean) => void
+			totalListHeightChanged?: (height: number) => void
+			className?: string
+		},
+		ref: React.ForwardedRef<{
+			scrollTo: typeof mockVirtuosoScrollTo
+			scrollToIndex: typeof mockVirtuosoScrollToIndex
+		}>,
+	) {
+		React.useImperativeHandle(ref, () => ({
+			scrollTo: mockVirtuosoScrollTo,
+			scrollToIndex: mockVirtuosoScrollToIndex,
+		}))
+		const isChatList = className?.includes("scrollable") ?? false
+		if (isChatList) {
+			latestVirtuosoProps = { atBottomStateChange, totalListHeightChanged }
+		}
+
 		return (
-			<div data-testid="virtuoso-item-list">
+			<div data-testid={isChatList ? "chat-virtuoso-item-list" : "virtuoso-item-list"}>
 				{data.map((item, index) => (
 					<div key={item.ts} data-testid={`virtuoso-item-${index}`}>
 						{itemContent(index, item)}
@@ -99,7 +127,7 @@ vi.mock("react-virtuoso", () => ({
 				))}
 			</div>
 		)
-	},
+	}),
 }))
 
 // Mock VersionIndicator - returns null by default to prevent rendering in tests
@@ -305,6 +333,115 @@ const renderChatView = (props: Partial<ChatViewProps> = {}) => {
 		</ExtensionStateContextProvider>,
 	)
 }
+
+// kilocode_change start: keep streaming reasoning pinned unless the user explicitly scrolls up
+
+describe("ChatView - streaming output following", () => {
+	let animationFrames: FrameRequestCallback[]
+	let restoreRequestAnimationFrame: () => void
+
+	beforeEach(() => {
+		vi.clearAllMocks()
+		animationFrames = []
+		const requestAnimationFrameSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+			animationFrames.push(callback)
+			return animationFrames.length
+		})
+		restoreRequestAnimationFrame = () => requestAnimationFrameSpy.mockRestore()
+	})
+
+	afterEach(() => {
+		restoreRequestAnimationFrame()
+	})
+
+	const renderActiveTask = async () => {
+		const result = renderChatView()
+		mockPostMessage({
+			clineMessages: [{ type: "say", say: "task", ts: 1, text: "Active task" }],
+		})
+		await waitFor(() => expect(result.getByTestId("chat-virtuoso-item-list")).toBeInTheDocument())
+		return result
+	}
+
+	const flushNextAnimationFrame = () => {
+		const callback = animationFrames.shift()
+		expect(callback).toBeDefined()
+		act(() => callback?.(0))
+	}
+
+	it("keeps following when streaming content growth temporarily reports away from bottom", async () => {
+		await renderActiveTask()
+		mockVirtuosoScrollTo.mockClear()
+
+		act(() => {
+			latestVirtuosoProps.atBottomStateChange?.(false)
+			latestVirtuosoProps.totalListHeightChanged?.(500)
+		})
+		flushNextAnimationFrame()
+
+		expect(mockVirtuosoScrollTo).toHaveBeenCalledWith({
+			top: Number.MAX_SAFE_INTEGER,
+			behavior: "auto",
+		})
+	})
+
+	it("stops forcing the bottom after an explicit upward wheel gesture", async () => {
+		const { getByTestId } = await renderActiveTask()
+		mockVirtuosoScrollTo.mockClear()
+
+		fireEvent.wheel(getByTestId("chat-virtuoso-item-list"), { deltaY: -100 })
+		act(() => {
+			latestVirtuosoProps.atBottomStateChange?.(false)
+			latestVirtuosoProps.totalListHeightChanged?.(600)
+		})
+
+		expect(animationFrames).toHaveLength(0)
+		expect(mockVirtuosoScrollTo).not.toHaveBeenCalled()
+	})
+
+	it("keeps following when a touch gesture moves toward newer output", async () => {
+		const { getByTestId } = await renderActiveTask()
+		const chatList = getByTestId("chat-virtuoso-item-list")
+		mockVirtuosoScrollTo.mockClear()
+
+		fireEvent.touchStart(chatList, { touches: [{ clientY: 200 }] })
+		fireEvent.touchMove(chatList, { touches: [{ clientY: 100 }] })
+		act(() => latestVirtuosoProps.totalListHeightChanged?.(650))
+		flushNextAnimationFrame()
+
+		expect(mockVirtuosoScrollTo).toHaveBeenCalledTimes(1)
+	})
+
+	it("stops following when a touch gesture moves toward older output", async () => {
+		const { getByTestId } = await renderActiveTask()
+		const chatList = getByTestId("chat-virtuoso-item-list")
+		mockVirtuosoScrollTo.mockClear()
+
+		fireEvent.touchStart(chatList, { touches: [{ clientY: 100 }] })
+		fireEvent.touchMove(chatList, { touches: [{ clientY: 200 }] })
+		act(() => latestVirtuosoProps.totalListHeightChanged?.(675))
+
+		expect(animationFrames).toHaveLength(0)
+		expect(mockVirtuosoScrollTo).not.toHaveBeenCalled()
+	})
+
+	it("resumes following after the user returns to the bottom", async () => {
+		const { getByTestId } = await renderActiveTask()
+		fireEvent.wheel(getByTestId("chat-virtuoso-item-list"), { deltaY: -100 })
+		mockVirtuosoScrollTo.mockClear()
+
+		act(() => {
+			latestVirtuosoProps.atBottomStateChange?.(true)
+			latestVirtuosoProps.atBottomStateChange?.(false)
+			latestVirtuosoProps.totalListHeightChanged?.(700)
+		})
+		flushNextAnimationFrame()
+
+		expect(mockVirtuosoScrollTo).toHaveBeenCalledTimes(1)
+	})
+})
+
+// kilocode_change end
 
 // kilocode_change start: prominent GitHub Star entry on the Deeptask home screen
 describe("ChatView - GitHub Star entry", () => {

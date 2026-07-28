@@ -36,7 +36,10 @@ export class DeepSeekHandler extends OpenAiHandler {
 
 	override getModel() {
 		const id = this.options.apiModelId ?? deepSeekDefaultModelId
-		const info = deepSeekModels[id as keyof typeof deepSeekModels] || deepSeekModels[deepSeekDefaultModelId]
+		const knownInfo = deepSeekModels[id as keyof typeof deepSeekModels]
+		const staticInfo = knownInfo ?? { ...deepSeekModels[deepSeekDefaultModelId], contextWindow: 256_000 }
+		const userInfo = this.options.apiModelInfoModelId === id ? this.options.apiModelInfo : undefined
+		const info = { ...staticInfo, ...userInfo }
 		const params = getModelParams({ format: "openai", modelId: id, model: info, settings: this.options })
 		return { id, info, ...params }
 	}

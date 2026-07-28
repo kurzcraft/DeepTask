@@ -38,9 +38,19 @@ const VENDOR_CONFIG: Record<
 const UNKNOWN_VENDOR_MODEL_DEFAULTS: ModelInfo = {
   ...NATIVE_TOOL_DEFAULTS,
   maxTokens: 8192,
-  contextWindow: 128_000,
+  contextWindow: 256_000,
   supportsImages: false,
   supportsPromptCache: false,
+}
+
+const getFirstPositiveNumber = (...values: unknown[]): number | undefined => {
+  for (const value of values) {
+    const numericValue = typeof value === "string" ? Number(value) : value
+    if (typeof numericValue === "number" && Number.isFinite(numericValue) && numericValue > 0) {
+      return numericValue
+    }
+  }
+  return undefined
 }
 
 /**
@@ -68,9 +78,11 @@ export async function getVendorModels(
   })
   const remoteModels = Array.isArray(response.data?.data)
     ? response.data.data
-    : Array.isArray(response.data)
-      ? response.data
-      : []
+    : Array.isArray(response.data?.models)
+      ? response.data.models
+      : Array.isArray(response.data)
+        ? response.data
+        : []
 
   const models: ModelRecord = {}
   for (const remoteModel of remoteModels) {
@@ -80,17 +92,40 @@ export async function getVendorModels(
 
     const id = remoteModel.id.trim()
     const staticInfo = config.staticModels[id]
-    const remoteContextWindow =
-      typeof remoteModel.context_window === "number"
-        ? remoteModel.context_window
-        : typeof remoteModel.max_context_length === "number"
-          ? remoteModel.max_context_length
-          : undefined
+    const remoteContextWindow = getFirstPositiveNumber(
+      remoteModel.contextWindow,
+      remoteModel.context_window,
+      remoteModel.context_length,
+      remoteModel.max_context_length,
+      remoteModel.max_model_len,
+      remoteModel.max_sequence_length,
+      remoteModel.limits?.contextWindow,
+      remoteModel.limits?.context_window,
+      remoteModel.limits?.context_length,
+      remoteModel.limits?.max_context_length,
+      remoteModel.capabilities?.contextWindow,
+      remoteModel.capabilities?.context_window,
+      remoteModel.model_extra?.contextWindow,
+      remoteModel.model_extra?.context_window,
+      remoteModel.model_extra?.context_length,
+      remoteModel.model_extra?.max_context_length,
+    )
+    const remoteMaxTokens = getFirstPositiveNumber(
+      remoteModel.maxTokens,
+      remoteModel.max_tokens,
+      remoteModel.max_output_tokens,
+      remoteModel.max_completion_tokens,
+      remoteModel.limits?.maxTokens,
+      remoteModel.limits?.max_tokens,
+      remoteModel.limits?.max_output_tokens,
+      remoteModel.limits?.max_completion_tokens,
+    )
 
     models[id] = {
       ...UNKNOWN_VENDOR_MODEL_DEFAULTS,
       ...staticInfo,
       ...(remoteContextWindow ? { contextWindow: remoteContextWindow } : {}),
+      ...(remoteMaxTokens ? { maxTokens: remoteMaxTokens } : {}),
       ...(remoteModel.capabilities?.vision === true ? { supportsImages: true } : {}),
       ...(remoteModel.capabilities?.function_calling === true
         ? { supportsNativeTools: true, defaultToolProtocol: "native" as const }

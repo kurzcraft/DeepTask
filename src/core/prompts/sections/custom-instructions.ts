@@ -459,7 +459,7 @@ export async function addCustomInstructions(
 	const taskProgressFileEnabled = options.settings?.taskProgressFileEnabled !== false
 	if (taskProgressFileEnabled) {
 		sections.push(`Task Progress File:
-Before completing any task, create a Markdown progress checklist file in the current workspace. Keep it updated as phases are completed. The file should clearly show completed, in-progress, and pending items. Use a concise task-specific filename so future sessions can recover progress from it.`)
+Before completing any non-trivial task, create a concise task-specific Markdown progress checklist file under the current workspace's EXTRA/task/ directory, creating the directory when needed. First look in EXTRA/task/ for an existing matching file and use it to restore cross-session progress. Keep the file updated as phases are completed and clearly show completed, in-progress, and pending items. Do not create task progress files in the workspace root. This uses the same workspace artifact layout as EXTRA/bash/ for long-command scripts and EXTRA/output/ for durable command logs.`)
 	}
 	// kilocode_change end
 

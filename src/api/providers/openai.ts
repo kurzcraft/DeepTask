@@ -598,6 +598,12 @@ const getModelInfoFromOpenAiModel = (model: Record<string, any>): ModelInfo | un
 		model.max_sequence_length,
 		model.max_seq_len,
 		model.n_ctx,
+		model.limits?.contextWindow,
+		model.limits?.context_window,
+		model.limits?.context_length,
+		model.limits?.max_context_length,
+		model.capabilities?.contextWindow,
+		model.capabilities?.context_window,
 		model.model_extra?.contextWindow,
 		model.model_extra?.context_window,
 		model.model_extra?.context_length,
@@ -609,11 +615,41 @@ const getModelInfoFromOpenAiModel = (model: Record<string, any>): ModelInfo | un
 		return undefined
 	}
 
+	const capabilities = model.capabilities ?? {}
+	const supportsImages = Boolean(
+		model.supportsImages ?? model.supports_images ?? capabilities.vision ?? capabilities.images ?? false,
+	)
+	const supportsNativeTools = Boolean(
+		model.supportsNativeTools ??
+			model.supports_native_tools ??
+			capabilities.function_calling ??
+			capabilities.tools ??
+			false,
+	)
+
 	return {
 		...openAiModelInfoSaneDefaults,
-		maxTokens: getFirstPositiveNumber(model.maxTokens, model.max_tokens, model.max_output_tokens),
+		maxTokens: getFirstPositiveNumber(
+			model.maxTokens,
+			model.max_tokens,
+			model.max_output_tokens,
+			model.max_completion_tokens,
+			model.limits?.maxTokens,
+			model.limits?.max_tokens,
+			model.limits?.max_output_tokens,
+			model.limits?.max_completion_tokens,
+		),
 		contextWindow,
-		supportsPromptCache: Boolean(model.supportsPromptCache ?? model.supports_prompt_cache ?? false),
+		supportsImages,
+		supportsPromptCache: Boolean(
+			model.supportsPromptCache ??
+				model.supports_prompt_cache ??
+				capabilities.promptCache ??
+				capabilities.prompt_cache ??
+				false,
+		),
+		supportsNativeTools,
+		...(supportsNativeTools ? { defaultToolProtocol: "native" as const } : {}),
 	}
 }
 
@@ -649,7 +685,13 @@ export async function getOpenAiModels(
 		}
 
 		const response = await axios.get(`${trimmedBaseUrl}/models`, config)
-		const models = Array.isArray(response.data?.data) ? response.data.data : []
+		const models = Array.isArray(response.data?.data)
+			? response.data.data
+			: Array.isArray(response.data?.models)
+				? response.data.models
+				: Array.isArray(response.data)
+					? response.data
+					: []
 		const modelsArray = models.map((model: any) => model.id).filter((id: unknown): id is string => typeof id === "string")
 		const result = [...new Set<string>(modelsArray)] as OpenAiModelsResult
 		const modelInfos: Record<string, ModelInfo> = {}

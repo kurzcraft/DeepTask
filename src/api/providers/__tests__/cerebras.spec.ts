@@ -58,6 +58,36 @@ describe("CerebrasHandler", () => {
 			const { id } = handlerWithoutModel.getModel()
 			expect(id).toBe("gpt-oss-120b") // cerebrasDefaultModelId
 		})
+
+		it("should use the 256K safety context for an unknown model", () => {
+			const handlerWithUnknownModel = new CerebrasHandler({
+				cerebrasApiKey: "test-api-key",
+				apiModelId: "subscription-coding-model",
+			})
+
+			const model = handlerWithUnknownModel.getModel()
+			expect(model.id).toBe("subscription-coding-model")
+			expect(model.info.contextWindow).toBe(256_000)
+		})
+
+		it("should apply model-bound user metadata to an explicitly configured model", () => {
+			const handlerWithOverride = new CerebrasHandler({
+				cerebrasApiKey: "test-api-key",
+				apiModelId: "subscription-coding-model",
+				apiModelInfoModelId: "subscription-coding-model",
+				apiModelInfo: {
+					maxTokens: 32_768,
+					contextWindow: 256_000,
+					supportsImages: false,
+					supportsPromptCache: false,
+				},
+			})
+
+			const model = handlerWithOverride.getModel()
+			expect(model.id).toBe("subscription-coding-model")
+			expect(model.info.contextWindow).toBe(256_000)
+			expect(model.info.maxTokens).toBe(32_768)
+		})
 	})
 
 	describe("message conversion", () => {

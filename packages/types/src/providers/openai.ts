@@ -563,9 +563,10 @@ export const openAiNativeModels = {
 	},
 } as const satisfies Record<string, ModelInfo>
 
+// kilocode_change start: use Deeptask's safety window when model metadata is unavailable.
 export const openAiModelInfoSaneDefaults: ModelInfo = {
 	maxTokens: -1,
-	contextWindow: 128_000,
+	contextWindow: 256_000,
 	supportsImages: true,
 	supportsPromptCache: false,
 	inputPrice: 0,
@@ -573,6 +574,7 @@ export const openAiModelInfoSaneDefaults: ModelInfo = {
 	supportsNativeTools: true,
 	defaultToolProtocol: "native",
 }
+// kilocode_change end
 
 // https://learn.microsoft.com/en-us/azure/ai-services/openai/api-version-deprecation
 // https://learn.microsoft.com/en-us/azure/ai-services/openai/reference#api-specs

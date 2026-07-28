@@ -1,6 +1,6 @@
 import { Anthropic } from "@anthropic-ai/sdk"
 
-import { type CerebrasModelId, cerebrasDefaultModelId, cerebrasModels } from "@roo-code/types"
+import { type CerebrasModelId, type ModelInfo, cerebrasDefaultModelId, cerebrasModels } from "@roo-code/types"
 
 import type { ApiHandlerOptions } from "../../shared/api"
 import { calculateApiCostOpenAI } from "../../shared/cost"
@@ -109,14 +109,16 @@ export class CerebrasHandler extends BaseProvider implements SingleCompletionHan
 		}
 	}
 
-	getModel(): { id: CerebrasModelId; info: (typeof cerebrasModels)[CerebrasModelId] } {
-		const modelId = this.options.apiModelId as CerebrasModelId
-		const validModelId = modelId && this.providerModels[modelId] ? modelId : this.defaultProviderModelId
-
-		return {
-			id: validModelId,
-			info: this.providerModels[validModelId],
+	getModel(): { id: string; info: ModelInfo } {
+		const id = this.options.apiModelId || this.defaultProviderModelId
+		const knownInfo = this.providerModels[id as CerebrasModelId]
+		const staticInfo = knownInfo ?? {
+			...this.providerModels[this.defaultProviderModelId],
+			contextWindow: 256_000,
 		}
+		const userInfo = this.options.apiModelInfoModelId === id ? this.options.apiModelInfo : undefined
+
+		return { id, info: { ...staticInfo, ...userInfo } }
 	}
 
 	/**

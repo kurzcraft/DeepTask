@@ -93,6 +93,24 @@ function getValidatedModelId(
 	return Object.keys(availableModels).sort((left, right) => left.localeCompare(right))[0]
 }
 
+function getVendorModel(
+	configuredId: string | undefined,
+	defaultModelId: string,
+	staticModels: ModelRecord,
+	remoteModels: ModelRecord | undefined,
+	apiConfiguration: ProviderSettings,
+): { id: string; info: ModelInfo } {
+	const id = configuredId || defaultModelId
+	const defaultInfo = staticModels[defaultModelId]
+	const staticInfo = staticModels[id]
+	const remoteInfo = remoteModels?.[id]
+	const userInfo = apiConfiguration.apiModelInfoModelId === id ? apiConfiguration.apiModelInfo : undefined
+	return {
+		id,
+		info: { ...NATIVE_TOOL_DEFAULTS, ...defaultInfo, ...staticInfo, ...remoteInfo, ...userInfo },
+	}
+}
+
 export const useSelectedModel = (apiConfiguration?: ProviderSettings) => {
 	const provider = apiConfiguration?.apiProvider || "anthropic"
 	// kilocode_change start
@@ -252,16 +270,8 @@ function getSelectedModel({
 			const info = xaiModels[id as keyof typeof xaiModels]
 			return info ? { id, info } : { id, info: undefined }
 		}
-		case "groq": {
-			const remoteModels = routerModels.groq
-			const availableModels: ModelRecord = Object.keys(remoteModels ?? {}).length > 0 ? remoteModels : groqModels
-			const id = getValidatedModelId(apiConfiguration.apiModelId, availableModels, defaultModelId, true)
-			const staticInfo = groqModels[id as keyof typeof groqModels]
-			const info = availableModels?.[id]
-				? { ...NATIVE_TOOL_DEFAULTS, ...staticInfo, ...availableModels[id] }
-				: staticInfo
-			return { id, info }
-		}
+		case "groq":
+			return getVendorModel(apiConfiguration.apiModelId, defaultModelId, groqModels, routerModels.groq, apiConfiguration)
 		case "huggingface": {
 			const id = apiConfiguration.huggingFaceModelId ?? "meta-llama/Llama-3.3-70B-Instruct"
 			const info = {
@@ -319,17 +329,14 @@ function getSelectedModel({
 			return { id, info: remoteInfo ?? staticInfo }
 		}
 		// kilocode_change end
-		case "deepseek": {
-			const remoteModels = routerModels.deepseek
-			const availableModels: ModelRecord =
-				Object.keys(remoteModels ?? {}).length > 0 ? remoteModels : deepSeekModels
-			const id = getValidatedModelId(apiConfiguration.apiModelId, availableModels, defaultModelId, true)
-			const staticInfo = deepSeekModels[id as keyof typeof deepSeekModels]
-			const info = availableModels?.[id]
-				? { ...NATIVE_TOOL_DEFAULTS, ...staticInfo, ...availableModels[id] }
-				: staticInfo
-			return { id, info }
-		}
+		case "deepseek":
+			return getVendorModel(
+				apiConfiguration.apiModelId,
+				defaultModelId,
+				deepSeekModels,
+				routerModels.deepseek,
+				apiConfiguration,
+			)
 		case "doubao": {
 			const id = apiConfiguration.apiModelId ?? defaultModelId
 			const info = doubaoModels[id as keyof typeof doubaoModels]
@@ -358,16 +365,14 @@ function getSelectedModel({
 			const info = openAiNativeModels[id as keyof typeof openAiNativeModels]
 			return { id, info }
 		}
-		case "mistral": {
-			const remoteModels = routerModels.mistral
-			const availableModels: ModelRecord = Object.keys(remoteModels ?? {}).length > 0 ? remoteModels : mistralModels
-			const id = getValidatedModelId(apiConfiguration.apiModelId, availableModels, defaultModelId, true)
-			const staticInfo = mistralModels[id as keyof typeof mistralModels]
-			const info = availableModels?.[id]
-				? { ...NATIVE_TOOL_DEFAULTS, ...staticInfo, ...availableModels[id] }
-				: staticInfo
-			return { id, info }
-		}
+		case "mistral":
+			return getVendorModel(
+				apiConfiguration.apiModelId,
+				defaultModelId,
+				mistralModels,
+				routerModels.mistral,
+				apiConfiguration,
+			)
 		case "openai": {
 			const id = apiConfiguration.openAiModelId ?? ""
 			const customInfo = apiConfiguration?.openAiCustomModelInfo
@@ -504,16 +509,14 @@ function getSelectedModel({
 			const info = claudeCodeModels[normalizedId]
 			return { id: normalizedId, info: { ...openAiModelInfoSaneDefaults, ...info } }
 		}
-		case "cerebras": {
-			const remoteModels = routerModels.cerebras
-			const availableModels: ModelRecord = Object.keys(remoteModels ?? {}).length > 0 ? remoteModels : cerebrasModels
-			const id = getValidatedModelId(apiConfiguration.apiModelId, availableModels, defaultModelId, true)
-			const staticInfo = cerebrasModels[id as keyof typeof cerebrasModels]
-			const info = availableModels?.[id]
-				? { ...NATIVE_TOOL_DEFAULTS, ...staticInfo, ...availableModels[id] }
-				: staticInfo
-			return { id, info }
-		}
+		case "cerebras":
+			return getVendorModel(
+				apiConfiguration.apiModelId,
+				defaultModelId,
+				cerebrasModels,
+				routerModels.cerebras,
+				apiConfiguration,
+			)
 		case "sambanova": {
 			const id = apiConfiguration.apiModelId ?? defaultModelId
 			const info = sambaNovaModels[id as keyof typeof sambaNovaModels]

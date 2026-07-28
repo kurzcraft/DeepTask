@@ -593,7 +593,7 @@ describe("OpenAiHandler", () => {
 			const model = handler.getModel()
 			expect(model.id).toBe(mockOptions.openAiModelId)
 			expect(model.info).toBeDefined()
-			expect(model.info.contextWindow).toBe(128_000)
+			expect(model.info.contextWindow).toBe(256_000) // kilocode_change
 			expect(model.info.supportsImages).toBe(true)
 		})
 
@@ -1319,6 +1319,37 @@ describe("getOpenAiModels", () => {
 				contextWindow: 262144,
 				maxTokens: 32768,
 				supportsPromptCache: true,
+			}),
+		)
+	})
+
+	it("should parse subscription catalogs with nested string limits and capabilities", async () => {
+		vi.mocked(axios.get).mockResolvedValueOnce({
+			data: {
+				models: [
+					{
+						id: "subscription/coding-pro",
+						limits: {
+							context_window: "1048576",
+							max_output_tokens: "65536",
+						},
+						capabilities: { vision: true, prompt_cache: true, function_calling: true },
+					},
+				],
+			},
+		})
+
+		const result = await getOpenAiModels("https://relay.example/v1", "subscription-key")
+
+		expect(result).toEqual(["subscription/coding-pro"])
+		expect(result.modelInfos?.["subscription/coding-pro"]).toEqual(
+			expect.objectContaining({
+				contextWindow: 1048576,
+				maxTokens: 65536,
+				supportsImages: true,
+				supportsPromptCache: true,
+				supportsNativeTools: true,
+				defaultToolProtocol: "native",
 			}),
 		)
 	})

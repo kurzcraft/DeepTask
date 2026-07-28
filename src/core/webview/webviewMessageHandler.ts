@@ -1244,32 +1244,39 @@ export const webviewMessageHandler = async (
 			// kilocode_change end
 
 			// kilocode_change start: authenticated dedicated vendor model directories
-			if (apiConfiguration.deepSeekApiKey) {
+			// Request values represent the currently edited form and must win over saved state.
+			const requestedApiKey = message?.values?.apiKey
+			const requestedBaseUrl = message?.values?.baseUrl
+			const deepSeekApiKey = requestedApiKey ?? apiConfiguration.deepSeekApiKey
+			if (deepSeekApiKey) {
 				candidates.push({
 					key: "deepseek",
 					options: {
 						provider: "deepseek",
-						apiKey: apiConfiguration.deepSeekApiKey,
-						baseUrl: apiConfiguration.deepSeekBaseUrl,
+						apiKey: deepSeekApiKey,
+						baseUrl: requestedBaseUrl ?? apiConfiguration.deepSeekBaseUrl,
 					},
 				})
 			}
-			if (apiConfiguration.groqApiKey) {
+			const groqApiKey = requestedApiKey ?? apiConfiguration.groqApiKey
+			if (groqApiKey) {
 				candidates.push({
 					key: "groq",
-					options: { provider: "groq", apiKey: apiConfiguration.groqApiKey },
+					options: { provider: "groq", apiKey: groqApiKey, baseUrl: requestedBaseUrl },
 				})
 			}
-			if (apiConfiguration.mistralApiKey) {
+			const mistralApiKey = requestedApiKey ?? apiConfiguration.mistralApiKey
+			if (mistralApiKey) {
 				candidates.push({
 					key: "mistral",
-					options: { provider: "mistral", apiKey: apiConfiguration.mistralApiKey },
+					options: { provider: "mistral", apiKey: mistralApiKey, baseUrl: requestedBaseUrl },
 				})
 			}
-			if (apiConfiguration.cerebrasApiKey) {
+			const cerebrasApiKey = requestedApiKey ?? apiConfiguration.cerebrasApiKey
+			if (cerebrasApiKey) {
 				candidates.push({
 					key: "cerebras",
-					options: { provider: "cerebras", apiKey: apiConfiguration.cerebrasApiKey },
+					options: { provider: "cerebras", apiKey: cerebrasApiKey, baseUrl: requestedBaseUrl },
 				})
 			}
 			// kilocode_change end

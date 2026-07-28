@@ -30,7 +30,7 @@ describe("getVendorModels", () => {
     expect(Object.keys(models)).toEqual(["deepseek-v4-pro", "deepseek-v4-flash"])
     expect(models["deepseek-v4-pro"]).toEqual(
       expect.objectContaining({
-        contextWindow: 128_000,
+        contextWindow: 256_000,
         maxTokens: 8192,
         supportsNativeTools: true,
         defaultToolProtocol: "native",
@@ -58,6 +58,31 @@ describe("getVendorModels", () => {
         supportsImages: true,
         supportsNativeTools: true,
         supportsPromptCache: false,
+      }),
+    )
+  })
+
+  it("parses nested string limits from subscription model catalogs", async () => {
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        models: [
+          {
+            id: "subscription-coding-pro",
+            limits: {
+              context_window: "320000",
+              max_output_tokens: "64000",
+            },
+          },
+        ],
+      },
+    })
+
+    const models = await getVendorModels("groq", "key")
+
+    expect(models["subscription-coding-pro"]).toEqual(
+      expect.objectContaining({
+        contextWindow: 320_000,
+        maxTokens: 64_000,
       }),
     )
   })

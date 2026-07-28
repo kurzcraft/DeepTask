@@ -1053,7 +1053,11 @@ describe("addCustomInstructions", () => {
 		})
 
 		expect(result).toContain("Task Progress File:")
-		expect(result).toContain("create a Markdown progress checklist file")
+		expect(result).toContain("current workspace's EXTRA/task/ directory")
+		expect(result).toContain("First look in EXTRA/task/ for an existing matching file")
+		expect(result).toContain("Do not create task progress files in the workspace root")
+		expect(result).toContain("EXTRA/bash/ for long-command scripts")
+		expect(result).toContain("EXTRA/output/ for durable command logs")
 	})
 
 	it("should override other progress file instructions when disabled", async () => {
@@ -1083,7 +1087,8 @@ describe("addCustomInstructions", () => {
 
 		const result = await addCustomInstructions("", "", "/fake/path", "", {})
 		expect(result).toContain("Task Progress File:")
-		expect(result).toContain("create a Markdown progress checklist file")
+		expect(result).toContain("current workspace's EXTRA/task/ directory")
+		expect(result).toContain("creating the directory when needed")
 	})
 
 	it("should handle missing mode-specific rules file", async () => {
