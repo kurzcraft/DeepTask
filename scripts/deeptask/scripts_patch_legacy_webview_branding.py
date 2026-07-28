@@ -9,7 +9,7 @@ repeatable replacements to those prebuilt assets before VSIX packaging.
 
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
 ASSETS = ROOT / "src" / "webview-ui" / "build" / "assets"
 
 DEEPTASK_LOGO_50 = (
@@ -35,13 +35,13 @@ REPLACEMENTS = {
         ('testTitle:"Kilo Code"', 'testTitle:"Deeptask"'),
         ('testMessage:"This is a test notification from Kilo Code."', 'testMessage:"This is a test notification from Deeptask."'),
         ("other Kilo Code users", "other Deeptask users"),
-        ("https://kilo.ai/support", "https://github.com/kurzgesagtcraft/deeptask/issues"),
-        ("github.com/Kilo-Org/kilocode", "github.com/kurzgesagtcraft/deeptask"),
-        ("reddit.com/r/kilocode", "github.com/kurzgesagtcraft/deeptask/discussions"),
-        ("kilo.ai/discord", "github.com/kurzgesagtcraft/deeptask/discussions"),
+        ("https://kilo.ai/support", "https://github.com/kurzcraft/DeepTask/issues"),
+        ("github.com/Kilo-Org/kilocode", "github.com/kurzcraft/DeepTask"),
+        ("reddit.com/r/kilocode", "github.com/kurzcraft/DeepTask/discussions"),
+        ("kilo.ai/discord", "github.com/kurzcraft/DeepTask/discussions"),
     ],
     ASSETS / "index.js": [
-        ("https://kilo.ai/support", "https://github.com/kurzgesagtcraft/deeptask/issues"),
+        ("https://kilo.ai/support", "https://github.com/kurzcraft/DeepTask/issues"),
         (
             'let C;e[29]===Symbol.for("react.memo_cache_sentinel")?(C=n.jsx("div",{children:n.jsx(ft,{i18nKey:"settings:footer.feedback",components:{githubLink:n.jsx(yt,{href:"https://github.com/Kilo-Org/kilocode"}),redditLink:n.jsx(yt,{href:"https://reddit.com/r/kilocode"}),discordLink:n.jsx(yt,{href:"https://kilo.ai/discord"})}})}),e[29]=C):C=e[29];let S;e[30]===Symbol.for("react.memo_cache_sentinel")?(S=n.jsx("div",{children:n.jsx(ft,{i18nKey:"settings:footer.support",components:{supportLink:n.jsx(yt,{href:"https://kilo.ai/support"})}})}),e[30]=S):S=e[30];',
             'let C;e[29]===Symbol.for("react.memo_cache_sentinel")?(C=null,e[29]=C):C=e[29];let S;e[30]===Symbol.for("react.memo_cache_sentinel")?(S=null,e[30]=S):S=e[30];',

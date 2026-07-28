@@ -27,6 +27,7 @@
 !integrations/theme/default-themes/**
 
 # Include icons and images
+!assets/deeptask-logo-v2.png
 !assets/codicons/**
 !assets/vscode-material-icons/**
 !assets/icons/**

@@ -1,6 +1,6 @@
 # Deeptask
 
-## 5.5.7
+## 5.5.8
 
 ### Patch Changes
 
@@ -10,7 +10,11 @@
 - Improve OpenAI-compatible context and output-limit detection for nested subscription catalog metadata.
 - Keep streaming Agent reasoning pinned to the latest output across same-message growth and asynchronous Markdown layout changes.
 - Respect explicit wheel, touch, keyboard, and scrollbar navigation while restoring automatic output following at the bottom.
-- Store cross-session task progress files under `EXTRA/task/`, alongside `EXTRA/bash/` scripts and `EXTRA/output/` logs.
+- Store cross-session task progress under `EXTRA/task/`, long-command scripts under `EXTRA/bash/`, and durable evidence under `EXTRA/output/`.
+- Add complete Chinese and English user guides for model setup, automation controls, background terminals, long-running work, context recovery, and troubleshooting.
+- Rebuild the bilingual project and Marketplace introduction around user workflows, with a visually dominant GitHub source action, live repository badges, latest-release downloads, and direct documentation navigation.
+- Improve Marketplace titles, descriptions, and search keywords around long-running tasks, visible terminals, continuous feedback, recoverable progress, and OpenAI-compatible APIs.
+- Organize Deeptask release records and dedicated automation under stable documentation and script directories.
 
 ## 5.5.6
 

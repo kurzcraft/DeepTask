@@ -1,6 +1,6 @@
 {
 	"extension.displayName": "Deeptask: AI Coding Agent, Copilot, and Autocomplete",
-	"extension.description": "Deeptask is an open source AI coding agent that generates code from natural language, automates tasks, and runs terminal commands. Features inline autocomplete, browser automation, automated refactoring, and custom modes for planning, coding, and debugging. Supports 500+ AI models including Claude (Anthropic), Gemini, Grok, GPT, Codex and GLM.",
+	"extension.description": "Finish long-running software tasks with visible integrated terminals, live requirement corrections, full-auto or approval-based control, recoverable EXTRA progress, context continuation, and broad OpenAI-compatible API support.",
 	"views.contextMenu.label": "Deeptask",
 	"views.terminalMenu.label": "Deeptask",
 	"views.activitybar.title": "Deeptask",

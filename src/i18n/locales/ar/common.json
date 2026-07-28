@@ -288,7 +288,7 @@
 	},
 	"docsLink": {
 		"label": "مستندات",
-		"url": "https://kilo.ai/docs"
+		"url": "https://github.com/kurzcraft/DeepTask/blob/main/docs/deeptask/guides/USER_GUIDE.md"
 	},
 	"errorBoundary": {
 		"title": "خطأ",

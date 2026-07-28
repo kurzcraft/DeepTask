@@ -1,149 +1,153 @@
-# Deeptask VSIX 打包方式说明
+# Deeptask VSIX 打包与发布
 
-本文档记录 Deeptask 5.5.0 在当前 Ubuntu 环境中的可复现打包方式。
+本文档记录当前 Deeptask 在 Ubuntu 环境中的可复现构建、安装、验收和 GitHub Release 流程。版本号以 `src/package.json` 为唯一事实源，以下命令不硬编码具体版本。
 
-## 产物
+## 产物与证据
 
-- 根目录产物：`deeptask-5.5.0.vsix`
-- 备份产物：`bin/deeptask-5.5.0.vsix`
-- 打包日志：`artifacts/deeptask/logs/DEEPTASK_PACKAGE_PROGRESS.log`
+- 根目录发布资产：`deeptask-<version>.vsix`
+- 本地归档资产：`bin/deeptask-<version>.vsix`
+- 完整打包日志：`artifacts/deeptask/logs/DEEPTASK_PACKAGE_PROGRESS.log`
+- 版本说明：`docs/deeptask/releases/DEEPTASK_RELEASE_<version>_NOTES.md`
+- 跨会话发布进度：`EXTRA/task/`
+- 长发布命令脚本：`EXTRA/bash/`
+- 发布、哈希与远端校验日志：`EXTRA/output/`
 
-最近一次验证通过结果：
+## 前置条件
 
-```text
-VSIX verified: deeptask-5.5.0.vsix 42395893
-```
+1. 工作区依赖已经安装，`pnpm` 可用。
+2. 项目外置 Node 20 位于：
 
-## 推荐打包命令
+    ```text
+    /media/kurz/aleber/vscode/tools/node-v20.20.0-linux-x64/bin
+    ```
+
+3. VSCodium 安装命令 `codium` 可用。
+4. GitHub 发布凭据可由 `GITHUB_TOKEN`、`GH_TOKEN` 或 Git credential helper 提供。
+5. 发布前已完成相关测试、类型检查和 lint。
+
+打包脚本会显式设置 Node 20 的 `PATH`，并通过 `npx --yes @vscode/vsce` 调用 VSIX 打包器。
+
+## 标准打包入口
 
 在仓库根目录执行：
 
 ```bash
-bash scripts_package_deeptask_vsix.sh
+bash scripts/deeptask/scripts_package_deeptask_vsix.sh
 ```
 
-脚本会打印 9 个阶段的进度，并同步写入
-`artifacts/deeptask/logs/DEEPTASK_PACKAGE_PROGRESS.log`：
+这是唯一受维护的发布打包入口。不要直接对历史构建产物运行 `vsce package`，否则可能把旧 Webview 或旧扩展 bundle 带入发布包。
 
-1. 检查 Node 与 npm 环境。
-2. 检查扩展构建产物。
-3. 同步旧 webview 构建产物中的 Deeptask 品牌。
-4. 检查临时 `@vscode/vsce` 可用性。
-5. 临时移除 `src/package.json` 的 `vscode:prepublish`。
-6. 执行 VSIX 打包到 `bin/deeptask-5.5.0.vsix`。
-7. 复制 VSIX 到仓库根目录。
-8. 验证 VSIX 内容与品牌资源。
-9. 打包完成并自动恢复 `vscode:prepublish`。
+脚本执行 10 个阶段：
 
-## 环境约束
+1. 验证 Node 与 npm 环境。
+2. 强制重建 `webview-ui`，拒绝复用 Turbo 缓存中的旧界面。
+3. 生产模式重建扩展 bundle，并检查关键运行时修复标记。
+4. 同步 legacy 兼容产物与用户可见品牌。
+5. 验证临时 `@vscode/vsce` 可用。
+6. 临时移除 `vscode:prepublish`，避免 `vsce` 重复触发第二次 bundle。
+7. 打包到 `bin/deeptask-<version>.vsix`。
+8. 复制发布资产到仓库根目录。
+9. 打开 VSIX 执行包内身份、资源、运行时和 Marketplace 审计。
+10. 报告完成，并通过退出 trap 恢复 `vscode:prepublish`。
 
-当前环境推荐使用项目外置 Node 20：
+第 6 步不是跳过构建。真实 Webview 与扩展 bundle 已分别在第 2、3 步强制生成；临时移除 prepublish 只用于避免 `vsce` 重复构建和引入第二条不一致路径。
+
+## 包内审计
+
+打包脚本失败即表示资产不可发布。当前审计至少覆盖：
+
+- 包身份与版本和 `src/package.json` 一致。
+- `dist/extension.js`、Webview、Agent Manager 和扩展图标存在。
+- 已完成终端硬限制、命令完成续跑、新安装配置门禁、取消恢复和 Windows 有界终止路径已进入生产 bundle。
+- Webview 含当前 Continue 行为，不含已知旧清按钮逻辑。
+- Marketplace README 包含 Deeptask 标题、长程任务价值主张、正确仓库、突出 GitHub 主按钮和用户指南入口。
+- Marketplace 首图 `assets/deeptask-logo-v2.png` 确实位于 VSIX 内。
+- 包内不含已知 Kilo 品牌、旧仓库 URL、旧支持链接和远程头像残留。
+
+品牌首图的单一源文件是根目录 `assets/deeptask-logo-v2.png`。标准 bundle 会把它同步到 `src/assets/deeptask-logo-v2.png`，`.vscodeignore` 只放行这个必要文件，避免扩大包体范围。
+
+## 安装与本机验收
+
+读取版本并强制安装到 VSCodium：
+
+```bash
+VERSION="$(node -p "require('./src/package.json').version")"
+codium --install-extension "./deeptask-${VERSION}.vsix" --force
+codium --list-extensions --show-versions | rg '^deeptask\.deeptask@'
+```
+
+至少验证：
+
+1. 扩展列表显示目标版本。
+2. Deeptask 视图可以打开，设置页和对话页无加载错误。
+3. OpenAI Compatible 可填写 endpoint、API Key 和模型 ID。
+4. 运行命令会出现在集成终端中，完成终端会收敛到配置上限，运行中终端不会被误删。
+5. 任务运行中发送新要求能进入当前工作轮次。
+6. Marketplace/扩展介绍中的品牌首图、GitHub 主入口和文档链接可见。
+
+若修改涉及跨平台终端行为，应在可用的真实 Windows VS Code 与 VSCodium 主机补做双编辑器验收；没有真实主机时必须把它记录为明确的验收边界，不得把 Linux 测试描述为 Windows 实机通过。
+
+## 提交与 GitHub Release
+
+发布顺序固定为：
+
+1. 完成测试、类型检查、lint、VSIX 打包和本机安装验收。
+2. 把最终验证结果写入版本说明与 `EXTRA/task/` 进度文件。
+3. 检查 Git 差异，只提交本次相关源码、测试、文档、changeset 和必要资源。
+4. 推送 `main`，确认远端提交与本地发布基线一致。
+5. 执行维护脚本：
+
+    ```bash
+    node scripts/deeptask/scripts_publish_github_release.mjs
+    ```
+
+6. 下载远端资产，认证比较本地与远端的文件大小和 SHA-256。
+7. 将 Release URL、资产大小、哈希和提交号写回发布证据与长期记忆。
+
+发布脚本从 `src/package.json` 读取版本，使用 `docs/deeptask/releases/DEEPTASK_RELEASE_<version>_NOTES.md` 作为正文，并创建或更新对应的 `v<version>` Release。
+
+## 依赖与安全约束
+
+- 打包过程不应重新安装项目依赖。
+- 若确实重新安装或新增 Python 依赖，必须同步更新项目 `requirements.txt`；当前项目主要使用 pnpm，不能凭空创建与实际环境不对应的 Python 清单。
+- 不把 API Key、GitHub token 或本机密码写入脚本、日志、提交或发布资产。
+- 长命令和发布闭环应写入 `EXTRA/bash/`，完整 stdout/stderr 写入 `EXTRA/output/`，避免依赖短暂终端输出。
+- 不发布未提交源码构建出的资产；Release tag、源码提交、版本说明和 VSIX 必须指向同一基线。
+
+## 常见失败
+
+### Webview 资产过旧
+
+表现：第 2 或第 9 阶段报告缺少 Continue 标记，或命中旧清按钮逻辑。
+
+处理：不要手工修改压缩后的 JavaScript；修复源码后重新运行标准打包入口，让 Webview 强制重建。
+
+### 扩展 bundle 缺少运行时标记
+
+表现：第 3 或第 9 阶段提示 `completedTerminalOrder`、`hasPendingWebviewAskResponse` 等标记缺失。
+
+处理：确认源码修复仍存在、`pnpm bundle --production` 成功，并检查是否有构建缓存或错误工作区。
+
+### Marketplace 图片或链接缺失
+
+表现：第 9 阶段报告 hero image、GitHub action、仓库 URL 或用户指南缺失。
+
+处理：检查根 README、`src/esbuild.mjs` 的复制规则、`src/.vscodeignore` 的单文件放行，以及包内 `extension/assets/deeptask-logo-v2.png`。
+
+### `vscode:prepublish` 未恢复
+
+脚本使用退出 trap 恢复该字段。任何异常退出后都应检查：
+
+```bash
+node -p "require('./src/package.json').scripts['vscode:prepublish']"
+```
+
+预期值为：
 
 ```text
-/media/kurz/aleber/vscode/tools/node-v20.20.0-linux-x64/bin
+pnpm bundle --production
 ```
 
-脚本会主动设置：
+### 远端资产与本地不一致
 
-```bash
-PATH="/media/kurz/aleber/vscode/tools/node-v20.20.0-linux-x64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-```
-
-不要在此环境中优先依赖 `corepack pnpm` 打包。此前 `corepack pnpm --version` 在该机器上可能卡住或输出异常重复内容。当前脚本改用：
-
-```bash
-npx --yes @vscode/vsce
-```
-
-## 为什么临时移除 `vscode:prepublish`
-
-`src/package.json` 中的 `vscode:prepublish` 会触发完整 bundle：
-
-```json
-"vscode:prepublish": "pnpm bundle --production"
-```
-
-当前工作区可能没有完整安装 `webview-ui` 依赖，直接触发 bundle 会失败或进入不稳定路径。脚本会：
-
-1. 读取并保存原始 `vscode:prepublish` 到 `/tmp/deeptask_vscode_prepublish_value.txt`。
-2. 打包前临时从 `src/package.json` 删除它。
-3. 通过 `trap restore EXIT` 在成功或失败退出时恢复原值。
-
-因此打包后应看到：
-
-```text
-restored vscode:prepublish: True
-```
-
-## 旧 webview 构建产物品牌同步
-
-当没有重新构建 webview 时，`src/webview-ui/build/assets/*.js` 可能仍含旧 Kilo Code 文案或旧 Logo。打包脚本会在打包前执行：
-
-```bash
-python3 scripts_patch_legacy_webview_branding.py
-```
-
-该脚本会同步以下内容：
-
-- `About Kilo Code` → `About Deeptask`
-- 旧 `Kilo_Code_Branding` SVG → Deeptask 指北针 SVG
-- `https://kilo.ai/support` → Deeptask GitHub issues
-- 旧 Kilo GitHub/Reddit/Discord 链接 → Deeptask GitHub 仓库或讨论区
-- 部分用户可见通知文案中的 `Kilo Code` → `Deeptask`
-
-脚本可重复运行。若构建产物已经修补，会打印 `WARN no match ...`，只要最终输出 `legacy webview branding patch complete` 且打包脚本第 8 阶段验证通过即可。
-
-## VSIX 验证项
-
-打包脚本第 8 阶段会打开 `deeptask-5.5.0.vsix` 并检查：
-
-- `extension/package.json` 中：
-  - `name` 为 `deeptask`
-  - `publisher` 为 `deeptask`
-  - `version` 为 `5.5.0`
-  - `main` 为 `./dist/extension.js`
-- 必要文件存在：
-  - `extension/dist/extension.js`
-  - `extension/assets/icons/logo-outline-black.png`
-  - `extension/assets/icons/kilo-light.svg`
-  - `extension/assets/icons/kilo-dark.svg`
-  - `extension/webview-ui/build/assets/agent-manager.js`
-- 图标 SVG 包含更大侧边栏占比与较细左侧描边：
-  - `L62 220`
-  - `L194 220`
-  - `stroke-width="10"`
-- webview bundle 中不再包含：
-  - `About Kilo Code`
-  - `alt="Kilo Code"`
-  - `Kilo_Code_Branding`
-  - `Kilo Code Branding`
-  - `Development: Allocate memory`
-  - `settings:footer.support`
-  - `https://kilo.ai/support`
-
-## 手动诊断命令
-
-查看 VSIX 包内 webview 文件：
-
-```bash
-python3 - <<'PY'
-from zipfile import ZipFile
-with ZipFile('deeptask-5.5.0.vsix') as z:
-    web = sorted(n for n in z.namelist() if n.startswith('extension/webview-ui/'))
-    print('webview count', len(web))
-    print('\n'.join(web[:80]))
-PY
-```
-
-扫描旧品牌残留：
-
-```bash
-grep -RIn "About Kilo Code\|alt=\"Kilo Code\"\|Kilo_Code_Branding\|Kilo Code Branding\|settings:footer.support\|https://kilo.ai/support" \
-  src/webview-ui/build/assets/*.js | head -n 80
-```
-
-## 注意事项
-
-- 当前打包方式是“legacy artifact packaging”：使用已有 `src/dist/extension.js` 与 `src/webview-ui/build/assets/*.js`，不重新安装依赖、不重新 bundle。
-- 如果未来完整依赖恢复，应优先运行标准构建，再用本脚本做最终 VSIX 验证。
-- 若重新安装了依赖，需要按用户规则同步更新项目的 `requirements.txt`；本次未重新安装 Python 或 Node 依赖，因此未改动该文件。
+不要重复盲目发布。先读取持久发布日志，核对目标 tag、提交号、资产名、文件大小与 SHA-256，再只替换错误资产。

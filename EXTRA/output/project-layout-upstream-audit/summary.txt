@@ -1,52 +1,9 @@
 ## status counts
-A 5259
-D 8441
-M 27
 
 ## top-level changed path counts
-8516 packages
-2145 src
-901 webview-ui
-822 apps
-420 cli
-246 jetbrains
-99 .changeset
-75 script
-72 releases
-69 .github
-38 .opencode
-31 .kilo
-21 translations
-14 specs
-13 scripts
-13 patches
-5 nix
-4 .vscode
-4 github
-4 .devcontainer
-3 .kilocode
-2 .husky
-2 bin
-2 benchmark
-1 .zed
-1 .vscodeignore
-1 turbo.json
-1 tsconfig.json
-1 .tool-versions
-1 TESTING.md
-1 star_command_dist_snippets.txt
-1 SECURITY.md
-1 search_music_files.sh
-1 scripts_verify_resend_atomic_continuation.sh
-1 scripts_verify_installed_cancel_output_fix.py
-1 scripts_verify_git_commit_entry_vsix.py
-1 scripts_verify_git_commit_chinese_vsix.py
-1 scripts_verify_edited_resend_visible_install.py
-1 scripts_verify_deeptask_wildcard_auto_approval_vsix.py
-1 scripts_verify_deeptask_vsix_task.js
 
 ## Deeptask root inventory
-root_tracked=183
-deeptask_docs=82
-deeptask_scripts=59
-core_source_paths=12806
+root_tracked=42
+deeptask_docs=0
+deeptask_scripts=0
+core_source_paths=0

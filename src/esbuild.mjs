@@ -77,6 +77,8 @@ async function main() {
 							["../CHANGELOG.md", "CHANGELOG.md"],
 							["../LICENSE", "LICENSE"],
 							["../.env", ".env", { optional: true }],
+							// kilocode_change: keep the Marketplace README hero available inside the VSIX.
+							["../assets/deeptask-logo-v2.png", "assets/deeptask-logo-v2.png"],
 							["node_modules/vscode-material-icons/generated", "assets/vscode-material-icons"],
 							["../webview-ui/audio", "webview-ui/audio"],
 						],
@@ -204,7 +206,8 @@ async function main() {
 	}
 	// kilocode_change end
 
-	const [extensionCtx, workerCtx, agentRuntimeCtx] = await Promise.all([ // kilocode_change
+	const [extensionCtx, workerCtx, agentRuntimeCtx] = await Promise.all([
+		// kilocode_change
 		esbuild.context(extensionConfig),
 		esbuild.context(workerConfig),
 		esbuild.context(agentRuntimeProcessConfig), // kilocode_change

@@ -5,7 +5,7 @@ ROOT="/media/kurz/aleber/vscode/deeptask"
 LOG="$ROOT/EXTRA/output/organize-deeptask-markdown.log"
 STATUS="$ROOT/EXTRA/output/organize-deeptask-markdown.status"
 CURRENT_PROGRESS="DEEPTASK_PROJECT_ORGANIZATION_AND_UPSTREAM_COMPARISON_PROGRESS.md"
-RELEASE_NOTES="DEEPTASK_RELEASE_5.5.0_NOTES.md"
+RELEASE_NOTES="docs/deeptask/releases/DEEPTASK_RELEASE_5.5.0_NOTES.md"
 
 mkdir -p "$ROOT/EXTRA/output"
 : > "$LOG"

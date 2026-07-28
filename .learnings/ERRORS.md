@@ -26,7 +26,7 @@ IndexError: tuple index out of range
 
 ### Metadata
 - Reproducible: yes
-- Related Files: scripts_diagnose_cross_workspace_completion.py
+- Related Files: scripts/deeptask/scripts_diagnose_cross_workspace_completion.py
 
 ### Resolution
 - **Resolved**: 2026-07-20T04:11:57Z
@@ -59,7 +59,7 @@ BrokenPipeError: [Errno 32] Broken pipe
 
 ### Metadata
 - Reproducible: yes
-- Related Files: scripts_diagnose_cross_workspace_completion.py
+- Related Files: scripts/deeptask/scripts_diagnose_cross_workspace_completion.py
 
 ### Resolution
 - **Resolved**: 2026-07-20T04:14:47Z
@@ -132,7 +132,7 @@ unknown flag: --verify-tag
 ### Metadata
 
 - Reproducible: yes
-- Related Files: DEEPTASK_RELEASE_5.5.2_NOTES.md
+- Related Files: docs/deeptask/releases/DEEPTASK_RELEASE_5.5.2_NOTES.md
 
 ### Resolution
 
@@ -176,7 +176,7 @@ Windows 依旧不能用
 ### Metadata
 
 - Reproducible: yes
-- Related Files: DEEPTASK_WINDOWS_VSCODE_VSCODIUM_FREEZE_FIX_PROGRESS.md,
+- Related Files: docs/deeptask/progress/DEEPTASK_WINDOWS_VSCODE_VSCODIUM_FREEZE_FIX_PROGRESS.md,
   EXTRA/output/windows-terminal-compat-quality.log
 - See Also: ERR-20260726-001
 

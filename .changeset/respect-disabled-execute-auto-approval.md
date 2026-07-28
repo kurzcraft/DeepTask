@@ -2,4 +2,4 @@
 "deeptask": patch
 ---
 
-Respect the disabled Execute permission even when wildcard command approval is configured.
+Improve long-running task control, model discovery, recoverable progress, and Marketplace documentation while respecting disabled Execute permission under wildcard approval.

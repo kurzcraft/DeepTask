@@ -19,7 +19,7 @@ git add \
   .changeset/fix-resend-tool-protocol-stuck.md \
   DEEPTASK_CONDENSE_REASONING_LEAK_PROVIDER_FIX_PROGRESS.md \
   DEEPTASK_RESEND_TOOL_PROTOCOL_STUCK_FIX_PROGRESS.md \
-  scripts_diagnose_resend_runtime.py
+  scripts/deeptask/scripts_diagnose_resend_runtime.py
 
 git commit -m "fix(task): make repeated resend continuation atomic"
 git push origin main

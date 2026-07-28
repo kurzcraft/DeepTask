@@ -15,15 +15,23 @@ cd "$ROOT"
 
 echo "started=$(date --iso-8601=seconds)"
 echo "head=$(git rev-parse HEAD)"
-echo "upstream=$(git rev-parse "$UPSTREAM")"
 
-# Snapshot comparison is intentional: Deeptask and the shallow upstream ref have no merge base.
-git diff --no-renames --name-status "$UPSTREAM" HEAD > "$OUT/all-name-status.txt"
-git diff --no-renames --numstat "$UPSTREAM" HEAD > "$OUT/all-numstat.txt"
-git diff --no-renames --stat "$UPSTREAM" HEAD > "$OUT/all-stat.txt"
-git diff --no-renames --name-only "$UPSTREAM" HEAD -- \
-  'src/**' 'webview-ui/**' 'packages/**' 'cli/**' 'apps/**' \
-  > "$OUT/core-source-paths.txt"
+if git rev-parse --verify --quiet "$UPSTREAM^{commit}" > /dev/null; then
+  echo "upstream=$(git rev-parse "$UPSTREAM")"
+  # Snapshot comparison is intentional: Deeptask and the shallow upstream ref have no merge base.
+  git diff --no-renames --name-status "$UPSTREAM" HEAD > "$OUT/all-name-status.txt"
+  git diff --no-renames --numstat "$UPSTREAM" HEAD > "$OUT/all-numstat.txt"
+  git diff --no-renames --stat "$UPSTREAM" HEAD > "$OUT/all-stat.txt"
+  git diff --no-renames --name-only "$UPSTREAM" HEAD -- \
+    'src/**' 'webview-ui/**' 'packages/**' 'cli/**' 'apps/**' \
+    > "$OUT/core-source-paths.txt"
+else
+  echo "upstream=skipped (missing $UPSTREAM)"
+  : > "$OUT/all-name-status.txt"
+  : > "$OUT/all-numstat.txt"
+  : > "$OUT/all-stat.txt"
+  : > "$OUT/core-source-paths.txt"
+fi
 
 git ls-files | awk -F/ 'NF == 1 { print }' | sort > "$OUT/root-tracked-files.txt"
 git ls-files 'DEEPTASK_*.md' | sort > "$OUT/root-deeptask-docs.txt"

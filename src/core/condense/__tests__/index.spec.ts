@@ -1221,10 +1221,13 @@ describe("summarizeConversation", () => {
 			content: "Summarize the conversation so far, as described in the prompt instructions.",
 		}
 
-		// Verify that createMessage was called with the correct prompt
+		// Verify that the default prompt preserves the live task authority contract.
 		expect(mockApiHandler.createMessage).toHaveBeenCalledWith(
-			expect.stringContaining("Your task is to create a detailed summary of the conversation"),
+			expect.stringContaining("The newest user instruction is the active acceptance target"),
 			expect.any(Array),
+		)
+		expect(vi.mocked(mockApiHandler.createMessage).mock.calls[0][0]).toContain(
+			"A checklist records progress facts; it does not define task scope",
 		)
 
 		// Check that maybeRemoveImageBlocks was called with the correct messages
@@ -1945,7 +1948,7 @@ describe("summarizeConversation with custom settings", () => {
 		// Verify the default prompt was used
 		let createMessageCalls = (mockMainApiHandler.createMessage as Mock).mock.calls
 		expect(createMessageCalls.length).toBe(1)
-		expect(createMessageCalls[0][0]).toContain("Your task is to create a detailed summary")
+		expect(createMessageCalls[0][0]).toContain("The newest user instruction is the active acceptance target")
 
 		// Reset mock and test with undefined
 		vi.clearAllMocks()
@@ -1962,7 +1965,7 @@ describe("summarizeConversation with custom settings", () => {
 		// Verify the default prompt was used again
 		createMessageCalls = (mockMainApiHandler.createMessage as Mock).mock.calls
 		expect(createMessageCalls.length).toBe(1)
-		expect(createMessageCalls[0][0]).toContain("Your task is to create a detailed summary")
+		expect(createMessageCalls[0][0]).toContain("The newest user instruction is the active acceptance target")
 	})
 
 	/**

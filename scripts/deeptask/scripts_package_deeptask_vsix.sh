@@ -108,8 +108,8 @@ else
 fi
 
 step "4/10 同步 legacy 构建产物与插件介绍中的 Deeptask 品牌"
-python3 scripts_fix_deeptask_residue.py 2>&1 | tee -a "$LOG"
-python3 scripts_patch_legacy_webview_branding.py 2>&1 | tee -a "$LOG"
+python3 scripts/deeptask/scripts_fix_deeptask_residue.py 2>&1 | tee -a "$LOG"
+python3 scripts/deeptask/scripts_patch_legacy_webview_branding.py 2>&1 | tee -a "$LOG"
 
 step "5/10 检查临时 @vscode/vsce 可用性"
 npx --yes @vscode/vsce --version 2>&1 | tee -a "$LOG"
@@ -163,6 +163,7 @@ from pathlib import Path
 from zipfile import ZipFile
 import json
 import os
+import re
 version = os.environ['VERSION']
 vsix = Path(os.environ['VSIX_NAME'])
 assert vsix.exists() and vsix.stat().st_size > 1_000_000, vsix
@@ -174,6 +175,7 @@ residue_patterns = [
     'Development: Allocate memory',
     'settings:footer.support',
     'https://kilo.ai/support',
+    'kurzgesagtcraft/deeptask',
     'https://media.githubusercontent.com/media/Kilo-Org/kilocode',
     'avatars.githubusercontent.com',
     'github.com/Kilo-Org/kilocode',
@@ -196,6 +198,7 @@ with ZipFile(vsix) as z:
     assert pkg['version'] == version, pkg['version']
     required = [
         'extension/dist/extension.js',
+        'extension/assets/deeptask-logo-v2.png',
         'extension/assets/icons/logo-outline-black.png',
         'extension/assets/icons/kilo-light.svg',
         'extension/assets/icons/kilo-dark.svg',
@@ -203,6 +206,21 @@ with ZipFile(vsix) as z:
     ]
     missing = [name for name in required if name not in names]
     assert not missing, missing
+    locale_names = sorted(
+        name for name in names
+        if name.startswith('extension/dist/i18n/locales/') and name.endswith('/common.json')
+    )
+    assert len(locale_names) == 22, f'expected 22 packaged locales, found {len(locale_names)}'
+    expected_docs_url = (
+        'https://github.com/kurzcraft/DeepTask/blob/main/'
+        'docs/deeptask/guides/USER_GUIDE.md'
+    )
+    for locale_name in locale_names:
+        locale = json.loads(z.read(locale_name))
+        assert locale['docsLink']['url'] == expected_docs_url, (
+            locale_name,
+            locale['docsLink']['url'],
+        )
     light_svg = z.read('extension/assets/icons/kilo-light.svg').decode()
     assert 'L62 220' in light_svg and 'L194 220' in light_svg
     assert 'stroke-width="10"' in light_svg
@@ -217,7 +235,18 @@ with ZipFile(vsix) as z:
     # Force-complete prune path must not require prior hasCompletedCommand.
     assert 'hasCompletedCommand&&!e.busy' not in extension_js or 'provider!=="vscode"' in extension_js
     readme = z.read('extension/readme.md').decode(errors='ignore')
-    assert '# Deeptask' in readme, 'readme missing Deeptask title'
+    assert '# Deeptask' in readme or re.search(r'<h1[^>]*>Deeptask</h1>', readme), 'readme missing Deeptask title'
+    hero_match = re.search(r'<img\s+src="([^"]*assets/deeptask-logo-v2\.png)"', readme)
+    assert hero_match, 'Marketplace README missing packaged hero image reference'
+    hero_url = hero_match.group(1)
+    assert hero_url.startswith('./') or 'github.com/kurzcraft/DeepTask' in hero_url, hero_url
+    assert 'https://github.com/kurzcraft/DeepTask' in readme, 'Marketplace README missing current GitHub repository'
+    assert 'style=for-the-badge&logo=github' in readme, 'Marketplace README missing prominent GitHub action'
+    assert '把跨小时、跨会话、持续变化的软件任务真正做完' in readme, 'Marketplace README missing long-task value proposition'
+    assert 'docs/deeptask/guides/USER_GUIDE.md' in readme, 'Marketplace README missing user guide link'
+    assert 'verified 5.5.0 legacy source line' not in readme, 'Marketplace README reverted to legacy copy'
+    assert '../logo.png' not in readme, 'Marketplace README reverted to legacy hero path'
+    assert 'kurzgesagtcraft/deeptask' not in readme.lower(), 'Marketplace README contains obsolete repository URL'
     assert 'contributors who help make Kilo better' not in readme
     assert 'avatars.githubusercontent.com' not in readme
     assert 'media.githubusercontent.com/media/Kilo-Org/kilocode' not in readme

@@ -258,45 +258,25 @@ export const N_MESSAGES_TO_KEEP = 3
 export const MIN_CONDENSE_THRESHOLD = 5 // Minimum percentage of context window to trigger condensing
 export const MAX_CONDENSE_THRESHOLD = 100 // Maximum percentage of context window to trigger condensing
 
+// kilocode_change start
+// Keep this prompt compact: it is paid on every provider-backed condensation.
+// The host appends authoritative live task state after the summary is committed.
 const SUMMARY_PROMPT = `\
-Your task is to create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions.
-This summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing with the conversation and supporting any continuing tasks.
+Compress the conversation into continuation context. Preserve facts and exact evidence; do not invent completion.
 
-Your summary should be structured as follows:
-Context: The context to continue the conversation with. If applicable based on the current task, this should include:
-  1. Previous Conversation: High level details about what was discussed throughout the entire conversation with the user. This should be written to allow someone to be able to follow the general overarching conversation flow.
-  2. Current Work: Describe in detail what was being worked on prior to this request to summarize the conversation. Pay special attention to the more recent messages in the conversation.
-  3. Key Technical Concepts: List all important technical concepts, technologies, coding conventions, and frameworks discussed, which might be relevant for continuing with this work.
-  4. Relevant Files and Code: If applicable, enumerate specific files and code sections examined, modified, or created for the task continuation. Pay special attention to the most recent messages and changes.
-  5. Problem Solving: Document problems solved thus far and any ongoing troubleshooting efforts.
-  6. Pending Tasks and Next Steps: Outline all pending tasks that you have explicitly been asked to work on, as well as list the next steps you will take for all outstanding work, if applicable. Include code snippets where they add clarity. For any next steps, include direct quotes from the most recent conversation showing exactly what task you were working on and where you left off. This should be verbatim to ensure there's no information loss in context between tasks.
+Authority rules:
+- The newest user instruction is the active acceptance target and overrides older plans, summaries, and completions.
+- A checklist records progress facts; it does not define task scope. Never let an old checklist override newer user feedback.
+- Distinguish completed work, open work, verification evidence, modified files, decisions, and blockers.
+- If messages conflict, state the conflict and follow the newest user instruction.
 
-Example summary structure:
-1. Previous Conversation:
-  [Detailed description]
-2. Current Work:
-  [Detailed description]
-3. Key Technical Concepts:
-  - [Concept 1]
-  - [Concept 2]
-  - [...]
-4. Relevant Files and Code:
-  - [File Name 1]
-    - [Summary of why this file is important]
-    - [Summary of the changes made to this file, if any]
-    - [Important Code Snippet]
-  - [File Name 2]
-    - [Important Code Snippet]
-  - [...]
-5. Problem Solving:
-  [Detailed description]
-6. Pending Tasks and Next Steps:
-  - [Task 1 details & next steps]
-  - [Task 2 details & next steps]
-  - [...]
+Use exactly these sections:
+1. Previous Conversation: brief background only.
+2. Current Work and Decisions: recent actions, files, concrete results, failures, and rejected approaches.
+3. Continuation State: quote the newest user instruction verbatim; list unfinished work, verification status, and the immediate next action.
 
-Output only the summary of the conversation so far, without any additional commentary or explanation.
-`
+Be dense. Omit repeated narration, obsolete plans, environment dumps, hidden reasoning, and examples. Output only the summary.`
+// kilocode_change end
 
 export type SummarizeResponse = {
 	messages: ApiMessage[] // The messages after summarization

@@ -14,7 +14,7 @@ printf '== Deeptask first product package/install/release ==\n'
 printf 'started=%s\n' "$(date -Is)"
 
 printf '\n== package ==\n'
-bash "$ROOT/scripts_package_deeptask_vsix.sh" || result=$?
+bash "$ROOT/scripts/deeptask/scripts_package_deeptask_vsix.sh" || result=$?
 
 if [[ $result -eq 0 ]]; then
   printf '\n== install VSCodium ==\n'
@@ -28,12 +28,12 @@ fi
 
 if [[ $result -eq 0 ]]; then
   printf '\n== publish GitHub Release ==\n'
-  node "$ROOT/scripts_publish_github_release.mjs" || result=$?
+  node "$ROOT/scripts/deeptask/scripts_publish_github_release.mjs" || result=$?
 fi
 
 if [[ $result -eq 0 ]]; then
   printf '\n== verify release asset ==\n'
-  node "$ROOT/scripts_verify_authenticated_release_asset.mjs" || result=$?
+  node "$ROOT/scripts/deeptask/scripts_verify_authenticated_release_asset.mjs" || result=$?
 fi
 
 printf '\nfinished=%s\n' "$(date -Is)"

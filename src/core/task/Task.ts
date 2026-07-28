@@ -2312,23 +2312,35 @@ ${protocolHint}
 			return messages
 		}
 
+		// kilocode_change start
+		// The generated summary is historical evidence, while this bounded capsule is
+		// authoritative live state. Rebuild it after every successful transaction so
+		// stale todo snapshots cannot outrank newer feedback or accumulate across
+		// repeated condensation. This is synchronous local work and adds no API wait.
 		const marker = '<current_task_focus source="latest_user_continuation">'
-		const alreadyAnchored = messages.some((message) => {
-			const content = typeof message.content === "string" ? message.content : JSON.stringify(message.content)
-			return content.includes(marker) && content.includes(focus)
-		})
-		if (alreadyAnchored) {
-			return messages
-		}
+		const messagesWithoutOldCapsule = messages.filter(
+			(message) =>
+				!(message.role === "user" && typeof message.content === "string" && message.content.startsWith(marker)),
+		)
+		const todos = this.todoList ?? []
+		const completedCount = todos.filter((todo) => todo.status === "completed").length
+		const openTodos = todos.filter((todo) => todo.status !== "completed").slice(0, 12)
+		const openTodoLines = openTodos.length
+			? openTodos.map((todo) => `- [${todo.status}] ${todo.content.slice(0, 300)}`).join("\n")
+			: "- None recorded; derive concrete next actions from the active instruction."
+		const omittedOpenCount = Math.max(0, todos.length - completedCount - openTodos.length)
+		const omittedLine =
+			omittedOpenCount > 0 ? `\n- ${omittedOpenCount} additional open checklist items omitted.` : ""
 
 		return [
-			...messages,
+			...messagesWithoutOldCapsule,
 			{
 				role: "user",
-				content: `${marker}\n${focus}\n</current_task_focus>\nThe exact instruction above remains the active acceptance target after context compression. Continue concrete work on it; do not revert focus to an older summary or completion.`,
+				content: `${marker}\n${focus}\n</current_task_focus>\n<current_task_state authority="host">\nThe instruction above is the active acceptance target and has priority over summaries, old completions, and checklist wording.\nChecklist facts: ${completedCount} completed, ${todos.length - completedCount} open. Completed items are evidence only and must not be reopened automatically.\nOpen checklist snapshot:\n${openTodoLines}${omittedLine}\nResolve any conflict by following the active instruction while preserving truthful checklist statuses. Continue concrete work; validate against the active instruction before completion.\n</current_task_state>`,
 				ts: Date.now(),
 			},
 		]
+		// kilocode_change end
 	}
 
 	private buildEditedResendText(editedText: string): string {

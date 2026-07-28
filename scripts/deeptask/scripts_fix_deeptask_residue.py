@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
 
 README = """<p align=\"center\">\n  <img src=\"../logo.png\" alt=\"Deeptask\" width=\"302\" />\n</p>\n\n# Deeptask\n\nDeeptask is an AI coding agent packaged from the verified 5.5.0 legacy source line for Deeptask distribution.\n\n- Generate code from natural language\n- Check and iterate on its own work\n- Run terminal commands\n- Automate browser workflows\n- Provide inline autocomplete suggestions\n- Work with modern AI model providers\n\n## Key Features\n\n- **Code Generation:** Deeptask can generate code from natural language.\n- **Inline Autocomplete:** Get intelligent code completions as you type.\n- **Task Automation:** Deeptask can automate repetitive coding tasks.\n- **Automated Refactoring:** Deeptask can refactor and improve existing code.\n- **MCP Server Marketplace:** Deeptask can use MCP servers to extend agent capabilities.\n- **Multi Mode:** Plan with Architect, code with Coder, debug with Debugger, and define custom modes.\n\n## Release Highlights\n\n- New installs start directly in the normal Deeptask workspace instead of the onboarding screen.\n- The default provider profile is OpenAI Compatible, ready for a user-supplied endpoint and key.\n- No model API base URI or API key is embedded in the release default profile.\n- The default profile keeps practical non-secret defaults, including model id, streaming, max-token inclusion, diff support, todo list support, mistake limit, and native tool protocol.\n- Regression tests cover both the seeded default provider profile and the welcome-screen configuration gate.\n\n## Source Layout\n\n- `src/` contains the VS Code extension host, provider configuration, task runtime, tools, services, and webview message handling.\n- `webview-ui/` contains the React webview application used by the chat, settings, onboarding, marketplace, and agent-manager surfaces.\n- `packages/` contains shared libraries such as provider types, telemetry, IPC, cloud integration, and build tooling.\n- `cli/` contains the standalone command-line package.\n- `apps/` contains documentation, Storybook, and end-to-end test applications.\n- `jetbrains/` contains the JetBrains plugin and Node.js host.\n\n## Code Quality Notes\n\n- Deeptask-specific changes in shared upstream areas should be small and marked with `kilocode_change` comments.\n- Provider defaults are centralized in `src/core/config/ProviderSettingsManager.ts`.\n- Welcome and onboarding gates are kept separate: API configuration completeness is checked in `src/shared/checkExistApiConfig.ts`, while Kilo onboarding state is exposed from `src/core/webview/ClineProvider.ts` and rendered by `webview-ui/src/App.tsx`.\n- Provider profile tests live beside the configuration manager, and shared API configuration gate tests live under `src/shared/__tests__/`.\n\n## Get Started\n\n1. Install the generated `deeptask-5.5.0.vsix` package in VS Code.\n2. Open Deeptask and enter your OpenAI-compatible API base URI and key in provider settings.\n3. Start coding with AI that adapts to your workflow.\n\n## Developer Setup\n\nIf you want to modify the extension locally, see `DEVELOPMENT.md` for build and setup instructions.\n\nFor release verification, run focused tests from the `src` workspace, for example:\n\n```bash\npnpm test core/config/__tests__/ProviderSettingsManager.spec.ts shared/__tests__/checkExistApiConfig.spec.ts\n```\n\nBuild the release VSIX with:\n\n```bash\n./scripts_package_deeptask_vsix.sh\n```\n\n## License\n\nThis project is licensed under the Apache License 2.0. See `LICENSE` for details.\n"""
 
@@ -29,17 +29,17 @@ TEXT_REPLACEMENTS = [
     ("with Kilo", "with Deeptask"),
     ("Kilo ", "Deeptask "),
     (" Kilo", " Deeptask"),
-    ("github.com/Kilo-Org/kilocode", "github.com/kurzgesagtcraft/deeptask"),
-    ("https://github.com/Kilo-Org/kilocode", "https://github.com/kurzgesagtcraft/deeptask"),
-    ("https://kilo.ai/support", "https://github.com/kurzgesagtcraft/deeptask/issues"),
+    ("github.com/Kilo-Org/kilocode", "github.com/kurzcraft/DeepTask"),
+    ("https://github.com/Kilo-Org/kilocode", "https://github.com/kurzcraft/DeepTask"),
+    ("https://kilo.ai/support", "https://github.com/kurzcraft/DeepTask/issues"),
     ("support@kilo.ai", "support@deeptask.local"),
-    ("https://kilo.ai/discord", "https://github.com/kurzgesagtcraft/deeptask/discussions"),
-    ("https://discord.gg/kilocode", "https://github.com/kurzgesagtcraft/deeptask/discussions"),
-    ("https://www.reddit.com/r/kilocode/", "https://github.com/kurzgesagtcraft/deeptask/discussions"),
-    ("reddit.com/r/kilocode", "github.com/kurzgesagtcraft/deeptask/discussions"),
-    ("https://x.com/kilocode", "https://github.com/kurzgesagtcraft/deeptask"),
-    ("https://blog.kilo.ai", "https://github.com/kurzgesagtcraft/deeptask"),
-    ("https://kilo.ai", "https://github.com/kurzgesagtcraft/deeptask"),
+    ("https://kilo.ai/discord", "https://github.com/kurzcraft/DeepTask/discussions"),
+    ("https://discord.gg/kilocode", "https://github.com/kurzcraft/DeepTask/discussions"),
+    ("https://www.reddit.com/r/kilocode/", "https://github.com/kurzcraft/DeepTask/discussions"),
+    ("reddit.com/r/kilocode", "github.com/kurzcraft/DeepTask/discussions"),
+    ("https://x.com/kilocode", "https://github.com/kurzcraft/DeepTask"),
+    ("https://blog.kilo.ai", "https://github.com/kurzcraft/DeepTask"),
+    ("https://kilo.ai", "https://github.com/kurzcraft/DeepTask"),
     ("kilocode.Kilo-Code", "deeptask.deeptask"),
     ("Kilo-Code", "deeptask"),
 ]
@@ -47,8 +47,8 @@ TEXT_REPLACEMENTS = [
 BUNDLE_RESIDUE_REPLACEMENTS = TEXT_REPLACEMENTS + [
     ("Kilo_Code_Branding", "Deeptask_Branding"),
     ("Kilo Code Branding", "Deeptask Branding"),
-    ("kilo.ai/discord", "github.com/kurzgesagtcraft/deeptask/discussions"),
-    ("kilo.ai", "github.com/kurzgesagtcraft/deeptask"),
+    ("kilo.ai/discord", "github.com/kurzcraft/DeepTask/discussions"),
+    ("kilo.ai", "github.com/kurzcraft/DeepTask"),
 ]
 
 
@@ -140,8 +140,13 @@ def write_icons() -> int:
 
 def main() -> None:
     changed = 0
-    (ROOT / "src/README.md").write_text(README)
-    changed += 1
+    # The root README is the release source of truth. Never restore the legacy
+    # embedded README constant after esbuild has copied the current Marketplace page.
+    root_readme = (ROOT / "README.md").read_text()
+    packaged_readme = ROOT / "src/README.md"
+    if not packaged_readme.exists() or packaged_readme.read_text() != root_readme:
+        packaged_readme.write_text(root_readme)
+        changed += 1
     changed += patch_package_nls()
     changed += patch_json_tree(ROOT / "src/dist/i18n/locales")
     changed += patch_text_tree(ROOT / "src/dist/walkthrough", {".md"}, TEXT_REPLACEMENTS)

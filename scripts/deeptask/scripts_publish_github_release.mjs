@@ -10,7 +10,7 @@ const tagName = `v${version}`
 const targetCommitish = "main"
 const releaseName = `Deeptask ${version}`
 const assetPath = path.resolve(`deeptask-${version}.vsix`)
-const notesPath = path.resolve(`DEEPTASK_RELEASE_${version}_NOTES.md`)
+const notesPath = path.resolve("docs", "deeptask", "releases", `DEEPTASK_RELEASE_${version}_NOTES.md`)
 
 function getGitHubToken() {
   const input = "protocol=https\nhost=github.com\n\n"

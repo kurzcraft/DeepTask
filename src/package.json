@@ -3,7 +3,7 @@
 	"displayName": "%extension.displayName%",
 	"description": "%extension.description%",
 	"publisher": "deeptask",
-	"version": "5.5.7",
+	"version": "5.5.8",
 	"icon": "assets/icons/logo-outline-black.png",
 	"galleryBanner": {
 		"color": "#FFFFFF",
@@ -37,16 +37,16 @@
 	],
 	"keywords": [
 		"deeptask",
-		"Deeptask",
-		"ai",
-		"agent",
-		"coding",
-		"autocomplete",
-		"chat",
+		"ai agent",
+		"coding agent",
+		"long-running",
+		"openai-compatible",
 		"terminal",
-		"claude",
-		"openai",
-		"deeptask"
+		"automation",
+		"human-in-the-loop",
+		"context",
+		"autocomplete",
+		"copilot"
 	],
 	"activationEvents": [
 		"onLanguage",
