@@ -86,7 +86,6 @@ import { UnauthorizedWarning } from "../kilocode/chat/UnauthorizedWarning"
 import { formatFileSize } from "@/lib/formatting-utils"
 import ChatTimestamps from "./ChatTimestamps"
 import { removeLeadingNonAlphanumeric } from "@/utils/removeLeadingNonAlphanumeric"
-import { KILOCODE_TOKEN_REQUIRED_ERROR } from "@roo/kilocode/errorUtils"
 // kilocode_change end
 
 // Helper function to get previous todos before a specific message
@@ -1265,15 +1264,12 @@ export const ChatRowContent = ({
 									// }
 								} else {
 									body = t("chat:apiRequest.errorMessage.unknown")
-									docsURL =
-										"mailto:support@roocode.com?subject=Unknown API Error&body=[Please include full error details]"
 								}
 							} else if (message.text.indexOf("Connection error") === 0) {
 								body = t("chat:apiRequest.errorMessage.connection")
 							} else {
 								// Non-HTTP-status-code error message - store full text as errorDetails
 								body = t("chat:apiRequest.errorMessage.unknown")
-								docsURL = "https://kilo.ai/support"
 							}
 						}
 
@@ -1446,29 +1442,8 @@ export const ChatRowContent = ({
 						</div>
 					)
 				case "error":
-					// kilocode_change start: Show login button for KiloCode auth errors
-					const isKiloCodeAuthError =
-						apiConfiguration?.apiProvider === "kilocode" &&
-						message.text?.includes(KILOCODE_TOKEN_REQUIRED_ERROR)
-					return (
-						<ErrorRow
-							type="error"
-							message={t("chat:error")}
-							errorDetails={message.text || undefined}
-							showLoginButton={isKiloCodeAuthError}
-							onLoginClick={
-								isKiloCodeAuthError
-									? () => {
-											vscode.postMessage({
-												type: "switchTab",
-												tab: "auth",
-												values: { returnTo: "chat" },
-											})
-										}
-									: undefined
-							}
-						/>
-					)
+					// kilocode_change start: Deeptask does not expose Kilo account or support flows.
+					return <ErrorRow type="error" message={t("chat:error")} errorDetails={message.text || undefined} />
 					// kilocode_change end
 					// Check if this is a model response error based on marker strings from backend
 					const isNoToolsUsedError = message.text === "MODEL_NO_TOOLS_USED"

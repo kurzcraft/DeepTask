@@ -10,13 +10,13 @@
 在 VSCodium 中安装：
 
 ```bash
-codium --install-extension ./deeptask-5.5.8.vsix --force
+codium --install-extension ./deeptask-5.5.9.vsix --force
 ```
 
 在 VS Code 中安装：
 
 ```bash
-code --install-extension ./deeptask-5.5.8.vsix --force
+code --install-extension ./deeptask-5.5.9.vsix --force
 ```
 
 也可以在扩展面板右上角菜单中选择 **Install from VSIX...**。升级后重载编辑器窗口，确认扩展列表显示新版本。

@@ -3,6 +3,7 @@ import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { VSCodeLink } from "@vscode/webview-ui-toolkit/react"
 
+import { buildDocLink } from "@/utils/docLinks"
 import { vscode } from "@/utils/vscode"
 import {
 	Button,
@@ -76,13 +77,14 @@ const InstalledSkillsView = () => {
 		<div className="px-5">
 			<div className="text-xs text-[var(--vscode-descriptionForeground)] mb-4">
 				<p>
-					{t("kilocode:skills.description")}{" "}
+					{t("kilocode:skills.description")} {/* kilocode_change start */}
 					<VSCodeLink
-						href="https://kilo.ai/docs/features/skills"
+						href={buildDocLink("features/skills", "installed_skills")}
 						style={{ display: "inline" }}
 						className="text-xs">
 						{t("kilocode:docs")}
 					</VSCodeLink>
+					{/* kilocode_change end */}
 				</p>
 			</div>
 

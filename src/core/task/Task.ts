@@ -2336,7 +2336,8 @@ ${protocolHint}
 			...messagesWithoutOldCapsule,
 			{
 				role: "user",
-				content: `${marker}\n${focus}\n</current_task_focus>\n<current_task_state authority="host">\nThe instruction above is the active acceptance target and has priority over summaries, old completions, and checklist wording.\nChecklist facts: ${completedCount} completed, ${todos.length - completedCount} open. Completed items are evidence only and must not be reopened automatically.\nOpen checklist snapshot:\n${openTodoLines}${omittedLine}\nResolve any conflict by following the active instruction while preserving truthful checklist statuses. Continue concrete work; validate against the active instruction before completion.\n</current_task_state>`,
+				// kilocode_change: keep host focus authoritative without repeating it in user-facing updates.
+				content: `${marker}\n${focus}\n</current_task_focus>\n<current_task_state authority="host" visibility="silent">\nThe instruction above is silent control state and the active acceptance target. It has priority over summaries, old completions, and checklist wording. Use it to choose and validate concrete work, but do not quote, paraphrase, or restate it in routine intermediary updates, tool preambles, or the final answer. Mention the target only when the user asks for status, when the target changes, or when a concise reference is necessary to explain a blocker or result.\nChecklist facts: ${completedCount} completed, ${todos.length - completedCount} open. Completed items are evidence only and must not be reopened automatically.\nOpen checklist snapshot:\n${openTodoLines}${omittedLine}\nResolve any conflict by following the active instruction while preserving truthful checklist statuses. Continue concrete work; validate against the active instruction before completion.\n</current_task_state>`,
 				ts: Date.now(),
 			},
 		]

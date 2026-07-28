@@ -8,6 +8,7 @@
 **Area**: tests
 
 ### Summary
+
 最近任务诊断脚本在打印结果时使用了越界元组索引。
 
 ### Error
@@ -17,18 +18,22 @@ IndexError: tuple index out of range
 ```
 
 ### Context
+
 - 脚本成功只读扫描 VSCodium Deeptask 任务存储。
 - 每行元组共有 7 个字段，但打印消息尾部时错误访问 `row[7]`。
 - 错误只发生在输出阶段，未修改任务历史。
 
 ### Suggested Fix
+
 将扫描结果改为字典或命名结构，避免位置索引；长诊断逻辑写入文件后执行。
 
 ### Metadata
+
 - Reproducible: yes
 - Related Files: scripts/deeptask/scripts_diagnose_cross_workspace_completion.py
 
 ### Resolution
+
 - **Resolved**: 2026-07-20T04:11:57Z
 - **Notes**: 后续诊断改用具名字典字段，并按用户规则写入脚本文件执行。
 
@@ -42,6 +47,7 @@ IndexError: tuple index out of range
 **Area**: tests
 
 ### Summary
+
 诊断脚本输出被 `head` 提前关闭后抛出 `BrokenPipeError`。
 
 ### Error
@@ -51,17 +57,21 @@ BrokenPipeError: [Errno 32] Broken pipe
 ```
 
 ### Context
+
 - 上游 Python 脚本持续输出 JSONL，下游 `head -n 6` 读取足够行后正常退出。
 - 错误是 Unix 管道生命周期噪声，不代表扫描或数据解析失败。
 
 ### Suggested Fix
+
 顶层输出捕获 `BrokenPipeError`，将提前关闭管道视为正常终止。
 
 ### Metadata
+
 - Reproducible: yes
 - Related Files: scripts/deeptask/scripts_diagnose_cross_workspace_completion.py
 
 ### Resolution
+
 - **Resolved**: 2026-07-20T04:14:47Z
 - **Notes**: 已在输出循环外捕获 `BrokenPipeError` 并正常返回。
 
@@ -75,6 +85,7 @@ BrokenPipeError: [Errno 32] Broken pipe
 **Area**: tests
 
 ### Summary
+
 Windows shell 一致性修复后，旧单测仍把 `shell: true` 这一实现细节当作契约。
 
 ### Error
@@ -85,18 +96,22 @@ Tests: 1 failed | 10 passed
 ```
 
 ### Context
+
 - 扩展 bundle 成功，说明 execa 9.5.2 支持显式 shell 路径与 `windowsHide`。
 - 失败断言来自旧实现；旧实现让 Windows 的提示词按 PowerShell 生成命令，却由 Execa 默认 CMD 执行。
 - 正确契约应是提示词与执行器共享 `getShell()` 的结果，而不是委托给平台默认 shell。
 
 ### Suggested Fix
+
 更新单测以 mock `getShell()`，分别断言 PowerShell/CMD/Unix shell 透传、Windows 不注入 POSIX locale、控制台隐藏及取消使用有界 `taskkill /T /F`。
 
 ### Metadata
+
 - Reproducible: yes
-- Related Files: src/integrations/terminal/ExecaTerminalProcess.ts, src/integrations/terminal/__tests__/ExecaTerminalProcess.spec.ts
+- Related Files: src/integrations/terminal/ExecaTerminalProcess.ts, src/integrations/terminal/**tests**/ExecaTerminalProcess.spec.ts
 
 ### Resolution
+
 - **Resolved**: 2026-07-26T11:53:36Z
 - **Notes**: 已更新为 shell 路径透传、Win32 环境与有界 taskkill 契约测试，49 项聚焦测试全部通过。
 
@@ -261,5 +276,86 @@ TS2322: Property 'serviceName' does not exist on type 'DynamicVendorModelSetting
 
 - **Resolved**: 2026-07-28T22:51:00+08:00
 - **Notes**: 删除四个调用点的陈旧 `serviceName` 属性，并以 Webview 类型构建和聚焦测试复验。
+
+---
+
+## [ERR-20260729-001] directory-wide-format-baseline-expansion
+
+**Logged**: 2026-07-29T03:57:06+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+为验证本轮前端变更而把整个 `webview-ui/src` 传给 Prettier，额外纳入未修改的既有格式基线并产生 20 个警告。
+
+### Error
+
+```text
+Code style issues found in 20 files.
+```
+
+### Context
+
+- 本轮实际只修改 30 余个明确文件，但目录级检查扫描了整个前端源码树。
+- 警告同时包含本轮文件和未修改基线文件，不能直接据此批量格式化全目录。
+- 批量改写会扩大工作树、增加上游合并冲突并掩盖真实功能差异。
+
+### Suggested Fix
+
+发布格式门禁应从 `git diff --name-only` 或明确变更清单构造输入，只格式化和检查本轮文件；全仓格式债务应作为独立任务处理。
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: EXTRA/bash/format_deeptask_5_5_9.sh, EXTRA/output/format-5.5.9.log
+
+### Resolution
+
+- **Resolved**: 2026-07-29T03:58:21+08:00
+- **Notes**: 改用持久化脚本精确列出本轮文件，格式化成功且日志完整保存。
+
+---
+
+## [ERR-20260729-002] broad-spec-selection-obscures-focused-regression
+
+**Logged**: 2026-07-29T04:00:28+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+为验证一条终端状态水合用例而运行整份 `ClineProvider.spec.ts`，触发 19 条与本轮无关的陈旧 mock 和模型目录断言失败，掩盖目标用例结果。
+
+### Error
+
+```text
+Test Files 1 failed | 2 passed
+Tests 19 failed | 185 passed | 16 skipped
+```
+
+### Context
+
+- `Task.spec.ts` 与 `TerminalRegistry.spec.ts` 在同次运行中全部通过。
+- 19 条失败均位于 `ClineProvider.spec.ts` 的 profile mock、编辑消息旧契约和新增厂商模型键断言。
+- 本轮相关的“状态水合后同步终端保留限制”只有一条精确测试，单独运行通过。
+
+### Suggested Fix
+
+先运行目标文件，再对含已知基线债务的大型 spec 使用 `-t` 精确验证相关契约；单独记录整文件基线失败，不得将其误报为本轮产品回归或忽略目标用例。
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: src/core/webview/**tests**/ClineProvider.spec.ts,
+  src/integrations/terminal/**tests**/TerminalRegistry.spec.ts,
+  src/core/task/**tests**/Task.spec.ts
+
+### Resolution
+
+- **Resolved**: 2026-07-29T04:01:35+08:00
+- **Notes**: 精确状态水合用例 1 passed；任务聚焦与终端注册表 2 文件 113 passed、4 skipped。
 
 ---

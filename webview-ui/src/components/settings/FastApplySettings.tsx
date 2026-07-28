@@ -1,4 +1,5 @@
 // kilocode_change: Fast Apply - global settings version
+import { useEffect } from "react"
 import { VSCodeDropdown, VSCodeOption, VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
 import { useAppTranslation } from "@/i18n/TranslationContext"
 import { SetCachedStateField } from "./types"
@@ -15,6 +16,16 @@ export const FastApplySettings = ({
 	setCachedStateField: SetCachedStateField<"morphApiKey" | "fastApplyModel" | "fastApplyApiProvider">
 }) => {
 	const { t } = useAppTranslation()
+	const selectedProvider = fastApplyApiProvider === "kilocode" ? "current" : fastApplyApiProvider || "current"
+
+	// kilocode_change start: migrate legacy Kilo Gateway selections to the active local profile.
+	useEffect(() => {
+		if (fastApplyApiProvider === "kilocode") {
+			setCachedStateField("fastApplyApiProvider", "current")
+		}
+	}, [fastApplyApiProvider, setCachedStateField])
+	// kilocode_change end
+
 	return (
 		<div className="flex flex-col gap-2">
 			<div>
@@ -22,14 +33,11 @@ export const FastApplySettings = ({
 					{t("settings:experimental.MORPH_FAST_APPLY.apiProvider")}
 				</label>
 				<VSCodeDropdown
-					value={fastApplyApiProvider || "current"}
+					value={selectedProvider}
 					onChange={(e: any) =>
 						setCachedStateField("fastApplyApiProvider", (e.target as any)?.value || "current")
 					}
 					className="w-full">
-					<VSCodeOption className="py-2 px-3" value="kilocode">
-						Kilo Code
-					</VSCodeOption>
 					<VSCodeOption className="py-2 px-3" value="openrouter">
 						OpenRouter
 					</VSCodeOption>
@@ -65,7 +73,7 @@ export const FastApplySettings = ({
 				</p>
 			</div>
 
-			{fastApplyApiProvider !== "current" && (
+			{selectedProvider !== "current" && (
 				<VSCodeTextField
 					type="password"
 					value={morphApiKey || ""}

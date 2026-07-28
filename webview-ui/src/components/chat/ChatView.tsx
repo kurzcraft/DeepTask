@@ -34,7 +34,7 @@ import { useSelectedModel } from "@src/components/ui/hooks/useSelectedModel"
 import { StandardTooltip } from "@src/components/ui"
 
 // import VersionIndicator from "../common/VersionIndicator" // kilocode_change: unused
-import { OrganizationSelector } from "../kilocode/common/OrganizationSelector"
+// kilocode_change: commercial organization selector removed from Deeptask.
 // import { useTaskSearch } from "../history/useTaskSearch" // kilocode_change: unused
 // import { CloudUpsellDialog } from "@src/components/cloud/CloudUpsellDialog" // kilocode_change: unused
 
@@ -2114,11 +2114,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							</div>
 						</div>
 					)}
-					{!showTelemetryBanner && (
-						<div>
-							<OrganizationSelector className="absolute top-2 right-3" />
-						</div>
-					)}
+					{/* kilocode_change: commercial organization selector removed from Deeptask. */}
 					{/* kilocode_change start: changed the classes to support notifications */}
 					<div className="w-full h-full flex flex-col gap-4 px-3.5 transition-all duration-300">
 						{/* kilocode_change end */}

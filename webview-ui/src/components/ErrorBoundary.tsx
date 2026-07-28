@@ -3,6 +3,8 @@ import { telemetryClient } from "@src/utils/TelemetryClient"
 import { withTranslation, WithTranslation } from "react-i18next"
 import { enhanceErrorWithSourceMaps } from "@src/utils/sourceMapUtils"
 
+import { DEEPTASK_GITHUB_URL } from "@/components/common/GitHubStarButton"
+
 type ErrorProps = {
 	children: React.ReactNode
 } & WithTranslation
@@ -70,10 +72,11 @@ class ErrorBoundary extends Component<ErrorProps, ErrorState> {
 					{t("errorBoundary.title")} (v{version})
 				</h2>
 				<p className="mb-4">
-					{t("errorBoundary.reportText")}{" "}
-					<a href="https://github.com/Kilo-Org/kilocode/issues" target="_blank" rel="noreferrer">
+					{t("errorBoundary.reportText")} {/* kilocode_change start */}
+					<a href={`${DEEPTASK_GITHUB_URL}/issues`} target="_blank" rel="noreferrer">
 						{t("errorBoundary.githubText")}
 					</a>
+					{/* kilocode_change end */}
 				</p>
 				<p className="mb-2">{t("errorBoundary.copyInstructions")}</p>
 

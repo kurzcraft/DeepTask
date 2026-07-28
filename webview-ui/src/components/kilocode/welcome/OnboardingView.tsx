@@ -28,12 +28,11 @@ const OnboardingOption: React.FC<OnboardingOptionProps> = ({ title, description,
 }
 
 interface OnboardingViewProps {
-	onSelectFreeModels: () => void
-	onSelectPremiumModels: () => void
-	onSelectBYOK: () => void
+	onConfigureProvider: () => void
 }
 
-const OnboardingView: React.FC<OnboardingViewProps> = ({ onSelectFreeModels, onSelectPremiumModels, onSelectBYOK }) => {
+// kilocode_change: Deeptask onboarding exposes only user-configured AI providers.
+const OnboardingView: React.FC<OnboardingViewProps> = ({ onConfigureProvider }) => {
 	const { t } = useAppTranslation()
 
 	return (
@@ -46,24 +45,10 @@ const OnboardingView: React.FC<OnboardingViewProps> = ({ onSelectFreeModels, onS
 
 			<div className="w-full max-w-md flex flex-col gap-4">
 				<OnboardingOption
-					title={t("kilocode:onboarding.freeModels.title")}
-					description={t("kilocode:onboarding.freeModels.description")}
-					icon="sparkle"
-					onClick={onSelectFreeModels}
-				/>
-
-				<OnboardingOption
-					title={t("kilocode:onboarding.premiumModels.title")}
-					description={t("kilocode:onboarding.premiumModels.description")}
-					icon="star-full"
-					onClick={onSelectPremiumModels}
-				/>
-
-				<OnboardingOption
 					title={t("kilocode:onboarding.byok.title")}
 					description={t("kilocode:onboarding.byok.description")}
 					icon="key"
-					onClick={onSelectBYOK}
+					onClick={onConfigureProvider}
 				/>
 			</div>
 		</div>

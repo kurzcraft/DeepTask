@@ -10,13 +10,13 @@ Download the latest `deeptask-*.vsix` from
 Install in VSCodium:
 
 ```bash
-codium --install-extension ./deeptask-5.5.8.vsix --force
+codium --install-extension ./deeptask-5.5.9.vsix --force
 ```
 
 Install in VS Code:
 
 ```bash
-code --install-extension ./deeptask-5.5.8.vsix --force
+code --install-extension ./deeptask-5.5.9.vsix --force
 ```
 
 You can also select **Install from VSIX...** from the Extensions panel menu. Reload the editor window after an upgrade and confirm that the Extensions view reports the new version.

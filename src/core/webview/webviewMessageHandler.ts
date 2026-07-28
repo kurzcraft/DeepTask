@@ -2389,13 +2389,16 @@ export const webviewMessageHandler = async (
 				customerSupport,
 			)
 
+			// kilocode_change start: keep support actions within the Deeptask repository.
+			const repositoryUrl = "https://github.com/kurzcraft/DeepTask"
 			if (answer === githubIssuesText) {
-				await vscode.env.openExternal(vscode.Uri.parse("https://github.com/Kilo-Org/kilocode/issues"))
+				await vscode.env.openExternal(vscode.Uri.parse(`${repositoryUrl}/issues`))
 			} else if (answer === discordText) {
-				await vscode.env.openExternal(vscode.Uri.parse("https://discord.gg/fxrhCFGhkP"))
+				await vscode.env.openExternal(vscode.Uri.parse(`${repositoryUrl}/discussions`))
 			} else if (answer === customerSupport) {
-				await vscode.env.openExternal(vscode.Uri.parse(getAppUrl("/support")))
+				await vscode.env.openExternal(vscode.Uri.parse(`${repositoryUrl}/issues/new`))
 			}
+			// kilocode_change end
 			break
 		}
 		// kilocode_change end

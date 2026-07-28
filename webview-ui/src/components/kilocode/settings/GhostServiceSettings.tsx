@@ -13,6 +13,7 @@ import {
 	GhostServiceSettings,
 	MODEL_SELECTION_ENABLED,
 } from "@roo-code/types"
+import { buildDocLink } from "@/utils/docLinks"
 import { vscode } from "@/utils/vscode"
 import { VSCodeCheckbox, VSCodeButton, VSCodeDropdown, VSCodeOption } from "@vscode/webview-ui-toolkit/react"
 import { useKeybindings } from "@/hooks/useKeybindings"
@@ -39,14 +40,8 @@ export const GhostServiceSettingsView = ({
 }: GhostServiceSettingsViewProps) => {
 	const { t } = useAppTranslation()
 	const { kiloCodeWrapperProperties } = useExtensionState()
-	const {
-		enableAutoTrigger,
-		enableSmartInlineTaskKeybinding,
-		enableChatAutocomplete,
-		provider,
-		model,
-		hasKilocodeProfileWithNoBalance,
-	} = ghostServiceSettings || {}
+	const { enableAutoTrigger, enableSmartInlineTaskKeybinding, enableChatAutocomplete, provider, model } =
+		ghostServiceSettings || {}
 	const keybindings = useKeybindings(GHOST_SERVICE_KEYBINDING_COMMAND_IDS)
 	const [snoozeDuration, setSnoozeDuration] = useState<number>(300)
 	const [currentTime, setCurrentTime] = useState<number>(Date.now())
@@ -271,22 +266,6 @@ export const GhostServiceSettingsView = ({
 										{model}
 									</div>
 								</>
-							) : hasKilocodeProfileWithNoBalance ? (
-								<div className="flex flex-col gap-2">
-									<div className="text-vscode-errorForeground font-medium">
-										{t("kilocode:ghost.settings.noCredits.title")}
-									</div>
-									<div className="text-vscode-descriptionForeground">
-										{t("kilocode:ghost.settings.noCredits.description")}
-									</div>
-									<div className="text-vscode-descriptionForeground">
-										<a
-											href="https://kilo.ai/credits"
-											className="text-vscode-textLink-foreground hover:underline">
-											{t("kilocode:ghost.settings.noCredits.buyCredits")}
-										</a>
-									</div>
-								</div>
 							) : (
 								<div className="flex flex-col gap-2">
 									<div className="text-vscode-errorForeground font-medium">
@@ -301,11 +280,13 @@ export const GhostServiceSettingsView = ({
 										))}
 									</ul>
 									<div className="text-vscode-descriptionForeground">
+										{/* kilocode_change start */}
 										<a
-											href="https://kilo.ai/docs/basic-usage/autocomplete"
+											href={buildDocLink("basic-usage/autocomplete", "autocomplete_settings")}
 											className="text-vscode-textLink-foreground hover:underline">
 											{t("kilocode:ghost.settings.noModelConfigured.learnMore")}
 										</a>
+										{/* kilocode_change end */}
 									</div>
 								</div>
 							)}

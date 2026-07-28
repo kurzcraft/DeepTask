@@ -75,7 +75,7 @@ interface ChatTextAreaProps {
 	showBrowserDockToggle?: boolean
 }
 
-// kilocode_change start
+// kilocode_change start: Deeptask keeps local session navigation but does not expose Kilo cloud sharing.
 function handleSessionCommand(trimmedInput: string, setInputValue: (value: string) => void) {
 	if (trimmedInput.startsWith("/session show")) {
 		vscode.postMessage({
@@ -83,27 +83,6 @@ function handleSessionCommand(trimmedInput: string, setInputValue: (value: strin
 		})
 
 		setInputValue("")
-
-		return true
-	} else if (trimmedInput.startsWith("/session share")) {
-		vscode.postMessage({
-			type: "sessionShare",
-		})
-
-		setInputValue("")
-
-		return true
-	} else if (trimmedInput.startsWith("/session fork ")) {
-		const shareId = trimmedInput.substring("/session fork ".length).trim()
-
-		vscode.postMessage({
-			type: "sessionFork",
-			shareId: shareId,
-		})
-
-		if (shareId) {
-			setInputValue("")
-		}
 
 		return true
 	} else if (trimmedInput.startsWith("/session select ")) {

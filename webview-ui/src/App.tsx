@@ -15,9 +15,7 @@ import ChatView, { ChatViewRef } from "./components/chat/ChatView"
 import HistoryView from "./components/history/HistoryView"
 import SettingsView, { SettingsViewRef } from "./components/settings/SettingsView"
 import OnboardingView from "./components/kilocode/welcome/OnboardingView" // kilocode_change
-import ProfileView from "./components/kilocode/profile/ProfileView" // kilocode_change
 import McpView from "./components/mcp/McpView" // kilocode_change
-import AuthView from "./components/kilocode/auth/AuthView" // kilocode_change
 import { MarketplaceView } from "./components/marketplace/MarketplaceView"
 import BottomControls from "./components/kilocode/BottomControls" // kilocode_change
 import { MemoryService } from "./services/MemoryService" // kilocode_change
@@ -33,7 +31,7 @@ import { STANDARD_TOOLTIP_DELAY } from "./components/ui/standard-tooltip"
 import { useKiloIdentity } from "./utils/kilocode/useKiloIdentity"
 import { MemoryWarningBanner } from "./kilocode/MemoryWarningBanner"
 
-type Tab = "settings" | "history" | "mcp" | "modes" | "chat" | "marketplace" | "account" | "cloud" | "profile" | "auth" // kilocode_change: add "profile" and "auth"
+type Tab = "settings" | "history" | "mcp" | "modes" | "chat" | "marketplace"
 
 interface HumanRelayDialogState {
 	isOpen: boolean
@@ -65,10 +63,9 @@ const tabsByMessageAction: Partial<Record<NonNullable<ExtensionMessage["action"]
 	chatButtonClicked: "chat",
 	settingsButtonClicked: "settings",
 	historyButtonClicked: "history",
-	profileButtonClicked: "profile",
+	profileButtonClicked: "settings", // kilocode_change: commercial account UI removed
 	marketplaceButtonClicked: "marketplace",
 	promptsButtonClicked: "settings", // kilocode_change: Navigate to settings with modes section
-	// cloudButtonClicked: "cloud", // kilocode_change: no cloud
 }
 
 // kilocode_change start: Map certain actions to a default section when navigating to settings
@@ -102,8 +99,6 @@ const App = () => {
 
 	const [showAnnouncement, setShowAnnouncement] = useState(false)
 	const [tab, setTab] = useState<Tab>("chat")
-	const [authReturnTo, setAuthReturnTo] = useState<"chat" | "settings">("chat")
-	const [authProfileName, setAuthProfileName] = useState<string | undefined>(undefined)
 	const [settingsEditingProfile, setSettingsEditingProfile] = useState<string | undefined>(undefined)
 
 	const [humanRelayDialogState, setHumanRelayDialogState] = useState<HumanRelayDialogState>({
@@ -131,10 +126,7 @@ const App = () => {
 
 	const switchTab = useCallback(
 		(newTab: Tab) => {
-			// Only check MDM compliance if mdmCompliant is explicitly false (meaning there's an MDM policy and user is non-compliant)
-			// If mdmCompliant is undefined or true, allow tab switching
-			if (mdmCompliant === false && newTab !== "cloud") {
-				// Notify the user that authentication is required by their organization
+			if (mdmCompliant === false) {
 				vscode.postMessage({ type: "showMdmAuthRequiredNotification" })
 				return
 			}
@@ -142,11 +134,7 @@ const App = () => {
 			setCurrentSection(undefined)
 			setCurrentMarketplaceTab(undefined)
 
-			// kilocode_change: start - Bypass unsaved changes check when navigating to auth tab
-			if (newTab === "auth") {
-				setTab(newTab)
-			} else if (settingsRef.current?.checkUnsaveChanges) {
-				// kilocode_change: end
+			if (settingsRef.current?.checkUnsaveChanges) {
 				settingsRef.current.checkUnsaveChanges(() => setTab(newTab))
 			} else {
 				setTab(newTab)
@@ -173,26 +161,23 @@ const App = () => {
 				}
 				// kilocode_change end
 
-				// Handle switchTab action with tab parameter
+				// Handle switchTab action with tab parameter.
 				if (message.action === "switchTab" && message.tab) {
-					const targetTab = message.tab as Tab
-					// kilocode_change start - Handle auth tab with returnTo and profileName parameters
-					if (targetTab === "auth") {
-						if (message.values?.returnTo) {
-							const returnTo = message.values.returnTo as "chat" | "settings"
-							setAuthReturnTo(returnTo)
-						}
-						if (message.values?.profileName) {
-							const profileName = message.values.profileName as string
-							setAuthProfileName(profileName)
+					// kilocode_change start: Kilo account/auth/cloud routes are not exposed by Deeptask.
+					const requestedTab = message.tab as string
+					const commercialTabs = new Set(["account", "auth", "cloud", "profile"])
+					const targetTab = (commercialTabs.has(requestedTab) ? "settings" : requestedTab) as Tab
+					if (commercialTabs.has(requestedTab)) {
+						setCurrentSection("providers")
+						const profileName = message.values?.profileName as string | undefined
+						if (profileName) {
 							setSettingsEditingProfile(profileName)
 						}
 					}
 					// kilocode_change end
 					switchTab(targetTab)
-					// Extract targetSection from values if provided
 					const targetSection = message.values?.section as string | undefined
-					setCurrentSection(targetSection)
+					setCurrentSection(targetSection ?? (commercialTabs.has(requestedTab) ? "providers" : undefined))
 					setCurrentMarketplaceTab(undefined)
 				} else {
 					// Handle other actions using the mapping
@@ -315,25 +300,9 @@ const App = () => {
 		}
 	}, [tab])
 
-	// kilocode_change start: Onboarding handlers
-	const handleSelectFreeModels = useCallback(() => {
-		// Mark onboarding as complete - the default profile is already set up with a free model
+	// kilocode_change start: Deeptask onboarding only configures independent AI providers.
+	const handleConfigureProvider = useCallback(() => {
 		vscode.postMessage({ type: "hasCompletedOnboarding", bool: true })
-	}, [])
-
-	const handleSelectPremiumModels = useCallback(() => {
-		// Mark onboarding as complete
-		vscode.postMessage({ type: "hasCompletedOnboarding", bool: true })
-		// Navigate to auth view which will show the device code and handle the OAuth flow
-		// The AuthView auto-starts device auth on mount
-		switchTab("auth")
-		setAuthReturnTo("chat")
-	}, [switchTab])
-
-	const handleSelectBYOK = useCallback(() => {
-		// Mark onboarding as complete
-		vscode.postMessage({ type: "hasCompletedOnboarding", bool: true })
-		// Navigate to settings with providers section
 		switchTab("settings")
 		setCurrentSection("providers")
 	}, [switchTab])
@@ -350,17 +319,13 @@ const App = () => {
 		return null
 	}
 
-	// kilocode_change start: Show OnboardingView for new users who haven't completed onboarding
+	// kilocode_change start: Show provider-only onboarding for new users.
 	const showOnboarding = hasCompletedOnboarding !== true
 
 	// Do not conditionally load ChatView, it's expensive and there's state we
 	// don't want to lose (user input, disableInput, askResponse promise, etc.)
 	return showOnboarding ? (
-		<OnboardingView
-			onSelectFreeModels={handleSelectFreeModels}
-			onSelectPremiumModels={handleSelectPremiumModels}
-			onSelectBYOK={handleSelectBYOK}
-		/>
+		<OnboardingView onConfigureProvider={handleConfigureProvider} />
 	) : (
 		// kilocode_change end
 		<>
@@ -369,7 +334,6 @@ const App = () => {
 			{tab === "mcp" && <McpView onDone={() => switchTab("chat")} />}
 			{/* kilocode_change end */}
 			{tab === "history" && <HistoryView onDone={() => switchTab("chat")} />}
-			{/* kilocode_change: auth redirect / editingProfile */}
 			{tab === "settings" && (
 				<SettingsView
 					ref={settingsRef}
@@ -378,9 +342,6 @@ const App = () => {
 					editingProfile={settingsEditingProfile}
 				/>
 			)}
-			{/* kilocode_change: add profileview and authview */}
-			{tab === "profile" && <ProfileView onDone={() => switchTab("chat")} />}
-			{tab === "auth" && <AuthView returnTo={authReturnTo} profileName={authProfileName} />}
 			{tab === "marketplace" && (
 				<MarketplaceView
 					stateManager={marketplaceStateManager}

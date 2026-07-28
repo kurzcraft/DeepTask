@@ -84,6 +84,14 @@ if ! grep -q "notifyTerminalProcessCompleted" src/dist/extension.js; then
   echo "src/dist/extension.js 缺少 notifyTerminalProcessCompleted" | tee -a "$LOG"
   exit 1
 fi
+if ! grep -q "visibility=\"silent\"" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少静默任务聚焦胶囊" | tee -a "$LOG"
+  exit 1
+fi
+if ! grep -q "do not quote, paraphrase, or restate it" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少防重复聚焦指令" | tee -a "$LOG"
+  exit 1
+fi
 if ! grep -q "OpenAI Compatible is not configured" src/dist/extension.js; then
   echo "src/dist/extension.js 缺少全新安装配置门禁" | tee -a "$LOG"
   exit 1
@@ -175,12 +183,19 @@ residue_patterns = [
     'Development: Allocate memory',
     'settings:footer.support',
     'https://kilo.ai/support',
+    'https://app.kilo.ai/share/',
+    'https://kilo.ai/pricing',
+    'https://kilo.ai/discord',
+    'https://roocode.com',
     'kurzgesagtcraft/deeptask',
     'https://media.githubusercontent.com/media/Kilo-Org/kilocode',
     'avatars.githubusercontent.com',
     'github.com/Kilo-Org/kilocode',
+    'github.com/RooCodeInc',
     'discord.gg/kilocode',
     'reddit.com/r/kilocode',
+    'reddit.com/r/RooCode',
+    'x.com/roocode',
 ]
 scan_prefixes = (
     'extension/readme.md',
@@ -228,6 +243,8 @@ with ZipFile(vsix) as z:
     assert 'completedTerminalOrder' in extension_js, 'extension bundle missing completed terminal order fix'
     assert 'hasPendingWebviewAskResponse' in extension_js, 'extension bundle missing fast command ask response guard'
     assert 'notifyTerminalProcessCompleted' in extension_js, 'extension bundle missing terminal completion notify'
+    assert 'visibility="silent"' in extension_js, 'extension bundle missing silent task focus capsule'
+    assert 'do not quote, paraphrase, or restate it' in extension_js, 'extension bundle missing focus repetition guard'
     assert 'OpenAI Compatible is not configured' in extension_js, 'extension bundle missing fresh-install guard'
     assert 'could not be rehydrated after cancellation' in extension_js, 'extension bundle missing cancel recovery'
     assert 'taskkill' in extension_js, 'extension bundle missing bounded Windows tree termination'

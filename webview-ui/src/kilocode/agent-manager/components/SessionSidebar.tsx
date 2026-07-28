@@ -11,7 +11,7 @@ import {
 import { sessionMachineUiStateAtom } from "../state/atoms/stateMachine"
 import { vscode } from "../utils/vscode"
 import { formatRelativeTime, createRelativeTimeLabels } from "../utils/timeUtils"
-import { Plus, Loader2, RefreshCw, GitBranch, Folder, Share2, MoreVertical, FileCode, Zap } from "lucide-react"
+import { Plus, Loader2, RefreshCw, GitBranch, Folder, MoreVertical, FileCode, Zap } from "lucide-react"
 
 export function SessionSidebar() {
 	const { t } = useTranslation("agentManager")
@@ -179,8 +179,6 @@ function SessionItem({
 }) {
 	const { t } = useTranslation("agentManager")
 	const timeLabels = useMemo(() => createRelativeTimeLabels(t), [t])
-	const [showShareConfirm, setShowShareConfirm] = useState(false)
-	const [isHovered, setIsHovered] = useState(false)
 
 	const showSpinner = uiState?.showSpinner ?? false
 	const isActive = uiState?.isActive ?? false
@@ -188,30 +186,8 @@ function SessionItem({
 	const branchName = session.parallelMode?.branch
 	const isCompleted = session.status === "done"
 
-	const handleShareClick = (e: React.MouseEvent) => {
-		e.stopPropagation()
-		setShowShareConfirm(true)
-	}
-
-	const handleShareConfirm = (e: React.MouseEvent) => {
-		e.stopPropagation()
-		setShowShareConfirm(false)
-		setIsHovered(false)
-		vscode.postMessage({ type: "agentManager.sessionShare", sessionId: session.sessionId })
-	}
-
-	const handleShareCancel = (e: React.MouseEvent) => {
-		e.stopPropagation()
-		setShowShareConfirm(false)
-		setIsHovered(false)
-	}
-
 	return (
-		<div
-			className={`am-session-item ${isSelected ? "am-selected" : ""}`}
-			onClick={onSelect}
-			onMouseEnter={() => setIsHovered(true)}
-			onMouseLeave={() => !showShareConfirm && setIsHovered(false)}>
+		<div className={`am-session-item ${isSelected ? "am-selected" : ""}`} onClick={onSelect}>
 			{session.status === "creating" && (
 				<div className="am-status-icon creating" title={t("status.creating")}>
 					<Loader2 size={14} className="am-spinning" />
@@ -253,34 +229,7 @@ function SessionItem({
 				</div>
 				{isWorktree && isCompleted && <div className="am-ready-to-merge">{t("sidebar.readyToMerge")}</div>}
 			</div>
-			{(isHovered || showShareConfirm) && (
-				<button
-					className="w-5 h-5 border-none bg-transparent rounded-[3px] cursor-pointer flex items-center justify-center -mt-0.5 hover:bg-vscode-toolbar-hoverBackground"
-					onClick={handleShareClick}
-					title={t("sidebar.shareSession")}
-					aria-label={t("sidebar.shareSession")}>
-					<Share2 size={14} />
-				</button>
-			)}
-			{showShareConfirm && (
-				<div
-					className="absolute top-full left-2 right-2 mt-1 p-3 bg-vscode-dropdown-background border border-vscode-dropdown-border rounded z-[100] shadow-[0_4px_12px_rgba(0,0,0,0.3)]"
-					onClick={(e) => e.stopPropagation()}>
-					<div className="text-sm mb-2">{t("sidebar.shareConfirmMessage")}</div>
-					<div className="flex gap-2">
-						<button
-							className="px-3 py-1 rounded-sm text-xs cursor-pointer border border-transparent transition-colors duration-150 bg-vscode-button-background text-vscode-button-foreground hover:bg-vscode-button-hoverBackground"
-							onClick={handleShareConfirm}>
-							{t("sidebar.shareConfirmYes")}
-						</button>
-						<button
-							className="px-3 py-1 rounded-sm text-xs cursor-pointer border border-transparent transition-colors duration-150 bg-vscode-button-secondaryBackground text-vscode-button-secondaryForeground hover:bg-vscode-button-secondaryHoverBackground"
-							onClick={handleShareCancel}>
-							{t("sidebar.shareConfirmNo")}
-						</button>
-					</div>
-				</div>
-			)}
+			{/* kilocode_change: Kilo cloud session sharing is not exposed by Deeptask. */}
 		</div>
 	)
 }

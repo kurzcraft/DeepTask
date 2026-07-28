@@ -343,12 +343,7 @@ const WelcomeViewProvider = () => {
 									{t("welcome:providerSignup.rooCloudProvider")}
 								</p>
 								<p className="text-base text-vscode-descriptionForeground mt-0">
-									{t("welcome:providerSignup.rooCloudDescription")}{" "}
-									<VSCodeLink
-										href="https://roocode.com/provider/pricing?utm_source=extension&utm_medium=welcome-screen&utm_campaign=provider-signup&utm_content=learn-more"
-										className="cursor-pointer">
-										{t("welcome:providerSignup.learnMore")}
-									</VSCodeLink>
+									{t("welcome:providerSignup.rooCloudDescription")}
 								</p>
 							</div>
 						</VSCodeRadio>

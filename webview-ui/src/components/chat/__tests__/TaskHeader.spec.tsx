@@ -180,7 +180,7 @@ describe("TaskHeader", () => {
 		expect(handleCondenseContext).not.toHaveBeenCalled()
 	})
 
-	describe("DismissibleUpsell behavior", () => {
+	describe("commercial upsell removal", () => {
 		beforeEach(() => {
 			vi.useFakeTimers()
 			// Reset the mock state before each test
@@ -199,18 +199,15 @@ describe("TaskHeader", () => {
 			vi.useRealTimers()
 		})
 
-		it("should show DismissibleUpsell after 2 minutes when task is not complete", async () => {
+		it("should not show a commercial upsell after a task runs for 2 minutes", async () => {
 			renderTaskHeader()
 
-			// Initially, the upsell should not be visible
 			expect(screen.queryByTestId("dismissible-upsell")).not.toBeInTheDocument()
 
-			// Fast-forward time by 2 minutes to match component timeout
 			await vi.advanceTimersByTimeAsync(120_000)
 
-			// The upsell should now be visible
-			expect(screen.getByTestId("dismissible-upsell")).toBeInTheDocument()
-			expect(screen.getByText("cloud:upsell.longRunningTask")).toBeInTheDocument()
+			expect(screen.queryByTestId("dismissible-upsell")).not.toBeInTheDocument()
+			expect(screen.queryByText("cloud:upsell.longRunningTask")).not.toBeInTheDocument()
 		})
 
 		it("should not show DismissibleUpsell when task is complete", async () => {
@@ -322,7 +319,7 @@ describe("TaskHeader", () => {
 			expect(screen.queryByTestId("dismissible-upsell")).not.toBeInTheDocument()
 		})
 
-		it("should show DismissibleUpsell when task has non-completion message followed by resume messages", async () => {
+		it("should not show a commercial upsell after non-completion and resume messages", async () => {
 			// Set up mock state with a non-completion message followed by resume messages
 			mockExtensionState = {
 				...mockExtensionState,
@@ -350,11 +347,9 @@ describe("TaskHeader", () => {
 
 			renderTaskHeader()
 
-			// Fast-forward time by 2 minutes to trigger the upsell
 			await vi.advanceTimersByTimeAsync(120_000)
 
-			// The upsell should appear because the last relevant message (skipping resume messages) is not completion_result
-			expect(screen.getByTestId("dismissible-upsell")).toBeInTheDocument()
+			expect(screen.queryByTestId("dismissible-upsell")).not.toBeInTheDocument()
 		})
 	})
 })

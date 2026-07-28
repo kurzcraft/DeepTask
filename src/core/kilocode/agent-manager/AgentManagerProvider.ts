@@ -420,22 +420,7 @@ export class AgentManagerProvider implements vscode.Disposable {
 				case "agentManager.configureSetupScript":
 					void this.configureSetupScript()
 					break
-				case "agentManager.sessionShare":
-					SessionManager.init()
-						?.shareSession(message.sessionId as string)
-						.then((result) => {
-							const shareUrl = `https://app.kilo.ai/share/${result.share_id}`
-
-							void vscode.env.clipboard.writeText(shareUrl)
-							vscode.window.showInformationMessage(
-								t("common:info.session_share_link_copied_with_url", { url: shareUrl }),
-							)
-						})
-						.catch((error) => {
-							const errorMessage = error instanceof Error ? error.message : String(error)
-							vscode.window.showErrorMessage(`Failed to share session: ${errorMessage}`)
-						})
-					break
+				// kilocode_change: Kilo cloud session sharing is intentionally unavailable in Deeptask.
 				case "openImage":
 					// Handle image click from ImageThumbnail component
 					void openImage(message.text as string)
@@ -1786,7 +1771,11 @@ export class AgentManagerProvider implements vscode.Disposable {
 		])
 
 		const scriptUri = `http://${localServerUrl}/src/kilocode/agent-manager/index.tsx`
-		const deeptaskIconUri = getUri(webview, this.context.extensionUri, ["assets", "icons", "logo-outline-black.png"])
+		const deeptaskIconUri = getUri(webview, this.context.extensionUri, [
+			"assets",
+			"icons",
+			"logo-outline-black.png",
+		])
 
 		return /*html*/ `
 			<!DOCTYPE html>
@@ -1826,7 +1815,11 @@ export class AgentManagerProvider implements vscode.Disposable {
 		])
 
 		const nonce = getNonce()
-		const deeptaskIconUri = getUri(webview, this.context.extensionUri, ["assets", "icons", "logo-outline-black.png"])
+		const deeptaskIconUri = getUri(webview, this.context.extensionUri, [
+			"assets",
+			"icons",
+			"logo-outline-black.png",
+		])
 
 		return `<!DOCTYPE html>
 <html lang="en">
@@ -1955,7 +1948,11 @@ export class AgentManagerProvider implements vscode.Disposable {
 		const actionLabel = t("kilocode:agentManager.actions.getHelp")
 		vscode.window.showErrorMessage(errorMessage, actionLabel).then((selection) => {
 			if (selection === actionLabel) {
-				void vscode.env.openExternal(vscode.Uri.parse("https://kilo.ai/docs"))
+				void vscode.env.openExternal(
+					vscode.Uri.parse(
+						"https://github.com/kurzcraft/DeepTask/blob/main/docs/deeptask/guides/USER_GUIDE.md",
+					),
+				)
 			}
 		})
 	}

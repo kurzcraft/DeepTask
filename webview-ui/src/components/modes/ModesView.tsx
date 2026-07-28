@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
-import { KiloShareModesBanner } from "../kilocode/KiloShareModesBanner" // kilocode_change
+import React, { useState, useEffect, useCallback, useRef } from "react"
 import {
 	VSCodeCheckbox,
 	VSCodeRadioGroup,
@@ -51,7 +50,6 @@ import {
 } from "@src/components/ui"
 import { DeleteModeDialog } from "@src/components/modes/DeleteModeDialog"
 import { useEscapeKey } from "@src/hooks/useEscapeKey"
-import { OrganizationModeWarning } from "../kilocode/OrganizationModeWarning"
 import { SectionHeader } from "../settings/SectionHeader"
 
 // Get all available groups that should show in prompts view
@@ -291,12 +289,6 @@ const ModesView = ({ hideHeader = false }: { hideHeader?: boolean }) => {
 		const findMode = (m: ModeConfig): boolean => m.slug === visualMode
 		return customModes?.find(findMode) || modes.find(findMode)
 	}, [visualMode, customModes, modes])
-
-	// kilocode_change start
-	const isOrganizationMode = useMemo(() => {
-		return getCurrentMode()?.source === "organization"
-	}, [getCurrentMode])
-	// kilocode_change end
 
 	// Check if the current mode has rules to export
 	const checkRulesDirectory = useCallback((slug: string) => {
@@ -709,9 +701,6 @@ const ModesView = ({ hideHeader = false }: { hideHeader?: boolean }) => {
 					</div>
 
 					<div className="text-sm text-vscode-descriptionForeground mb-6">
-						{/* kilocode_change - add KiloShareModesBanner */}
-						<KiloShareModesBanner />
-
 						<Trans i18nKey="prompts:modes.createModeHelpText">
 							<VSCodeLink
 								href={buildDocLink("basic-usage/using-modes", "prompts_view_modes")}
@@ -928,10 +917,6 @@ const ModesView = ({ hideHeader = false }: { hideHeader?: boolean }) => {
 							</>
 						)}
 					</div>
-
-					{/* kilocode_change start */}
-					{isOrganizationMode && <OrganizationModeWarning />}
-					{/* kilocode_change end */}
 
 					{/* API Configuration - Moved Here */}
 					<div className="mb-3">

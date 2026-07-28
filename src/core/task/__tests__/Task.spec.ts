@@ -2304,11 +2304,13 @@ describe("Queued message processing after condense", () => {
 
 		const historyText = JSON.stringify((task as any).apiConversationHistory)
 		expect(historyText).toContain('current_task_focus source=\\"latest_user_continuation\\"')
-		expect(historyText).toContain('current_task_state authority=\\"host\\"')
+		expect(historyText).toContain('current_task_state authority=\\"host\\" visibility=\\"silent\\"')
 		expect(historyText).toContain("修复压缩后新拓展任务失焦并完成真实验收")
 		expect(historyText).toContain("Checklist facts: 1 completed, 1 open")
 		expect(historyText).toContain("[in_progress] 验证新的压缩聚焦")
 		expect(historyText).toContain("priority over summaries, old completions, and checklist wording")
+		expect(historyText).toContain("do not quote, paraphrase, or restate it in routine intermediary updates")
+		expect(historyText).toContain("Mention the target only when the user asks for status")
 		expect((task as any).apiConversationHistory.at(-1)?.role).toBe("user")
 	})
 
@@ -2331,6 +2333,8 @@ describe("Queued message processing after condense", () => {
 
 		expect(anchors).toHaveLength(1)
 		expect(anchors[0].content).toContain("new open work")
+		expect(anchors[0].content).toContain('visibility="silent"')
+		expect(anchors[0].content).toContain("do not quote, paraphrase, or restate it")
 		expect(anchors[0].content).not.toContain("old checklist snapshot")
 		expect(result[0]).toBe(messages[0])
 	})

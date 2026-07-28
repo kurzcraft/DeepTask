@@ -1,9 +1,9 @@
-import { useEffect, useRef, useCallback } from "react"
+// kilocode_change start: Deeptask handles provider authorization through local model settings.
 import { ClineMessage } from "@roo-code/types"
 import { vscode } from "@src/utils/vscode"
 import { Button } from "@src/components/ui"
-import { useTranslation } from "react-i18next"
 import { safeJsonParse } from "@roo/safeJsonParse"
+import { useTranslation } from "react-i18next"
 
 type UnauthorizedWarningProps = {
 	message: ClineMessage
@@ -15,73 +15,40 @@ type UnauthorizedWarningData = {
 
 export const UnauthorizedWarning = ({ message }: UnauthorizedWarningProps) => {
 	const { t } = useTranslation()
-	const hasRetried = useRef(false)
-
 	const data = safeJsonParse<UnauthorizedWarningData>(message.text)
-
-	const handleRetry = useCallback(() => {
-		if (hasRetried.current) {
-			return
-		}
-		hasRetried.current = true
-		vscode.postMessage({
-			type: "askResponse",
-			askResponse: "retry_clicked",
-			text: message.text,
-		})
-	}, [message.text])
-
-	// Listen for successful authentication and automatically retry
-	useEffect(() => {
-		let retryTimeoutId: ReturnType<typeof setTimeout> | undefined
-
-		const handleMessage = (event: MessageEvent) => {
-			// Validate message shape and type before acting
-			const msg = event.data
-			if (typeof msg !== "object" || msg === null || msg.type !== "deviceAuthComplete") {
-				return
-			}
-			// Auth succeeded - wait briefly for token to be saved, then retry
-			retryTimeoutId = setTimeout(() => {
-				handleRetry()
-			}, 500)
-		}
-
-		window.addEventListener("message", handleMessage)
-		return () => {
-			window.removeEventListener("message", handleMessage)
-			if (retryTimeoutId !== undefined) {
-				clearTimeout(retryTimeoutId)
-			}
-		}
-	}, [handleRetry])
-
-	const modelId = data?.modelId || "(chosen)"
+	const modelId = data?.modelId || t("common:unknown", { defaultValue: "Unknown model" })
 
 	return (
 		<div className="flex flex-col gap-3">
-			<div className="flex items-center gap-2">
-				<span className="text-yellow-400 text-lg">✨</span>
-				<span className="font-semibold text-vscode-foreground">
-					{t("kilocode:unauthorizedError.title", { modelId })}
-				</span>
+			<div className="font-semibold text-vscode-errorForeground">
+				{t("chat:apiRequest.errorMessage.401", { defaultValue: "Provider authorization failed" })}
 			</div>
-			<p className="text-vscode-descriptionForeground text-sm m-0 break-words">
-				{t("kilocode:unauthorizedError.message")}
-			</p>
-			<Button
-				variant="primary"
-				size="lg"
-				className="w-full mt-1"
-				onClick={() => {
-					vscode.postMessage({
-						type: "switchTab",
-						tab: "auth",
-						values: { returnTo: "chat" },
-					})
-				}}>
-				{t("kilocode:unauthorizedError.loginButton")}
-			</Button>
+			<p className="m-0 break-words text-sm text-vscode-descriptionForeground">{modelId}</p>
+			<div className="flex gap-2">
+				<Button
+					variant="secondary"
+					onClick={() => {
+						vscode.postMessage({
+							type: "askResponse",
+							askResponse: "retry_clicked",
+							text: message.text,
+						})
+					}}>
+					{t("common:retry", { defaultValue: "Retry" })}
+				</Button>
+				<Button
+					variant="primary"
+					onClick={() => {
+						vscode.postMessage({
+							type: "switchTab",
+							tab: "settings",
+							values: { section: "providers" },
+						})
+					}}>
+					{t("chat:apiRequest.errorMessage.goToSettings", { defaultValue: "Settings" })}
+				</Button>
+			</div>
 		</div>
 	)
 }
+// kilocode_change end

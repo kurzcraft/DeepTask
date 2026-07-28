@@ -1,5 +1,15 @@
 # Deeptask
 
+## 5.5.9
+
+### Patch Changes
+
+- Keep the newest user extension or correction authoritative after context condensation while retaining verified checklist facts without replaying obsolete goals.
+- Replace broken documentation directory URLs with direct links to real repository guide files.
+- Remove user-facing Kilo/Roo commercial, account, organization-indexing, upsell, community, and support entry points while preserving independent AI model provider links.
+- Keep code indexing on the local Deeptask indexer so stale organization settings cannot reactivate managed commercial UI.
+- Add regression gates for documentation links, onboarding, local indexing, and the continued absence of long-task commercial upsells.
+
 ## 5.5.8
 
 ### Patch Changes
