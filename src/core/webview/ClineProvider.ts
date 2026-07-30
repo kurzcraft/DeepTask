@@ -48,6 +48,9 @@ import {
 	DEFAULT_MODES,
 	DEFAULT_CHECKPOINT_TIMEOUT_SECONDS,
 	getModelId,
+	isTypicalProvider,
+	modelIdKeys,
+	modelIdKeysByProvider,
 } from "@roo-code/types"
 import { aggregateTaskCostsRecursive, type AggregatedCosts } from "./aggregateTaskCosts"
 import { TelemetryService } from "@roo-code/telemetry"
@@ -143,6 +146,7 @@ const DEEPTASK_DEFAULT_GLOBAL_SETTINGS: Partial<GlobalState> = {
 	alwaysAllowBrowser: false,
 	alwaysAllowMcp: false,
 	alwaysAllowModeSwitch: true,
+	alwaysAllowProviderProfileSwitch: true, // kilocode_change
 	alwaysAllowSubtasks: true,
 	showAutoApproveMenu: true,
 	terminalShellIntegrationDisabled: false,
@@ -1852,17 +1856,14 @@ export class ClineProvider
 					this.contextProxy.setProviderSettings(providerSettings),
 				])
 
-				// Change the provider for the current task.
-				// TODO: We should rename `buildApiHandler` for clarity (e.g. `getProviderClient`).
-				const task = this.getCurrentTask()
-
-				if (task) {
-					task.api = buildApiHandler(providerSettings)
-				}
-
-				await TelemetryService.instance.updateIdentity(providerSettings.kilocodeToken ?? "") // kilocode_change
+				// kilocode_change start
+				// Route every live-task client update through Task.updateApiConfiguration.
+				// Direct assignment here used to replace credentials underneath an active
+				// stream before the request-boundary deferral could protect it.
+				await TelemetryService.instance.updateIdentity(providerSettings.kilocodeToken ?? "")
 
 				this.updateTaskApiHandlerIfNeeded(providerSettings, { forceRebuild: true })
+				// kilocode_change end
 
 				// Keep the current task's sticky provider profile in sync with the newly-activated profile.
 				await this.persistStickyProviderProfileToCurrentTask(name)
@@ -1929,6 +1930,79 @@ export class ClineProvider
 					error instanceof Error ? error.message : String(error)
 				}`,
 			)
+		}
+	}
+
+	/**
+	 * Validate a provider profile against the live task before committing it.
+	 * The current profile remains untouched until both checks pass.
+	 */
+	async switchProviderProfileWithPreflight(
+		name: string,
+		task: Task,
+		modelId?: string,
+	): Promise<{ ok: true; modelId: string } | { ok: false; reason: string }> {
+		try {
+			const profile = await this.providerSettingsManager.getProfile({ name })
+			const { name: _name, id: _id, ...storedProviderSettings } = profile
+			if (!storedProviderSettings.apiProvider) {
+				return { ok: false, reason: `Provider profile "${name}" is not configured.` }
+			}
+
+			const providerSettings: ProviderSettings = { ...storedProviderSettings }
+			if (modelId) {
+				const existingModelKey = modelIdKeys.find((key) => key in providerSettings)
+				const providerModelKey = isTypicalProvider(providerSettings.apiProvider)
+					? modelIdKeysByProvider[providerSettings.apiProvider]
+					: providerSettings.apiProvider === "openai" || providerSettings.apiProvider === "openai-responses"
+						? "openAiModelId"
+						: undefined
+				const modelKey = existingModelKey ?? providerModelKey
+				if (!modelKey) {
+					return {
+						ok: false,
+						reason: `Provider profile "${name}" does not support direct model selection.`,
+					}
+				}
+				providerSettings[modelKey] = modelId
+			}
+
+			const candidate = buildApiHandler(providerSettings)
+			const candidateModel = candidate.getModel()
+			const targetContextWindow = candidateModel.info.contextWindow
+			const currentContextTokens = task.getTokenUsage().contextTokens ?? 0
+			if (!Number.isFinite(targetContextWindow) || targetContextWindow <= 0) {
+				return { ok: false, reason: `Model "${candidateModel.id}" did not report a valid context window.` }
+			}
+			if (currentContextTokens >= targetContextWindow) {
+				return {
+					ok: false,
+					reason: `Current context (${currentContextTokens} tokens) exceeds model "${candidateModel.id}" context window (${targetContextWindow} tokens).`,
+				}
+			}
+
+			const probeStream = candidate.createMessage(
+				"Respond with one short confirmation.",
+				[{ role: "user", content: "Connectivity probe. Reply with OK." }],
+				{ taskId: task.taskId, store: false, suppressPreviousResponseId: true },
+			)
+			const iterator = probeStream[Symbol.asyncIterator]()
+			const firstChunk = await iterator.next()
+			if (firstChunk.done || firstChunk.value?.type === "error") {
+				return { ok: false, reason: `Model "${candidateModel.id}" did not return a valid response.` }
+			}
+			await iterator.return?.(undefined)
+
+			if (modelId) {
+				await this.providerSettingsManager.saveConfig(name, providerSettings)
+			}
+			await this.activateProviderProfile({ name })
+			return { ok: true, modelId: candidateModel.id }
+		} catch (error) {
+			return {
+				ok: false,
+				reason: `Provider preflight failed: ${error instanceof Error ? error.message : String(error)}`,
+			}
 		}
 	}
 
@@ -2478,6 +2552,7 @@ export class ClineProvider
 			alwaysAllowBrowser,
 			alwaysAllowMcp,
 			alwaysAllowModeSwitch,
+			alwaysAllowProviderProfileSwitch, // kilocode_change
 			alwaysAllowSubtasks,
 			allowedMaxRequests,
 			allowedMaxCost,
@@ -2651,6 +2726,7 @@ export class ClineProvider
 			alwaysAllowBrowser: alwaysAllowBrowser ?? false,
 			alwaysAllowMcp: alwaysAllowMcp ?? false,
 			alwaysAllowModeSwitch: alwaysAllowModeSwitch ?? true,
+			alwaysAllowProviderProfileSwitch: alwaysAllowProviderProfileSwitch ?? true, // kilocode_change
 			alwaysAllowSubtasks: alwaysAllowSubtasks ?? true,
 			isBrowserSessionActive,
 			yoloMode: yoloMode ?? false, // kilocode_change
@@ -2983,6 +3059,7 @@ export class ClineProvider
 			alwaysAllowBrowser: stateValues.alwaysAllowBrowser ?? false,
 			alwaysAllowMcp: stateValues.alwaysAllowMcp ?? false,
 			alwaysAllowModeSwitch: stateValues.alwaysAllowModeSwitch ?? true,
+			alwaysAllowProviderProfileSwitch: stateValues.alwaysAllowProviderProfileSwitch ?? true, // kilocode_change
 			alwaysAllowSubtasks: stateValues.alwaysAllowSubtasks ?? true,
 			alwaysAllowFollowupQuestions: stateValues.alwaysAllowFollowupQuestions ?? false,
 			isBrowserSessionActive,
@@ -3996,6 +4073,7 @@ export class ClineProvider
 						alwaysAllowFollowupQuestions: !!state.alwaysAllowFollowupQuestions,
 						alwaysAllowMcp: !!state.alwaysAllowMcp,
 						alwaysAllowModeSwitch: !!state.alwaysAllowModeSwitch,
+						alwaysAllowProviderProfileSwitch: !!state.alwaysAllowProviderProfileSwitch, // kilocode_change
 						alwaysAllowReadOnly: !!state.alwaysAllowReadOnly,
 						alwaysAllowReadOnlyOutsideWorkspace: !!state.alwaysAllowReadOnlyOutsideWorkspace,
 						alwaysAllowSubtasks: !!state.alwaysAllowSubtasks,

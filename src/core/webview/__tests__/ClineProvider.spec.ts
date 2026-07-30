@@ -1005,6 +1005,7 @@ describe("ClineProvider", () => {
 		expect(state.alwaysAllowBrowser).toBe(false)
 		expect(state.alwaysAllowMcp).toBe(false)
 		expect(state.alwaysAllowModeSwitch).toBe(true)
+		expect(state.alwaysAllowProviderProfileSwitch).toBe(true) // kilocode_change
 		expect(state.alwaysAllowSubtasks).toBe(true)
 		expect(state.showAutoApproveMenu).toBe(true)
 		expect(state.terminalShellIntegrationDisabled).toBe(false)
@@ -2402,12 +2403,12 @@ describe("ClineProvider", () => {
 			// kilocode_change end
 		})
 
-		test("handles successful saveApiConfiguration", async () => {
+		test("handles successful saveApiConfiguration without restarting services for chat profiles", async () => {
 			await provider.resolveWebviewView(mockWebviewView)
 			const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
 			;(provider as any).providerSettingsManager = {
-			initialize: vi.fn().mockResolvedValue(undefined),
+				initialize: vi.fn().mockResolvedValue(undefined),
 				setModeConfig: vi.fn(),
 				saveConfig: vi.fn().mockResolvedValue(undefined),
 				listConfig: vi
@@ -2419,24 +2420,98 @@ describe("ClineProvider", () => {
 				apiProvider: "anthropic" as const,
 				apiKey: "test-key",
 			}
+			vi.mocked(vscode.commands.executeCommand).mockClear()
 
-			// Trigger upsertApiConfiguration
 			await messageHandler({
 				type: "saveApiConfiguration",
 				text: "test-config",
 				apiConfiguration: testApiConfig,
 			})
 
-			// Verify config was saved
 			expect(provider.providerSettingsManager.saveConfig).toHaveBeenCalledWith("test-config", testApiConfig)
-
-			// Verify state updates
 			expect(mockContext.globalState.update).toHaveBeenCalledWith("listApiConfigMeta", [
 				{ name: "test-config", id: "test-id", apiProvider: "anthropic" },
 			])
 			expect(updateGlobalStateSpy).toHaveBeenCalledWith("listApiConfigMeta", [
 				{ name: "test-config", id: "test-id", apiProvider: "anthropic" },
 			])
+			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith("kilo-code.ghost.reload")
+			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith("workbench.action.reloadWindow")
+		})
+
+		test("reloads only the autocomplete service when saving an autocomplete profile", async () => {
+			await provider.resolveWebviewView(mockWebviewView)
+			const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
+			;(provider as any).providerSettingsManager = {
+				initialize: vi.fn().mockResolvedValue(undefined),
+				saveConfig: vi.fn().mockResolvedValue(undefined),
+				listConfig: vi.fn().mockResolvedValue([]),
+			} as any
+			vi.mocked(vscode.commands.executeCommand).mockClear()
+
+			await messageHandler({
+				type: "saveApiConfiguration",
+				text: "autocomplete-config",
+				apiConfiguration: {
+					apiProvider: "mistral",
+					profileType: "autocomplete",
+					mistralApiKey: "test-key",
+				},
+			})
+
+			expect(vscode.commands.executeCommand).toHaveBeenCalledTimes(1)
+			expect(vscode.commands.executeCommand).toHaveBeenCalledWith("kilo-code.ghost.reload")
+			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith("workbench.action.reloadWindow")
+		})
+
+		test("does not restart services when renaming a chat profile", async () => {
+			await provider.resolveWebviewView(mockWebviewView)
+			const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
+			;(provider as any).providerSettingsManager = {
+				getProfile: vi.fn().mockResolvedValue({ id: "chat-id" }),
+				saveConfig: vi.fn().mockResolvedValue(undefined),
+				deleteConfig: vi.fn().mockResolvedValue(undefined),
+			} as any
+			vi.spyOn(provider, "activateProviderProfile").mockResolvedValue(undefined)
+			vi.mocked(vscode.commands.executeCommand).mockClear()
+
+			await messageHandler({
+				type: "renameApiConfiguration",
+				values: { oldName: "old-chat", newName: "new-chat" },
+				apiConfiguration: { apiProvider: "anthropic", apiKey: "test-key" },
+			})
+
+			expect(provider.providerSettingsManager.saveConfig).toHaveBeenCalledWith("new-chat", {
+				apiProvider: "anthropic",
+				apiKey: "test-key",
+				id: "chat-id",
+			})
+			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith("kilo-code.ghost.reload")
+			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith("workbench.action.reloadWindow")
+		})
+
+		test("does not restart services when deleting a chat profile", async () => {
+			await provider.resolveWebviewView(mockWebviewView)
+			const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
+			;(provider as any).providerSettingsManager = {
+				listConfig: vi.fn().mockResolvedValue([
+					{ name: "old-chat", id: "old-id", apiProvider: "anthropic" },
+					{ name: "remaining-chat", id: "remaining-id", apiProvider: "openai" },
+				]),
+				deleteConfig: vi.fn().mockResolvedValue(undefined),
+			} as any
+			vi.spyOn(provider, "activateProviderProfile").mockResolvedValue(undefined)
+			vi.mocked(vscode.window.showInformationMessage).mockImplementationOnce(
+				async (_message, _options, confirm) => confirm,
+			)
+			vi.mocked(vscode.commands.executeCommand).mockClear()
+
+			await messageHandler({ type: "deleteApiConfiguration", text: "old-chat" })
+
+			expect(provider.providerSettingsManager.deleteConfig).toHaveBeenCalledWith("old-chat")
+			expect(provider.activateProviderProfile).toHaveBeenCalledWith({ name: "remaining-chat" })
+			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith("kilo-code.ghost.reload")
+			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith("workbench.action.reloadWindow")
 		})
 	})
 

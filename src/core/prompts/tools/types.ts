@@ -1,6 +1,6 @@
 import { DiffStrategy } from "../../../shared/tools"
 import { McpHub } from "../../../services/mcp/McpHub"
-import { Experiments } from "@roo-code/types"
+import { Experiments, ProviderSettingsEntry } from "@roo-code/types"
 
 export type ToolArgs = {
 	cwd: string
@@ -11,5 +11,6 @@ export type ToolArgs = {
 	toolOptions?: any
 	partialReadsEnabled?: boolean
 	settings?: Record<string, any>
+	providerProfiles?: ProviderSettingsEntry[] // kilocode_change
 	experiments?: Partial<Experiments>
 }

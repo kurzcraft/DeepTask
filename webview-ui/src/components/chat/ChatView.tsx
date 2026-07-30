@@ -378,6 +378,19 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							setSecondaryButtonText(undefined)
 							break
 						case "tool":
+							// kilocode_change start
+							// Auto-approved tool asks are already answered by the host. Keep
+							// their buttons hidden so a late click cannot be misrouted as a
+							// fresh empty continuation after the switch has already started.
+							if (lastMessage.isAnswered) {
+								setSendingDisabled(false)
+								setClineAsk(undefined)
+								setEnableButtons(false)
+								setPrimaryButtonText(undefined)
+								setSecondaryButtonText(undefined)
+								break
+							}
+							// kilocode_change end
 							setSendingDisabled(isPartial)
 							setClineAsk("tool")
 							setEnableButtons(!isPartial)
@@ -484,6 +497,10 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							setSecondaryButtonText(undefined)
 							break
 						case "resume_task":
+							// kilocode_change start
+							// Returning from settings (e.g. after fixing an API key) can leave the
+							// same resume_task row as lastMessage. Always re-light Resume even if
+							// the row was briefly marked answered during a failed click/save race.
 							setSendingDisabled(false)
 							setClineAsk("resume_task")
 							setEnableButtons(true)
@@ -504,6 +521,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 								setSecondaryButtonText(t("chat:terminate.title"))
 							}
 							setDidClickCancel(false) // special case where we reset the cancel button state
+							// kilocode_change end
 							break
 						case "resume_completed_task":
 							setSendingDisabled(false)
@@ -678,8 +696,86 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	useEffect(() => {
 		if (isHidden) {
 			everVisibleMessagesTsRef.current.clear()
+			return
 		}
-	}, [isHidden])
+
+		// kilocode_change start
+		// Returning from settings (API key save, profile edit, etc.) keeps the same
+		// lastMessage object, so the deep-compare effect may not re-run. Re-derive
+		// actionable controls from the latest row so Resume/Retry cannot stay blank.
+		const latest = messagesRef.current.at(-1)
+		if (!latest) {
+			setSendingDisabled(false)
+			setClineAsk(undefined)
+			setEnableButtons(false)
+			setPrimaryButtonText(undefined)
+			setSecondaryButtonText(undefined)
+			return
+		}
+
+		if (latest.type === "ask" && latest.partial !== true) {
+			currentAskTsRef.current = latest.ts
+			switch (latest.ask) {
+				case "api_req_failed":
+					setSendingDisabled(true)
+					setClineAsk("api_req_failed")
+					setEnableButtons(true)
+					setPrimaryButtonText(t("chat:retry.title"))
+					setSecondaryButtonText(t("chat:startNewTask.title"))
+					break
+				case "resume_task": {
+					setSendingDisabled(false)
+					setClineAsk("resume_task")
+					setEnableButtons(true)
+					const isCompletedSubtask =
+						currentTaskItem?.parentTaskId &&
+						messagesRef.current.some(
+							(msg) => msg.ask === "completion_result" || msg.say === "completion_result",
+						)
+					if (isCompletedSubtask) {
+						setPrimaryButtonText(t("chat:startNewTask.title"))
+						setSecondaryButtonText(undefined)
+					} else {
+						setPrimaryButtonText(t("chat:resumeTask.title"))
+						setSecondaryButtonText(t("chat:terminate.title"))
+					}
+					setDidClickCancel(false)
+					break
+				}
+				case "resume_completed_task":
+					setSendingDisabled(false)
+					setClineAsk("resume_completed_task")
+					setEnableButtons(true)
+					setPrimaryButtonText(t("chat:startNewTask.title"))
+					setSecondaryButtonText(undefined)
+					setDidClickCancel(false)
+					break
+				case "mistake_limit_reached":
+					setSendingDisabled(false)
+					setClineAsk("mistake_limit_reached")
+					setEnableButtons(true)
+					setPrimaryButtonText(t("chat:proceedAnyways.title"))
+					setSecondaryButtonText(t("chat:startNewTask.title"))
+					break
+				default:
+					// Keep non-resume asks as-is; only force composer open if controls
+					// were wiped into a dead empty state while the panel was hidden.
+					if (!enableButtons && !primaryButtonText && sendingDisabled) {
+						setSendingDisabled(false)
+					}
+					break
+			}
+		} else if (latest.type === "say" && latest.partial !== true) {
+			// Settled assistant rows must leave the composer interactive after settings.
+			setSendingDisabled(false)
+			if (!enableButtons) {
+				setClineAsk(undefined)
+				setPrimaryButtonText(undefined)
+				setSecondaryButtonText(undefined)
+			}
+		}
+		// kilocode_change end
+	}, [isHidden, currentTaskItem?.parentTaskId, enableButtons, primaryButtonText, sendingDisabled, t])
 
 	useEffect(() => {
 		const cache = everVisibleMessagesTsRef.current

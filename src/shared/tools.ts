@@ -55,6 +55,8 @@ export const toolParamNames = [
 	"diff",
 	"mode_slug",
 	"reason",
+	"profile_name",
+	"model_id",
 	"line",
 	"mode",
 	"message",
@@ -123,6 +125,7 @@ export type NativeToolArgs = {
 	run_slash_command: { command: string; args?: string }
 	search_files: { path: string; regex: string; file_pattern?: string | null }
 	switch_mode: { mode_slug: string; reason: string }
+	switch_provider_profile: { profile_name: string; model_id?: string; reason: string }
 	update_todo_list: { todos: string }
 	use_mcp_tool: { server_name: string; tool_name: string; arguments?: Record<string, unknown> }
 	write_to_file: { path: string; content: string }
@@ -245,6 +248,11 @@ export interface SwitchModeToolUse extends ToolUse<"switch_mode"> {
 	params: Partial<Pick<Record<ToolParamName, string>, "mode_slug" | "reason">>
 }
 
+export interface SwitchProviderProfileToolUse extends ToolUse<"switch_provider_profile"> {
+	name: "switch_provider_profile"
+	params: Partial<Pick<Record<ToolParamName, string>, "profile_name" | "model_id" | "reason">>
+}
+
 export interface NewTaskToolUse extends ToolUse<"new_task"> {
 	name: "new_task"
 	params: Partial<Pick<Record<ToolParamName, string>, "mode" | "message" | "todos">>
@@ -302,6 +310,7 @@ export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
 	ask_followup_question: "ask questions",
 	attempt_completion: "complete tasks",
 	switch_mode: "switch modes",
+	switch_provider_profile: "switch provider profiles",
 	new_task: "create new task",
 	new_rule: "create new rule",
 	codebase_search: "codebase search",
@@ -340,7 +349,7 @@ export const TOOL_GROUPS: Record<ToolGroup, ToolGroupConfig> = {
 		tools: ["use_mcp_tool", "access_mcp_resource"],
 	},
 	modes: {
-		tools: ["switch_mode", "new_task"],
+		tools: ["switch_mode", "switch_provider_profile", "new_task"],
 		alwaysAvailable: true,
 	},
 }
@@ -350,6 +359,7 @@ export const ALWAYS_AVAILABLE_TOOLS: ToolName[] = [
 	"ask_followup_question",
 	"attempt_completion",
 	"switch_mode",
+	"switch_provider_profile",
 	"new_task",
 	"report_bug",
 	"condense", // kilocode_Change

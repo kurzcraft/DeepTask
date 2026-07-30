@@ -68,7 +68,7 @@ export class Terminal extends BaseTerminal {
 		const promise = new Promise<void>((resolve, reject) => {
 			// Set up event handlers
 			process.once("continue", () => {
-				TerminalRegistry.notifyTerminalProcessCompleted(this)
+				TerminalRegistry.notifyTerminalProcessCompleted(this, process)
 				resolve()
 			})
 			process.once("error", (error) => {
@@ -99,7 +99,7 @@ export class Terminal extends BaseTerminal {
 					)
 				})
 		}).finally(() => {
-			TerminalRegistry.notifyTerminalProcessCompleted(this)
+			TerminalRegistry.notifyTerminalProcessCompleted(this, process)
 		})
 
 		return mergePromise(process, promise)

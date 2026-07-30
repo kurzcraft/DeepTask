@@ -44,31 +44,48 @@ describe("History resume delegation - parent metadata transitions", () => {
 		vi.clearAllMocks()
 	})
 
-	it("reopenParentFromDelegation persists parent metadata (delegated → active) before reopen", async () => {
+	it("reopenParentFromDelegation preserves the parent profile after a child profile switch", async () => {
 		const providerEmit = vi.fn()
-		const getTaskWithId = vi.fn().mockResolvedValue({
-			historyItem: {
-				id: "parent-1",
-				status: "delegated",
-				delegatedToId: "child-1",
-				awaitingChildId: "child-1",
-				childIds: ["child-1"],
-				ts: Date.now(),
-				task: "Parent task",
-				tokensIn: 0,
-				tokensOut: 0,
-				totalCost: 0,
-				mode: "code",
-				workspace: "/tmp",
-			},
-		})
+		const getTaskWithId = vi.fn().mockImplementation(async (taskId: string) => ({
+			historyItem:
+				taskId === "parent-1"
+					? {
+							id: "parent-1",
+							status: "delegated",
+							delegatedToId: "child-1",
+							awaitingChildId: "child-1",
+							childIds: ["child-1"],
+							ts: Date.now(),
+							task: "Parent task",
+							tokensIn: 0,
+							tokensOut: 0,
+							totalCost: 0,
+							mode: "code",
+							apiConfigName: "parent-profile",
+							workspace: "/tmp",
+						}
+					: {
+							id: "child-1",
+							parentTaskId: "parent-1",
+							status: "active",
+							ts: Date.now(),
+							task: "Child task",
+							tokensIn: 0,
+							tokensOut: 0,
+							totalCost: 0,
+							mode: "code",
+							apiConfigName: "child-profile",
+							workspace: "/tmp",
+						},
+		}))
 
 		const updateTaskHistory = vi.fn().mockResolvedValue([])
 		const removeClineFromStack = vi.fn().mockResolvedValue(undefined)
+		const resumeAfterDelegation = vi.fn().mockResolvedValue(undefined)
 		const createTaskWithHistoryItem = vi.fn().mockResolvedValue({
 			taskId: "parent-1",
 			skipPrevResponseIdOnce: false,
-			resumeAfterDelegation: vi.fn().mockResolvedValue(undefined),
+			resumeAfterDelegation,
 		})
 
 		const provider = {
@@ -108,15 +125,21 @@ describe("History resume delegation - parent metadata transitions", () => {
 		const createCall = createTaskWithHistoryItem.mock.invocationCallOrder[0]
 		expect(updateCall).toBeLessThan(createCall)
 
-		// Verify child closed and parent reopened with updated metadata
+		// Verify child closed and parent reopened with its own sticky profile, not the child's.
 		expect(removeClineFromStack).toHaveBeenCalledTimes(1)
 		expect(createTaskWithHistoryItem).toHaveBeenCalledWith(
 			expect.objectContaining({
 				status: "active",
 				completedByChildId: "child-1",
+				apiConfigName: "parent-profile",
 			}),
 			{ startTask: false },
 		)
+		expect(createTaskWithHistoryItem).not.toHaveBeenCalledWith(
+			expect.objectContaining({ apiConfigName: "child-profile" }),
+			expect.anything(),
+		)
+		expect(resumeAfterDelegation).toHaveBeenCalledTimes(1)
 	})
 
 	it("reopenParentFromDelegation injects subtask_result into both UI and API histories", async () => {

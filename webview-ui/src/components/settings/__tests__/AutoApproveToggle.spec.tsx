@@ -23,6 +23,7 @@ describe("AutoApproveToggle", () => {
 		alwaysAllowBrowser: false,
 		alwaysAllowMcp: false,
 		alwaysAllowModeSwitch: true,
+		alwaysAllowProviderProfileSwitch: true, // kilocode_change
 		alwaysAllowSubtasks: false,
 		alwaysAllowExecute: true,
 		alwaysAllowFollowupQuestions: false,
@@ -65,6 +66,13 @@ describe("AutoApproveToggle", () => {
 		fireEvent.click(readOnlyButton)
 		expect(mockOnToggle).toHaveBeenCalledTimes(2)
 		expect(mockOnToggle).toHaveBeenCalledWith("alwaysAllowReadOnly", false)
+
+		const providerSwitchButton = screen.getByTestId(
+			autoApproveSettingsConfig.alwaysAllowProviderProfileSwitch.testId,
+		)
+		fireEvent.click(providerSwitchButton)
+		expect(mockOnToggle).toHaveBeenCalledTimes(3)
+		expect(mockOnToggle).toHaveBeenCalledWith("alwaysAllowProviderProfileSwitch", false)
 	})
 
 	test("updates aria-pressed attribute after toggle", () => {

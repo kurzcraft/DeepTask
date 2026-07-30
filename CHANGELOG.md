@@ -1,5 +1,18 @@
 # Deeptask
 
+## 5.6.0
+
+### Minor Changes
+
+- Give every new command an isolated integrated terminal, prune only verified completed terminals at every allocation boundary, and never terminate running or state-unknown commands.
+- Normalize completion callbacks so settled processes leave the active slot before retention pruning, including shell-stream and fallback completion races.
+- Let the agent directly select any live saved provider profile or a model within that profile; newly created profiles appear without restarting, and changes commit only after context-capacity and connectivity preflight succeeds.
+- Keep both the active profile and model unchanged when provider or model preflight fails.
+- Auto-approve provider and model switches by default through a dedicated control that can be disabled independently.
+- Keep native tools working after switching from OpenAI Compatible to DeepSeek by omitting unsupported request fields and preserving required thinking metadata across tool turns.
+- Restore explicit task focus and continuation state across context compression and follow-up task expansion.
+- Always return completed delegated subtasks to their parent, even when the child switched models, entered a continuation turn, or compressed its context before finishing.
+
 ## 5.5.9
 
 ### Patch Changes

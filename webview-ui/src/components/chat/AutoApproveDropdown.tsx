@@ -37,6 +37,7 @@ export const AutoApproveDropdown = ({ disabled = false, triggerClassName = "" }:
 		setAlwaysAllowBrowser,
 		setAlwaysAllowMcp,
 		setAlwaysAllowModeSwitch,
+		setAlwaysAllowProviderProfileSwitch, // kilocode_change
 		setAlwaysAllowSubtasks,
 		setAlwaysAllowFollowupQuestions,
 	} = useExtensionState()
@@ -66,6 +67,9 @@ export const AutoApproveDropdown = ({ disabled = false, triggerClassName = "" }:
 				case "alwaysAllowModeSwitch":
 					setAlwaysAllowModeSwitch(value)
 					break
+				case "alwaysAllowProviderProfileSwitch":
+					setAlwaysAllowProviderProfileSwitch(value)
+					break
 				case "alwaysAllowSubtasks":
 					setAlwaysAllowSubtasks(value)
 					break
@@ -88,6 +92,7 @@ export const AutoApproveDropdown = ({ disabled = false, triggerClassName = "" }:
 			setAlwaysAllowBrowser,
 			setAlwaysAllowMcp,
 			setAlwaysAllowModeSwitch,
+			setAlwaysAllowProviderProfileSwitch,
 			setAlwaysAllowSubtasks,
 			setAlwaysAllowFollowupQuestions,
 			setAutoApprovalEnabled,

@@ -238,6 +238,10 @@
 			"label": "模式",
 			"description": "無需核准即可自動切換至不同模式"
 		},
+		"providerProfileSwitch": {
+			"label": "提供商 / 模型",
+			"description": "通過相容性檢查後自動切換提供商設定與模型"
+		},
 		"subtasks": {
 			"label": "子任務",
 			"description": "無需核准即可建立與完成子任務"

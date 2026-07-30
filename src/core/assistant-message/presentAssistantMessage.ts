@@ -32,6 +32,7 @@ import { useMcpToolTool } from "../tools/UseMcpToolTool"
 import { accessMcpResourceTool } from "../tools/accessMcpResourceTool"
 import { askFollowupQuestionTool } from "../tools/AskFollowupQuestionTool"
 import { switchModeTool } from "../tools/SwitchModeTool"
+import { switchProviderProfileTool } from "../tools/SwitchProviderProfileTool"
 import { attemptCompletionTool, AttemptCompletionCallbacks } from "../tools/AttemptCompletionTool"
 import { newTaskTool } from "../tools/NewTaskTool"
 import { updateTodoListTool } from "../tools/UpdateTodoListTool"
@@ -1167,6 +1168,15 @@ export async function presentAssistantMessage(cline: Task) {
 					break
 				case "switch_mode":
 					await switchModeTool.handle(cline, block as ToolUse<"switch_mode">, {
+						askApproval,
+						handleError,
+						pushToolResult,
+						removeClosingTag,
+						toolProtocol,
+					})
+					break
+				case "switch_provider_profile":
+					await switchProviderProfileTool.handle(cline, block as ToolUse<"switch_provider_profile">, {
 						askApproval,
 						handleError,
 						pushToolResult,

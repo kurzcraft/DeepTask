@@ -13,7 +13,7 @@ import { isWriteToolAction, isReadOnlyToolAction } from "./tools"
 import { isMcpToolAlwaysAllowed } from "./mcp"
 import { getCommandDecision } from "./commands"
 
-// We have 11 different actions that can be auto-approved. // kilocode_change
+// Auto-approvable action categories. // kilocode_change
 export type AutoApprovalState =
 	| "alwaysAllowReadOnly"
 	| "alwaysAllowWrite"
@@ -21,6 +21,7 @@ export type AutoApprovalState =
 	| "alwaysAllowBrowser"
 	| "alwaysAllowMcp"
 	| "alwaysAllowModeSwitch"
+	| "alwaysAllowProviderProfileSwitch" // kilocode_change
 	| "alwaysAllowSubtasks"
 	| "alwaysAllowExecute"
 	| "alwaysAllowFollowupQuestions"
@@ -169,6 +170,12 @@ export async function checkAutoApproval({
 		if (tool?.tool === "switchMode") {
 			return state.alwaysAllowModeSwitch === true ? { decision: "approve" } : { decision: "ask" }
 		}
+
+		// kilocode_change start - provider/profile switching has an independent permission.
+		if (tool?.tool === "switchProviderProfile") {
+			return state.alwaysAllowProviderProfileSwitch === true ? { decision: "approve" } : { decision: "ask" }
+		}
+		// kilocode_change end
 
 		if (["newTask", "finishTask"].includes(tool?.tool)) {
 			return state.alwaysAllowSubtasks === true ? { decision: "approve" } : { decision: "ask" }

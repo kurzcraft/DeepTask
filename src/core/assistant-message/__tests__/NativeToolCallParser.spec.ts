@@ -170,6 +170,30 @@ describe("NativeToolCallParser", () => {
 				}
 			})
 		})
+
+		describe("switch_provider_profile tool", () => {
+			it("preserves the selected profile and optional model", () => {
+				const result = NativeToolCallParser.parseToolCall({
+					id: "toolu_switch_profile",
+					name: "switch_provider_profile",
+					arguments: JSON.stringify({
+						profile_name: "DeepSeek",
+						model_id: "deepseek-v4-pro",
+						reason: "Use the larger context model",
+					}),
+				})
+
+				expect(result).not.toBeNull()
+				expect(result?.type).toBe("tool_use")
+				if (result?.type === "tool_use") {
+					expect(result.nativeArgs).toEqual({
+						profile_name: "DeepSeek",
+						model_id: "deepseek-v4-pro",
+						reason: "Use the larger context model",
+					})
+				}
+			})
+		})
 	})
 
 	describe("processStreamingChunk", () => {

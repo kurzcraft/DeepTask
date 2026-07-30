@@ -493,6 +493,7 @@ export type ExtensionState = Pick<
 	| "alwaysAllowBrowser"
 	| "alwaysAllowMcp"
 	| "alwaysAllowModeSwitch"
+	| "alwaysAllowProviderProfileSwitch" // kilocode_change
 	| "alwaysAllowSubtasks"
 	| "alwaysAllowFollowupQuestions"
 	| "alwaysAllowExecute"
@@ -1268,6 +1269,7 @@ export interface ClineSayTool {
 		| "listFilesRecursive"
 		| "searchFiles"
 		| "switchMode"
+		| "switchProviderProfile" // kilocode_change
 		| "newTask"
 		| "finishTask"
 		| "generateImage"

@@ -438,6 +438,42 @@ describe("Cline", () => {
 			expect(cline.consecutiveMistakeLimit).toBe(5)
 		})
 
+		// kilocode_change start
+		it("waits for task mode and API profile initialization before the first request", async () => {
+			const cline = new Task({
+				provider: mockProvider,
+				apiConfiguration: mockApiConfig,
+				task: "cold start task",
+				startTask: false,
+				context: mockExtensionContext,
+			})
+			let resolveMode!: () => void
+			let resolveProfile!: () => void
+			;(cline as any).taskModeReady = new Promise<void>((resolve) => {
+				resolveMode = resolve
+			})
+			;(cline as any).taskApiConfigReady = new Promise<void>((resolve) => {
+				resolveProfile = resolve
+			})
+			vi.spyOn(cline, "say").mockResolvedValue(undefined)
+			const initiateSpy = vi.spyOn(cline as any, "initiateTaskLoop").mockResolvedValue(undefined)
+
+			const startPromise = (cline as any).startTask("cold start task")
+			await Promise.resolve()
+			expect(initiateSpy).not.toHaveBeenCalled()
+
+			resolveMode()
+			await Promise.resolve()
+			expect(initiateSpy).not.toHaveBeenCalled()
+
+			resolveProfile()
+			await startPromise
+			expect(initiateSpy).toHaveBeenCalledWith([
+				expect.objectContaining({ type: "text", text: "<task>\ncold start task\n</task>" }),
+			])
+		})
+		// kilocode_change end
+
 		it("should require either task or historyItem", () => {
 			expect(() => {
 				new Task({ provider: mockProvider, apiConfiguration: mockApiConfig, context: mockExtensionContext })
@@ -2109,6 +2145,25 @@ describe("Queued message processing after condense", () => {
 		expect(JSON.stringify(history)).not.toContain("legacy provider private summary")
 	})
 
+	it("never soft-completes a delegated child even in DeepTask mode", async () => {
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "parentTaskId", { value: "parent-task" })
+		;(task as any)._taskMode = "DeepTask"
+		;(task as any).shouldKeepNextCompletionActive = true
+		;(task as any).activeContinuationWorkToolUsed = true
+
+		await expect(task.shouldDowngradeCompletionToActiveResponse()).resolves.toBe(false)
+	})
+
+	it("never blocks delegated child completion behind the root continuation work gate", () => {
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "parentTaskId", { value: "parent-task" })
+		;(task as any).shouldKeepNextCompletionActive = true
+		;(task as any).activeContinuationWorkToolUsed = false
+
+		expect(task.shouldRejectPrematureActiveContinuationCompletion()).toBe(false)
+	})
+
 	it("clears stale queued message after condense completes", async () => {
 		const provider = createProvider()
 		const task = new Task({
@@ -2644,6 +2699,53 @@ describe("Queued message processing after condense", () => {
 		expect(entries[0]).toContain('"reusedInFlight":true')
 		expect(entries[1]).toContain('"outcome":"stale_discarded"')
 		expect(entries[1]).toContain('"canCommit":false')
+	})
+
+	it("persists streamed reasoning_content for dynamic DeepSeek thinking models", async () => {
+		const task = Object.create(Task.prototype) as Task
+		;(task as any).apiConfiguration = {
+			apiProvider: "deepseek",
+			apiModelId: "deepseek-v4-flash",
+		}
+		;(task as any).apiConversationHistory = []
+		;(task as any).api = {}
+		;(task as any).saveApiConversationHistory = vi.fn().mockResolvedValue(undefined)
+
+		await (task as any).addToApiConversationHistory(
+			{
+				role: "assistant",
+				content: [
+					{ type: "text", text: "Calling the tool." },
+					{ type: "tool_use", id: "tool-1", name: "read_file", input: { path: "README.md" } },
+				],
+			},
+			"Need to inspect the requested file first.",
+		)
+
+		expect((task as any).apiConversationHistory).toEqual([
+			expect.objectContaining({
+				role: "assistant",
+				reasoning_content: "Need to inspect the requested file first.",
+			}),
+		])
+	})
+
+	it("does not persist plain streamed reasoning for other OpenAI-compatible providers", async () => {
+		const task = Object.create(Task.prototype) as Task
+		;(task as any).apiConfiguration = {
+			apiProvider: "openai",
+			apiModelId: "custom-thinking-model",
+		}
+		;(task as any).apiConversationHistory = []
+		;(task as any).api = {}
+		;(task as any).saveApiConversationHistory = vi.fn().mockResolvedValue(undefined)
+
+		await (task as any).addToApiConversationHistory(
+			{ role: "assistant", content: [{ type: "text", text: "Answer." }] },
+			"Display-only reasoning.",
+		)
+
+		expect((task as any).apiConversationHistory[0]).not.toHaveProperty("reasoning_content")
 	})
 
 	it("clears the automatic condense spinner when context management throws", async () => {
@@ -3836,6 +3938,72 @@ describe("Queued message processing after condense", () => {
 		expect(initiateSpy).toHaveBeenCalledTimes(1)
 		expect(setPending).toHaveBeenCalledWith("second new instruction", [])
 		expect(cancelTask).toHaveBeenCalledTimes(1)
+	})
+
+	it("defers API configuration replacement until the next request boundary", () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context,
+		})
+		const activeApi = task.api
+		const nextConfiguration: ProviderSettings = {
+			apiProvider: "deepseek",
+			apiModelId: "deepseek-chat",
+			deepSeekApiKey: "updated-key",
+			deepSeekBaseUrl: "https://api.deepseek.com",
+		}
+
+		task.isStreaming = true
+		task.updateApiConfiguration(nextConfiguration)
+
+		expect(task.api).toBe(activeApi)
+		expect(task.apiConfiguration).toBe(apiConfig)
+		expect((task as any).pendingApiConfiguration).toEqual(nextConfiguration)
+
+		task.isStreaming = false
+		;(task as any).applyPendingApiConfiguration()
+
+		expect(task.api).not.toBe(activeApi)
+		expect(task.apiConfiguration).toEqual(nextConfiguration)
+		expect((task as any).pendingApiConfiguration).toBeUndefined()
+	})
+
+	it("uses last-save-wins semantics for configuration edits during a request", () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context,
+		})
+		const activeApi = task.api
+		const firstEdit: ProviderSettings = {
+			apiProvider: "deepseek",
+			apiModelId: "deepseek-chat",
+			deepSeekApiKey: "first-key",
+		}
+		const latestEdit: ProviderSettings = {
+			apiProvider: "deepseek",
+			apiModelId: "deepseek-reasoner",
+			deepSeekApiKey: "latest-key",
+		}
+
+		task.isWaitingForFirstChunk = true
+		task.updateApiConfiguration(firstEdit)
+		task.updateApiConfiguration(latestEdit)
+
+		expect(task.api).toBe(activeApi)
+		expect((task as any).pendingApiConfiguration).toEqual(latestEdit)
+
+		task.isWaitingForFirstChunk = false
+		;(task as any).applyPendingApiConfiguration()
+
+		expect(task.apiConfiguration).toEqual(latestEdit)
 	})
 
 	it("recovers first-chunk context overflow by reducing context before retrying", async () => {

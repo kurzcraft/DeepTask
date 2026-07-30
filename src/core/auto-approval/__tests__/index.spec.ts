@@ -63,4 +63,30 @@ describe("checkAutoApproval", () => {
 
 		expect(result).toEqual({ decision: "deny" })
 	})
+
+	it("approves provider profile switches when their dedicated toggle is enabled", async () => {
+		const result = await checkAutoApproval({
+			state: {
+				autoApprovalEnabled: true,
+				alwaysAllowProviderProfileSwitch: true,
+			} as unknown as ExtensionState,
+			ask: "tool",
+			text: JSON.stringify({ tool: "switchProviderProfile", profileName: "deepseek", modelId: null }),
+		})
+
+		expect(result).toEqual({ decision: "approve" })
+	})
+
+	it("asks before provider profile switches when their dedicated toggle is disabled", async () => {
+		const result = await checkAutoApproval({
+			state: {
+				autoApprovalEnabled: true,
+				alwaysAllowProviderProfileSwitch: false,
+			} as unknown as ExtensionState,
+			ask: "tool",
+			text: JSON.stringify({ tool: "switchProviderProfile", profileName: "deepseek", modelId: null }),
+		})
+
+		expect(result).toEqual({ decision: "ask" })
+	})
 })

@@ -1,5 +1,5 @@
 {
-	"greeting": "Kilo Code 能为您做什么？",
+	"greeting": "Deeptask 能为您做什么？",
 	"task": {
 		"title": "任务",
 		"expand": "展开任务",
@@ -188,7 +188,7 @@
 		"current": "当前"
 	},
 	"instructions": {
-		"wantsToFetch": "Kilo Code 想要获取详细指示以协助当前任务"
+		"wantsToFetch": "Deeptask 想要获取详细指示以协助当前任务"
 	},
 	"fileOperations": {
 		"wantsToRead": "需要读取文件",
@@ -204,7 +204,7 @@
 		"wantsToInsertWithLineNumber": "需要在第 {{lineNumber}} 行插入内容",
 		"wantsToInsertAtEnd": "需要在文件末尾添加内容",
 		"wantsToDelete": "需要删除文件",
-		"wantsToDeleteDirectory": "Kilo Code 想要删除此目录",
+		"wantsToDeleteDirectory": "Deeptask 想要删除此目录",
 		"wantsToReadAndXMore": "Kilo Code 想读取此文件以及另外 {{count}} 个文件",
 		"wantsToReadMultiple": "Kilo Code 想要读取多个文件",
 		"wantsToApplyBatchChanges": "Kilo Code 想要对多个文件应用更改",
@@ -218,8 +218,8 @@
 		"didViewTopLevel": "已查看目录文件列表",
 		"wantsToViewRecursive": "需要查看目录所有文件",
 		"didViewRecursive": "已查看目录所有文件",
-		"wantsToViewDefinitions": "Kilo Code想查看此目录中使用的源代码定义名称",
-		"didViewDefinitions": "Kilo Code已查看此目录中使用的源代码定义名称",
+		"wantsToViewDefinitions": "Deeptask 想查看此目录中使用的源代码定义名称",
+		"didViewDefinitions": "Deeptask 已查看此目录中使用的源代码定义名称",
 		"wantsToSearch": "需要搜索内容: {{regex}}",
 		"didSearch": "已完成内容搜索: {{regex}}",
 		"wantsToSearchOutsideWorkspace": "需要搜索内容（工作区外）: {{regex}}",
@@ -228,8 +228,8 @@
 		"didViewTopLevelOutsideWorkspace": "已查看目录文件列表（工作区外）",
 		"wantsToViewRecursiveOutsideWorkspace": "需要查看目录所有文件（工作区外）",
 		"didViewRecursiveOutsideWorkspace": "已查看目录所有文件（工作区外）",
-		"wantsToViewDefinitionsOutsideWorkspace": "Kilo Code想查看此目录中使用的源代码定义名称（工作区外）",
-		"didViewDefinitionsOutsideWorkspace": "Kilo Code已查看此目录中使用的源代码定义名称（工作区外）"
+		"wantsToViewDefinitionsOutsideWorkspace": "Deeptask 想查看此目录中使用的源代码定义名称（工作区外）",
+		"didViewDefinitionsOutsideWorkspace": "Deeptask 已查看此目录中使用的源代码定义名称（工作区外）"
 	},
 	"commandOutput": "命令输出",
 	"commandExecution": {
@@ -252,13 +252,13 @@
 	"response": "响应",
 	"arguments": "参数",
 	"text": {
-		"rooSaid": "Kilo 说"
+		"rooSaid": "Deeptask 说"
 	},
 	"feedback": {
 		"youSaid": "你说"
 	},
 	"mcp": {
-		"wantsToUseTool": "Kilo Code想在{{serverName}} MCP上使用工具",
+		"wantsToUseTool": "Deeptask 想在{{serverName}} MCP上使用工具",
 		"wantsToAccessResource": "Kilo Code想访问{{serverName}} MCP服务上的资源"
 	},
 	"modes": {
@@ -268,8 +268,8 @@
 		"didSwitchWithReason": "已切换至{{mode}}模式（原因：{{reason}}）"
 	},
 	"subtasks": {
-		"wantsToCreate": "Kilo Code想在<code>{{mode}}</code>模式下创建新子任务",
-		"wantsToFinish": "Kilo Code想完成此子任务",
+		"wantsToCreate": "Deeptask 想在<code>{{mode}}</code>模式下创建新子任务",
+		"wantsToFinish": "Deeptask 想完成此子任务",
 		"newTaskContent": "子任务说明",
 		"completionContent": "子任务已完成",
 		"resultContent": "子任务结果",
@@ -277,7 +277,7 @@
 		"completionInstructions": "子任务已完成！您可以查看结果并提出修改或下一步建议。如果一切正常，请确认以将结果返回给主任务。"
 	},
 	"questions": {
-		"hasQuestion": "Kilo Code有一个问题"
+		"hasQuestion": "Deeptask 有一个问题"
 	},
 	"taskCompleted": "任务完成",
 	"modelResponseIncomplete": "模型响应不完整",

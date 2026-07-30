@@ -83,6 +83,7 @@ export const globalSettingsSchema = z.object({
 	requestDelaySeconds: z.number().optional(),
 	alwaysAllowMcp: z.boolean().optional(),
 	alwaysAllowModeSwitch: z.boolean().optional(),
+	alwaysAllowProviderProfileSwitch: z.boolean().optional(), // kilocode_change
 	alwaysAllowSubtasks: z.boolean().optional(),
 	alwaysAllowExecute: z.boolean().optional(),
 	alwaysAllowFollowupQuestions: z.boolean().optional(),
@@ -370,6 +371,7 @@ export const EVALS_SETTINGS: RooCodeSettings = {
 	requestDelaySeconds: 10,
 	alwaysAllowMcp: true,
 	alwaysAllowModeSwitch: true,
+	alwaysAllowProviderProfileSwitch: true, // kilocode_change
 	alwaysAllowSubtasks: true,
 	alwaysAllowExecute: true,
 	alwaysAllowFollowupQuestions: true,

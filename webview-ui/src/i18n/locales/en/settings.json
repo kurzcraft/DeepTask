@@ -243,6 +243,10 @@
 			"label": "Mode",
 			"description": "Automatically switch between different modes without requiring approval"
 		},
+		"providerProfileSwitch": {
+			"label": "Provider / Model",
+			"description": "Automatically switch provider profiles and models after compatibility checks"
+		},
 		"subtasks": {
 			"label": "Subtasks",
 			"description": "Allow creation and completion of subtasks without requiring approval"

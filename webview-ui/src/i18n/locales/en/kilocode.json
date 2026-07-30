@@ -15,8 +15,8 @@
 		}
 	},
 	"welcome": {
-		"greeting": "Welcome to Kilo Code!",
-		"introText1": "Kilo Code is a free, open source AI coding agent.",
+		"greeting": "Welcome to Deeptask!",
+		"introText1": "Deeptask is a free, open source AI coding agent.",
 		"introText2": "It works with the latest AI models like Claude Opus 4.5, Gemini 3 Pro, GPT-5.2, and 450+ more.",
 		"introText3": "Create a free account and get $20 in bonus credits when you top-up for the first time.",
 		"ctaButton": "Get Started",
@@ -71,8 +71,8 @@
 			"skills": "Skills"
 		},
 		"provider": {
-			"account": "Kilo Code Account",
-			"apiKey": "Kilo Code API Key",
+			"account": "Deeptask Account",
+			"apiKey": "Deeptask API Key",
 			"login": "Log in at Kilo Code",
 			"logout": "Log out from Kilo Code",
 			"loginForPremiumModels": "Log in to access premium models & features",
@@ -116,10 +116,10 @@
 		},
 		"systemNotifications": {
 			"label": "Enable System Notifications",
-			"description": "When enabled, Kilo Code will send system notifications for important events like task completion or errors.",
+			"description": "When enabled, Deeptask will send system notifications for important events like task completion or errors.",
 			"testButton": "Test Notification",
-			"testTitle": "Kilo Code",
-			"testMessage": "This is a test notification from Kilo Code."
+			"testTitle": "Deeptask",
+			"testMessage": "This is a test notification from Deeptask."
 		},
 		"terminal": {
 			"commandGenerator": {
@@ -140,7 +140,7 @@
 	},
 	"chat": {
 		"condense": {
-			"wantsToCondense": "Kilo Code wants to condense your conversation",
+			"wantsToCondense": "Deeptask wants to condense your conversation",
 			"condenseConversation": "Condense Conversation"
 		},
 		"seeNewChanges": "See New Changes",
@@ -253,7 +253,7 @@
 	"toolCallStyle": {
 		"title": "Tool Call Style",
 		"description": "Choose how tool calls are formatted in the system prompt. JSON is currently experimental and mostly intended for users interested in contributing to its development.",
-		"automatic": "Let Kilo decide",
+		"automatic": "Let Deeptask decide",
 		"xml": "XML",
 		"json": "JSON"
 	},

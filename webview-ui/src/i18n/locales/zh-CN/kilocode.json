@@ -15,8 +15,8 @@
 		}
 	},
 	"welcome": {
-		"greeting": "欢迎使用 Kilo Code！",
-		"introText1": "Kilo Code 是一个免费的开源 AI 编程代理。",
+		"greeting": "欢迎使用 Deeptask！",
+		"introText1": "Deeptask 是一个免费的开源 AI 编程助手。",
 		"introText2": "它适用于最新的 AI 模型，如 Claude Opus 4.5、Gemini 3 Pro、GPT-5.2 以及 450 多个其他模型。",
 		"introText3": "创建免费账户，首次充值即可获得 20 美元奖励额度。",
 		"ctaButton": "开始使用",
@@ -26,7 +26,7 @@
 	},
 	"lowCreditWarning": {
 		"addCredit": "添加额度",
-		"lowBalance": "你的 Kilo Code 余额不足",
+		"lowBalance": "你的 Deeptask 余额不足",
 		"switchToFreeModel": "切换到免费模型"
 	},
 	"pagination": {
@@ -70,16 +70,16 @@
 		},
 		"systemNotifications": {
 			"label": "启用系统通知",
-			"description": "启用后 Kilo Code 将发送系统通知，提醒任务完成或错误等重要事件。",
+			"description": "启用后 Deeptask 将发送系统通知，提醒任务完成或错误等重要事件。",
 			"testButton": "测试通知",
-			"testTitle": "Kilo Code",
-			"testMessage": "这是来自 Kilo Code 的测试通知。"
+			"testTitle": "Deeptask",
+			"testMessage": "这是来自 Deeptask 的测试通知。"
 		},
 		"provider": {
-			"account": "Kilo Code 账号",
-			"apiKey": "Kilo Code API 密钥",
-			"login": "登录 Kilo Code",
-			"logout": "退出 Kilo Code",
+			"account": "Deeptask 账号",
+			"apiKey": "Deeptask API 密钥",
+			"login": "登录 Deeptask",
+			"logout": "退出 Deeptask",
 			"loginForPremiumModels": "登录以访问高级模型和功能",
 			"providerRouting": {
 				"title": "提供商路由",
@@ -134,7 +134,7 @@
 	"toolCallStyle": {
 		"title": "工具调用样式",
 		"description": "选择系统提示中工具调用的格式。JSON 格式目前处于实验阶段，主要面向有兴趣参与开发的用户。",
-		"automatic": "让 Kilo 决定",
+		"automatic": "让 Deeptask 决定",
 		"xml": "XML",
 		"json": "JSON"
 	},

@@ -746,6 +746,51 @@ export const webviewMessageHandler = async (
 				} else if (task && hasPendingAsk && isAskResponseForCurrentAsk) {
 					task.handleWebviewAskResponse(message.askResponse!, resolved.text, resolved.images)
 				} else if (
+					task &&
+					!hasPendingAsk &&
+					!hasMessagePayload &&
+					(message.askResponse === "yesButtonClicked" || message.askResponse === "noButtonClicked") &&
+					message.askTs !== undefined
+				) {
+					// kilocode_change start
+					// Auto-approved tool asks can leave a brief window where the webview still
+					// shows Approve. A late click for that already-settled *tool* ask must be
+					// dropped, not rewritten into an empty "continue" user message.
+					//
+					// Do NOT drop resume_task / api_req_failed / mistake_limit_reached the same
+					// way: after an API-key edit the user often returns and clicks Continue on a
+					// row that was briefly marked answered during a failed race. Dropping those
+					// clicks clears the webview buttons and freezes the chat with no recovery.
+					const answeredAsk =
+						task.findMessageByTimestamp?.(message.askTs) ??
+						task.clineMessages?.find((clineMessage) => clineMessage.ts === message.askTs)
+					const isDropOnlyAutoApprovedToolAsk =
+						answeredAsk?.type === "ask" &&
+						answeredAsk.isAnswered === true &&
+						answeredAsk.ask === "tool"
+					if (isDropOnlyAutoApprovedToolAsk) {
+						task.clearStaleWebviewAskResponse()
+						task.messageQueueService.clear()
+						await provider.postStateToWebview()
+						break
+					}
+					// kilocode_change end
+					if (task.terminalProcess) {
+						task.clearStaleWebviewAskResponse()
+						task.messageQueueService.clear()
+						void task.handleTerminalOperation(
+							message.askResponse === "noButtonClicked" ? "abort" : "continue",
+							resolved.text,
+							resolved.images,
+						)
+						await provider.postStateToWebview()
+					} else {
+						task.clearStaleWebviewAskResponse()
+						task.messageQueueService.clear()
+						void task.continueTaskFromUserMessage("")
+						await provider.postStateToWebview()
+					}
+				} else if (
 					task?.terminalProcess &&
 					(hasMessagePayload ||
 						message.askResponse === "yesButtonClicked" ||
@@ -2502,7 +2547,13 @@ export const webviewMessageHandler = async (
 					await provider.providerSettingsManager.saveConfig(message.text, message.apiConfiguration)
 					const listApiConfig = await provider.providerSettingsManager.listConfig()
 					await updateGlobalState("listApiConfigMeta", listApiConfig)
-					vscode.commands.executeCommand("kilo-code.ghost.reload") // kilocode_change: Reload ghost model when API provider settings change
+					// kilocode_change start
+					// Chat profile edits must not restart the independent autocomplete service.
+					// Reload Ghost only when the edited profile explicitly belongs to it.
+					if (message.apiConfiguration.profileType === "autocomplete") {
+						void vscode.commands.executeCommand("kilo-code.ghost.reload")
+					}
+					// kilocode_change end
 				} catch (error) {
 					provider.log(
 						`Error save api configuration: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`,
@@ -2561,20 +2612,20 @@ export const webviewMessageHandler = async (
 					// Config might not exist yet, that's fine
 				}
 
-				// kilocode_change start: If we're updating the active profile, we need to activate it to ensure it's persisted
+				// kilocode_change start: If we're updating the active profile, activate its
+				// persisted values without coupling ordinary chat settings to Ghost reloads.
 				const currentApiConfigName = getGlobalState("currentApiConfigName") || "default"
 				const isActiveProfile = message.text === currentApiConfigName
-				await provider.upsertProviderProfile(message.text, configToSave, isActiveProfile) // Activate if it's the current active profile
-				vscode.commands.executeCommand("kilo-code.ghost.reload")
+				await provider.upsertProviderProfile(message.text, configToSave, isActiveProfile)
+				if (configToSave.profileType === "autocomplete") {
+					void vscode.commands.executeCommand("kilo-code.ghost.reload")
+				}
 				// kilocode_change end
 
 				// Ensure state is posted to webview after profile update to reflect organization mode changes
 				if (organizationChanged) {
 					await provider.postStateToWebview()
 				}
-
-				// kilocode_change: Reload ghost model when API provider settings change
-				vscode.commands.executeCommand("kilo-code.ghost.reload")
 			}
 			// kilocode_change end: check for kilocodeToken change to remove organizationId and fetch organization modes
 			break
@@ -2600,8 +2651,13 @@ export const webviewMessageHandler = async (
 					// currently activated provider profile.
 					await provider.activateProviderProfile({ name: newName })
 
-					// kilocode_change: Reload ghost model when API provider settings change
-					vscode.commands.executeCommand("kilo-code.ghost.reload")
+					// kilocode_change start
+					// Renaming an ordinary chat profile must not restart the independent
+					// autocomplete service or disturb an active conversation.
+					if (message.apiConfiguration.profileType === "autocomplete") {
+						void vscode.commands.executeCommand("kilo-code.ghost.reload")
+					}
+					// kilocode_change end
 				} catch (error) {
 					provider.log(
 						`Error rename api configuration: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`,
@@ -2663,10 +2719,9 @@ export const webviewMessageHandler = async (
 				}
 
 				const oldName = message.text
-
-				const newName = (await provider.providerSettingsManager.listConfig()).filter(
-					(c) => c.name !== oldName,
-				)[0]?.name
+				const profiles = await provider.providerSettingsManager.listConfig()
+				const deletedProfile = profiles.find((profile) => profile.name === oldName)
+				const newName = profiles.find((profile) => profile.name !== oldName)?.name
 
 				if (!newName) {
 					vscode.window.showErrorMessage(t("common:errors.delete_api_config"))
@@ -2677,8 +2732,13 @@ export const webviewMessageHandler = async (
 					await provider.providerSettingsManager.deleteConfig(oldName)
 					await provider.activateProviderProfile({ name: newName })
 
-					// kilocode_change: Reload ghost model when API provider settings change
-					vscode.commands.executeCommand("kilo-code.ghost.reload")
+					// kilocode_change start
+					// Ghost only owns autocomplete profiles. Deleting a chat profile must
+					// not restart that service or interfere with the active task loop.
+					if (deletedProfile?.profileType === "autocomplete") {
+						void vscode.commands.executeCommand("kilo-code.ghost.reload")
+					}
+					// kilocode_change end
 				} catch (error) {
 					provider.log(
 						`Error delete api configuration: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`,

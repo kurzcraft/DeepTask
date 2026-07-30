@@ -48,6 +48,7 @@
 | Change unfamiliar or production code carefully           | Disable YOLO and approve or reject tools, commands, and final completion step by step         |
 | Run several servers, watchers, or training jobs          | Keep every long-running job visible in the integrated terminal list and stop any one manually |
 | Discover a new requirement while the Agent is working    | Send the correction immediately; the latest feedback becomes the active focus                 |
+| Switch mode, provider, or model mid-task                 | Let the Agent auto-switch agent mode, provider profiles, and models after connectivity checks |
 | Continue tomorrow or after the conversation becomes long | Condense context and restore real state from `EXTRA/task/`, scripts, logs, and Git            |
 | Use a hosted proxy, gateway, or local model              | Configure an OpenAI-compatible endpoint and detect or override its context window             |
 
@@ -68,6 +69,15 @@ Deeptask retains only the three newest **completed** terminals by default. Runni
 - **Progressive trust:** begin read-only, then open editing, command allowlists, and final delivery as confidence grows.
 
 [Learn how to configure control modes and permissions](./docs/deeptask/guides/USER_GUIDE_EN.md#3-choose-your-level-of-control)
+
+### Agent can auto-switch mode, provider, and model
+
+Deeptask lets the Agent switch agent mode, provider profiles, and models mid-task instead of relying only on the bottom-left selector:
+
+- **Live profile enumeration:** each tool call reads the latest saved profiles, so newly created or renamed configs are selectable without restart.
+- **Same-profile model changes and cross-provider switches:** switch only the model, or move to another saved profile such as DeepSeek, OpenAI Compatible, or Nvidia.
+- **Atomic preflight:** activation is saved only after the target API responds and the current context fits the destination model window; failures leave the active profile unchanged.
+- **Dedicated auto-approval:** a separate model/provider-switch approval toggle defaults to on and can be turned off for manual confirmation.
 
 ### Correct a running task as the real requirement changes
 

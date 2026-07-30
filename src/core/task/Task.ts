@@ -352,6 +352,12 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	// API
 	apiConfiguration: ProviderSettings
 	api: ApiHandler
+	// kilocode_change start
+	// Settings can be saved while an API stream is active. Replacing the handler
+	// mid-stream makes the current request and its retry/continuation state observe
+	// different credentials. Commit such updates only at the next request boundary.
+	private pendingApiConfiguration?: ProviderSettings
+	// kilocode_change end
 	private static lastGlobalApiRequestTime?: number
 	private autoApprovalHandler: AutoApprovalHandler
 
@@ -752,13 +758,28 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		onCreated?.(this)
 
 		if (startTask) {
+			let startupPromise: Promise<void>
 			if (task || images) {
-				this.startTask(task, images)
+				startupPromise = this.startTask(task, images)
 			} else if (historyItem) {
-				this.resumeTaskFromHistory()
+				startupPromise = this.resumeTaskFromHistory()
 			} else {
 				throw new Error("Either historyItem or task/images must be provided")
 			}
+
+			// kilocode_change start: direct construction has no caller-owned startup promise.
+			// Always observe it so cancellation while cold-start initialization is pending cannot
+			// become an unhandled rejection. Task.create() still returns the original promise.
+			void startupPromise.catch((error) => {
+				if (this.abort || this.abandoned || this.abortReason === "user_cancelled") {
+					return
+				}
+				console.error(
+					`[Task] Failed to start task ${this.taskId}.${this.instanceId}:`,
+					error instanceof Error ? error : new Error(String(error)),
+				)
+			})
+			// kilocode_change end
 		}
 	}
 
@@ -1112,6 +1133,15 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			if (reasoningDetails) {
 				messageWithTs.reasoning_details = reasoningDetails
 			}
+
+			// kilocode_change start: DeepSeek thinking responses require the exact
+			// reasoning_content to be replayed with the assistant tool-call message.
+			// Dynamic DeepSeek model IDs do not necessarily contain "reasoner", so the
+			// provider plus an actually received reasoning stream is the reliable gate.
+			if (this.apiConfiguration.apiProvider === "deepseek" && reasoning) {
+				messageWithTs.reasoning_content = reasoning
+			}
+			// kilocode_change end
 
 			// Store provider-replayable reasoning only. Plain reasoning text from
 			// OpenAI-compatible providers is display metadata, not valid Anthropic-style
@@ -1820,47 +1850,29 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			void this.checkpointSave(false, true)
 		}
 
-		// Mark the last follow-up question as answered
+		// Mark the consumed ask row as answered before the webview receives the next
+		// state snapshot. This is required for automatic approvals: the response can
+		// settle before React processes the ask row, otherwise its old buttons remain
+		// clickable and a late click can be misrouted as a fresh continuation.
+		// Also covers follow-up and command/command_output asks that stay latest while
+		// the shell is still running.
 		if (
 			askResponse === "messageResponse" ||
 			askResponse === "yesButtonClicked" ||
 			askResponse === "noButtonClicked"
 		) {
-			// Find the last unanswered follow-up message using findLastIndex
-			const lastFollowUpIndex = findLastIndex(
+			const lastAskIndex = findLastIndex(
 				this.clineMessages,
-				(msg) => msg.type === "ask" && msg.ask === "followup" && !msg.isAnswered,
+				(msg) => msg.type === "ask" && msg.partial !== true && !msg.isAnswered,
 			)
-
-			if (lastFollowUpIndex !== -1) {
-				// Mark this follow-up as answered
-				this.clineMessages[lastFollowUpIndex].isAnswered = true
-				// Save the updated messages
-				this.saveClineMessages().catch((error) => {
-					console.error("Failed to save answered follow-up state:", error)
+			if (lastAskIndex !== -1) {
+				const answeredAsk = this.clineMessages[lastAskIndex]
+				answeredAsk.isAnswered = true
+				void this.saveClineMessages().catch((error) => {
+					console.error("Failed to save answered ask state:", error)
 				})
+				void this.updateClineMessage(answeredAsk)
 			}
-
-			// kilocode_change start
-			// Command/command_output asks can remain the latest message while the shell is
-			// running. Persist isAnswered so the webview can stop re-lighting Run/Continue
-			// buttons for an already-settled ask.
-			const lastCommandAskIndex = findLastIndex(
-				this.clineMessages,
-				(msg) =>
-					msg.type === "ask" &&
-					(msg.ask === "command" || msg.ask === "command_output") &&
-					!msg.isAnswered &&
-					msg.partial !== true,
-			)
-
-			if (lastCommandAskIndex !== -1) {
-				this.clineMessages[lastCommandAskIndex].isAnswered = true
-				this.saveClineMessages().catch((error) => {
-					console.error("Failed to save answered command ask state:", error)
-				})
-			}
-			// kilocode_change end
 		}
 	}
 
@@ -1940,15 +1952,35 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	 * @param newApiConfiguration - The new API configuration to use
 	 */
 	public updateApiConfiguration(newApiConfiguration: ProviderSettings): void {
-		// Update the configuration and rebuild the API handler
+		// kilocode_change start
+		// Never replace credentials/client state underneath an active stream. A
+		// settings save remains durable immediately, while the live task adopts the
+		// newest saved snapshot at the next API request boundary.
+		if (this.isStreaming || this.isWaitingForFirstChunk || this.currentRequestAbortController) {
+			this.pendingApiConfiguration = newApiConfiguration
+			return
+		}
+
+		this.applyApiConfiguration(newApiConfiguration)
+		// kilocode_change end
+	}
+
+	// kilocode_change start
+	private applyApiConfiguration(newApiConfiguration: ProviderSettings): void {
 		this.apiConfiguration = newApiConfiguration
 		this.api = buildApiHandler(this.apiConfiguration)
-
-		// IMPORTANT: Do NOT change the parser based on the new configuration!
-		// The task's tool protocol is locked at creation time and must remain
-		// consistent throughout the task's lifetime to ensure history can be
-		// properly resumed.
 	}
+
+	private applyPendingApiConfiguration(): void {
+		if (!this.pendingApiConfiguration) {
+			return
+		}
+
+		const pendingApiConfiguration = this.pendingApiConfiguration
+		this.pendingApiConfiguration = undefined
+		this.applyApiConfiguration(pendingApiConfiguration)
+	}
+	// kilocode_change end
 
 	public async submitUserMessage(
 		text: string,
@@ -2058,6 +2090,15 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	}
 
 	public async shouldDowngradeCompletionToActiveResponse(): Promise<boolean> {
+		// kilocode_change start: delegated children must complete through the parent
+		// restoration transaction. Soft completion would return before
+		// reopenParentFromDelegation(), leaving the child focused indefinitely after a
+		// continuation, model switch, or context condensation marked it active.
+		if (this.parentTaskId) {
+			return false
+		}
+		// kilocode_change end
+
 		// Deeptask is designed as a long-lived cognitive session. Treat any
 		// attempt_completion as a soft completion: show the green final-looking
 		// answer, but do not transition the task lifecycle to completed. A later
@@ -2071,7 +2112,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	}
 
 	public shouldRejectPrematureActiveContinuationCompletion(): boolean {
-		return this.shouldKeepNextCompletionActive && !this.activeContinuationWorkToolUsed
+		// kilocode_change: continuation quality gates apply to root sessions, not to
+		// delegated child completion, whose result must always be returned to its parent.
+		return !this.parentTaskId && this.shouldKeepNextCompletionActive && !this.activeContinuationWorkToolUsed
 	}
 
 	public markActiveContinuationWorkToolUsed(toolName: string): void {
@@ -2869,6 +2912,15 @@ ${protocolHint}
 		// messages from previous session).
 		this.clineMessages = []
 		this.apiConversationHistory = []
+
+		// kilocode_change start: make cold-start state deterministic before the first request.
+		// New conversations have no prior turn to correct a stale mode/profile snapshot, so
+		// wait for both task-scoped identities before generating tools and the system prompt.
+		await Promise.all([this.taskModeReady, this.taskApiConfigReady])
+		if (this.abort || this.abandoned || this.abortReason === "user_cancelled") {
+			return
+		}
+		// kilocode_change end
 
 		// The todo list is already set in the constructor if initialTodos were provided
 		// No need to add any messages - the todoList property is already set
@@ -5162,7 +5214,7 @@ ${protocolHint}
 					toolProtocol,
 					isStealthModel: modelInfo?.isStealthModel,
 				},
-				undefined, // todoList
+				this.todoList,
 				this.api.getModel().id,
 				provider.getSkillsManager(),
 				state, // kilocode_change
@@ -5390,6 +5442,12 @@ ${protocolHint}
 		retryAttempt: number = 0,
 		options: { skipProviderRateLimit?: boolean } = {},
 	): ApiStream {
+		// kilocode_change start
+		// This is the single commit point for configuration changes made while the
+		// previous request was active. Last save wins without aborting or restarting
+		// the conversation.
+		this.applyPendingApiConfiguration()
+		// kilocode_change end
 		const state = await this.providerRef.deref()?.getState()
 
 		const {

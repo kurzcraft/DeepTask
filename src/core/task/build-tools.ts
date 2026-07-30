@@ -122,11 +122,24 @@ export async function buildNativeToolsArrayWithRestrictions(options: BuildToolsO
 	// Check if the model supports images for read_file tool description.
 	const supportsImages = modelInfo?.supportsImages ?? false
 
-	// Build native tools with dynamic read_file tool based on settings.
+	// Refresh saved profiles for every native request so profiles created or
+	// renamed during the session are immediately available to the agent. Some
+	// lightweight/IPC providers do not expose the settings manager, so use the
+	// request state as the capability-safe fallback.
+	const liveProviderProfiles = provider.providerSettingsManager
+		? await provider.providerSettingsManager.listConfig()
+		: options.state?.listApiConfigMeta ?? []
+	const providerProfiles = liveProviderProfiles.map((profile) => ({
+		name: profile.name,
+		modelId: profile.modelId,
+	}))
+
+	// Build native tools with request-scoped settings and live provider profiles.
 	const nativeTools = getNativeTools({
 		partialReadsEnabled,
 		maxConcurrentFileReads,
 		supportsImages,
+		providerProfiles,
 	})
 
 	// Filter native tools based on mode restrictions.

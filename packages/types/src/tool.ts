@@ -31,6 +31,7 @@ export const toolNames = [
 	"ask_followup_question",
 	"attempt_completion",
 	"switch_mode",
+	"switch_provider_profile",
 	"new_task",
 	"fetch_instructions",
 	"codebase_search",

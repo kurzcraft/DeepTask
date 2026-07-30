@@ -12,6 +12,7 @@ type AutoApproveToggles = Pick<
 	| "alwaysAllowBrowser"
 	| "alwaysAllowMcp"
 	| "alwaysAllowModeSwitch"
+	| "alwaysAllowProviderProfileSwitch" // kilocode_change
 	| "alwaysAllowSubtasks"
 	| "alwaysAllowExecute"
 	| "alwaysAllowFollowupQuestions"
@@ -72,6 +73,15 @@ export const autoApproveSettingsConfig: Record<AutoApproveSetting, AutoApproveCo
 		icon: "sync",
 		testId: "always-allow-mode-switch-toggle",
 	},
+	// kilocode_change start
+	alwaysAllowProviderProfileSwitch: {
+		key: "alwaysAllowProviderProfileSwitch",
+		labelKey: "settings:autoApprove.providerProfileSwitch.label",
+		descriptionKey: "settings:autoApprove.providerProfileSwitch.description",
+		icon: "server-process",
+		testId: "always-allow-provider-profile-switch-toggle",
+	},
+	// kilocode_change end
 	alwaysAllowSubtasks: {
 		key: "alwaysAllowSubtasks",
 		labelKey: "settings:autoApprove.subtasks.label",

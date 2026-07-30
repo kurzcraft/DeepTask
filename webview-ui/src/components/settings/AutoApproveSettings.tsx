@@ -27,6 +27,7 @@ type AutoApproveSettingsProps = HTMLAttributes<HTMLDivElement> & {
 	alwaysAllowBrowser?: boolean
 	alwaysAllowMcp?: boolean
 	alwaysAllowModeSwitch?: boolean
+	alwaysAllowProviderProfileSwitch?: boolean // kilocode_change
 	alwaysAllowSubtasks?: boolean
 	alwaysAllowExecute?: boolean
 	alwaysAllowFollowupQuestions?: boolean
@@ -48,6 +49,7 @@ type AutoApproveSettingsProps = HTMLAttributes<HTMLDivElement> & {
 		| "alwaysAllowBrowser"
 		| "alwaysAllowMcp"
 		| "alwaysAllowModeSwitch"
+		| "alwaysAllowProviderProfileSwitch" // kilocode_change
 		| "alwaysAllowSubtasks"
 		| "alwaysAllowExecute"
 		| "alwaysAllowFollowupQuestions"
@@ -71,6 +73,7 @@ export const AutoApproveSettings = ({
 	alwaysAllowBrowser,
 	alwaysAllowMcp,
 	alwaysAllowModeSwitch,
+	alwaysAllowProviderProfileSwitch, // kilocode_change
 	alwaysAllowSubtasks,
 	alwaysAllowExecute,
 	alwaysAllowFollowupQuestions,
@@ -197,6 +200,7 @@ export const AutoApproveSettings = ({
 						alwaysAllowBrowser={alwaysAllowBrowser}
 						alwaysAllowMcp={alwaysAllowMcp}
 						alwaysAllowModeSwitch={alwaysAllowModeSwitch}
+						alwaysAllowProviderProfileSwitch={alwaysAllowProviderProfileSwitch}
 						alwaysAllowSubtasks={alwaysAllowSubtasks}
 						alwaysAllowExecute={alwaysAllowExecute}
 						alwaysAllowFollowupQuestions={alwaysAllowFollowupQuestions}

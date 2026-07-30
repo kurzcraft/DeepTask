@@ -21,7 +21,6 @@ describe("TerminalRegistry", () => {
 	beforeEach(() => {
 		;(TerminalRegistry as any).terminals = []
 		;(TerminalRegistry as any).completedTerminalOrder = new WeakMap()
-		;(TerminalRegistry as any).legacyCompletedTerminalOrder = new WeakMap()
 		;(TerminalRegistry as any).disposedCompletedTerminals = new WeakSet()
 		;(TerminalRegistry as any).nextCompletedTerminalOrder = 1
 		;(vscode.window as any).terminals = []
@@ -148,6 +147,38 @@ describe("TerminalRegistry", () => {
 
 	// kilocode_change start
 	describe("completed VS Code terminal limit", () => {
+		it("restores Deeptask terminals that survived an extension-host restart", () => {
+			const restoredDeeptask = {
+				exitStatus: undefined,
+				name: DEEPTASK_TERMINAL_NAME,
+				shellIntegration: { cwd: { fsPath: "/test/restored" } },
+				dispose: vi.fn(),
+			} as any
+			const restoredLegacy = {
+				exitStatus: undefined,
+				name: LEGACY_KILOCODE_TERMINAL_NAME,
+				shellIntegration: { cwd: { fsPath: "/test/legacy" } },
+				dispose: vi.fn(),
+			} as any
+			const unrelated = {
+				exitStatus: undefined,
+				name: "bash",
+				dispose: vi.fn(),
+			} as any
+			;(vscode.window as any).terminals = [restoredDeeptask, restoredLegacy, unrelated]
+
+			;(TerminalRegistry as any).restoreExistingTerminals()
+
+			expect((TerminalRegistry as any).terminals).toHaveLength(2)
+			expect((TerminalRegistry as any).terminals.map((terminal: Terminal) => terminal.terminal)).toEqual([
+				restoredDeeptask,
+				restoredLegacy,
+			])
+			expect((TerminalRegistry as any).terminals.every((terminal: Terminal) => terminal.hasCompletedCommand === false)).toBe(
+				true,
+			)
+		})
+
 		const markCompleted = (terminal: Terminal) => {
 			;(TerminalRegistry as any).markTerminalCompleted(terminal)
 		}
@@ -204,25 +235,18 @@ describe("TerminalRegistry", () => {
 			expect(secondCompleted.terminal.dispose).not.toHaveBeenCalled()
 		})
 
-		it("creates a new terminal instead of reusing retained completed terminals", async () => {
+		it("creates a fresh terminal for every new command", async () => {
 			TerminalRegistry.setCompletedTerminalLimit(3)
 
-			const firstCompleted = TerminalRegistry.createTerminal("/test/path", "vscode") as Terminal
-			const secondCompleted = TerminalRegistry.createTerminal("/test/path", "vscode") as Terminal
-			const thirdCompleted = TerminalRegistry.createTerminal("/test/path", "vscode") as Terminal
-			markCompleted(firstCompleted)
-			markCompleted(secondCompleted)
-			markCompleted(thirdCompleted)
+			const first = await TerminalRegistry.getOrCreateTerminal("/test/path", "task-1", "vscode")
+			;(first as Terminal).busy = false
+			;(first as Terminal).running = false
+			markCompleted(first as Terminal)
 
-			const selected = await TerminalRegistry.getOrCreateTerminal("/test/path", "task-1", "vscode")
+			const second = await TerminalRegistry.getOrCreateTerminal("/test/path", "task-1", "vscode")
 
-			expect(selected).not.toBe(firstCompleted)
-			expect(selected).not.toBe(secondCompleted)
-			expect(selected).not.toBe(thirdCompleted)
-			expect(mockCreateTerminal).toHaveBeenCalledTimes(4)
-			expect(firstCompleted.terminal.dispose).not.toHaveBeenCalled()
-			expect(secondCompleted.terminal.dispose).not.toHaveBeenCalled()
-			expect(thirdCompleted.terminal.dispose).not.toHaveBeenCalled()
+			expect(second).not.toBe(first)
+			expect(mockCreateTerminal).toHaveBeenCalledTimes(2)
 		})
 
 		it("prunes stale completed terminals after a new command terminal completes", async () => {
@@ -335,6 +359,46 @@ describe("TerminalRegistry", () => {
 			// kilocode_change end
 		})
 
+		it("clears a settled active process before completed-terminal pruning", () => {
+			TerminalRegistry.setCompletedTerminalLimit(1)
+
+			const staleCompleted = TerminalRegistry.createTerminal("/test/stale-active", "vscode") as Terminal
+			markCompleted(staleCompleted)
+
+			const selected = TerminalRegistry.createTerminal("/test/selected-active", "vscode") as Terminal
+			const settledProcess = {
+				hasUnretrievedOutput: vi.fn(() => true),
+			} as any
+			selected.process = settledProcess
+			selected.busy = true
+			selected.running = true
+
+			TerminalRegistry.notifyTerminalProcessCompleted(selected, settledProcess)
+
+			expect(selected.process).toBeUndefined()
+			expect(selected.completedProcesses).toContain(settledProcess)
+			expect(staleCompleted.terminal.dispose).toHaveBeenCalledTimes(1)
+		})
+
+		it("ignores a late completion callback from an older process after replacement command starts", () => {
+			TerminalRegistry.setCompletedTerminalLimit(0)
+
+			const terminal = TerminalRegistry.createTerminal("/test/replaced", "vscode") as Terminal
+			const oldProcess = { abort: vi.fn() } as any
+			const newProcess = { abort: vi.fn() } as any
+			terminal.process = newProcess
+			terminal.busy = true
+			terminal.running = true
+
+			TerminalRegistry.notifyTerminalProcessCompleted(terminal, oldProcess)
+
+			expect(terminal.process).toBe(newProcess)
+			expect(terminal.busy).toBe(true)
+			expect(terminal.running).toBe(true)
+			expect(terminal.hasCompletedCommand).toBe(false)
+			expect(terminal.terminal.dispose).not.toHaveBeenCalled()
+		})
+
 		it("does not resurrect or dispose a pruned terminal on duplicate completion notification", () => {
 			TerminalRegistry.setCompletedTerminalLimit(1)
 
@@ -388,52 +452,19 @@ describe("TerminalRegistry", () => {
 			expect(createdFirstCompletedLast.terminal.dispose).not.toHaveBeenCalled()
 		})
 
-		it("counts legacy Deeptask integrated terminals while keeping the latest completed terminals", () => {
-			TerminalRegistry.setCompletedTerminalLimit(4)
-
-			const legacyTerminal = {
-				exitStatus: undefined,
-				name: LEGACY_KILOCODE_TERMINAL_NAME,
-				dispose: vi.fn(),
-			} as any
-			;(vscode.window as any).terminals.push(legacyTerminal)
-
-			const first = TerminalRegistry.createTerminal("/test/one", "vscode") as Terminal
-			const second = TerminalRegistry.createTerminal("/test/two", "vscode") as Terminal
-			const third = TerminalRegistry.createTerminal("/test/three", "vscode") as Terminal
-			const fourth = TerminalRegistry.createTerminal("/test/four", "vscode") as Terminal
-			markCompleted(first)
-			markCompleted(second)
-			markCompleted(third)
-			markCompleted(fourth)
-
-			TerminalRegistry.setCompletedTerminalLimit(4)
-
-			expect(legacyTerminal.dispose).not.toHaveBeenCalled()
-			expect(first.terminal.dispose).toHaveBeenCalledTimes(1)
-			expect(second.terminal.dispose).not.toHaveBeenCalled()
-			expect(third.terminal.dispose).not.toHaveBeenCalled()
-			expect(fourth.terminal.dispose).not.toHaveBeenCalled()
-		})
-
-		it("does not recount disposed legacy terminals that still appear in VS Code terminal list", () => {
-			TerminalRegistry.setCompletedTerminalLimit(1)
-
-			const legacyTerminal = {
-				exitStatus: undefined,
-				name: LEGACY_KILOCODE_TERMINAL_NAME,
-				dispose: vi.fn(),
-			} as any
-			;(vscode.window as any).terminals.push(legacyTerminal)
+		it("never disposes an unregistered terminal whose completion state is unknown", () => {
 			TerminalRegistry.setCompletedTerminalLimit(0)
-			TerminalRegistry.setCompletedTerminalLimit(1)
 
-			const first = TerminalRegistry.createTerminal("/test/one", "vscode") as Terminal
-			markCompleted(first)
-			TerminalRegistry.setCompletedTerminalLimit(1)
+			const unknownTerminal = {
+				exitStatus: undefined,
+				name: LEGACY_KILOCODE_TERMINAL_NAME,
+				dispose: vi.fn(),
+			} as any
+			;(vscode.window as any).terminals.push(unknownTerminal)
 
-			expect(legacyTerminal.dispose).toHaveBeenCalledTimes(1)
-			expect(first.terminal.dispose).not.toHaveBeenCalled()
+			TerminalRegistry.setCompletedTerminalLimit(0)
+
+			expect(unknownTerminal.dispose).not.toHaveBeenCalled()
 		})
 
 		it("does not dispose completed terminals when the limit is disabled", () => {
@@ -452,6 +483,35 @@ describe("TerminalRegistry", () => {
 			expect(first.terminal.dispose).not.toHaveBeenCalled()
 			expect(second.terminal.dispose).not.toHaveBeenCalled()
 			expect(third.terminal.dispose).not.toHaveBeenCalled()
+		})
+
+		it("keeps allocation integrated and ignores running terminals when pruning completed terminals", async () => {
+			TerminalRegistry.setCompletedTerminalLimit(1)
+
+			const staleCompleted = TerminalRegistry.createTerminal("/test/stale-before-allocation", "vscode") as Terminal
+			const retainedCompleted = TerminalRegistry.createTerminal("/test/retained-before-allocation", "vscode") as Terminal
+			const running = TerminalRegistry.createTerminal("/test/running-before-allocation", "vscode") as Terminal
+			markCompleted(staleCompleted)
+			markCompleted(retainedCompleted)
+			running.busy = true
+			running.running = true
+
+			const selected = await TerminalRegistry.getOrCreateTerminal("/test/new-allocation", "task-new", "vscode")
+
+			expect(selected.provider).toBe("vscode")
+			expect(staleCompleted.terminal.dispose).not.toHaveBeenCalled()
+			expect(retainedCompleted.terminal.dispose).not.toHaveBeenCalled()
+			expect(running.terminal.dispose).not.toHaveBeenCalled()
+			expect(mockCreateTerminal).toHaveBeenCalledTimes(4)
+
+			;(selected as Terminal).busy = false
+			;(selected as Terminal).running = false
+			markCompleted(selected as Terminal)
+			TerminalRegistry.enforceCompletedTerminalLimit()
+
+			expect(staleCompleted.terminal.dispose).toHaveBeenCalledTimes(1)
+			expect(retainedCompleted.terminal.dispose).toHaveBeenCalledTimes(1)
+			expect(running.terminal.dispose).not.toHaveBeenCalled()
 		})
 
 		it("prunes oldest completed terminals beyond the limit while keeping the newest ones", () => {

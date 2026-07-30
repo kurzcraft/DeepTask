@@ -96,6 +96,30 @@ if ! grep -q "OpenAI Compatible is not configured" src/dist/extension.js; then
   echo "src/dist/extension.js 缺少全新安装配置门禁" | tee -a "$LOG"
   exit 1
 fi
+if ! grep -q "Provider preflight failed" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少 Agent 配置切换连通性预检" | tee -a "$LOG"
+  exit 1
+fi
+if ! grep -q "does not support direct model selection" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少 Agent 模型切换能力门禁" | tee -a "$LOG"
+  exit 1
+fi
+if ! grep -q "Available profiles and current models" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少实时配置与模型描述" | tee -a "$LOG"
+  exit 1
+fi
+if ! grep -q "alwaysAllowProviderProfileSwitch" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少模型/配置自动批准开关" | tee -a "$LOG"
+  exit 1
+fi
+if ! grep -q "parallel_tool_calls" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少 DeepSeek 工具请求兼容路径" | tee -a "$LOG"
+  exit 1
+fi
+if ! grep -q "reopenParentFromDelegation" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少子任务完成回退事务" | tee -a "$LOG"
+  exit 1
+fi
 if ! grep -q "could not be rehydrated after cancellation" src/dist/extension.js; then
   echo "src/dist/extension.js 缺少取消时持久化缺失自愈路径" | tee -a "$LOG"
   exit 1
@@ -246,6 +270,12 @@ with ZipFile(vsix) as z:
     assert 'visibility="silent"' in extension_js, 'extension bundle missing silent task focus capsule'
     assert 'do not quote, paraphrase, or restate it' in extension_js, 'extension bundle missing focus repetition guard'
     assert 'OpenAI Compatible is not configured' in extension_js, 'extension bundle missing fresh-install guard'
+    assert 'Provider preflight failed' in extension_js, 'extension bundle missing provider connectivity preflight'
+    assert 'does not support direct model selection' in extension_js, 'extension bundle missing model switch guard'
+    assert 'Available profiles and current models' in extension_js, 'extension bundle missing live profile description'
+    assert 'alwaysAllowProviderProfileSwitch' in extension_js, 'extension bundle missing provider/model auto-approval toggle'
+    assert 'parallel_tool_calls' in extension_js, 'extension bundle missing DeepSeek tool compatibility path'
+    assert 'reopenParentFromDelegation' in extension_js, 'extension bundle missing child-to-parent completion transaction'
     assert 'could not be rehydrated after cancellation' in extension_js, 'extension bundle missing cancel recovery'
     assert 'taskkill' in extension_js, 'extension bundle missing bounded Windows tree termination'
     assert 'taskkill failed for PID' in extension_js, 'extension bundle missing Windows fail-soft diagnostic'

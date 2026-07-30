@@ -18,6 +18,10 @@ import searchReplace from "./search_replace"
 import edit_file from "./edit_file"
 import searchFiles from "./search_files"
 import switchMode from "./switch_mode"
+import {
+	createSwitchProviderProfileTool,
+	type SwitchProviderProfileToolOptions,
+} from "./switch_provider_profile"
 import updateTodoList from "./update_todo_list"
 import writeToFile from "./write_to_file"
 
@@ -38,6 +42,8 @@ export interface NativeToolsOptions {
 	maxConcurrentFileReads?: number
 	/** Whether the model supports image processing (default: false) */
 	supportsImages?: boolean
+	/** Current saved provider profiles, refreshed before each native request. */
+	providerProfiles?: SwitchProviderProfileToolOptions["profiles"]
 }
 
 /**
@@ -47,7 +53,12 @@ export interface NativeToolsOptions {
  * @returns Array of native tool definitions
  */
 export function getNativeTools(options: NativeToolsOptions = {}): OpenAI.Chat.ChatCompletionTool[] {
-	const { partialReadsEnabled = true, maxConcurrentFileReads = 5, supportsImages = false } = options
+	const {
+		partialReadsEnabled = true,
+		maxConcurrentFileReads = 5,
+		supportsImages = false,
+		providerProfiles,
+	} = options
 
 	const readFileOptions: ReadFileToolOptions = {
 		partialReadsEnabled,
@@ -83,6 +94,7 @@ export function getNativeTools(options: NativeToolsOptions = {}): OpenAI.Chat.Ch
 		edit_file,
 		searchFiles,
 		switchMode,
+		createSwitchProviderProfileTool({ profiles: providerProfiles }),
 		updateTodoList,
 		writeToFile,
 	] satisfies OpenAI.Chat.ChatCompletionTool[]

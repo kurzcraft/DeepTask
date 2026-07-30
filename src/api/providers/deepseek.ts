@@ -52,8 +52,21 @@ export class DeepSeekHandler extends OpenAiHandler {
 		const modelId = this.options.apiModelId ?? deepSeekDefaultModelId
 		const { info: modelInfo } = this.getModel()
 
-		// Check if this is a thinking-enabled model (deepseek-reasoner)
-		const isThinkingModel = modelId.includes("deepseek-reasoner")
+		// kilocode_change start: Dynamic DeepSeek model IDs can emit thinking without
+		// containing "reasoner". Existing reasoning is authoritative. A pending tool
+		// call is also a thinking continuation boundary, including when that call was
+		// created immediately before switching from another provider.
+		const hasReplayableReasoning = messages.some(
+			(message) => message.role === "assistant" && Boolean((message as { reasoning_content?: string }).reasoning_content),
+		)
+		const hasAssistantToolCall = messages.some(
+			(message) =>
+				message.role === "assistant" &&
+				Array.isArray(message.content) &&
+				message.content.some((block) => block.type === "tool_use"),
+		)
+		const isThinkingModel = modelId.includes("deepseek-reasoner") || hasReplayableReasoning || hasAssistantToolCall
+		// kilocode_change end
 
 		// Convert messages to R1 format (merges consecutive same-role messages)
 		// This is required for DeepSeek which does not support successive messages with the same role
@@ -63,6 +76,7 @@ export class DeepSeekHandler extends OpenAiHandler {
 		// See: https://api-docs.deepseek.com/guides/thinking_mode
 		const convertedMessages = convertToR1Format([{ role: "user", content: systemPrompt }, ...messages], {
 			mergeToolResultText: isThinkingModel,
+			ensureToolCallReasoningContent: isThinkingModel,
 		})
 
 		const requestOptions: DeepSeekChatCompletionParams = {
@@ -75,9 +89,9 @@ export class DeepSeekHandler extends OpenAiHandler {
 			...(isThinkingModel && { thinking: { type: "enabled" } }),
 			...(metadata?.tools && { tools: this.convertToolsForOpenAI(metadata.tools) }),
 			...(metadata?.tool_choice && { tool_choice: metadata.tool_choice }),
-			...(metadata?.toolProtocol === "native" && {
-				parallel_tool_calls: metadata.parallelToolCalls ?? false,
-			}),
+			// DeepSeek supports native tools but rejects OpenAI's parallel_tool_calls field.
+			// The task runner already serializes tool execution, so omitting it preserves
+			// native history compatibility when switching from OpenAI-compatible profiles.
 		}
 
 		// Add max_tokens if needed

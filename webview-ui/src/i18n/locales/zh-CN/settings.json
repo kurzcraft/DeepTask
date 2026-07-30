@@ -235,6 +235,10 @@
 			"label": "模式",
 			"description": "自动在不同模式之间切换而无需批准"
 		},
+		"providerProfileSwitch": {
+			"label": "提供商 / 模型",
+			"description": "通过兼容性检查后自动切换提供商配置和模型"
+		},
 		"subtasks": {
 			"label": "子任务",
 			"description": "允许创建和完成子任务而无需批准"

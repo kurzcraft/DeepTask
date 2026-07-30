@@ -38,7 +38,7 @@ export type DeepSeekAssistantMessage = AssistantMessage & {
  */
 export function convertToR1Format(
 	messages: AnthropicMessage[],
-	options?: { mergeToolResultText?: boolean },
+	options?: { mergeToolResultText?: boolean; ensureToolCallReasoningContent?: boolean },
 ): Message[] {
 	const result: Message[] = []
 
@@ -194,15 +194,20 @@ export function convertToR1Format(
 					}
 				}
 
-				// Use reasoning from content blocks if not provided at top level
+				// Use reasoning from content blocks if not provided at top level.
+				// A tool call created before switching to DeepSeek has no reasoning text,
+				// but DeepSeek thinking mode still requires the protocol field to exist.
 				const finalReasoning = reasoningContent || extractedReasoning
+				const replayReasoning =
+					finalReasoning ??
+					(options?.ensureToolCallReasoningContent && toolCalls.length > 0 ? "" : undefined)
 
 				const assistantMessage: DeepSeekAssistantMessage = {
 					role: "assistant",
 					content: textParts.length > 0 ? textParts.join("\n") : null,
 					...(toolCalls.length > 0 && { tool_calls: toolCalls }),
-					// Preserve reasoning_content for DeepSeek interleaved thinking
-					...(finalReasoning && { reasoning_content: finalReasoning }),
+					// Preserve reasoning_content for DeepSeek interleaved thinking.
+					...(replayReasoning !== undefined && { reasoning_content: replayReasoning }),
 				}
 
 				// Check if we can merge with the last message (only if no tool calls)

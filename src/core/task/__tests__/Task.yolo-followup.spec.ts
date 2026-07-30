@@ -280,4 +280,32 @@ describe("Task - YOLO Mode Follow-up Question Auto-Answer", () => {
 
 		expect(result.response).toBe("yesButtonClicked")
 	})
+
+	it("auto-approves provider profile switches and marks the ask as answered", async () => {
+		;(mockProvider.getState as any).mockResolvedValue({
+			autoApprovalEnabled: true,
+			alwaysAllowProviderProfileSwitch: true,
+		})
+
+		const task = new Task({
+			context: mockContext,
+			provider: mockProvider as ClineProvider,
+			apiConfiguration: {
+				apiProvider: "anthropic",
+			} as any,
+			startTask: false,
+		})
+
+		const approvalMessage = JSON.stringify({
+			tool: "switchProviderProfile",
+			profile: "deepseek",
+			model: null,
+			reason: "switch for verification",
+		})
+		const result = await task.ask("tool", approvalMessage, false)
+
+		expect(result.response).toBe("yesButtonClicked")
+		const lastAsk = task.clineMessages.find((message) => message.type === "ask" && message.ask === "tool")
+		expect(lastAsk?.isAnswered).toBe(true)
+	})
 })

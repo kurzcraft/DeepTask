@@ -228,6 +228,7 @@ describe("ClineProvider - API Handler Rebuild Guard", () => {
 
 		// Mock providerSettingsManager
 		;(provider as any).providerSettingsManager = {
+			initialize: vi.fn().mockResolvedValue(undefined),
 			saveConfig: vi.fn().mockResolvedValue("test-id"),
 			listConfig: vi
 				.fn()
@@ -259,6 +260,11 @@ describe("ClineProvider - API Handler Rebuild Guard", () => {
 				id: "openai/gpt-4",
 				info: { contextWindow: 128000 },
 			}),
+			createMessage: vi.fn(() =>
+				(async function* () {
+					yield { type: "text", text: "OK" }
+				})(),
+			),
 		})
 
 		defaultTaskOptions = {
@@ -271,6 +277,112 @@ describe("ClineProvider - API Handler Rebuild Guard", () => {
 		}
 
 		await provider.resolveWebviewView(mockWebviewView)
+	})
+
+	describe("switchProviderProfileWithPreflight", () => {
+		let task: any
+
+		beforeEach(() => {
+			task = {
+				taskId: "switch-task",
+				getTokenUsage: vi.fn().mockReturnValue({ contextTokens: 1000 }),
+			}
+			;(provider as any).providerSettingsManager.getProfile.mockResolvedValue({
+				name: "target-config",
+				id: "target-id",
+				apiProvider: "openrouter",
+				openRouterModelId: "openai/gpt-4o",
+			})
+			;(provider as any).providerSettingsManager.saveConfig.mockResolvedValue("target-id")
+			vi.spyOn(provider, "activateProviderProfile").mockResolvedValue(undefined)
+		})
+
+		it("does not activate when the connectivity probe fails", async () => {
+			buildApiHandlerMock.mockReturnValueOnce({
+				getModel: vi.fn().mockReturnValue({ id: "openai/gpt-4o", info: { contextWindow: 128000 } }),
+				createMessage: vi.fn(() =>
+					(async function* () {
+						yield { type: "error", error: "offline" }
+					})(),
+				),
+			})
+
+			const result = await provider.switchProviderProfileWithPreflight(
+				"target-config",
+				task,
+				"openai/gpt-4.1",
+			)
+
+			expect(result.ok).toBe(false)
+			expect((provider as any).providerSettingsManager.saveConfig).not.toHaveBeenCalled()
+			expect(provider.activateProviderProfile).not.toHaveBeenCalled()
+		})
+
+		it("does not activate when the target context window is too small", async () => {
+			buildApiHandlerMock.mockReturnValueOnce({
+				getModel: vi.fn().mockReturnValue({ id: "tiny-model", info: { contextWindow: 1000 } }),
+				createMessage: vi.fn(),
+			})
+			task.getTokenUsage.mockReturnValue({ contextTokens: 1000 })
+
+			const result = await provider.switchProviderProfileWithPreflight("target-config", task, "tiny-model")
+
+			expect(result.ok).toBe(false)
+			expect((provider as any).providerSettingsManager.saveConfig).not.toHaveBeenCalled()
+			expect(provider.activateProviderProfile).not.toHaveBeenCalled()
+		})
+
+		it("uses the saved profile model when no model override is provided", async () => {
+			const createMessage = vi.fn(() =>
+				(async function* () {
+					yield { type: "text", text: "OK" }
+				})(),
+			)
+			buildApiHandlerMock.mockImplementationOnce((settings: any) => {
+				expect(settings.openRouterModelId).toBe("openai/gpt-4o")
+				return {
+					getModel: vi.fn().mockReturnValue({ id: "openai/gpt-4o", info: { contextWindow: 128000 } }),
+					createMessage,
+				}
+			})
+
+			const result = await provider.switchProviderProfileWithPreflight("target-config", task)
+
+			expect(result).toEqual({ ok: true, modelId: "openai/gpt-4o" })
+			expect((provider as any).providerSettingsManager.saveConfig).not.toHaveBeenCalled()
+			expect(provider.activateProviderProfile).toHaveBeenCalledWith({ name: "target-config" })
+			expect(createMessage).toHaveBeenCalledOnce()
+		})
+
+		it("saves the selected model only after a successful connectivity and context preflight", async () => {
+			buildApiHandlerMock.mockReturnValueOnce({
+				getModel: vi.fn().mockReturnValue({ id: "openai/gpt-4.1", info: { contextWindow: 128000 } }),
+				createMessage: vi.fn(() =>
+					(async function* () {
+						yield { type: "text", text: "OK" }
+					})(),
+				),
+			})
+
+			const result = await provider.switchProviderProfileWithPreflight(
+				"target-config",
+				task,
+				"openai/gpt-4.1",
+			)
+
+			expect(result).toEqual({ ok: true, modelId: "openai/gpt-4.1" })
+			expect((provider as any).providerSettingsManager.saveConfig).toHaveBeenCalledWith(
+				"target-config",
+				expect.objectContaining({
+					apiProvider: "openrouter",
+					openRouterModelId: "openai/gpt-4.1",
+				}),
+			)
+			expect(provider.activateProviderProfile).toHaveBeenCalledWith({ name: "target-config" })
+			const saveOrder = (provider as any).providerSettingsManager.saveConfig.mock.invocationCallOrder[0]
+			const activateOrder = vi.mocked(provider.activateProviderProfile).mock.invocationCallOrder[0]
+			expect(saveOrder).toBeLessThan(activateOrder)
+		})
 	})
 
 	describe("upsertProviderProfile", () => {
@@ -289,6 +401,7 @@ describe("ClineProvider - API Handler Rebuild Guard", () => {
 					info: { contextWindow: 128000 },
 				}),
 			} as any
+			const activeApi = mockTask.api
 
 			await provider.addClineToStack(mockTask)
 
@@ -305,7 +418,9 @@ describe("ClineProvider - API Handler Rebuild Guard", () => {
 				true,
 			)
 
-			// Verify updateApiConfiguration was called because we force rebuild on explicit save/switch
+			// Verify updateApiConfiguration was called because we force rebuild on explicit save/switch.
+			// The provider must not assign task.api directly: a real Task may defer this update
+			// while its current stream is active.
 			expect(mockTask.updateApiConfiguration).toHaveBeenCalledWith(
 				expect.objectContaining({
 					apiProvider: "openrouter",
@@ -314,6 +429,7 @@ describe("ClineProvider - API Handler Rebuild Guard", () => {
 					modelTemperature: 0.7,
 				}),
 			)
+			expect(mockTask.api).toBe(activeApi)
 			// Verify task.apiConfiguration was synchronized
 			expect((mockTask as any).apiConfiguration.openRouterModelId).toBe("openai/gpt-4")
 			expect((mockTask as any).apiConfiguration.rateLimitSeconds).toBe(5)

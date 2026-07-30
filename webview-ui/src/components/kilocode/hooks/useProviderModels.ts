@@ -1,3 +1,5 @@
+import { useEffect } from "react"
+
 import {
 	type ProviderName,
 	type ProviderSettings,
@@ -63,6 +65,7 @@ import {
 import type { ModelRecord, RouterModels } from "@roo/api"
 import { useRouterModels } from "../../ui/hooks/useRouterModels"
 import { useExtensionState } from "@/context/ExtensionStateContext"
+import { vscode } from "@/utils/vscode"
 
 const FALLBACK_MODELS = {
 	models: anthropicModels,
@@ -158,7 +161,12 @@ export const getModelsByProvider = ({
 		}
 		case "deepseek": {
 			return {
-				models: deepSeekModels,
+				// The authenticated directory is additive. Keep bundled models available
+				// so models exposed only by the local/static catalog remain selectable.
+				models: {
+					...deepSeekModels,
+					...(routerModels.deepseek ?? {}),
+				},
 				defaultModel: deepSeekDefaultModelId,
 			}
 		}
@@ -351,9 +359,44 @@ export const getOptionsForProvider = (provider: ProviderName, apiConfiguration?:
 export const useProviderModels = (apiConfiguration?: ProviderSettings) => {
 	const provider = apiConfiguration?.apiProvider || "anthropic"
 
-	const { kilocodeDefaultModel } = useExtensionState()
+	const { kilocodeDefaultModel, dynamicProviderModels } = useExtensionState()
 
-	const routerModels = useRouterModels({
+	useEffect(() => {
+		switch (provider) {
+			case "openai":
+			case "openai-responses":
+				if (apiConfiguration?.openAiBaseUrl && apiConfiguration.openAiApiKey) {
+					vscode.postMessage({
+						type: "requestOpenAiModels",
+						values: {
+							baseUrl: apiConfiguration.openAiBaseUrl,
+							apiKey: apiConfiguration.openAiApiKey,
+							openAiHeaders: apiConfiguration.openAiHeaders ?? {},
+						},
+					})
+				}
+				break
+			case "ollama":
+				vscode.postMessage({ type: "requestOllamaModels" })
+				break
+			case "lmstudio":
+				vscode.postMessage({ type: "requestLmStudioModels" })
+				break
+			case "vscode-lm":
+				vscode.postMessage({ type: "requestVsCodeLmModels" })
+				break
+		}
+	}, [
+		provider,
+		apiConfiguration?.openAiBaseUrl,
+		apiConfiguration?.openAiApiKey,
+		apiConfiguration?.openAiHeaders,
+		apiConfiguration?.ollamaBaseUrl,
+		apiConfiguration?.lmStudioBaseUrl,
+	])
+
+	const routerModels = useRouterModels(
+		{
 		openRouterBaseUrl: apiConfiguration?.openRouterBaseUrl,
 		openRouterApiKey: apiConfiguration?.apiKey,
 		kilocodeOrganizationId: apiConfiguration?.kilocodeOrganizationId ?? "personal",
@@ -365,11 +408,16 @@ export const useProviderModels = (apiConfiguration?: ProviderSettings) => {
 		nanoGptModelList: apiConfiguration?.nanoGptModelList,
 		//kilocode_change end
 		syntheticApiKey: apiConfiguration?.syntheticApiKey, // kilocode_change
-	})
+		deepSeekApiKey: apiConfiguration?.deepSeekApiKey,
+		deepSeekBaseUrl: apiConfiguration?.deepSeekBaseUrl,
+		},
+		{ provider: provider === "deepseek" ? "deepseek" : undefined },
+	)
 
 	const options = getOptionsForProvider(provider, apiConfiguration)
+	const dynamicModels = dynamicProviderModels[provider]
 
-	const { models, defaultModel } =
+	const { models: configuredModels, defaultModel } =
 		apiConfiguration && typeof routerModels.data !== "undefined"
 			? getModelsByProvider({
 					provider,
@@ -377,7 +425,20 @@ export const useProviderModels = (apiConfiguration?: ProviderSettings) => {
 					kilocodeDefaultModel,
 					options,
 				})
-			: FALLBACK_MODELS
+			: getModelsByProvider({
+					provider,
+					routerModels: {} as RouterModels,
+					kilocodeDefaultModel,
+					options,
+				})
+
+	// Keep bundled models available while adding account-specific models. A remote
+	// directory is additive because providers can expose models absent from the
+	// bundle, while the static catalog remains the offline fallback.
+	const models = {
+		...(configuredModels ?? {}),
+		...(dynamicModels ?? {}),
+	}
 
 	return {
 		provider,

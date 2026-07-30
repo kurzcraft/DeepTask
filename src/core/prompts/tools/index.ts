@@ -21,6 +21,7 @@ import { getAttemptCompletionDescription } from "./attempt-completion"
 import { getUseMcpToolDescription } from "./use-mcp-tool"
 import { getAccessMcpResourceDescription } from "./access-mcp-resource"
 import { getSwitchModeDescription } from "./switch-mode"
+import { getSwitchProviderProfileDescription } from "./switch-provider-profile"
 import { getNewTaskDescription } from "./new-task"
 import { getCodebaseSearchDescription } from "./codebase-search"
 import { getUpdateTodoListDescription } from "./update-todo-list"
@@ -50,6 +51,7 @@ const toolDescriptionMap: Record<string, (args: ToolArgs) => string | undefined>
 	access_mcp_resource: (args) => getAccessMcpResourceDescription(args),
 	codebase_search: (args) => getCodebaseSearchDescription(args),
 	switch_mode: () => getSwitchModeDescription(),
+	switch_provider_profile: (args) => getSwitchProviderProfileDescription(args.providerProfiles), // kilocode_change
 	new_task: (args) => getNewTaskDescription(args),
 	// kilocode_change start: Fast Apply
 	fast_edit_file: () => getEditFileDescription(),
@@ -86,6 +88,7 @@ export function getToolDescriptionsForMode(
 		browserViewportSize,
 		mcpHub,
 		partialReadsEnabled,
+		providerProfiles: clineProviderState?.listApiConfigMeta, // kilocode_change
 		settings: {
 			...settings,
 			enableMcpServerCreation,

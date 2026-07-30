@@ -31,6 +31,7 @@ const AutoApproveMenu = ({ style }: AutoApproveMenuProps) => {
 		setAlwaysAllowBrowser,
 		setAlwaysAllowMcp,
 		setAlwaysAllowModeSwitch,
+		setAlwaysAllowProviderProfileSwitch, // kilocode_change
 		setAlwaysAllowSubtasks,
 		setAlwaysAllowFollowupQuestions,
 		setAllowedMaxRequests, // kilocode_change
@@ -71,6 +72,9 @@ const AutoApproveMenu = ({ style }: AutoApproveMenuProps) => {
 				case "alwaysAllowModeSwitch":
 					setAlwaysAllowModeSwitch(value)
 					break
+				case "alwaysAllowProviderProfileSwitch":
+					setAlwaysAllowProviderProfileSwitch(value)
+					break
 				case "alwaysAllowSubtasks":
 					setAlwaysAllowSubtasks(value)
 					break
@@ -109,6 +113,7 @@ const AutoApproveMenu = ({ style }: AutoApproveMenuProps) => {
 			setAlwaysAllowBrowser,
 			setAlwaysAllowMcp,
 			setAlwaysAllowModeSwitch,
+			setAlwaysAllowProviderProfileSwitch,
 			setAlwaysAllowSubtasks,
 			setAlwaysAllowFollowupQuestions,
 			setAutoApprovalEnabled,

@@ -103,6 +103,21 @@ describe("getModelsByProvider", () => {
 		expect(result.models).toEqual(mainlandZAiModels)
 		expect(result.defaultModel).toEqual(mainlandZAiDefaultModelId)
 	})
+
+	it("keeps bundled DeepSeek models when the remote directory is non-empty", () => {
+		const result = getModelsByProvider({
+			provider: "deepseek",
+			routerModels: {
+				...routerModels,
+				deepseek: { "deepseek-remote-model": testModel },
+			},
+			kilocodeDefaultModel: "test-default-model",
+			options: {},
+		})
+
+		expect(result.models).toHaveProperty("deepseek-v4-pro")
+		expect(result.models).toHaveProperty("deepseek-remote-model")
+	})
 })
 
 describe("getOptionsForProvider", () => {

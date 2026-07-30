@@ -14,6 +14,7 @@ export function useAutoApprovalToggles() {
 		alwaysAllowBrowser,
 		alwaysAllowMcp,
 		alwaysAllowModeSwitch,
+		alwaysAllowProviderProfileSwitch, // kilocode_change
 		alwaysAllowSubtasks,
 		alwaysAllowFollowupQuestions,
 	} = useExtensionState()
@@ -27,6 +28,7 @@ export function useAutoApprovalToggles() {
 			alwaysAllowBrowser,
 			alwaysAllowMcp,
 			alwaysAllowModeSwitch,
+			alwaysAllowProviderProfileSwitch, // kilocode_change
 			alwaysAllowSubtasks,
 			alwaysAllowFollowupQuestions,
 		}),
@@ -38,6 +40,7 @@ export function useAutoApprovalToggles() {
 			alwaysAllowBrowser,
 			alwaysAllowMcp,
 			alwaysAllowModeSwitch,
+			alwaysAllowProviderProfileSwitch, // kilocode_change
 			alwaysAllowSubtasks,
 			alwaysAllowFollowupQuestions,
 		],

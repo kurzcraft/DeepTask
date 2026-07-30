@@ -482,6 +482,20 @@ export class NativeToolCallParser {
 				}
 				break
 
+			case "switch_provider_profile":
+				if (
+					partialArgs.profile_name !== undefined ||
+					partialArgs.model_id !== undefined ||
+					partialArgs.reason !== undefined
+				) {
+					nativeArgs = {
+						profile_name: partialArgs.profile_name,
+						model_id: partialArgs.model_id,
+						reason: partialArgs.reason,
+					}
+				}
+				break
+
 			case "update_todo_list":
 				if (partialArgs.todos !== undefined) {
 					nativeArgs = {
@@ -775,6 +789,16 @@ export class NativeToolCallParser {
 					if (args.mode_slug !== undefined && args.reason !== undefined) {
 						nativeArgs = {
 							mode_slug: args.mode_slug,
+							reason: args.reason,
+						} as NativeArgsFor<TName>
+					}
+					break
+
+				case "switch_provider_profile":
+					if (args.profile_name !== undefined && args.reason !== undefined) {
+						nativeArgs = {
+							profile_name: args.profile_name,
+							model_id: args.model_id,
 							reason: args.reason,
 						} as NativeArgsFor<TName>
 					}

@@ -476,6 +476,129 @@ describe("DeepSeekHandler", () => {
 			expect(callArgs.thinking).toBeUndefined()
 		})
 
+		it("replays thinking history for dynamic DeepSeek model IDs", async () => {
+			const dynamicHandler = new DeepSeekHandler({
+				...mockOptions,
+				apiModelId: "deepseek-v4-flash",
+			})
+			const dynamicMessages = [
+				{
+					role: "assistant",
+					content: [
+						{ type: "tool_use", id: "call_1", name: "read_file", input: { path: "README.md" } },
+					],
+					reasoning_content: "I need to inspect the file.",
+				},
+				{
+					role: "user",
+					content: [
+						{ type: "tool_result", tool_use_id: "call_1", content: "file content" },
+						{ type: "text", text: "environment details" },
+					],
+				},
+			] as Anthropic.Messages.MessageParam[]
+
+			const stream = dynamicHandler.createMessage(systemPrompt, dynamicMessages)
+			for await (const _chunk of stream) {
+				// Consume the stream.
+			}
+
+			const callArgs = mockCreate.mock.calls[0][0]
+			expect(callArgs.thinking).toEqual({ type: "enabled" })
+			expect(callArgs.messages).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						role: "assistant",
+						reasoning_content: "I need to inspect the file.",
+					}),
+					expect.objectContaining({
+						role: "tool",
+						content: "file content\n\nenvironment details",
+					}),
+				]),
+			)
+		})
+
+		it("accepts a tool-call continuation created before switching to DeepSeek", async () => {
+			const dynamicHandler = new DeepSeekHandler({
+				...mockOptions,
+				apiModelId: "deepseek-v4-flash",
+			})
+			const switchedMessages = [
+				{
+					role: "assistant",
+					content: [
+						{ type: "text", text: "Switching provider now." },
+						{
+							type: "tool_use",
+							id: "call_switch",
+							name: "switch_provider_profile",
+							input: { profile_name: "deepseek", model_id: null },
+						},
+					],
+				},
+				{
+					role: "user",
+					content: [
+						{ type: "tool_result", tool_use_id: "call_switch", content: "Switched to DeepSeek." },
+						{ type: "text", text: "<environment_details>updated</environment_details>" },
+					],
+				},
+			] as Anthropic.Messages.MessageParam[]
+
+			const stream = dynamicHandler.createMessage(systemPrompt, switchedMessages)
+			for await (const _chunk of stream) {
+				// Consume the stream.
+			}
+
+			const callArgs = mockCreate.mock.calls[0][0]
+			expect(callArgs.thinking).toEqual({ type: "enabled" })
+			expect(callArgs.messages).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						role: "assistant",
+						reasoning_content: "",
+						tool_calls: expect.arrayContaining([
+							expect.objectContaining({ id: "call_switch" }),
+						]),
+					}),
+					expect.objectContaining({
+						role: "tool",
+						content: "Switched to DeepSeek.\n\n<environment_details>updated</environment_details>",
+					}),
+				]),
+			)
+		})
+
+		it("keeps native tools but omits unsupported parallel_tool_calls after a provider switch", async () => {
+			const tools: any[] = [
+				{
+					type: "function",
+					function: {
+						name: "read_file",
+						description: "Read a file",
+						parameters: { type: "object", properties: {} },
+					},
+				},
+			]
+
+			const stream = handler.createMessage(systemPrompt, messages, {
+				taskId: "switched-task",
+				tools,
+				tool_choice: "auto",
+				toolProtocol: "native",
+				parallelToolCalls: false,
+			})
+			for await (const _chunk of stream) {
+				// Consume the stream.
+			}
+
+			const callArgs = mockCreate.mock.calls[0][0]
+			expect(callArgs.tools).toHaveLength(1)
+			expect(callArgs.tool_choice).toBe("auto")
+			expect(callArgs.parallel_tool_calls).toBeUndefined()
+		})
+
 		it("should handle tool calls with reasoning_content", async () => {
 			const reasonerHandler = new DeepSeekHandler({
 				...mockOptions,

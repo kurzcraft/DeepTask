@@ -283,6 +283,90 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
 	})
 
+	it("drops a late yesButton for an already auto-approved tool ask instead of sending continue", async () => {
+		vi.mocked(resolveImageMentions).mockResolvedValueOnce({ text: "", images: [] })
+		const mockHandleWebviewAskResponse = vi.fn()
+		const mockClearStaleWebviewAskResponse = vi.fn()
+		const mockClearQueue = vi.fn()
+		const mockContinueTaskFromUserMessage = vi.fn()
+		const answeredAsk = {
+			ts: 200,
+			type: "ask",
+			ask: "tool",
+			text: JSON.stringify({ tool: "switchProviderProfile", profile: "deepseek" }),
+			isAnswered: true,
+			partial: false,
+		}
+		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
+			cwd: "/mock/workspace",
+			rooIgnoreController: undefined,
+			getPendingWebviewAskTs: vi.fn().mockReturnValue(undefined),
+			hasPendingWebviewAskResponse: vi.fn().mockReturnValue(false),
+			findMessageByTimestamp: vi.fn().mockReturnValue(answeredAsk),
+			clineMessages: [answeredAsk],
+			handleWebviewAskResponse: mockHandleWebviewAskResponse,
+			clearStaleWebviewAskResponse: mockClearStaleWebviewAskResponse,
+			messageQueueService: { clear: mockClearQueue },
+			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
+		} as any)
+
+		await webviewMessageHandler(mockClineProvider, {
+			type: "askResponse",
+			askResponse: "yesButtonClicked",
+			askTs: 200,
+			images: [],
+		})
+
+		expect(mockHandleWebviewAskResponse).not.toHaveBeenCalled()
+		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
+		expect(mockClearStaleWebviewAskResponse).toHaveBeenCalledTimes(1)
+		expect(mockClearQueue).toHaveBeenCalledTimes(1)
+		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
+	})
+
+	it("resumes after API-key edit when a late Continue targets an already-marked resume_task row", async () => {
+		// Returning from settings after fixing an API key often re-clicks Resume on a
+		// row that was briefly marked answered. That click must still continue work,
+		// otherwise the webview clears buttons and freezes with no recovery path.
+		vi.mocked(resolveImageMentions).mockResolvedValueOnce({ text: "", images: [] })
+		const mockHandleWebviewAskResponse = vi.fn()
+		const mockClearStaleWebviewAskResponse = vi.fn()
+		const mockClearQueue = vi.fn()
+		const mockContinueTaskFromUserMessage = vi.fn()
+		const answeredResumeAsk = {
+			ts: 300,
+			type: "ask",
+			ask: "resume_task",
+			isAnswered: true,
+			partial: false,
+		}
+		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
+			cwd: "/mock/workspace",
+			rooIgnoreController: undefined,
+			getPendingWebviewAskTs: vi.fn().mockReturnValue(undefined),
+			hasPendingWebviewAskResponse: vi.fn().mockReturnValue(false),
+			findMessageByTimestamp: vi.fn().mockReturnValue(answeredResumeAsk),
+			clineMessages: [answeredResumeAsk],
+			handleWebviewAskResponse: mockHandleWebviewAskResponse,
+			clearStaleWebviewAskResponse: mockClearStaleWebviewAskResponse,
+			messageQueueService: { clear: mockClearQueue },
+			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
+		} as any)
+
+		await webviewMessageHandler(mockClineProvider, {
+			type: "askResponse",
+			askResponse: "yesButtonClicked",
+			askTs: 300,
+			images: [],
+		})
+
+		expect(mockHandleWebviewAskResponse).not.toHaveBeenCalled()
+		expect(mockContinueTaskFromUserMessage).toHaveBeenCalledWith("")
+		expect(mockClearStaleWebviewAskResponse).toHaveBeenCalledTimes(1)
+		expect(mockClearQueue).toHaveBeenCalledTimes(1)
+		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
+	})
+
 	it("wakes a live terminal for a stale yesButton click after the command ask settled", async () => {
 		vi.mocked(resolveImageMentions).mockResolvedValueOnce({ text: "", images: [] })
 		const mockHandleWebviewAskResponse = vi.fn()
@@ -1169,15 +1253,19 @@ describe("webviewMessageHandler - requestRouterModels", () => {
 		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
 			type: "routerModels",
 			routerModels: {
+				cerebras: {},
 				deepinfra: mockModels,
+				deepseek: {},
 				openrouter: mockModels,
 				gemini: mockModels, // kilocode_change
 				requesty: mockModels,
 				glama: mockModels, // kilocode_change
+				groq: {},
 				synthetic: mockModels, // kilocode_change
 				unbound: mockModels,
 				litellm: mockModels,
 				kilocode: mockModels,
+				mistral: {},
 				"nano-gpt": mockModels, // kilocode_change
 				roo: mockModels,
 				chutes: mockModels,
@@ -1275,17 +1363,21 @@ describe("webviewMessageHandler - requestRouterModels", () => {
 		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
 			type: "routerModels",
 			routerModels: {
+				cerebras: {},
 				deepinfra: mockModels,
+				deepseek: {},
 				openrouter: mockModels,
 				gemini: mockModels, // kilocode_change
 				requesty: mockModels,
 				glama: mockModels, // kilocode_change
+				groq: {},
 				synthetic: mockModels, // kilocode_change
 				unbound: mockModels,
 				roo: mockModels,
 				chutes: mockModels,
 				litellm: {},
 				kilocode: mockModels,
+				mistral: {},
 				"nano-gpt": mockModels, // kilocode_change
 				ollama: mockModels, // kilocode_change
 				lmstudio: {},
@@ -1382,16 +1474,20 @@ describe("webviewMessageHandler - requestRouterModels", () => {
 		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
 			type: "routerModels",
 			routerModels: {
+				cerebras: {},
 				deepinfra: mockModels,
+				deepseek: {},
 				openrouter: mockModels,
 				requesty: {},
 				glama: mockModels, // kilocode_change
+				groq: {},
 				unbound: {},
 				roo: mockModels,
 				chutes: {},
 				litellm: {},
 				ollama: {},
 				lmstudio: {},
+				mistral: {},
 				"vercel-ai-gateway": mockModels,
 				huggingface: {},
 				"io-intelligence": {},

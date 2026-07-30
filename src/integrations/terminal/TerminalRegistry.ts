@@ -1,7 +1,5 @@
 import * as vscode from "vscode"
 
-import { arePathsEqual } from "../../utils/path"
-
 import { RooTerminal, RooTerminalProvider } from "./types"
 import { TerminalProcess } from "./TerminalProcess"
 import { DEEPTASK_TERMINAL_NAME, LEGACY_KILOCODE_TERMINAL_NAME, Terminal } from "./Terminal"
@@ -27,7 +25,8 @@ export class TerminalRegistry {
 	private static completedTerminalLimitEnabled = true
 	private static completedTerminalLimit = 3
 	private static completedTerminalOrder = new WeakMap<vscode.Terminal, number>()
-	private static legacyCompletedTerminalOrder = new WeakMap<vscode.Terminal, number>()
+	// Unknown terminals are never eligible for automatic pruning because VS Code
+	// does not expose enough state to prove that their current shell command ended.
 	// VS Code updates exitStatus asynchronously after dispose(). Keep an explicit
 	// tombstone so duplicate shell-end / promise-finally notifications cannot
 	// resurrect or dispose the same terminal again during that window.
@@ -41,6 +40,14 @@ export class TerminalRegistry {
 		}
 
 		this.isInitialized = true
+
+		// Re-register terminals that survived an extension-host restart. VS Code
+		// keeps these terminal objects alive, but the extension's in-memory registry
+		// is rebuilt from scratch. A terminal that survived the restart has no
+		// command process owned by this extension anymore, so it is treated as a
+		// retained completed terminal and participates in the configured bound.
+		this.restoreExistingTerminals(true)
+		this.pruneCompletedVscodeTerminals()
 
 		// TODO: This initialization code is VSCode specific, and therefore
 		// should probably live elsewhere.
@@ -117,13 +124,9 @@ export class TerminalRegistry {
 							{ terminalId: terminal?.id, command: process?.command, exitCode: e.exitCode },
 						)
 
-						// kilocode_change start
-						// Stream-close can finish before the shell end event. Still mark
-						// completed and prune, otherwise excess Deeptask terminals accumulate.
-						terminal.busy = false
-						this.markTerminalCompleted(terminal)
-						this.pruneCompletedVscodeTerminals()
-						// kilocode_change end
+						// Stream-close can finish before the shell end event. Complete the
+						// process here as well, otherwise the active process blocks pruning.
+						this.completeTerminalProcess(terminal, process)
 						return
 					}
 
@@ -133,22 +136,15 @@ export class TerminalRegistry {
 							{ terminalId: terminal.id, exitCode: e.exitCode },
 						)
 
-						// kilocode_change start
-						terminal.busy = false
-						terminal.running = false
-						this.markTerminalCompleted(terminal)
-						this.pruneCompletedVscodeTerminals()
-						// kilocode_change end
+						this.completeTerminalProcess(terminal)
 						return
 					}
 
-					// Signal completion to any waiting processes.
+					// Signal completion to any waiting processes and make the terminal
+					// eligible for retention pruning immediately.
 					terminal.shellExecutionComplete(exitDetails)
-					terminal.busy = false // Mark terminal as not busy when shell execution ends
-					// kilocode_change start
 					this.markTerminalCompleted(terminal)
 					this.pruneCompletedVscodeTerminals()
-					// kilocode_change end
 				},
 			)
 
@@ -187,48 +183,10 @@ export class TerminalRegistry {
 		taskId?: string,
 		provider: RooTerminalProvider = "vscode",
 	): Promise<RooTerminal> {
-		const terminals = this.getAllTerminals()
-		let terminal: RooTerminal | undefined
-
-		// First priority: Find a terminal already assigned to this task with
-		// matching directory.
-		if (taskId) {
-			terminal = terminals.find((t) => {
-				if (t.busy || t.taskId !== taskId || t.provider !== provider || this.isRetainedCompletedTerminal(t)) {
-					return false
-				}
-
-				const terminalCwd = t.getCurrentWorkingDirectory()
-
-				if (!terminalCwd) {
-					return false
-				}
-
-				return arePathsEqual(vscode.Uri.file(cwd).fsPath, terminalCwd)
-			})
-		}
-
-		// Second priority: Find any available terminal with matching directory.
-		if (!terminal) {
-			terminal = terminals.find((t) => {
-				if (t.busy || t.provider !== provider || this.isRetainedCompletedTerminal(t)) {
-					return false
-				}
-
-				const terminalCwd = t.getCurrentWorkingDirectory()
-
-				if (!terminalCwd) {
-					return false
-				}
-
-				return arePathsEqual(vscode.Uri.file(cwd).fsPath, terminalCwd)
-			})
-		}
-
-		// If no suitable terminal found, create a new one.
-		if (!terminal) {
-			terminal = this.createTerminal(cwd, provider)
-		}
+		// Every command gets an isolated terminal. Retention is evaluated only
+		// when commands complete (and when surviving terminals are restored at
+		// extension startup), so running integrated terminals are never counted.
+		const terminal = this.createTerminal(cwd, provider)
 
 		// kilocode_change start
 		this.markTerminalInUse(terminal)
@@ -308,7 +266,7 @@ export class TerminalRegistry {
 	// kilocode_change start
 	public static setCompletedTerminalLimitEnabled(enabled: boolean): void {
 		this.completedTerminalLimitEnabled = enabled
-		this.pruneCompletedVscodeTerminals()
+		this.enforceCompletedTerminalLimit()
 	}
 
 	public static getCompletedTerminalLimitEnabled(): boolean {
@@ -317,7 +275,7 @@ export class TerminalRegistry {
 
 	public static setCompletedTerminalLimit(limit: number): void {
 		this.completedTerminalLimit = Math.max(0, Math.floor(limit))
-		this.pruneCompletedVscodeTerminals()
+		this.enforceCompletedTerminalLimit()
 	}
 
 	public static getCompletedTerminalLimit(): number {
@@ -346,6 +304,52 @@ export class TerminalRegistry {
 	}
 
 	// kilocode_change start
+	/**
+	 * Re-register Deeptask terminals that VS Code kept alive while the extension
+	 * host restarted. This restores event routing and makes the startup terminal
+	 * bound enforceable before the first new command is allocated.
+	 */
+	private static restoreExistingTerminals(assumeCompleted = false): void {
+		const existingTerminals = vscode.window.terminals ?? []
+
+		for (const vsceTerminal of existingTerminals) {
+			if (
+				vsceTerminal.name !== DEEPTASK_TERMINAL_NAME &&
+				vsceTerminal.name !== LEGACY_KILOCODE_TERMINAL_NAME
+			) {
+				continue
+			}
+
+			if (this.getTerminalByVSCETerminal(vsceTerminal)) {
+				continue
+			}
+
+			const cwd =
+				vsceTerminal.shellIntegration?.cwd?.fsPath ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? ""
+			const restored = new Terminal(this.nextTerminalId++, vsceTerminal, cwd)
+			if (assumeCompleted) {
+				// The old extension-host process is gone. No command process can still be
+				// owned by this registry, so restored terminals are eligible for retention
+				// pruning immediately. New commands call markTerminalInUse() before run.
+				restored.hasCompletedCommand = true
+				this.markTerminalCompleted(restored)
+			} else {
+				this.terminals.push(restored)
+			}
+		}
+	}
+
+	/**
+	 * Reconcile host terminals before every allocation/configuration boundary.
+	 * VS Code can materialize terminals after activation, so relying only on the
+	 * initial snapshot allows late Deeptask terminals to bypass retention.
+	 */
+	public static enforceCompletedTerminalLimit(): void {
+		// Only terminals registered by this extension can be classified safely.
+		// Unknown host terminals may belong to the user or another extension.
+		this.pruneCompletedVscodeTerminals()
+	}
+
 	private static markTerminalInUse(terminal: RooTerminal): void {
 		terminal.hasCompletedCommand = false
 
@@ -371,7 +375,29 @@ export class TerminalRegistry {
 		return this.isCompletedVscodeTerminal(terminal) && !terminal.process
 	}
 
-	public static notifyTerminalProcessCompleted(terminal: RooTerminal): void {
+	private static completeTerminalProcess(terminal: RooTerminal, completedProcess?: RooTerminal["process"]): void {
+		if (terminal instanceof Terminal && terminal.provider === "vscode" && !terminal.isClosed()) {
+			terminal.busy = false
+			terminal.running = false
+			if (completedProcess && terminal.process === completedProcess) {
+				if (completedProcess.hasUnretrievedOutput()) {
+					terminal.completedProcesses.unshift(completedProcess)
+				}
+				terminal.process = undefined
+			}
+			this.markTerminalCompleted(terminal)
+			this.pruneCompletedVscodeTerminals()
+		}
+	}
+
+	public static notifyTerminalProcessCompleted(terminal: RooTerminal, completedProcess?: RooTerminal["process"]): void {
+		// An old process can settle after the same terminal has already started a
+		// replacement command (for example after force-continue). Its late callback
+		// must not mark the replacement terminal as completed or trigger pruning.
+		if (completedProcess && terminal.process && terminal.process !== completedProcess) {
+			return
+		}
+
 		// kilocode_change start
 		// Command completion must always re-check the completed-terminal limit.
 		// Do not require hasCompletedCommand beforehand: shell end events can be
@@ -386,10 +412,7 @@ export class TerminalRegistry {
 			return
 		}
 
-		terminal.busy = false
-		terminal.running = false
-		this.markTerminalCompleted(terminal)
-		this.pruneCompletedVscodeTerminals()
+		this.completeTerminalProcess(terminal, completedProcess)
 		// kilocode_change end
 	}
 
@@ -415,19 +438,12 @@ export class TerminalRegistry {
 			(terminal) => !(terminal instanceof Terminal && this.disposedCompletedTerminals.has(terminal.terminal)),
 		)
 
-		type CompletedCandidate =
-			| { kind: "registered"; terminal: Terminal; order: number }
-			| { kind: "legacy"; terminal: vscode.Terminal; order: number }
+		type CompletedCandidate = { kind: "registered"; terminal: Terminal; order: number }
 
 		const registeredCompletedTerminalByVsceTerminal = new Map<vscode.Terminal, Terminal>(
 			this.getAllTerminals()
 				.filter((t): t is Terminal => this.isCompletedVscodeTerminal(t))
 				.map((terminal) => [terminal.terminal, terminal]),
-		)
-		const registeredVsceTerminals = new Set(
-			this.getAllTerminals()
-				.filter((t): t is Terminal => t instanceof Terminal)
-				.map((t) => t.terminal),
 		)
 		// Prefer the live VS Code terminal list, but fall back to the registry so
 		// unit tests and racey window.terminals snapshots still prune correctly.
@@ -446,22 +462,8 @@ export class TerminalRegistry {
 				return [{ kind: "registered", terminal: registeredTerminal, order }]
 			}
 
-			if (
-				(terminal.name === DEEPTASK_TERMINAL_NAME || terminal.name === LEGACY_KILOCODE_TERMINAL_NAME) &&
-				terminal.exitStatus === undefined &&
-				!registeredVsceTerminals.has(terminal) &&
-				!this.disposedCompletedTerminals.has(terminal)
-			) {
-				let order = this.legacyCompletedTerminalOrder.get(terminal)
-
-				if (order === undefined) {
-					order = this.nextCompletedTerminalOrder++
-					this.legacyCompletedTerminalOrder.set(terminal, order)
-				}
-
-				return [{ kind: "legacy", terminal, order }]
-			}
-
+			// Do not infer completion from a title or an undefined exitStatus. An
+			// unregistered terminal may still be running a long-lived command.
 			return []
 		})
 		const completedFromRegistry = [...registeredCompletedTerminalByVsceTerminal.values()]
@@ -482,8 +484,14 @@ export class TerminalRegistry {
 			.slice(0, Math.max(0, completedVscodeTerminals.length - this.completedTerminalLimit))
 
 		for (const candidate of terminalsToClose) {
-			const vsceTerminal = candidate.kind === "registered" ? candidate.terminal.terminal : candidate.terminal
+			const vsceTerminal = candidate.terminal.terminal
 			if (this.disposedCompletedTerminals.has(vsceTerminal)) {
+				continue
+			}
+
+			// Re-check immediately before disposal because a command may have started
+			// after candidate collection.
+			if (!this.isCompletedVscodeTerminal(candidate.terminal)) {
 				continue
 			}
 
@@ -491,9 +499,7 @@ export class TerminalRegistry {
 			// some hosts and asynchronously in others.
 			this.disposedCompletedTerminals.add(vsceTerminal)
 			vsceTerminal.dispose()
-			if (candidate.kind === "registered") {
-				this.removeTerminal(candidate.terminal.id)
-			}
+			this.removeTerminal(candidate.terminal.id)
 		}
 	}
 	// kilocode_change end

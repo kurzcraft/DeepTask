@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react"
+import type { ModelRecord } from "@roo/api"
 
 import {
 	type ProviderSettings,
@@ -123,6 +124,7 @@ export interface ExtensionStateContextType extends ExtensionState {
 	setAlwaysAllowBrowser: (value: boolean) => void
 	setAlwaysAllowMcp: (value: boolean) => void
 	setAlwaysAllowModeSwitch: (value: boolean) => void
+	setAlwaysAllowProviderProfileSwitch: (value: boolean) => void // kilocode_change
 	setAlwaysAllowSubtasks: (value: boolean) => void
 	setBrowserToolEnabled: (value: boolean) => void
 	setShowRooIgnoredFiles: (value: boolean) => void
@@ -218,6 +220,7 @@ export interface ExtensionStateContextType extends ExtensionState {
 	autoCondenseContextPercent: number
 	setAutoCondenseContextPercent: (value: number) => void
 	routerModels?: RouterModels
+	dynamicProviderModels: Partial<Record<string, ModelRecord>>
 	includeDiagnosticMessages?: boolean
 	setIncludeDiagnosticMessages: (value: boolean) => void
 	maxDiagnosticMessages?: number
@@ -384,6 +387,7 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 	const [mcpMarketplaceCatalog, setMcpMarketplaceCatalog] = useState<McpMarketplaceCatalog>({ items: [] }) // kilocode_change
 	const [currentCheckpoint, setCurrentCheckpoint] = useState<string>()
 	const [extensionRouterModels, setExtensionRouterModels] = useState<RouterModels | undefined>(undefined)
+	const [dynamicProviderModels, setDynamicProviderModels] = useState<Partial<Record<string, ModelRecord>>>({})
 	// kilocode_change start
 	const [globalRules, setGlobalRules] = useState<ClineRulesToggles>({})
 	const [localRules, setLocalRules] = useState<ClineRulesToggles>({})
@@ -530,6 +534,41 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 					setExtensionRouterModels(message.routerModels)
 					break
 				}
+				case "openAiModels": {
+					const models = Object.fromEntries(
+						(message.openAiModels ?? []).map((modelId) => [
+							modelId,
+							message.openAiModelInfos?.[modelId] ?? {
+								displayName: modelId,
+								contextWindow: 0,
+								supportsPromptCache: false,
+							},
+						]),
+					)
+					setDynamicProviderModels((previous) => ({ ...previous, openai: models }))
+					break
+				}
+				case "ollamaModels": {
+					setDynamicProviderModels((previous) => ({ ...previous, ollama: message.ollamaModels ?? {} }))
+					break
+				}
+				case "lmStudioModels": {
+					setDynamicProviderModels((previous) => ({ ...previous, lmstudio: message.lmStudioModels ?? {} }))
+					break
+				}
+				case "vsCodeLmModels": {
+					const models = Object.fromEntries(
+						(message.vsCodeLmModels ?? []).map((model) => {
+							const modelId = model.id ?? `${model.vendor ?? ""}/${model.family ?? ""}`
+							return [
+								modelId,
+								{ displayName: modelId, contextWindow: 0, supportsPromptCache: false },
+							]
+						}),
+					)
+					setDynamicProviderModels((previous) => ({ ...previous, "vscode-lm": models }))
+					break
+				}
 				case "marketplaceData": {
 					if (message.marketplaceItems !== undefined) {
 						setMarketplaceItems(message.marketplaceItems)
@@ -590,6 +629,7 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		writeDelayMs: state.writeDelayMs,
 		screenshotQuality: state.screenshotQuality,
 		routerModels: extensionRouterModels,
+		dynamicProviderModels,
 		cloudIsAuthenticated: state.cloudIsAuthenticated ?? false,
 		cloudOrganizations: state.cloudOrganizations ?? [],
 		organizationSettingsVersion: state.organizationSettingsVersion ?? -1,
@@ -616,6 +656,8 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		setAlwaysAllowBrowser: (value) => setState((prevState) => ({ ...prevState, alwaysAllowBrowser: value })),
 		setAlwaysAllowMcp: (value) => setState((prevState) => ({ ...prevState, alwaysAllowMcp: value })),
 		setAlwaysAllowModeSwitch: (value) => setState((prevState) => ({ ...prevState, alwaysAllowModeSwitch: value })),
+		setAlwaysAllowProviderProfileSwitch: (value) =>
+			setState((prevState) => ({ ...prevState, alwaysAllowProviderProfileSwitch: value })), // kilocode_change
 		setAlwaysAllowSubtasks: (value) => setState((prevState) => ({ ...prevState, alwaysAllowSubtasks: value })),
 		setAlwaysAllowFollowupQuestions,
 		setFollowupAutoApproveTimeoutMs: (value) =>

@@ -1,10 +1,14 @@
-import { render, screen } from "@/utils/test-utils"
+import { fireEvent, render, screen } from "@/utils/test-utils"
 import { ModelSelector } from "../ModelSelector"
 import type { ProviderSettings } from "@roo-code/types"
 
+const { mockPostMessage } = vi.hoisted(() => ({
+	mockPostMessage: vi.fn(),
+}))
+
 vi.mock("@/utils/vscode", () => ({
 	vscode: {
-		postMessage: vi.fn(),
+		postMessage: mockPostMessage,
 	},
 }))
 
@@ -41,6 +45,7 @@ describe("ModelSelector", () => {
 
 	beforeEach(() => {
 		// Reset mocks before each test
+		mockPostMessage.mockReset()
 		mockUseProviderModels.mockReset()
 		mockUseGroupedModelIds.mockReset()
 
@@ -291,6 +296,48 @@ describe("ModelSelector", () => {
 			// Should render the dropdown with only preferred models section
 			const dropdownTrigger = screen.getByTestId("dropdown-trigger")
 			expect(dropdownTrigger).toBeInTheDocument()
+		})
+
+		test("shows and submits bundled DeepSeek V4 Pro alongside remote models", () => {
+			mockUseGroupedModelIds.mockReturnValue({
+				preferredModelIds: [],
+				restModelIds: ["deepseek-remote-model", "deepseek-v4-pro"],
+			})
+			mockUseProviderModels.mockReturnValue({
+				provider: "deepseek",
+				providerModels: {
+					"deepseek-remote-model": { displayName: "DeepSeek Remote Model" },
+					"deepseek-v4-pro": { displayName: "DeepSeek V4 Pro" },
+				},
+				providerDefaultModel: "deepseek-chat",
+				isLoading: false,
+				isError: false,
+			})
+
+			const apiConfiguration: ProviderSettings = {
+				apiProvider: "deepseek",
+				apiModelId: "model-1",
+				profileType: "chat",
+			}
+			render(
+				<ModelSelector
+					currentApiConfigName="deepseek-profile"
+					apiConfiguration={apiConfiguration}
+					fallbackText="Select a model"
+				/>,
+			)
+
+			fireEvent.click(screen.getByTestId("dropdown-trigger"))
+			fireEvent.click(screen.getByText("DeepSeek V4 Pro"))
+
+			expect(mockPostMessage).toHaveBeenCalledWith({
+				type: "upsertApiConfiguration",
+				text: "deepseek-profile",
+				apiConfiguration: expect.objectContaining({
+					apiProvider: "deepseek",
+					apiModelId: "deepseek-v4-pro",
+				}),
+			})
 		})
 	})
 })
