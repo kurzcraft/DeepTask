@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 5.6.0</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 6.6.6</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 5.6.0** evolves from the proven Kilo Code 5.5 architecture and focuses on the failures
+> **Deeptask 6.6.6** evolves from the proven Kilo Code 5.5 architecture and focuses on the failures
 > that most damage long-running Agent work: invisible execution, instructions that cannot change
 > mid-run, lost focus after context condensation, weak cross-session recovery, and completion claims
 > without real acceptance evidence.
@@ -114,17 +114,17 @@ Deeptask treats work as a recoverable state machine rather than a one-shot answe
 
 ## Start in three minutes
 
-1. Download `deeptask-5.6.0.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-6.6.6.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-5.6.0.vsix --force
+    codium --install-extension ./deeptask-6.6.6.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-5.6.0.vsix --force
+    code --install-extension ./deeptask-6.6.6.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.
