@@ -60,17 +60,23 @@ export class Terminal extends BaseTerminal {
 		// This ensures that we don't miss any events because they are
 		// configured before the process starts.
 		process.on("line", (line) => callbacks.onLine(line, process))
-		process.once("completed", (output) => callbacks.onCompleted(output, process))
+		process.once("completed", (output) => {
+			callbacks.onCompleted(output, process)
+			// kilocode_change start
+			// Completion is independent from `continue`: a background command can
+			// detach first and finish much later, including when VS Code omits the
+			// shell-end event. Register retention only on this real output/stream
+			// completion boundary, never when the foreground tool wait is released.
+			TerminalRegistry.notifyTerminalProcessCompleted(this, process)
+			// kilocode_change end
+		})
 		process.once("shell_execution_started", (pid) => callbacks.onShellExecutionStarted(pid, process))
 		process.once("shell_execution_complete", (details) => callbacks.onShellExecutionComplete(details, process))
 		process.once("no_shell_integration", (msg) => callbacks.onNoShellIntegration?.(msg, process))
 
 		const promise = new Promise<void>((resolve, reject) => {
 			// Set up event handlers
-			process.once("continue", () => {
-				TerminalRegistry.notifyTerminalProcessCompleted(this, process)
-				resolve()
-			})
+			process.once("continue", resolve)
 			process.once("error", (error) => {
 				console.error(`[Terminal ${this.id}] error:`, error)
 				reject(error)
@@ -98,8 +104,6 @@ export class Terminal extends BaseTerminal {
 						`Shell integration initialization sequence '\\x1b]633;A' was not received within ${Terminal.getShellIntegrationTimeout() / 1000}s. Shell integration has been disabled for this terminal instance. Increase the timeout in the settings if necessary.`,
 					)
 				})
-		}).finally(() => {
-			TerminalRegistry.notifyTerminalProcessCompleted(this, process)
 		})
 
 		return mergePromise(process, promise)

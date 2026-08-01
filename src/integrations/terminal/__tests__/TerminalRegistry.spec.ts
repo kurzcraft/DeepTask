@@ -297,10 +297,11 @@ describe("TerminalRegistry", () => {
 			expect(selected.terminal.dispose).not.toHaveBeenCalled()
 		})
 
-		it("prunes on command promise completion even when shell end never marked hasCompletedCommand", async () => {
+		it("prunes after output completion even when shell end never marked hasCompletedCommand", async () => {
 			// kilocode_change start
-			// Heredoc / stream-close races can settle the command promise without a
-			// prior shellExecutionComplete. Prune must still run every time.
+			// Heredoc / stream-close races can emit the process completion signal
+			// without a prior shellExecutionComplete. That signal, rather than the
+			// independent continue event, still makes the terminal safely prunable.
 			TerminalRegistry.setCompletedTerminalLimit(1)
 
 			const staleCompleted = TerminalRegistry.createTerminal("/test/stale-no-shell-end", "vscode") as Terminal
@@ -322,11 +323,11 @@ describe("TerminalRegistry", () => {
 				expect(selected.terminal.shellIntegration?.executeCommand).toHaveBeenCalled()
 			})
 
-			// Simulate stream/continue settle without shellExecutionComplete.
 			selected.busy = false
 			selected.running = false
 			selected.hasCompletedCommand = false
 			selected.process = process
+			process.emit("completed", "done")
 			process.emit("continue")
 
 			await process
@@ -335,6 +336,43 @@ describe("TerminalRegistry", () => {
 			expect(staleCompleted.terminal.dispose).toHaveBeenCalledTimes(1)
 			expect(selected.terminal.dispose).not.toHaveBeenCalled()
 			// kilocode_change end
+		})
+
+		it("does not make a live background command prunable when force-continue releases the tool wait", async () => {
+			TerminalRegistry.setCompletedTerminalLimit(1)
+
+			const selected = (await TerminalRegistry.getOrCreateTerminal(
+				"/test/live-background",
+				"task-live-background",
+				"vscode",
+			)) as Terminal
+			const process = selected.runCommand("sleep infinity", {
+				onLine: vi.fn(),
+				onCompleted: vi.fn(),
+				onShellExecutionStarted: vi.fn(),
+				onShellExecutionComplete: vi.fn(),
+			})
+
+			await vi.waitFor(() => {
+				expect(selected.terminal.shellIntegration?.executeCommand).toHaveBeenCalledWith("sleep infinity")
+			})
+
+			selected.running = true
+			process.continue()
+			await process
+
+			const firstCompleted = TerminalRegistry.createTerminal("/test/completed-one", "vscode") as Terminal
+			const secondCompleted = TerminalRegistry.createTerminal("/test/completed-two", "vscode") as Terminal
+			markCompleted(firstCompleted)
+			markCompleted(secondCompleted)
+			TerminalRegistry.enforceCompletedTerminalLimit()
+
+			expect(selected.process).toBe(process)
+			expect(selected.running).toBe(true)
+			expect(selected.hasCompletedCommand).toBe(false)
+			expect(selected.terminal.dispose).not.toHaveBeenCalled()
+			expect(firstCompleted.terminal.dispose).toHaveBeenCalledTimes(1)
+			expect(secondCompleted.terminal.dispose).not.toHaveBeenCalled()
 		})
 
 		it("prunes after notifyTerminalProcessCompleted without requiring prior completed flags", () => {
