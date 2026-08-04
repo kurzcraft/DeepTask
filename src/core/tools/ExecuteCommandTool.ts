@@ -250,6 +250,20 @@ export async function executeCommandInTerminal(
 				return
 			}
 
+			// The output-completed callback is also authoritative when VS Code omits
+			// onDidEndTerminalShellExecution. Publish the terminal exit state here so
+			// the webview clears its live command set and cannot leave stale Continue /
+			// Terminate controls after the tool has already returned.
+			if (!finalStatusPosted) {
+				const status: CommandExecutionStatus = {
+					executionId,
+					status: "exited",
+					exitCode: exitDetails?.exitCode,
+				}
+				provider?.postMessageToWebview({ type: "commandExecutionStatus", text: JSON.stringify(status) })
+				finalStatusPosted = true
+			}
+
 			// Prefer the completed stream payload. If completion arrives empty after
 			// line streaming already captured text (or after continue() detached the
 			// line listener), fall back to accumulated live output so the model still
@@ -306,6 +320,8 @@ export async function executeCommandInTerminal(
 	const terminal = await TerminalRegistry.getOrCreateTerminal(workingDir, task.taskId, terminalProvider)
 
 	if (terminal instanceof Terminal) {
+		// Keep focus in the chat/editor while the command is injected. Focusing the
+		// integrated terminal here can route the next user message into readline.
 		terminal.terminal.show(true)
 
 		// Update the working directory in case the terminal we asked for has
@@ -474,8 +490,8 @@ export async function executeCommandInTerminal(
 					exitStatus += " - core dump possible"
 				}
 			} else if (exitDetails.exitCode === undefined) {
-				result += "<VSCE exit code is undefined: terminal output and command execution status is unknown.>"
-				exitStatus = `Exit code: <undefined, notify user>`
+				result += "<VSCE exit code was not reported; terminal output completed.>"
+				exitStatus = "Exit code: <unavailable>"
 			} else {
 				if (exitDetails.exitCode !== 0) {
 					exitStatus += "Command execution was not successful, inspect the cause and adjust as needed.\n"
@@ -484,8 +500,8 @@ export async function executeCommandInTerminal(
 				exitStatus += `Exit code: ${exitDetails.exitCode}`
 			}
 		} else {
-			result += "<VSCE exitDetails == undefined: terminal output and command execution status is unknown.>"
-			exitStatus = `Exit code: <undefined, notify user>`
+			result += "<VSCE exit code was not reported; terminal output completed.>"
+			exitStatus = "Exit code: <unavailable>"
 		}
 
 		let workingDirInfo = ` within working directory '${terminal.getCurrentWorkingDirectory().toPosix()}'`

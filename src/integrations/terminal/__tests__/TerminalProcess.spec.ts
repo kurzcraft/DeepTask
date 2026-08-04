@@ -73,8 +73,8 @@ describe("TerminalProcess", () => {
 				yield "Initial output\n"
 				yield "More output\n"
 				yield "Final output"
-				yield "\x1b]633;D\x07" // The last chunk contains the command end sequence with bell character.
 				terminalProcess.emit("shell_execution_complete", { exitCode: 0 })
+				yield "\x1b]633;D\x07" // The last chunk contains the command end sequence with bell character.
 			})()
 
 			mockExecution = {
@@ -153,8 +153,8 @@ describe("TerminalProcess", () => {
 				yield "compiling...\n"
 				yield "still compiling...\n"
 				yield "done"
-				yield "\x1b]633;D\x07" // The last chunk contains the command end sequence with bell character.
 				terminalProcess.emit("shell_execution_complete", { exitCode: 0 })
+				yield "\x1b]633;D\x07" // The last chunk contains the command end sequence with bell character.
 			})()
 
 			mockTerminal.shellIntegration.executeCommand.mockReturnValue({
@@ -231,6 +231,68 @@ describe("TerminalProcess", () => {
 			expect(continueSpy).toHaveBeenCalled()
 			expect(terminalProcess.isHot).toBe(false)
 		})
+
+		it("waits briefly for a stream that arrives after shell completion", async () => {
+			let completedOutput = ""
+			const continueSpy = vi.fn()
+			const outputStream = (async function* () {
+				yield "\x1b]633;C\x07"
+				yield "late output from PIPESTATUS and exit tail\n"
+				yield "\x1b]633;D\x07"
+			})()
+
+			terminalProcess.on("completed", (output) => {
+				completedOutput = output || ""
+			})
+			terminalProcess.on("continue", continueSpy)
+
+			mockTerminal.shellIntegration.executeCommand.mockReturnValue({
+				read: vi.fn().mockReturnValue(outputStream),
+			})
+
+			const runPromise = terminalProcess.run(
+				"python3 task.py 2>&1 | tee output.log; status=${PIPESTATUS[0]}; printf '\\nexit_status=%s\\n' \"$status\"; exit \"$status\"",
+			)
+			terminalProcess.emit("shell_execution_complete", { exitCode: 0 })
+
+			await expect(runPromise).resolves.toBeUndefined()
+			expect(completedOutput).toContain("late output from PIPESTATUS and exit tail")
+			expect(completedOutput).not.toContain("output is unknown")
+			expect(continueSpy).toHaveBeenCalledTimes(1)
+			expect(terminalProcess.isHot).toBe(false)
+		})
+
+		it("completes when shell execution ends but the output stream never closes", async () => {
+			let completedOutput = ""
+			const continueSpy = vi.fn()
+			const neverClosingStream: AsyncIterableIterator<string> = {
+				next: vi
+					.fn()
+					.mockImplementationOnce(async () => ({ done: false, value: "]633;C" }))
+					.mockImplementation(() => new Promise<IteratorResult<string>>(() => {})),
+				return: vi.fn().mockResolvedValue({ done: true, value: undefined }),
+				throw: vi.fn(),
+				[Symbol.asyncIterator]() {
+					return this
+				},
+			}
+
+			terminalProcess.on("completed", (output) => {
+				completedOutput = output || ""
+			})
+			terminalProcess.on("continue", continueSpy)
+			mockTerminal.shellIntegration.executeCommand.mockReturnValue({
+				read: vi.fn().mockReturnValue(neverClosingStream),
+			})
+
+			const runPromise = terminalProcess.run("python3 task.py 2>&1 | tee output.log; exit ${PIPESTATUS[0]}")
+			terminalProcess.emit("stream_available", neverClosingStream)
+			terminalProcess.emit("shell_execution_complete", { exitCode: 0 })
+
+			await expect(runPromise).resolves.toBeUndefined()
+			expect(completedOutput).not.toContain("output is unknown")
+			expect(continueSpy).toHaveBeenCalledTimes(1)
+		}, 3_000)
 
 		it("reports unknown output when shell execution exposes no readable stream", async () => {
 			let completedOutput = ""

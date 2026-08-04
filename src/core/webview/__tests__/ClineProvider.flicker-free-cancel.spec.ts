@@ -43,7 +43,14 @@ vi.mock("vscode", () => {
 })
 
 vi.mock("../../task/Task")
-vi.mock("../../config/ContextProxy")
+vi.mock("../../config/ContextProxy", () => ({
+	ContextProxy: vi.fn().mockImplementation(() => ({
+		getValue: vi.fn().mockReturnValue(undefined),
+		setValue: vi.fn().mockResolvedValue(undefined),
+		getValues: vi.fn().mockReturnValue({}),
+		setValues: vi.fn().mockResolvedValue(undefined),
+	})),
+}))
 vi.mock("../../../services/mcp/McpServerManager", () => ({
 	McpServerManager: {
 		getInstance: vi.fn().mockResolvedValue({
@@ -146,6 +153,7 @@ describe("ClineProvider flicker-free cancel", () => {
 			getValues: vi.fn().mockReturnValue({}),
 			getValue: vi.fn().mockReturnValue(undefined),
 			setValue: vi.fn().mockResolvedValue(undefined),
+			setValues: vi.fn().mockResolvedValue(undefined),
 			getProviderSettings: vi.fn().mockReturnValue(mockApiConfig),
 			extensionUri: mockContext.extensionUri,
 			globalStorageUri: mockContext.globalStorageUri,

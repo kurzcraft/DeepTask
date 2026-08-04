@@ -231,7 +231,14 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	// Keep live shell IDs in both a ref (sync checks) and state (re-render isStreaming /
 	// button visibility when start/exit events arrive).
 	const activeCommandExecutionIdsRef = useRef<Set<string>>(new Set())
+	// Shell exit can precede the final drained output. Tombstones prevent late output
+	// from resurrecting Continue/Terminate controls for an already settled command.
+	const settledCommandExecutionIdsRef = useRef<Set<string>>(new Set())
 	const [activeCommandCount, setActiveCommandCount] = useState(0)
+	// A task has at most one terminal command in flight. This task-level barrier handles
+	// providers that deliver an exit event with a different/missing execution ID, then
+	// replay a stale started/output event after the shell has already exited.
+	const commandExitBarrierRef = useRef(false)
 	// kilocode_change end
 	const currentAskTsRef = useRef<number | undefined>(undefined) // kilocode_change
 	const [currentFollowUpTs, setCurrentFollowUpTs] = useState<number | null>(null)
@@ -431,21 +438,25 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							break
 						case "command":
 							// kilocode_change start
-							// Once a command ask is answered or the shell is already running,
-							// never re-light the Run button from a stale lastMessage effect.
-							// Long-running commands keep the same approved `command` ask as the
-							// latest message until output arrives; show Continue instead of a
-							// blank button row so the user can manually resume if auto-continue fails.
-							if (lastMessage.isAnswered || activeCommandExecutionIdsRef.current.size > 0) {
+							// An answered command ask is not evidence that a shell is still live.
+							// The commandExecutionStatus exit event clears the live set, so only
+							// that set may keep Continue/Terminate visible. Otherwise a stale
+							// answered command row re-lights the run/terminate controls after the
+							// tool finished.
+							if (lastMessage.isAnswered) {
+								setSendingDisabled(false)
+								setClineAsk(undefined)
+								setEnableButtons(false)
+								setPrimaryButtonText(undefined)
+								setSecondaryButtonText(undefined)
+								break
+							}
+							if (activeCommandExecutionIdsRef.current.size > 0) {
 								setSendingDisabled(false)
 								setClineAsk("command_output")
 								setEnableButtons(true)
 								setPrimaryButtonText(t("chat:proceedWhileRunning.title"))
-								setSecondaryButtonText(
-									activeCommandExecutionIdsRef.current.size > 0
-										? t("chat:killCommand.title")
-										: undefined,
-								)
+								setSecondaryButtonText(t("chat:killCommand.title"))
 								break
 							}
 							// kilocode_change end
@@ -457,10 +468,11 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							break
 						case "command_output":
 							// kilocode_change start
-							// Only an unanswered ask or a known live execution needs command controls.
-							// A completed/answered row must yield to the next api_req_started instead of
-							// re-lighting a stale Continue button over active model reasoning.
-							if (!lastMessage.isAnswered || activeCommandExecutionIdsRef.current.size > 0) {
+							// A command_output ask is only actionable while its execution is live.
+							// The host may replay an unanswered historical ask after the shell has
+							// already emitted exited; allowing that row to restore controls leaves
+							// the UI stuck on Continue/Terminate forever.
+							if (activeCommandExecutionIdsRef.current.size > 0) {
 								setSendingDisabled(false)
 								setClineAsk("command_output")
 								setEnableButtons(true)
@@ -647,6 +659,8 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			// tracking. Otherwise the first typed message is misrouted as terminal continue
 			// and handleChatReset() only empties the input with no new task.
 			activeCommandExecutionIdsRef.current.clear()
+			settledCommandExecutionIdsRef.current.clear()
+			commandExitBarrierRef.current = false
 			setActiveCommandCount(0)
 			// kilocode_change end
 			setSendingDisabled(false)
@@ -669,6 +683,8 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		// Active command IDs belong to the previous task's shell lifecycle. Keep them
 		// across message rows, but never across task switches or home-screen returns.
 		activeCommandExecutionIdsRef.current.clear()
+		settledCommandExecutionIdsRef.current.clear()
+		commandExitBarrierRef.current = false
 		setActiveCommandCount(0)
 		// kilocode_change end
 
@@ -679,7 +695,17 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		}
 		// Reset user response flag for new task
 		userRespondedRef.current = false
-	}, [task?.ts])
+
+		// A task switch can happen immediately after condensation or completion while
+		// the old terminal still owns focus. Restore the composer after React commits
+		// the new task state so the first instruction cannot enter the shell.
+		if (!isHidden && task?.ts) {
+			const focusTimer = window.setTimeout(() => {
+				textAreaRef.current?.focus()
+			}, 0)
+			return () => window.clearTimeout(focusTimer)
+		}
+	}, [task?.ts, isHidden])
 
 	const taskTs = task?.ts
 
@@ -851,6 +877,17 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		) {
 			return false
 		}
+
+		// A settled command can leave the preceding API request row unfinished until
+		// the final tool result is persisted. It must not keep the action row in a
+		// streaming/cancel state after the command exit barrier has closed.
+		if (
+			!hasFreshApiRequestAfterCommand &&
+			activeCommandCount === 0 &&
+			settledCommandExecutionIdsRef.current.size > 0
+		) {
+			return false
+		}
 		// kilocode_change end
 
 		const isLastMessagePartial = modifiedMessages.at(-1)?.partial === true
@@ -940,6 +977,8 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				if (messagesRef.current.length === 0) {
 					userRespondedRef.current = true
 					activeCommandExecutionIdsRef.current.clear()
+					settledCommandExecutionIdsRef.current.clear()
+					commandExitBarrierRef.current = false
 					setActiveCommandCount(0)
 					vscode.postMessage({ type: "newTask", text, images })
 					handleChatReset()
@@ -1406,12 +1445,27 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 					if (result.success) {
 						const { executionId, status } = result.data
 						// kilocode_change start
-						// fallback ends the current command-execution status stream before a
-						// retry path starts, so do not keep it in the active command set.
-						// While the shell is live (or just exited), always expose a manual
-						// Continue button. Blank UI after long commands is worse than a
-						// recoverable Continue click that resumes the task loop.
-						if (status === "started" || status === "output") {
+						// A shell exit can precede the final drained output. Once an execution
+						// reaches any terminal status, ignore all later live-looking events for
+						// that ID so the UI cannot get stuck on Continue/Terminate again.
+						if (status === "started") {
+							if (settledCommandExecutionIdsRef.current.has(executionId)) {
+								break
+							}
+							// A new execution in the same task starts a fresh lifecycle after
+							// the previous command's exit barrier has closed.
+							commandExitBarrierRef.current = false
+							activeCommandExecutionIdsRef.current.add(executionId)
+							setActiveCommandCount(activeCommandExecutionIdsRef.current.size)
+							setSendingDisabled(false)
+							setClineAsk("command_output")
+							setEnableButtons(true)
+							setPrimaryButtonText(t("chat:proceedWhileRunning.title"))
+							setSecondaryButtonText(t("chat:killCommand.title"))
+						} else if (status === "output") {
+							if (commandExitBarrierRef.current || settledCommandExecutionIdsRef.current.has(executionId)) {
+								break
+							}
 							activeCommandExecutionIdsRef.current.add(executionId)
 							setActiveCommandCount(activeCommandExecutionIdsRef.current.size)
 							setSendingDisabled(false)
@@ -1420,20 +1474,14 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							setPrimaryButtonText(t("chat:proceedWhileRunning.title"))
 							setSecondaryButtonText(t("chat:killCommand.title"))
 						} else {
-							activeCommandExecutionIdsRef.current.delete(executionId)
-							setActiveCommandCount(activeCommandExecutionIdsRef.current.size)
-							if (activeCommandExecutionIdsRef.current.size > 0) {
-								setSendingDisabled(false)
-								setClineAsk("command_output")
-								setEnableButtons(true)
-								setPrimaryButtonText(t("chat:proceedWhileRunning.title"))
-								setSecondaryButtonText(t("chat:killCommand.title"))
-							} else {
-								setClineAsk(undefined)
-								setEnableButtons(false)
-								setPrimaryButtonText(undefined)
-								setSecondaryButtonText(undefined)
-							}
+							commandExitBarrierRef.current = true
+							settledCommandExecutionIdsRef.current.add(executionId)
+							activeCommandExecutionIdsRef.current.clear()
+							setActiveCommandCount(0)
+							setClineAsk(undefined)
+							setEnableButtons(false)
+							setPrimaryButtonText(undefined)
+							setSecondaryButtonText(undefined)
 						}
 						// kilocode_change end
 					}

@@ -1317,6 +1317,21 @@ describe("ChatView - Command Execution Status", () => {
 			],
 		})
 
+		await act(async () => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: {
+						type: "commandExecutionStatus",
+						text: JSON.stringify({
+							executionId: "command-output-live",
+							status: "started",
+							command: "python test.py",
+						}),
+					},
+				}),
+			)
+		})
+
 		// Wait until the command_output ask UI is hydrated; chat-textarea alone is always present.
 		await waitFor(() => {
 			expect(getByText("chat:proceedWhileRunning.title")).toBeInTheDocument()
@@ -1549,12 +1564,9 @@ describe("ChatView - Command Execution Status", () => {
 			expect(getByTestId("chat-textarea")).toBeInTheDocument()
 		})
 
-		// An answered command ask must not re-light the Run button.
+		// A persisted answered ask is history only until the host reports a live execution.
 		expect(queryByText("Run")).not.toBeInTheDocument()
-		// Recovery Continue must appear even before the first shell status event.
-		await waitFor(() => {
-			expect(getByText("chat:proceedWhileRunning.title")).toBeInTheDocument()
-		})
+		expect(queryByText("chat:proceedWhileRunning.title")).not.toBeInTheDocument()
 
 		act(() => {
 			window.postMessage(
@@ -1566,7 +1578,12 @@ describe("ChatView - Command Execution Status", () => {
 			)
 		})
 
-		// Re-post the same answered command ask after shell start; Continue stays, Run stays off.
+		await waitFor(() => {
+			expect(queryByText("Run")).not.toBeInTheDocument()
+			expect(getByText("chat:proceedWhileRunning.title")).toBeInTheDocument()
+		})
+
+		// A refreshed answered history row must not override the live execution state.
 		mockPostMessage({
 			clineMessages: [
 				{
@@ -1630,6 +1647,15 @@ describe("ChatView - Command Execution Status", () => {
 				},
 				"*",
 			)
+			// VS Code may flush one final output event after shell exit. It must not
+			// resurrect the live command controls for this settled execution.
+			window.postMessage(
+				{
+					type: "commandExecutionStatus",
+					text: JSON.stringify({ executionId, status: "output", output: "late output" }),
+				},
+				"*",
+			)
 		})
 
 		await waitFor(() => {
@@ -1639,6 +1665,55 @@ describe("ChatView - Command Execution Status", () => {
 		expect(vscode.postMessage).not.toHaveBeenCalledWith(
 			expect.objectContaining({ type: "terminalOperation", terminalOperation: "continue" }),
 		)
+	})
+
+	it("does not resurrect controls when an unanswered command_output ask is replayed after exit", async () => {
+		const { queryByText } = renderChatView()
+		const executionId = "command-replayed-after-exit"
+		const baseTs = Date.now() - 3000
+
+		mockPostMessage({
+			clineMessages: [
+				{
+					type: "say",
+					say: "task",
+					ts: baseTs,
+					text: "Initial task",
+				},
+				{
+					type: "ask",
+					ask: "command_output",
+					ts: baseTs + 1000,
+					text: "command output",
+					partial: false,
+					isAnswered: false,
+				},
+			],
+		})
+
+		await act(async () => {
+			window.dispatchEvent(
+			new MessageEvent("message", {
+				data: {
+					type: "commandExecutionStatus",
+					text: JSON.stringify({ executionId, status: "started", command: "python test.py" }),
+				},
+			}),
+			)
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: {
+						type: "commandExecutionStatus",
+						text: JSON.stringify({ executionId, status: "exited", exitCode: 0 }),
+					},
+				}),
+			)
+		})
+
+		await waitFor(() => {
+			expect(queryByText("chat:proceedWhileRunning.title")).not.toBeInTheDocument()
+			expect(queryByText("chat:killCommand.title")).not.toBeInTheDocument()
+		})
 	})
 
 	it("still shows Continue during a live command even if api_req_started has no cost yet", async () => {

@@ -8,6 +8,10 @@ describe("Task.handleTerminalOperation", () => {
 		;(task as any).askResponseImages = undefined
 		;(task as any).lastMessageTs = undefined
 		;(task as any).clineMessages = []
+		;(task as any).providerRef = {
+			deref: () => undefined,
+		}
+		;(task as any).cloudSyncedMessageTimestamps = new Set<number>()
 		;(task as any).pendingCommandOutputFeedback = undefined
 		;(task as any).commandOutputFeedbackAlreadyShown = false
 		;(task as any).cancelAutoApprovalTimeout = vi.fn()

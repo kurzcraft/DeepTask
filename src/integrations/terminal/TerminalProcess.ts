@@ -9,6 +9,7 @@ import { getTerminalShellExecutionStream } from "./TerminalShellExecutionStream"
 
 export class TerminalProcess extends BaseTerminalProcess {
 	private terminalRef: WeakRef<Terminal>
+	private isReleased = false
 
 	constructor(terminal: Terminal) {
 		super()
@@ -168,8 +169,9 @@ export class TerminalProcess extends BaseTerminalProcess {
 		this.isHot = true
 
 		// Wait for stream to be available. Some complex commands can emit the shell
-		// completion event before VS Code exposes an output stream; treat that as a
-		// completed command instead of waiting for the stream timeout.
+		// completion event before VS Code exposes an output stream. Give the stream
+		// one short grace window after shell completion so finite commands do not lose
+		// output merely because PIPESTATUS/tee/exit caused event ordering to invert.
 		let stream: AsyncIterable<string>
 
 		try {
@@ -179,19 +181,30 @@ export class TerminalProcess extends BaseTerminalProcess {
 			])
 
 			if (streamOrCompletion.type === "completed") {
-				isWaitingForStream = false
-				this.isHot = false
-				this.terminal.busy = false
-				this.terminal.setActiveStream(undefined)
-				this.emit(
-					"completed",
-					"<VSCE shell integration stream was not available before shell execution completed; terminal output is unknown.>",
-				)
-				this.emit("continue")
-				return
-			}
+				const lateStream = await Promise.race([
+					streamAvailable.then((availableStream) => ({ type: "stream" as const, stream: availableStream })),
+					new Promise<{ type: "completed" }>((resolve) =>
+						setTimeout(() => resolve({ type: "completed" }), 250),
+					),
+				])
 
-			stream = streamOrCompletion.stream
+				if (lateStream.type === "completed") {
+					isWaitingForStream = false
+					this.isHot = false
+					this.terminal.busy = false
+					this.terminal.setActiveStream(undefined)
+					this.emit(
+						"completed",
+						"<VSCE shell integration stream was not available before shell execution completed; terminal output is unknown.>",
+					)
+					this.emit("continue")
+					return
+				}
+
+				stream = lateStream.stream
+			} else {
+				stream = streamOrCompletion.stream
+			}
 		} catch (error) {
 			isWaitingForStream = false
 
@@ -224,8 +237,49 @@ export class TerminalProcess extends BaseTerminalProcess {
 		 * - OSC 633 ; E ; <commandline> [; <nonce>] ST - Explicitly set command line with optional nonce
 		 */
 
-		// Process stream data
-		for await (let data of stream) {
+		// Process stream data. VS Code can report shell completion while leaving the
+		// async output iterator open indefinitely, especially for tee/PIPESTATUS
+		// commands. Once completion is known, bound the remaining drain window so the
+		// agent cannot stay stuck waiting for a stream close that never arrives.
+		const streamIterator = stream[Symbol.asyncIterator]()
+		const closeStreamIterator = async () => {
+			if (typeof streamIterator.return === "function") {
+				try {
+					await streamIterator.return()
+				} catch (error) {
+					console.debug("[TerminalProcess] Failed to close shell execution stream:", error)
+				}
+			}
+		}
+		const shellCompletionDeadline = shellExecutionComplete.then(
+			() =>
+				new Promise<"deadline">((resolve) => {
+					setTimeout(() => resolve("deadline"), 1_000)
+				}),
+		)
+		// If VS Code closes the backing terminal shell, neither the shell execution
+		// end event nor the output iterator is guaranteed to resolve. Poll the
+		// terminal close state so a failed/terminated bash cannot leave the command
+		// tool waiting forever on an abandoned stream.
+		const terminalClosed = new Promise<"terminal_closed">((resolve) => {
+			const pollId = setInterval(() => {
+				if (this.terminal.isClosed()) {
+					clearInterval(pollId)
+					resolve("terminal_closed")
+				}
+			}, 100)
+		})
+		while (true) {
+			const next = await Promise.race([
+				streamIterator.next().then((result) => ({ kind: "item" as const, result })),
+				shellCompletionDeadline.then((kind) => ({ kind })),
+				terminalClosed.then((kind) => ({ kind })),
+			])
+			if (next.kind === "deadline" || next.kind === "terminal_closed" || next.result.done) {
+				break
+			}
+
+			let data = next.result.value
 			// Check for command output start marker
 			if (!commandOutputStarted) {
 				preOutput += data
@@ -247,6 +301,16 @@ export class TerminalProcess extends BaseTerminalProcess {
 			// and chunks may not be complete so you cannot rely on detecting or removing escape sequences mid-stream.
 			this.fullOutput += data
 
+			// The end marker is the command boundary. VS Code may keep the shared stream
+			// open and immediately emit the interactive prompt (including carriage-return
+			// redraws) after it. Do not consume that prompt as command output: doing so
+			// makes the visible terminal path appear to move backwards one chunk at a time.
+			const completedOutput = this.matchBeforeVsceEndMarkers(this.fullOutput)
+			if (completedOutput !== undefined) {
+				this.fullOutput = completedOutput
+				break
+			}
+
 			// For non-immediately returning commands we want to show loading spinner
 			// right away but this wouldn't happen until it emits a line break, so
 			// as soon as we get any output we emit to let webview know to show spinner
@@ -259,6 +323,8 @@ export class TerminalProcess extends BaseTerminalProcess {
 
 			this.startHotTimer(data)
 		}
+
+		await closeStreamIterator()
 
 		// Set streamClosed immediately after stream ends.
 		this.terminal.setActiveStream(undefined)
@@ -298,8 +364,8 @@ export class TerminalProcess extends BaseTerminalProcess {
 			return
 		}
 
-		// fullOutput begins after C marker so we only need to trim off D marker
-		// (if D exists, see VSCode bug# 237208):
+		// fullOutput begins after C marker. The loop normally removes D as soon as
+		// it arrives; retain this final guard for split markers and stream-close races.
 		const match = this.matchBeforeVsceEndMarkers(this.fullOutput)
 
 		if (match !== undefined) {
@@ -316,6 +382,9 @@ export class TerminalProcess extends BaseTerminalProcess {
 			output +=
 				"\n<VSCE shell execution end event not received after stream closed; treated stream close as command completion.>"
 		}
+		if (this.terminal.isClosed()) {
+			output += "\n<VSCE terminal shell closed before command completion; treated terminal closure as command completion.>"
+		}
 		this.emit("completed", output)
 		this.emit("continue")
 	}
@@ -330,6 +399,11 @@ export class TerminalProcess extends BaseTerminalProcess {
 	}
 
 	public override continue() {
+		if (this.isReleased) {
+			return
+		}
+
+		this.isReleased = true
 		this.emitRemainingBufferIfListening()
 		this.isListening = false
 		this.removeAllListeners("line")
