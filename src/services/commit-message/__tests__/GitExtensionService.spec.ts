@@ -149,13 +149,10 @@ describe("GitExtensionService", () => {
 			expect(result).toContain("Modified (staged): file1.ts")
 		})
 
-		it("should bound huge per-file diffs before building the AI context", async () => {
+		it("should bound a batched diff before building the AI context", async () => {
 			const hugeDiff = `diff --git a/file.ts b/file.ts\n${"+changed line\n".repeat(20_000)}`
 			mockSpawnSync.mockImplementation((_command, args) => {
 				const gitArgs = args as string[]
-				if (gitArgs.includes("--numstat")) {
-					return { status: 0, stdout: "1\t1\tfile.ts", stderr: "", error: null }
-				}
 				if (gitArgs.includes("--cached") && gitArgs.includes("--")) {
 					return { status: 0, stdout: hugeDiff, stderr: "", error: null }
 				}
@@ -165,8 +162,36 @@ describe("GitExtensionService", () => {
 
 			const result = await service.getCommitContext(changes, { staged: true, includeRepoContext: false })
 
-			expect(result).toContain("[Diff truncated for this file]")
-			expect(result.length).toBeLessThan(25_000)
+			expect(result).toContain("[Diff truncated because the commit context limit was reached]")
+			expect(result.length).toBeLessThan(125_000)
+		})
+
+		it("should collect hundreds of tracked changes with one diff invocation", async () => {
+			mockSpawnSync.mockReturnValue({ status: 0, stdout: "diff --git a/file-0.ts b/file-0.ts", stderr: "", error: null })
+			const changes = Array.from({ length: 600 }, (_, index) => ({
+				filePath: path.join(mockWorkspaceRoot, `src/file-${index}.ts`),
+				status: "M" as const,
+				staged: true,
+			}))
+
+			const result = await service.getCommitContext(changes, { staged: true, includeRepoContext: false })
+
+			expect(result).toContain("diff --git a/file-0.ts b/file-0.ts")
+			expect(mockSpawnSync).toHaveBeenCalledTimes(1)
+			expect(mockSpawnSync).toHaveBeenCalledWith(
+				"git",
+				["diff", "--cached", "--", ...changes.map((change) => path.relative(mockWorkspaceRoot, change.filePath))],
+				expect.any(Object),
+			)
+		})
+
+		it("should not run diff commands for untracked files", async () => {
+			const changes = [{ filePath: path.join(mockWorkspaceRoot, "new-file.ts"), status: "?" as const, staged: false }]
+
+			const result = await service.getCommitContext(changes, { staged: false, includeRepoContext: false })
+
+			expect(result).toContain("Untracked (unstaged): new-file.ts")
+			expect(mockSpawnSync).not.toHaveBeenCalled()
 		})
 
 		it("should handle empty changes gracefully", async () => {

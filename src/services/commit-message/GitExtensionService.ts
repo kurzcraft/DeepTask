@@ -123,45 +123,56 @@ export class GitExtensionService {
 	}
 
 	private async getDiffForChanges(changes: GitChange[], options: GitProgressOptions): Promise<string> {
-		const { onProgress } = options || {}
+		const { onProgress } = options
 		if (changes.length === 0) {
 			return ""
 		}
 
+		// Running `git diff` (and, historically, `git diff --numstat`) once per
+		// file blocks the extension host for a long time in a large working tree.
+		// Group changes by index state and obtain each diff in one Git invocation.
+		// Untracked files have no diff, but remain represented by the change summary.
+		const changesByStage = new Map<boolean, string[]>()
+		let excludedFiles = 0
+		for (const change of changes) {
+			const relativePath = path.relative(this.workspaceRoot, change.filePath)
+			if (!this.shouldIncludeFile(relativePath)) {
+				excludedFiles++
+				continue
+			}
+			if (change.status === "?") {
+				continue
+			}
+
+			const staged = change.staged ?? options.staged
+			const filePaths = changesByStage.get(staged) ?? []
+			filePaths.push(relativePath)
+			changesByStage.set(staged, filePaths)
+		}
+
 		try {
 			const diffs: string[] = []
-			let processedFiles = 0
-			let remainingChars = MAX_COMMIT_CONTEXT_CHARS
-			let omittedFiles = 0
-
-			for (const change of changes) {
-				const relativePath = path.relative(this.workspaceRoot, change.filePath)
-
-				if (this.shouldIncludeFile(relativePath) && remainingChars > 0) {
-					const stagedFlag = change.staged ?? options.staged ?? true
-					const diff = this.getGitDiff(change.filePath, { staged: stagedFlag })
-
-					if (diff) {
-						const fileBudget = Math.min(MAX_DIFF_CHARS_PER_FILE, remainingChars)
-						const boundedDiff = diff.slice(0, fileBudget)
-						const suffix = diff.length > boundedDiff.length ? "\n[Diff truncated for this file]" : ""
-						diffs.push(boundedDiff + suffix)
-						remainingChars -= boundedDiff.length + suffix.length
-					}
-				} else if (remainingChars <= 0) {
-					omittedFiles++
+			for (const [staged, filePaths] of changesByStage) {
+				if (filePaths.length === 0) {
+					continue
 				}
-
-				processedFiles++
-				this.reportProgress(onProgress, processedFiles, changes.length)
+				const args = staged ? ["diff", "--cached", "--", ...filePaths] : ["diff", "--", ...filePaths]
+				const diff = this.spawnGitWithArgs(args)
+				if (diff) {
+					diffs.push(diff)
+				}
 			}
 
-			if (omittedFiles > 0) {
-				diffs.push(
-					`[${omittedFiles} additional changed files omitted because the commit context limit was reached]`,
-				)
-			}
-			return diffs.join("\n")
+			onProgress?.(100)
+			const combinedDiff = diffs.join("\n")
+			const boundedDiff = combinedDiff.slice(0, MAX_COMMIT_CONTEXT_CHARS)
+			const truncatedSuffix =
+				combinedDiff.length > boundedDiff.length
+					? "\n[Diff truncated because the commit context limit was reached]"
+					: ""
+			const excludedSuffix =
+				excludedFiles > 0 ? `\n[${excludedFiles} excluded files omitted from the diff]` : ""
+			return boundedDiff + truncatedSuffix + excludedSuffix
 		} catch (error) {
 			return ""
 		}
@@ -175,25 +186,6 @@ export class GitExtensionService {
 		} else {
 			// For unstaged files, use status --porcelain to get both modified tracked and untracked files
 			return this.spawnGitWithArgs(["status", "--porcelain"])
-		}
-	}
-
-	private getGitDiff(filePath: string, options: GitOptions): string {
-		const { staged } = options
-
-		try {
-			if (this.isBinaryFile(filePath, staged)) {
-				return `Binary file ${filePath} has been ${staged ? "staged" : "modified"}`
-			}
-
-			if (!staged && this.isUntrackedFile(filePath)) {
-				return `New untracked file: ${filePath}`
-			}
-
-			const diffArgs = this.buildDiffArgs(staged, filePath)
-			return this.spawnGitWithArgs(diffArgs)
-		} catch (error) {
-			return `File ${filePath} - diff unavailable`
 		}
 	}
 
@@ -361,34 +353,6 @@ export class GitExtensionService {
 			const percentage = (processed / total) * 100
 			onProgress(percentage)
 		}
-	}
-
-	private isBinaryFile(filePath: string, staged: boolean): boolean {
-		try {
-			const checkArgs = this.buildNumstatArgs(staged, filePath)
-			const numstatOutput = this.spawnGitWithArgs(checkArgs)
-			return numstatOutput.includes("-\t-\t")
-		} catch (error) {
-			return false
-		}
-	}
-
-	private isUntrackedFile(filePath: string): boolean {
-		try {
-			const statusArgs = ["status", "--porcelain", "--", filePath]
-			const statusOutput = this.spawnGitWithArgs(statusArgs)
-			return statusOutput.startsWith("??")
-		} catch (error) {
-			return false
-		}
-	}
-
-	private buildNumstatArgs(staged: boolean, filePath: string): string[] {
-		return staged ? ["diff", "--cached", "--numstat", "--", filePath] : ["diff", "--numstat", "--", filePath]
-	}
-
-	private buildDiffArgs(staged: boolean, filePath: string): string[] {
-		return staged ? ["diff", "--cached", "--", filePath] : ["diff", "--", filePath]
 	}
 
 	public dispose(): void {

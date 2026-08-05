@@ -104,6 +104,10 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(outputChannel)
 	outputChannel.appendLine(`${Package.name} extension activated - ${JSON.stringify(Package)}`)
 
+	// Register SCM commands before any awaited startup work. SCM menu clicks can
+	// activate the extension while the rest of startup is still initializing.
+	registerCommitMessageProvider(context, outputChannel) // kilocode_change
+
 	// Initialize network proxy configuration early, before any network requests.
 	// When proxyUrl is configured, all HTTP/HTTPS traffic will be routed through it.
 	// Only applied in debug mode (F5).
@@ -518,7 +522,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	if (kiloCodeWrapperCode !== "cli") {
 		registerGhostProvider(context, provider)
 	}
-	registerCommitMessageProvider(context, outputChannel) // kilocode_change
+	// Commit-message commands were registered at the start of activation so SCM
+	// clicks do not wait for unrelated startup initialization.
 	// kilocode_change end - Kilo Code specific registrations
 
 	registerCodeActions(context)

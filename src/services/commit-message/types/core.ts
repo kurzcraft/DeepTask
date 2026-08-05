@@ -1,8 +1,13 @@
 // kilocode_change - new file
 
+import type { VscGenerationRequest } from "./vscode"
+
 export interface CommitMessageRequest {
 	workspacePath: string
 	selectedFiles?: string[]
+	// Preserve the SCM object supplied by VS Code when the command is clicked
+	// from the source-control input/title menu.
+	vscodeTarget?: VscGenerationRequest
 }
 
 export interface CommitMessageResult {

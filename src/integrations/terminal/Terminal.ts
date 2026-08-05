@@ -60,6 +60,14 @@ export class Terminal extends BaseTerminal {
 		// This ensures that we don't miss any events because they are
 		// configured before the process starts.
 		process.on("line", (line) => callbacks.onLine(line, process))
+		process.once("continue", () => {
+			// A shell-end event can clear `this.process` before the merged promise
+			// settles. In that ordering, retain/prune only after the process wait is
+			// released, while keeping force-continued live background commands safe.
+			if (this.hasCompletedCommand && this.process === process) {
+				TerminalRegistry.notifyTerminalProcessCompleted(this, process)
+			}
+		})
 		process.once("completed", (output) => {
 			callbacks.onCompleted(output, process)
 			// kilocode_change start

@@ -261,10 +261,14 @@ export class TerminalProcess extends BaseTerminalProcess {
 		// end event nor the output iterator is guaranteed to resolve. Poll the
 		// terminal close state so a failed/terminated bash cannot leave the command
 		// tool waiting forever on an abandoned stream.
+		let terminalClosePollId: NodeJS.Timeout | undefined
 		const terminalClosed = new Promise<"terminal_closed">((resolve) => {
-			const pollId = setInterval(() => {
+			terminalClosePollId = setInterval(() => {
 				if (this.terminal.isClosed()) {
-					clearInterval(pollId)
+					if (terminalClosePollId) {
+						clearInterval(terminalClosePollId)
+						terminalClosePollId = undefined
+					}
 					resolve("terminal_closed")
 				}
 			}, 100)
@@ -322,6 +326,14 @@ export class TerminalProcess extends BaseTerminalProcess {
 			}
 
 			this.startHotTimer(data)
+		}
+
+		// The stream has reached a terminal boundary, so the close poll is no
+		// longer needed. Leaving it alive keeps the integrated-terminal command
+		// shell marked active even after the child command returned successfully.
+		if (terminalClosePollId) {
+			clearInterval(terminalClosePollId)
+			terminalClosePollId = undefined
 		}
 
 		await closeStreamIterator()

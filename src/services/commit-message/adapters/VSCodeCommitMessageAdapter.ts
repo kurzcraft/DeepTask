@@ -27,12 +27,6 @@ export class VSCodeCommitMessageAdapter implements ICommitMessageAdapter {
 		this.activeGeneration = generation
 		// kilocode_change end
 		try {
-			const targetRepository = await this.determineTargetRepository(request.workspacePath)
-			if (!targetRepository?.rootUri) {
-				throw new Error("Could not determine Git repository")
-			}
-			this.targetRepository = targetRepository
-
 			return await vscode.window.withProgress(
 				{
 					location: vscode.ProgressLocation.SourceControl,
@@ -41,6 +35,18 @@ export class VSCodeCommitMessageAdapter implements ICommitMessageAdapter {
 				},
 				async (progress, cancellationToken) => {
 					const cancellationDisposable = cancellationToken.onCancellationRequested(() => generation.abort())
+					progress.report({ message: t("kilocode:commitMessage.initializing") })
+
+					// A command invoked from an SCM menu carries the exact input box that was
+					// clicked. Use it first; repository discovery is only a fallback for the
+					// command palette or keyboard invocation. VS Code may omit rootUri from a
+					// SourceControlInput argument, but the input box is still a valid target.
+					const targetRepository =
+						request.vscodeTarget ?? (await this.determineTargetRepository(request.workspacePath))
+					if (!targetRepository?.inputBox) {
+						throw new Error("Could not determine Git repository input box")
+					}
+					this.targetRepository = targetRepository
 					const integration: ICommitMessageIntegration = {
 						abortSignal: generation.signal,
 						reportProgress: (percentage: number, message?: string) => {

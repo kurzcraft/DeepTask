@@ -317,7 +317,7 @@ describe("executeCommand", () => {
 		})
 		// kilocode_change end
 
-		it("should use execa provider when shell integration is disabled", async () => {
+		it("always uses the VS Code provider when shell integration is disabled in state", async () => {
 			mockTerminal.runCommand.mockImplementation((command: string, callbacks: RooTerminalCallbacks) => {
 				setTimeout(() => {
 					callbacks.onCompleted("Command output", mockProcess)
@@ -336,8 +336,8 @@ describe("executeCommand", () => {
 			// Execute
 			await executeCommandInTerminal(mockTask, options)
 
-			// Verify
-			expect(TerminalRegistry.getOrCreateTerminal).toHaveBeenCalledWith(mockTask.cwd, mockTask.taskId, "execa")
+			// Verify that the command remains in the visible integrated terminal.
+			expect(TerminalRegistry.getOrCreateTerminal).toHaveBeenCalledWith(mockTask.cwd, mockTask.taskId, "vscode")
 		})
 	})
 

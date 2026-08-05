@@ -427,7 +427,7 @@
 					"when": "true"
 				}
 			],
-			"scm/input": [
+			"scm/inputBox": [
 				{
 					"command": "deeptask.vsc.generateCommitMessage",
 					"group": "navigation"

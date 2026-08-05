@@ -112,27 +112,18 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 
 				pushToolResult(result)
 			} catch (error: unknown) {
+				// Never silently switch from the VS Code integrated terminal to an
+				// independent child process. That hides shell integration failures,
+				// loses visible terminal state, and makes commands appear to run in a
+				// different environment. Surface the failure and keep the integrated
+				// terminal as the only execution path when it is selected.
 				const status: CommandExecutionStatus = { executionId, status: "fallback" }
 				provider?.postMessageToWebview({ type: "commandExecutionStatus", text: JSON.stringify(status) })
 				await task.say("shell_integration_warning")
-
-				// Invalidate pending ask from first execution to prevent race condition
 				task.supersedePendingAsk()
 
-				if (error instanceof ShellIntegrationError) {
-					const [rejected, result] = await executeCommandInTerminal(task, {
-						...options,
-						terminalShellIntegrationDisabled: true,
-					})
-
-					if (rejected) {
-						task.didRejectTool = true
-					}
-
-					pushToolResult(result)
-				} else {
-					pushToolResult(`Command failed to execute in terminal due to a shell integration error.`)
-				}
+			const errorMessage = error instanceof Error ? error.message : String(error)
+				pushToolResult(`Command was not executed because the VS Code integrated terminal failed: ${errorMessage}`)
 			}
 
 			return
@@ -209,7 +200,10 @@ export async function executeCommandInTerminal(
 		resolveProcessCompleted = resolve
 	})
 
-	const terminalProvider = terminalShellIntegrationDisabled ? "execa" : "vscode"
+	// Commands must always use the VS Code integrated terminal. The former
+	// Execa branch silently changed the shell, environment, working directory,
+	// and visible terminal state when this preference was enabled.
+	const terminalProvider = "vscode"
 	const provider = await task.providerRef.deref()
 
 	let accumulatedOutput = ""
