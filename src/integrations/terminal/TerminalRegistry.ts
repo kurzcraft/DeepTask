@@ -118,31 +118,30 @@ export class TerminalRegistry {
 						return
 					}
 
-					if (!terminal.running) {
-						console.error(
-							"[TerminalRegistry] Shell execution end event received, but process is not running for terminal:",
-							{ terminalId: terminal?.id, command: process?.command, exitCode: e.exitCode },
-						)
-
-						// Stream-close can finish before the shell end event. Complete the
-						// process here as well, otherwise the active process blocks pruning.
-						this.completeTerminalProcess(terminal, process)
-						return
-					}
-
 					if (!process) {
 						console.error(
-							"[TerminalRegistry] Shell execution end event received on running terminal, but process is undefined:",
-							{ terminalId: terminal.id, exitCode: e.exitCode },
+							"[TerminalRegistry] Shell execution end event received, but process is undefined:",
+							{ terminalId: terminal.id, running: terminal.running, exitCode: e.exitCode },
 						)
 
 						this.completeTerminalProcess(terminal)
 						return
 					}
 
-					// Signal completion to any waiting processes and make the terminal
-					// eligible for retention pruning immediately.
+					if (!terminal.running) {
+						console.warn(
+							"[TerminalRegistry] Shell execution ended before its start state was observed; completing the current process:",
+							{ terminalId: terminal.id, command: process.command, exitCode: e.exitCode },
+						)
+					}
+
+					// kilocode_change start
+					// Fast commands can finish before VS Code delivers the matching start
+					// event. The end event is authoritative whenever this terminal still owns
+					// a process; always publish it so TerminalProcess and ExecuteCommandTool
+					// cannot remain suspended behind a false `running` flag.
 					terminal.shellExecutionComplete(exitDetails)
+					// kilocode_change end
 					this.markTerminalCompleted(terminal)
 					this.pruneCompletedVscodeTerminals()
 				},

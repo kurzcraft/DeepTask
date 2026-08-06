@@ -306,6 +306,44 @@ describe("TerminalProcess with Bash Command Output", () => {
 		expect(capturedOutput).toBe(expectedOutput)
 	})
 
+	// kilocode_change start
+	it("completes a fast command when the shell end event arrives before the start state", async () => {
+		const mockTerminal = {
+			shellIntegration: { executeCommand: vi.fn(), cwd: vscode.Uri.file("/test/path") },
+			name: "Deeptask",
+			processId: Promise.resolve(123),
+			creationOptions: {},
+			exitStatus: undefined,
+			state: { isInteractedWith: true, shell: undefined },
+			dispose: vi.fn(),
+			hide: vi.fn(),
+			show: vi.fn(),
+			sendText: vi.fn(),
+		}
+		const terminal = new Terminal(1, mockTerminal, "/test/path")
+		const terminalProcess = new TerminalProcess(terminal)
+		terminal.process = terminalProcess
+		terminal.busy = true
+		terminal.running = false
+		TerminalRegistry["terminals"] = [terminal]
+
+		const completion = new Promise<ExitCodeDetails>((resolve) => {
+			terminalProcess.once("shell_execution_complete", resolve)
+		})
+		const eventHandlers = (vscode as any).__eventHandlers
+		eventHandlers.endTerminalShellExecution({
+			terminal: mockTerminal,
+			execution: { commandLine: { value: "echo test-terminal-ok" } },
+			exitCode: 0,
+		})
+
+		await expect(completion).resolves.toEqual({ exitCode: 0 })
+		expect(terminal.process).toBeUndefined()
+		expect(terminal.running).toBe(false)
+		expect(terminal.busy).toBe(false)
+	})
+	// kilocode_change end
+
 	it(TEST_PURPOSES.OUTPUT_WITHOUT_NEWLINE, async () => {
 		// Platform-specific command for output without newline
 		const command = process.platform === "win32" ? "echo|set /p=a" : "/bin/echo -n a"
