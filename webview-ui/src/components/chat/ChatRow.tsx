@@ -210,6 +210,17 @@ export const ChatRowContent = ({
 	const [editMode, setEditMode] = useState<Mode>(mode || "code")
 	const [editImages, setEditImages] = useState<string[]>([])
 
+	// Synthetic "continue" prompts are created by assistant-message editing and
+	// must enter the same editor used by ordinary user feedback rows.
+	useEffect(() => {
+		if (message.editPrompt && message.say === "user_feedback") {
+			setIsEditing(true)
+			setEditedContent(message.text || "")
+			setEditImages(message.images || [])
+			setEditMode(mode || "code")
+		}
+	}, [message.editPrompt, message.say, message.text, message.images, mode])
+
 	// Handle message events for image selection during edit mode
 	useEffect(() => {
 		const handleMessage = (event: MessageEvent) => {
@@ -249,21 +260,17 @@ export const ChatRowContent = ({
 	// Handle save edit
 	const handleSaveEdit = useCallback(() => {
 		setIsEditing(false)
-		// kilocode_change start: edited resend has no local queue/optimistic UI.
-		// The persisted host echo is the only message rendered after rewind.
 		const contentToSubmit = editedContent
 		const imagesToSubmit = editImages
 		setEditedContent("")
 		setEditImages([])
-		// kilocode_change end
-		// Send edited message to backend
 		vscode.postMessage({
-			type: "submitEditedMessage",
+			type: message.say === "user_feedback" ? "submitEditedMessage" : "submitEditedAssistantMessage",
 			value: message.ts,
 			editedMessageContent: contentToSubmit,
 			images: imagesToSubmit,
 		})
-	}, [message.ts, editedContent, editImages])
+	}, [message.say, message.ts, editedContent, editImages])
 
 	// Handle image selection for editing
 	const handleSelectImages = useCallback(() => {
@@ -1339,15 +1346,44 @@ export const ChatRowContent = ({
 								<span style={{ fontWeight: "bold" }}>{t("chat:text.rooSaid")}</span>
 								<div style={{ flexGrow: 1 }} />
 								<OpenMarkdownPreviewButton markdown={message.text} />
+								{!isStreaming && !isEditing && (
+									<Edit
+										className="w-4 shrink-0 cursor-pointer opacity-0 group-hover:opacity-100"
+										aria-label={t("chat:edit")}
+										onClick={handleEditClick}
+									/>
+								)}
 							</div>
 							<div className="pl-6">
-								<Markdown markdown={message.text} partial={message.partial} />
-								{message.images && message.images.length > 0 && (
-									<div style={{ marginTop: "10px" }}>
-										{message.images.map((image, index) => (
-											<ImageBlock key={index} imageData={image} />
-										))}
-									</div>
+								{isEditing ? (
+									<ChatTextArea
+										inputValue={editedContent}
+										setInputValue={setEditedContent}
+										sendingDisabled={false}
+										selectApiConfigDisabled={true}
+										placeholderText={t("chat:editMessage.placeholder")}
+										selectedImages={editImages}
+										setSelectedImages={setEditImages}
+										onSend={handleSaveEdit}
+										onSelectImages={handleSelectImages}
+										shouldDisableImages={!model?.supportsImages}
+										mode={editMode}
+										setMode={setEditMode}
+										modeShortcutText=""
+										isEditMode={true}
+										onCancel={handleCancelEdit}
+									/>
+								) : (
+									<>
+										<Markdown markdown={message.text} partial={message.partial} />
+										{message.images && message.images.length > 0 && (
+											<div style={{ marginTop: "10px" }}>
+												{message.images.map((image, index) => (
+													<ImageBlock key={index} imageData={image} />
+												))}
+											</div>
+										)}
+									</>
 								)}
 							</div>
 						</div>
@@ -1486,11 +1522,38 @@ export const ChatRowContent = ({
 									{title}
 									{showTimestamps && <ChatTimestamps ts={message.ts} />}
 									<OpenMarkdownPreviewButton markdown={message.text} />
+									{!isStreaming && !isEditing && (
+										<Edit
+											className="w-4 shrink-0 cursor-pointer opacity-0 group-hover:opacity-100"
+											aria-label={t("chat:edit")}
+											onClick={handleEditClick}
+										/>
+									)}
 								</div>
 								{/* kilocode_change end */}
 							</div>
 							<div className="border-l border-green-600/30 ml-2 pl-4 pb-1">
-								<Markdown markdown={message.text} />
+								{isEditing ? (
+									<ChatTextArea
+										inputValue={editedContent}
+										setInputValue={setEditedContent}
+										sendingDisabled={false}
+										selectApiConfigDisabled={true}
+										placeholderText={t("chat:editMessage.placeholder")}
+										selectedImages={editImages}
+										setSelectedImages={setEditImages}
+										onSend={handleSaveEdit}
+										onSelectImages={handleSelectImages}
+										shouldDisableImages={!model?.supportsImages}
+										mode={editMode}
+										setMode={setEditMode}
+										modeShortcutText=""
+										isEditMode={true}
+										onCancel={handleCancelEdit}
+									/>
+								) : (
+									<Markdown markdown={message.text} />
+								)}
 							</div>
 							{
 								// kilocode_change start

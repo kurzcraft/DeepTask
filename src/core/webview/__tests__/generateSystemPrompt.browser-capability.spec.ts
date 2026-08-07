@@ -2,6 +2,7 @@ import { describe, test, expect, vi } from "vitest"
 
 // Module under test
 import { generateSystemPrompt } from "../generateSystemPrompt"
+import { SYSTEM_PROMPT } from "../../prompts/system"
 
 // Mock SYSTEM_PROMPT to capture its third argument (browser capability flag)
 vi.mock("../../prompts/system", () => ({
@@ -72,6 +73,10 @@ function makeProviderStub() {
 }
 
 describe("generateSystemPrompt browser capability (supportsImages=true)", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+	})
+
 	test("passes canUseBrowserTool=true when mode has browser group and setting enabled", async () => {
 		const provider = makeProviderStub()
 		const message = { mode: "test-mode" } as any
@@ -80,5 +85,16 @@ describe("generateSystemPrompt browser capability (supportsImages=true)", () => 
 
 		// SYSTEM_PROMPT mock encodes the boolean into the returned string
 		expect(result).toBe("SYSTEM_PROMPT:true")
+	})
+
+	test("enables task progress rules when the provider state omits the setting", async () => {
+		const provider = makeProviderStub()
+		const message = { mode: "test-mode" } as any
+
+		await generateSystemPrompt(provider, message)
+
+		const systemPromptCall = vi.mocked(SYSTEM_PROMPT).mock.calls[0]
+		expect(systemPromptCall[16]).toMatchObject({ taskProgressFileEnabled: true })
+		expect(systemPromptCall[20]).toMatchObject({ taskProgressFileEnabled: true })
 	})
 })

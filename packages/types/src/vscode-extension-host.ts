@@ -784,6 +784,7 @@ export interface WebviewMessage {
 		| "deleteMessage"
 		| "deleteMessageConfirm"
 		| "submitEditedMessage"
+		| "submitEditedAssistantMessage" // kilocode_change
 		| "editMessageConfirm"
 		| "enableMcpServerCreation"
 		| "remoteControlEnabled"

@@ -476,7 +476,9 @@ export class ClineProvider
 		}
 	}
 
-	private syncRuntimeTerminalSettings(state: Pick<GlobalState, "terminalCompletedTerminalLimitEnabled" | "terminalCompletedTerminalLimit">): void {
+	private syncRuntimeTerminalSettings(
+		state: Pick<GlobalState, "terminalCompletedTerminalLimitEnabled" | "terminalCompletedTerminalLimit">,
+	): void {
 		// kilocode_change start
 		TerminalRegistry.setCompletedTerminalLimitEnabled(state.terminalCompletedTerminalLimitEnabled ?? true)
 		TerminalRegistry.setCompletedTerminalLimit(state.terminalCompletedTerminalLimit ?? 3)
@@ -1373,59 +1375,56 @@ export class ClineProvider
 			)
 		}
 
-		// Check if there's a pending edit after checkpoint restoration
+		// kilocode_change start
+		// A checkpoint edit already persisted a strict UI/API prefix before triggering
+		// cancellation. Feed its replacement text directly into the one restoration
+		// flow. The former delayed second-pass cleanup raced resumeTaskFromHistory(),
+		// allowing a request to be built from the discarded branch.
 		const operationId = `task-${task.taskId}`
 		const pendingEdit = this.getPendingEditOperation(operationId)
 		if (pendingEdit) {
-			this.clearPendingEditOperation(operationId) // Clear the pending edit
-
-			this.log(`[createTaskWithHistoryItem] Processing pending edit after checkpoint restoration`)
-
-			// Process the pending edit after a short delay to ensure the task is fully initialized
-			setTimeout(async () => {
-				try {
-					// Find the message index in the restored state
-					const { messageIndex, apiConversationHistoryIndex } = (() => {
-						const messageIndex = task.clineMessages.findIndex((msg) => msg.ts === pendingEdit.messageTs)
-						const apiConversationHistoryIndex = task.apiConversationHistory.findIndex(
-							(msg) => msg.ts === pendingEdit.messageTs,
-						)
-						return { messageIndex, apiConversationHistoryIndex }
-					})()
-
-					if (messageIndex !== -1) {
-						// Remove the target message and all subsequent messages
-						await task.overwriteClineMessages(task.clineMessages.slice(0, messageIndex))
-
-						if (apiConversationHistoryIndex !== -1) {
-							await task.overwriteApiConversationHistory(
-								task.apiConversationHistory.slice(0, apiConversationHistoryIndex),
-							)
-						}
-
-						// Process the edited message
-						await task.handleWebviewAskResponse(
-							"messageResponse",
-							pendingEdit.editedContent,
-							pendingEdit.images,
-						)
-					}
-				} catch (error) {
-					this.log(`[createTaskWithHistoryItem] Error processing pending edit: ${error}`)
-				}
-			}, 100) // Small delay to ensure task is fully ready
+			this.clearPendingEditOperation(operationId)
+			this.log(`[createTaskWithHistoryItem] Injecting pending checkpoint edit into history restoration`)
 		}
 
-		// kilocode_change start
 		// Start exactly one restoration flow after stack replacement and listener
-		// setup. A pending cancellation payload is injected into that flow so no
-		// resume ask can race a separately started continuation loop.
+		// setup. Consume both payload holders so a stale cancellation continuation
+		// cannot survive a checkpoint-edit replacement; the explicit edit wins.
 		if (shouldStartTask) {
-			const pendingContinuation = this.consumePendingCancelledTaskContinuation()
+			const pendingCancelledContinuation = this.consumePendingCancelledTaskContinuation()
+			const pendingContinuation = pendingEdit
+				? {
+						text: pendingEdit.editedContent,
+						images: pendingEdit.images,
+						options: { kind: "edited_resend" as const },
+						createdAt: pendingEdit.createdAt,
+					}
+				: pendingCancelledContinuation
 			try {
 				await task.resumeTaskFromHistory(pendingContinuation)
 			} catch (error) {
 				this.log(`[createTaskWithHistoryItem] Error restoring task history: ${error}`)
+
+				// Human input must not be lost when history restoration fails. The restored
+				// task is unusable, so hand the already-captured latest message to a fresh
+				// task and let the normal model prompt process it as a new turn.
+				if (pendingContinuation) {
+					const current = this.getCurrentTask()
+					if (current === task) {
+						task.abortReason = "streaming_failed"
+						task.abandoned = true
+						await this.removeClineFromStack()
+					}
+					try {
+						await this.createTask(pendingContinuation.text, pendingContinuation.images)
+						await this.postMessageToWebview({ type: "invoke", invoke: "newChat" })
+					} catch (fallbackError) {
+						this.log(
+							`[createTaskWithHistoryItem] Failed to deliver pending human message after restore failure: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
+						)
+						await this.postStateToWebview()
+					}
+				}
 			}
 		}
 		// kilocode_change end
@@ -3597,7 +3596,9 @@ export class ClineProvider
 			!apiConfiguration.openAiBaseUrl?.trim() &&
 			!apiConfiguration.openAiApiKey?.trim()
 		) {
-			throw new Error("OpenAI Compatible is not configured. Add an API key or custom endpoint in Provider settings.")
+			throw new Error(
+				"OpenAI Compatible is not configured. Add an API key or custom endpoint in Provider settings.",
+			)
 		}
 		// kilocode_change end
 
@@ -3648,9 +3649,7 @@ export class ClineProvider
 		const rollbackFailedStartup = async (error: unknown) => {
 			await registrationFinished
 			const message = error instanceof Error ? error.message : String(error)
-			this.log(
-				`[DEEPTASK_STARTUP_TRANSACTION_V1] task ${task.taskId}.${task.instanceId} failed: ${message}`,
-			)
+			this.log(`[DEEPTASK_STARTUP_TRANSACTION_V1] task ${task.taskId}.${task.instanceId} failed: ${message}`)
 
 			// A newer continuation or task must never be removed by an older loop's
 			// delayed rejection. Roll back only the exact instance that owns it.
@@ -3720,9 +3719,26 @@ export class ClineProvider
 			this.log(
 				`[cancelTask] Task ${task.taskId} could not be rehydrated after cancellation: ${error instanceof Error ? error.message : String(error)}`,
 			)
+
+			// Persistence failure must not turn a real human message into a no-op. The
+			// pending continuation is already the complete user payload, so deliver it
+			// through a fresh task when the old history cannot be restored.
+			const pendingContinuation = this.consumePendingCancelledTaskContinuation()
 			await this.removeClineFromStack()
-			await this.postStateToWebview()
-			await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
+			if (pendingContinuation) {
+				try {
+					await this.createTask(pendingContinuation.text, pendingContinuation.images)
+					await this.postMessageToWebview({ type: "invoke", invoke: "newChat" })
+				} catch (fallbackError) {
+					this.log(
+						`[cancelTask] Failed to deliver pending human message after persistence failure: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
+					)
+					await this.postStateToWebview()
+				}
+			} else {
+				await this.postStateToWebview()
+				await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
+			}
 			return
 		}
 		// kilocode_change end

@@ -250,11 +250,13 @@ export type CheckpointRestoreOptions = {
 	commitHash: string
 	mode: "preview" | "restore"
 	operation?: "delete" | "edit" // Optional to maintain backward compatibility
+	/** Exact API-history boundary captured for an edited resend. */
+	apiConversationHistoryIndex?: number
 }
 
 export async function checkpointRestore(
 	task: Task,
-	{ ts, commitHash, mode, operation = "delete" }: CheckpointRestoreOptions,
+	{ ts, commitHash, mode, operation = "delete", apiConversationHistoryIndex }: CheckpointRestoreOptions,
 ) {
 	const service = await getCheckpointService(task)
 
@@ -276,17 +278,32 @@ export async function checkpointRestore(
 		await provider?.postMessageToWebview({ type: "currentCheckpointUpdated", text: commitHash })
 
 		if (mode === "restore") {
-			// Calculate metrics from messages that will be deleted (must be done before rewind)
-			const deletedMessages = task.clineMessages.slice(index + 1)
+			// A checkpoint edit replaces the target user turn, so its metrics and
+			// persisted UI/API histories must both begin deletion at that turn.
+			// Retaining it here used to require a delayed second rewind after task
+			// recreation, which could leak the discarded branch into the new request.
+			const deletedMessages = task.clineMessages.slice(index)
 
 			const { totalTokensIn, totalTokensOut, totalCacheWrites, totalCacheReads, totalCost } = getApiMetrics(
 				task.combineMessages(deletedMessages),
 			)
 
-			// Use MessageManager to properly handle context-management events
-			// This ensures orphaned Summary messages and truncation markers are cleaned up
+			// Use MessageManager to properly handle context-management events.
+			// Edited checkpoint resends replace a branch and therefore require the same
+			// strict API boundary as non-checkpoint edits; ordinary deletes retain their
+			// timestamp-race compatibility behavior.
+			const exactApiCutoffIndex =
+				apiConversationHistoryIndex !== undefined && apiConversationHistoryIndex >= 0
+					? apiConversationHistoryIndex
+					: task.apiConversationHistory.findIndex((message) => message.ts === ts)
 			await task.messageManager.rewindToTimestamp(ts, {
-				includeTargetMessage: operation === "edit",
+				includeTargetMessage: false,
+				...(operation === "edit"
+					? {
+							strictCutoff: true,
+							...(exactApiCutoffIndex !== -1 ? { apiCutoffIndex: exactApiCutoffIndex } : {}),
+						}
+					: {}),
 			})
 
 			// Report the deleted API request metrics

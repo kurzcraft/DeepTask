@@ -53,12 +53,16 @@ export async function handleCheckpointRestoreOperation(config: CheckpointRestore
 			})
 		}
 
-		// Perform the checkpoint restoration
+		// Perform the checkpoint restoration. Pass the captured API boundary through
+		// so edit rewinds cannot fall back to an ambiguous timestamp after restore.
 		await currentCline.checkpointRestore({
 			ts: messageTs,
 			commitHash: checkpoint.hash,
 			mode: "restore",
 			operation,
+			...(operation === "edit" && editData
+				? { apiConversationHistoryIndex: editData.apiConversationHistoryIndex }
+				: {}),
 		})
 
 		// For delete operations, we need to save messages and reinitialize

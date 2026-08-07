@@ -11,54 +11,61 @@ describe("updateTodoListTool", () => {
 			recordToolError: vi.fn(),
 			didToolFailInCurrentTurn: false,
 			normalizeTodoListForActiveContinuation: vi.fn((todos: TodoItem[]) => todos),
+			syncTaskProgressWithTodoList: vi.fn().mockResolvedValue(undefined),
 			shouldRequireProgressListExpansion: vi.fn().mockReturnValue(true),
 			hasActionableProgressListForContinuation: vi.fn().mockReturnValue(false),
 			markProgressListExpandedForContinuation: vi.fn(),
 		} as unknown as Task
 
-		await updateTodoListTool.execute(
-			{ todos: "[x] 研究问题本质\n[x] 汇总安装位置、skill 内容和测试结论" },
-			task,
-			{
-				askApproval: vi.fn().mockResolvedValue(true),
-				handleError: vi.fn(),
-				pushToolResult,
-				removeClosingTag: vi.fn(),
-				toolProtocol: "xml",
-			},
-		)
+		await updateTodoListTool.execute({ todos: "[x] 研究问题本质\n[x] 汇总安装位置、skill 内容和测试结论" }, task, {
+			askApproval: vi.fn().mockResolvedValue(true),
+			handleError: vi.fn(),
+			pushToolResult,
+			removeClosingTag: vi.fn(),
+			toolProtocol: "xml",
+		})
 
 		expect(task.normalizeTodoListForActiveContinuation).not.toHaveBeenCalled()
 		expect(task.markProgressListExpandedForContinuation).not.toHaveBeenCalled()
 		expect(pushToolResult).toHaveBeenCalledWith(expect.stringContaining("new user work turn"))
 	})
 
-	it("accepts concrete unfinished milestones for a new feedback work turn", async () => {
+	it("writes concrete milestones to the task file before synchronizing the native list", async () => {
 		const pushToolResult = vi.fn()
+		const postStateToWebview = vi.fn().mockResolvedValue(undefined)
 		const task = {
 			consecutiveMistakeCount: 0,
 			recordToolError: vi.fn(),
 			didToolFailInCurrentTurn: false,
 			normalizeTodoListForActiveContinuation: vi.fn((todos: TodoItem[]) => todos),
+			providerRef: { deref: () => ({ postStateToWebview }) },
+			todoList: [{ id: "old", content: "previous native state", status: "completed" }],
+			syncTaskProgressWithTodoList: vi.fn().mockImplementation(async (todos: TodoItem[]) => {
+				expect((task as any).todoList).toEqual([
+					{ id: "old", content: "previous native state", status: "completed" },
+				])
+				expect(todos).toEqual([
+					{ id: expect.any(String), content: "修复反馈路由", status: "in_progress" },
+					{ id: expect.any(String), content: "验证新任务响应", status: "pending" },
+				])
+			}),
 			shouldRequireProgressListExpansion: vi.fn().mockReturnValue(true),
 			hasActionableProgressListForContinuation: vi.fn().mockReturnValue(true),
 			markProgressListExpandedForContinuation: vi.fn(),
 			ask: undefined,
 		} as unknown as Task
 
-		await updateTodoListTool.execute(
-			{ todos: "[-] 修复反馈路由\n[ ] 验证新任务响应" },
-			task,
-			{
-				askApproval: vi.fn().mockResolvedValue(true),
-				handleError: vi.fn(),
-				pushToolResult,
-				removeClosingTag: vi.fn(),
-				toolProtocol: "xml",
-			},
-		)
+		await updateTodoListTool.execute({ todos: "[-] 修复反馈路由\n[ ] 验证新任务响应" }, task, {
+			askApproval: vi.fn().mockResolvedValue(true),
+			handleError: vi.fn(),
+			pushToolResult,
+			removeClosingTag: vi.fn(),
+			toolProtocol: "xml",
+		})
 
+		expect(task.syncTaskProgressWithTodoList).toHaveBeenCalledOnce()
 		expect(task.markProgressListExpandedForContinuation).toHaveBeenCalled()
+		expect(postStateToWebview).toHaveBeenCalledOnce()
 		expect(pushToolResult).toHaveBeenCalledWith(expect.stringContaining("Todo list updated successfully"))
 	})
 })
@@ -164,6 +171,18 @@ describe("parseMarkdownChecklist", () => {
 			expect(result[0].status).toBe("in_progress")
 			expect(result[1].content).toBe("In progress task 2")
 			expect(result[1].status).toBe("in_progress")
+		})
+
+		it("preserves four-space checklist hierarchy as todo depth", () => {
+			const md = ["- [-] Parent task", "    - [x] Child task", "        - [ ] Grandchild task"].join("\n")
+			const result = parseMarkdownChecklist(md)
+
+			expect(result).toMatchObject([
+				{ content: "Parent task", status: "in_progress" },
+				{ content: "Child task", status: "completed", depth: 1 },
+				{ content: "Grandchild task", status: "pending", depth: 2 },
+			])
+			expect(result[0]).not.toHaveProperty("depth")
 		})
 
 		it("should parse in-progress tasks with dash prefix and tilde marker", () => {

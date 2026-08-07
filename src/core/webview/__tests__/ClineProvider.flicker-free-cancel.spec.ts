@@ -311,6 +311,23 @@ describe("ClineProvider flicker-free cancel", () => {
 		expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
 	})
 
+	it("delivers a parked human message when cancellation cannot read task history", async () => {
+		;(provider as any).clineStack = [mockTask1]
+		provider.getTaskWithId = vi.fn().mockRejectedValue(new Error("history unavailable"))
+		provider.postMessageToWebview = vi.fn().mockResolvedValue(undefined)
+		const createTask = vi.spyOn(provider, "createTask").mockResolvedValue(mockTask2 as any)
+		vi.spyOn(provider, "removeClineFromStack").mockImplementation(async () => {
+			;(provider as any).clineStack = []
+		})
+		provider.setPendingCancelledTaskContinuation("message must reach the model", ["image-data"])
+
+		await expect(provider.cancelTask()).resolves.toBeUndefined()
+
+		expect(createTask).toHaveBeenCalledWith("message must reach the model", ["image-data"])
+		expect((provider as any).pendingCancelledTaskContinuation).toBeUndefined()
+		expect(provider.postMessageToWebview).toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
+	})
+
 	it("rolls back the exact half-created task when its owned startup promise rejects", async () => {
 		let rejectStartup!: (error: Error) => void
 		const startup = new Promise<void>((_resolve, reject) => {
@@ -413,6 +430,71 @@ describe("ClineProvider flicker-free cancel", () => {
 		})
 		expect(mockTask2.continueTaskFromUserMessage).not.toHaveBeenCalled()
 		expect((provider as any).pendingCancelledTaskContinuation).toBeUndefined()
+	})
+
+	it("delivers the latest human message through a fresh task when history restoration fails", async () => {
+		;(provider as any).clineStack = [mockTask1]
+		;(provider as any).taskEventListeners = new WeakMap()
+		;(provider as any).taskEventListeners.set(mockTask1, [vi.fn()])
+		mockTask2.resumeTaskFromHistory.mockRejectedValueOnce(new Error("corrupt history"))
+		const createTask = vi.spyOn(provider, "createTask").mockResolvedValue(mockTask2 as any)
+		provider.setPendingCancelledTaskContinuation("latest human instruction", ["latest-image"])
+
+		const historyItem: HistoryItem = {
+			id: "task-1",
+			number: 1,
+			task: "test task",
+			ts: Date.now(),
+			tokensIn: 100,
+			tokensOut: 200,
+			totalCost: 0.001,
+			workspace: "/test/workspace",
+		}
+
+		await provider.createTaskWithHistoryItem(historyItem)
+
+		expect(createTask).toHaveBeenCalledWith("latest human instruction", ["latest-image"])
+		expect(mockTask2.resumeTaskFromHistory).toHaveBeenCalledTimes(1)
+		expect((provider as any).clineStack).toEqual([])
+	})
+
+	it("makes a checkpoint edit the only continuation consumed by the restored task", async () => {
+		;(provider as any).clineStack = [mockTask1]
+		;(provider as any).taskEventListeners = new WeakMap()
+		;(provider as any).taskEventListeners.set(mockTask1, [vi.fn()])
+		provider.setPendingCancelledTaskContinuation("stale cancelled continuation", undefined, {
+			kind: "edited_resend",
+		})
+		provider.setPendingEditOperation("task-task-1", {
+			messageTs: 200,
+			editedContent: "replacement message",
+			images: ["replacement-image"],
+			messageIndex: 2,
+			apiConversationHistoryIndex: 1,
+		})
+
+		const historyItem: HistoryItem = {
+			id: "task-1",
+			number: 1,
+			task: "test task",
+			ts: Date.now(),
+			tokensIn: 100,
+			tokensOut: 200,
+			totalCost: 0.001,
+			workspace: "/test/workspace",
+		}
+
+		await provider.createTaskWithHistoryItem(historyItem)
+
+		expect(mockTask2.resumeTaskFromHistory).toHaveBeenCalledWith({
+			text: "replacement message",
+			images: ["replacement-image"],
+			options: { kind: "edited_resend" },
+			createdAt: expect.any(Number),
+		})
+		expect(mockTask2.continueTaskFromUserMessage).not.toHaveBeenCalled()
+		expect((provider as any).pendingCancelledTaskContinuation).toBeUndefined()
+		expect((provider as any).pendingOperations.size).toBe(0)
 	})
 
 	it("should detach old abort listeners before aborting a streaming task during rehydration", async () => {

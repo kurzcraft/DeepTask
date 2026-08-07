@@ -408,12 +408,15 @@ export class OpenAiNativeHandler extends BaseProvider implements SingleCompletio
 		// Create AbortController for cancellation
 		this.abortController = new AbortController()
 
-		// Build per-request headers using taskId when available, falling back to sessionId
-		const taskId = metadata?.taskId
+		// Keep taskId available for provider tracking, but do not use it as the
+		// server-side session key. A task can be branch-replaced after an edit while
+		// retaining its persisted taskId; reusing that key could restore discarded
+		// context on compatible Responses backends.
+		const sessionId = metadata?.sessionId ?? this.sessionId
 		const userAgent = `kilo-code/${Package.version} (${os.platform()} ${os.release()}; ${os.arch()}) node/${process.version.slice(1)}`
 		const requestHeaders: Record<string, string> = {
 			originator: "kilo-code",
-			session_id: taskId || this.sessionId,
+			session_id: sessionId,
 			"User-Agent": userAgent,
 		}
 
@@ -565,8 +568,9 @@ export class OpenAiNativeHandler extends BaseProvider implements SingleCompletio
 		// Create AbortController for cancellation
 		this.abortController = new AbortController()
 
-		// Build per-request headers using taskId when available, falling back to sessionId
-		const taskId = metadata?.taskId
+		// See executeRequest(): branch replacement requires an instance-scoped
+		// session key in both the SDK and manual-SSE request paths.
+		const sessionId = metadata?.sessionId ?? this.sessionId
 		const userAgent = `kilo-code/${Package.version} (${os.platform()} ${os.release()}; ${os.arch()}) node/${process.version.slice(1)}`
 
 		try {
@@ -576,7 +580,7 @@ export class OpenAiNativeHandler extends BaseProvider implements SingleCompletio
 					"Content-Type": "application/json",
 					Authorization: `Bearer ${apiKey}`,
 					originator: "kilo-code",
-					session_id: taskId || this.sessionId,
+					session_id: sessionId,
 					"User-Agent": userAgent,
 				},
 				body: JSON.stringify(requestBody),

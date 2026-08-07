@@ -13,6 +13,7 @@ import { ClineProvider } from "./ClineProvider"
 
 export const generateSystemPrompt = async (provider: ClineProvider, message: WebviewMessage) => {
 	const state = await provider.getState() // kilocode_change
+	const taskProgressFileEnabled = state.taskProgressFileEnabled ?? true // kilocode_change
 
 	const {
 		apiConfiguration,
@@ -94,7 +95,7 @@ export const generateSystemPrompt = async (provider: ClineProvider, message: Web
 		{
 			maxConcurrentFileReads: maxConcurrentFileReads ?? 5,
 			todoListEnabled: apiConfiguration?.todoListEnabled ?? true,
-			taskProgressFileEnabled: state.taskProgressFileEnabled ?? true,
+			taskProgressFileEnabled,
 			useAgentRules: vscode.workspace.getConfiguration(Package.name).get<boolean>("useAgentRules") ?? true,
 			enableSubfolderRules: enableSubfolderRules ?? false,
 			newTaskRequireTodos: vscode.workspace
@@ -106,7 +107,7 @@ export const generateSystemPrompt = async (provider: ClineProvider, message: Web
 		undefined, // todoList
 		undefined, // modelId
 		provider.getSkillsManager(),
-		state, // kilocode_change
+		{ ...state, taskProgressFileEnabled }, // kilocode_change
 	)
 
 	return systemPrompt

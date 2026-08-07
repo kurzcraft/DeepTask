@@ -6,6 +6,7 @@ interface TodoItem {
 	id?: string
 	content: string
 	status?: "completed" | "in_progress" | string
+	depth?: number
 }
 
 /**
@@ -263,6 +264,7 @@ const UpdateTodoListToolBlock: React.FC<UpdateTodoListToolBlockProps> = ({
 											display: "flex",
 											alignItems: "flex-start",
 											minHeight: 20,
+											paddingLeft: Math.min(todo.depth ?? 0, 4) * 16,
 										}}>
 										{icon}
 										{isEditing ? (

@@ -7,6 +7,7 @@ interface TodoItem {
 	id?: string
 	content: string
 	status?: TodoStatus | string
+	depth?: number
 }
 
 interface TodoChangeDisplayProps {
@@ -71,6 +72,7 @@ export function TodoChangeDisplay({ previousTodos, newTodos }: TodoChangeDisplay
 						return (
 							<li
 								key={todo.id || todo.content}
+								style={{ paddingLeft: Math.min(todo.depth ?? 0, 4) * 16 }}
 								className={`flex flex-row gap-2 items-start ${
 									status === "in_progress" ? "text-vscode-charts-yellow" : ""
 								}`}>

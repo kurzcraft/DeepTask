@@ -5,6 +5,21 @@ import { useState, useRef, useMemo, useEffect } from "react"
 
 type TodoStatus = "completed" | "in_progress" | "pending"
 
+function getTodoDepthClass(depth?: number) {
+	switch (Math.min(depth ?? 0, 4)) {
+		case 1:
+			return "pl-4"
+		case 2:
+			return "pl-8"
+		case 3:
+			return "pl-12"
+		case 4:
+			return "pl-16"
+		default:
+			return ""
+	}
+}
+
 function getTodoIcon(status: TodoStatus | null) {
 	switch (status) {
 		case "completed":
@@ -88,6 +103,7 @@ export function TodoListDisplay({ todos }: { todos: any[] }) {
 								ref={(el) => (itemRefs.current[idx] = el)}
 								className={cn(
 									"font-light flex flex-row gap-2 items-start min-h-[20px] leading-normal mb-2",
+									getTodoDepthClass(todo.depth),
 									todo.status === "in_progress" && "text-vscode-charts-yellow",
 									todo.status !== "in_progress" && todo.status !== "completed" && "opacity-60",
 								)}>

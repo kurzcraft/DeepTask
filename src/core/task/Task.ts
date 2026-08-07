@@ -326,6 +326,12 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 	providerRef: WeakRef<ClineProvider>
 	private readonly globalStoragePath: string
+	// kilocode_change start
+	// A persisted task can be restored after an edited resend while retaining its
+	// taskId. Keep the Provider session separate so a compatible backend cannot
+	// reattach the new branch to server-side context owned by the discarded Task.
+	private readonly providerSessionId: string
+	// kilocode_change end
 	abort: boolean = false
 	currentRequestAbortController?: AbortController
 	skipPrevResponseIdOnce: boolean = false
@@ -389,6 +395,12 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	// LLM Messages & Chat Messages
 	apiConversationHistory: ApiMessage[] = []
 	clineMessages: ClineMessage[] = []
+	// A branch-replacement edit freezes the discarded Task instance before its
+	// histories are rewound. Late stream/tool callbacks may still finish, but they
+	// must never overwrite the persisted prefix that the replacement Task restores.
+	private historyPersistenceFrozen = false
+	private apiConversationHistorySaveChain: Promise<void> = Promise.resolve()
+	private clineMessagesSaveChain: Promise<void> = Promise.resolve()
 
 	// Ask
 	private askResponse?: ClineAskResponse
@@ -515,25 +527,24 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	// Generation counter so an older loop's finally cannot clear isTaskLoopActive
 	// after a newer continuation has already started.
 	private taskLoopGeneration = 0
+	// Prevent a provider retry or duplicate completion callback from persisting the
+	// same final summary twice within one request loop. A new loop resets this key.
+	private lastCompletionResultKey?: string
 	// Context compression is a history rewrite. Reusing one in-flight result prevents
 	// overlapping requests from committing summaries from stale history snapshots.
 	private contextManagementInFlight?: Promise<Awaited<ReturnType<typeof manageContext>>>
 	private apiConversationHistoryRevision = 0
 	// Serialize user continuations so post-completion sends never start two loops.
 	private continuationChain: Promise<void> = Promise.resolve()
-	// Exact latest user intent survives summary rewriting as a structured anchor.
-	// Summaries are lossy by design; task focus must not be.
+	// Exact latest user intent is retained only for continuation routing. The user
+	// message itself is sent to the model; it is never converted into a Todo item.
 	private latestUserContinuationFocus?: string
 	// Legacy gate retained for compatibility with restored tasks created by older
-	// builds. New feedback turns establish their own host-managed work item instead.
+	// builds. It only asks the model to author a list and never creates one itself.
 	private requiresProgressListExpansion = false
 	// Keep the content identity of the checklist that existed at the continuation
 	// boundary. Status-only replay must not count as intelligent task expansion.
 	private supersededContinuationTodoSignature?: string
-	// The host, not the model, owns the boundary between completed work and a new
-	// user feedback turn. Existing todos remain visible as structured context; this
-	// ID tracks the appended feedback item so it can be completed before delivery.
-	private activeUserFeedbackTodoId?: string
 	// kilocode_change end
 
 	// MessageManager for high-level message operations (lazy initialized)
@@ -584,6 +595,8 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		}
 
 		this.taskId = historyItem ? historyItem.id : uuidv7()
+		// kilocode_change: request-session identity must not survive branch replacement.
+		this.providerSessionId = crypto.randomUUID()
 		this.taskIsFavorited = historyItem?.isFavorited // kilocode_change
 		this.rootTaskId = historyItem ? historyItem.rootTaskId : rootTask?.taskId
 		this.parentTaskId = historyItem ? historyItem.parentTaskId : parentTask?.taskId
@@ -1097,7 +1110,20 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		return readApiMessages({ taskId: this.taskId, globalStoragePath: this.globalStoragePath })
 	}
 
+	/**
+	 * Prevent a superseded task instance from publishing late stream or tool state.
+	 * Forced writes are reserved for the synchronous rewind that establishes the
+	 * replacement task's durable UI/API prefix.
+	 */
+	public freezeHistoryPersistenceForBranchReplacement(): void {
+		this.historyPersistenceFrozen = true
+		this.apiConversationHistoryRevision++
+	}
+
 	private async addToApiConversationHistory(message: Anthropic.MessageParam, reasoning?: string) {
+		if (this.historyPersistenceFrozen) {
+			return
+		}
 		// Capture the encrypted_content / thought signatures from the provider (e.g., OpenAI Responses API, Google GenAI) if present.
 		// We only persist data reported by the current response body.
 		const handler = this.api as ApiHandler & {
@@ -1219,9 +1245,13 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		await this.saveApiConversationHistory()
 	}
 
-	async overwriteApiConversationHistory(newHistory: ApiMessage[]) {
+	async overwriteApiConversationHistory(newHistory: ApiMessage[], options: { force?: boolean } = {}) {
+		if (this.historyPersistenceFrozen && !options.force) {
+			return
+		}
+
 		this.apiConversationHistory = newHistory
-		await this.saveApiConversationHistory()
+		await this.saveApiConversationHistory(options)
 	}
 
 	/**
@@ -1240,8 +1270,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	 * So we usually only need to flush the pending user message with tool_results.
 	 */
 	public async flushPendingToolResultsToHistory(): Promise<void> {
-		// Only flush if there's actually pending content to save
-		if (this.userMessageContent.length === 0) {
+		// A branch-replacement rewind owns the durable history boundary. Pending
+		// results from the discarded loop are intentionally not replayed into it.
+		if (this.historyPersistenceFrozen || this.userMessageContent.length === 0) {
 			return
 		}
 
@@ -1385,38 +1416,57 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	}
 	// kilocode_change end
 
-	private async saveApiConversationHistory() {
-		// kilocode_change: every persisted mutation invalidates in-flight history rewrites.
-		this.apiConversationHistoryRevision++
-		try {
-			await saveApiMessages({
-				messages: this.apiConversationHistory,
-				taskId: this.taskId,
-				globalStoragePath: this.globalStoragePath,
-			})
-
-			// kilocode_change start
-			// Post directly to webview for CLI to react to file save.
-			// This must not prevent saving history or emitting usage events if
-			// storage is unavailable (e.g., during unit tests).
-			try {
-				const taskDir = await getTaskDirectoryPath(this.globalStoragePath, this.taskId)
-				const filePath = path.join(taskDir, GlobalFileNames.apiConversationHistory)
-				const provider = this.providerRef.deref()
-				if (provider) {
-					await provider.postMessageToWebview({
-						type: "apiMessagesSaved",
-						payload: [this.taskId, filePath],
-					})
-				}
-			} catch (error) {
-				console.warn("Failed to notify webview about saved API messages:", error)
-			}
-			// kilocode_change end
-		} catch (error) {
-			// In the off chance this fails, we don't want to stop the task.
-			console.error("Failed to save API conversation history:", error)
+	private async saveApiConversationHistory(options: { force?: boolean } = {}) {
+		if (this.historyPersistenceFrozen && !options.force) {
+			return
 		}
+
+		// Every persisted mutation invalidates in-flight history rewrites. Capture a
+		// snapshot and serialize writes so an already-started old save completes before
+		// the forced rewind commit, never after it.
+		this.apiConversationHistoryRevision++
+		const messages = [...this.apiConversationHistory]
+		const force = options.force === true
+		const write = async () => {
+			if (this.historyPersistenceFrozen && !force) {
+				return
+			}
+
+			try {
+				await saveApiMessages({
+					messages,
+					taskId: this.taskId,
+					globalStoragePath: this.globalStoragePath,
+				})
+
+				// kilocode_change start
+				// Post directly to webview for CLI to react to file save.
+				// This must not prevent saving history or emitting usage events if
+				// storage is unavailable (e.g., during unit tests).
+				try {
+					const taskDir = await getTaskDirectoryPath(this.globalStoragePath, this.taskId)
+					const filePath = path.join(taskDir, GlobalFileNames.apiConversationHistory)
+					const provider = this.providerRef.deref()
+					if (provider) {
+						await provider.postMessageToWebview({
+							type: "apiMessagesSaved",
+							payload: [this.taskId, filePath],
+						})
+					}
+				} catch (error) {
+					console.warn("Failed to notify webview about saved API messages:", error)
+				}
+				// kilocode_change end
+			} catch (error) {
+				// In the off chance this fails, we don't want to stop the task.
+				console.error("Failed to save API conversation history:", error)
+			}
+		}
+
+		this.apiConversationHistorySaveChain = this.apiConversationHistorySaveChain
+			.catch((error) => console.error("Failed to serialize API history save:", error))
+			.then(write)
+		await this.apiConversationHistorySaveChain
 	}
 
 	// Cline Messages
@@ -1426,6 +1476,10 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	}
 
 	private async addToClineMessages(message: ClineMessage) {
+		if (this.historyPersistenceFrozen) {
+			return
+		}
+
 		this.clineMessages.push(message)
 		const provider = this.providerRef.deref()
 		await provider?.postStateToWebview()
@@ -1444,10 +1498,14 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// kilocode_change end
 	}
 
-	public async overwriteClineMessages(newMessages: ClineMessage[]) {
+	public async overwriteClineMessages(newMessages: ClineMessage[], options: { force?: boolean } = {}) {
+		if (this.historyPersistenceFrozen && !options.force) {
+			return
+		}
+
 		this.clineMessages = newMessages
 		restoreTodoListForTask(this)
-		await this.saveClineMessages()
+		await this.saveClineMessages(options)
 
 		// When overwriting messages (e.g., during task resume), repopulate the cloud sync tracking Set
 		// with timestamps from all non-partial messages to prevent re-syncing previously synced messages
@@ -1460,6 +1518,10 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	}
 
 	private async updateClineMessage(message: ClineMessage) {
+		if (this.historyPersistenceFrozen) {
+			return
+		}
+
 		const provider = this.providerRef.deref()
 		await provider?.postMessageToWebview({ type: "messageUpdated", clineMessage: message })
 		this.emit(RooCodeEventName.Message, { action: "updated", message })
@@ -1480,62 +1542,79 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// kilocode_change end
 	}
 
-	private async saveClineMessages() {
-		try {
-			await saveTaskMessages({
-				messages: this.clineMessages,
-				taskId: this.taskId,
-				globalStoragePath: this.globalStoragePath,
-			})
-
-			if (this._taskApiConfigName === undefined) {
-				await this.taskApiConfigReady
-			}
-
-			// kilocode_change start
-			// Post directly to webview for CLI to react to file save.
-			// Keep this isolated so filesystem issues don't prevent token usage
-			// updates (important for unit tests and degraded environments).
-			try {
-				const taskDir = await getTaskDirectoryPath(this.globalStoragePath, this.taskId)
-				const filePath = path.join(taskDir, GlobalFileNames.uiMessages)
-				const provider = this.providerRef.deref()
-				if (provider) {
-					await provider.postMessageToWebview({
-						type: "taskMessagesSaved",
-						payload: [this.taskId, filePath],
-					})
-				}
-			} catch (error) {
-				console.warn("Failed to notify webview about saved task messages:", error)
-			}
-			// kilocode_change end
-
-			const { historyItem, tokenUsage } = await taskMetadata({
-				taskId: this.taskId,
-				rootTaskId: this.rootTaskId,
-				parentTaskId: this.parentTaskId,
-				taskNumber: this.taskNumber,
-				messages: this.clineMessages,
-				globalStoragePath: this.globalStoragePath,
-				workspace: this.cwd,
-				mode: this._taskMode || defaultModeSlug, // Use the task's own mode, not the current provider mode.
-				apiConfigName: this._taskApiConfigName, // Use the task's own provider profile, not the current provider profile.
-				initialStatus: this.continuationStatusOverride ?? this.initialStatus,
-				toolProtocol: this._taskToolProtocol, // Persist the locked tool protocol.
-			})
-
-			// Emit token/tool usage updates using debounced function
-			// The debounce with maxWait ensures:
-			// - Immediate first emit (leading: true)
-			// - At most one emit per interval during rapid updates (maxWait)
-			// - Final state is emitted when updates stop (trailing: true)
-			this.debouncedEmitTokenUsage(tokenUsage, this.toolUsage)
-
-			await this.providerRef.deref()?.updateTaskHistory(historyItem)
-		} catch (error) {
-			console.error("Failed to save messages:", error)
+	private async saveClineMessages(options: { force?: boolean } = {}) {
+		if (this.historyPersistenceFrozen && !options.force) {
+			return
 		}
+
+		const messages = [...this.clineMessages]
+		const force = options.force === true
+		const write = async () => {
+			if (this.historyPersistenceFrozen && !force) {
+				return
+			}
+
+			try {
+				await saveTaskMessages({
+					messages,
+					taskId: this.taskId,
+					globalStoragePath: this.globalStoragePath,
+				})
+
+				if (this._taskApiConfigName === undefined) {
+					await this.taskApiConfigReady
+				}
+
+				// kilocode_change start
+				// Post directly to webview for CLI to react to file save.
+				// Keep this isolated so filesystem issues don't prevent token usage
+				// updates (important for unit tests and degraded environments).
+				try {
+					const taskDir = await getTaskDirectoryPath(this.globalStoragePath, this.taskId)
+					const filePath = path.join(taskDir, GlobalFileNames.uiMessages)
+					const provider = this.providerRef.deref()
+					if (provider) {
+						await provider.postMessageToWebview({
+							type: "taskMessagesSaved",
+							payload: [this.taskId, filePath],
+						})
+					}
+				} catch (error) {
+					console.warn("Failed to notify webview about saved task messages:", error)
+				}
+				// kilocode_change end
+
+				const { historyItem, tokenUsage } = await taskMetadata({
+					taskId: this.taskId,
+					rootTaskId: this.rootTaskId,
+					parentTaskId: this.parentTaskId,
+					taskNumber: this.taskNumber,
+					messages,
+					globalStoragePath: this.globalStoragePath,
+					workspace: this.cwd,
+					mode: this._taskMode || defaultModeSlug, // Use the task's own mode, not the current provider mode.
+					apiConfigName: this._taskApiConfigName, // Use the task's own provider profile, not the current provider profile.
+					initialStatus: this.continuationStatusOverride ?? this.initialStatus,
+					toolProtocol: this._taskToolProtocol, // Persist the locked tool protocol.
+				})
+
+				// Emit token/tool usage updates using debounced function
+				// The debounce with maxWait ensures:
+				// - Immediate first emit (leading: true)
+				// - At most one emit per interval during rapid updates (maxWait)
+				// - Final state is emitted when updates stop (trailing: true)
+				this.debouncedEmitTokenUsage(tokenUsage, this.toolUsage)
+
+				await this.providerRef.deref()?.updateTaskHistory(historyItem)
+			} catch (error) {
+				console.error("Failed to save messages:", error)
+			}
+		}
+
+		this.clineMessagesSaveChain = this.clineMessagesSaveChain
+			.catch((error) => console.error("Failed to serialize UI history save:", error))
+			.then(write)
+		await this.clineMessagesSaveChain
 	}
 
 	// kilocode_change start: used by webview routing to inspect pending ask kinds
@@ -2099,15 +2178,10 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		}
 		// kilocode_change end
 
-		// Deeptask is designed as a long-lived cognitive session. Treat any
-		// attempt_completion as a soft completion: show the green final-looking
-		// answer, but do not transition the task lifecycle to completed. A later
-		// user message must always be able to continue the same task.
-		const currentMode = this._taskMode ?? (await this.getTaskMode())
-		if (currentMode.toLowerCase() === "deeptask") {
-			return true
-		}
-
+		// Completion and continued conversation are separate concerns. An initial
+		// DeepTask response must reach a real completed boundary so the next human
+		// message can start with fresh task state. Only concrete work performed in an
+		// explicit same-task continuation remains active for another follow-up turn.
 		return this.shouldKeepNextCompletionActive && this.activeContinuationWorkToolUsed
 	}
 
@@ -2129,25 +2203,6 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		this.activeContinuationWorkToolUsed = true
 	}
 
-	public async completeHostManagedFeedbackTodo(): Promise<void> {
-		if (!this.activeUserFeedbackTodoId || !this.activeContinuationWorkToolUsed) {
-			return
-		}
-
-		const todo = this.todoList?.find((item) => item.id === this.activeUserFeedbackTodoId)
-		if (!todo) {
-			this.activeUserFeedbackTodoId = undefined
-			return
-		}
-
-		todo.status = "completed"
-		this.activeUserFeedbackTodoId = undefined
-		await this.say(
-			"user_edit_todos",
-			JSON.stringify({ tool: "updateTodoList", todos: this.todoList ?? [], hostManagedFeedbackTurn: true }),
-		)
-	}
-
 	public normalizeTodoListForActiveContinuation(todos: TodoItem[]): TodoItem[] {
 		// A continuation is a new work turn. Never manufacture an in-progress item
 		// from a completed checklist: doing so reopens the old task and makes a
@@ -2166,6 +2221,13 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	}
 
 	private async promoteLastAssistantTextToSoftCompletion(): Promise<boolean> {
+		// A provider can return a final-looking answer without calling
+		// attempt_completion. That fallback must obey the same durable task-progress
+		// barrier as the tool path; otherwise it silently bypasses EXTRA/task.
+		if ((await this.getIncompleteTaskProgressItems()).length > 0) {
+			return false
+		}
+
 		const index = findLastIndex(
 			this.clineMessages,
 			(message) => message.type === "say" && message.say === "text" && message.partial !== true,
@@ -2244,58 +2306,33 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		return unfinished.some((todo) => !this.isMeaninglessProgressListItem(todo.content ?? ""))
 	}
 
+	private isLikelyActionableContinuation(continuationText: string): boolean {
+		const normalized = continuationText.toLowerCase().replace(/\s+/g, " ").trim()
+		if (!normalized) {
+			return false
+		}
+
+		// This is intentionally a high-precision host gate, not a replacement for
+		// semantic model judgment. Explicit implementation verbs and direct defect
+		// feedback must establish milestones before the agent can merely discuss them.
+		const actionablePatterns = [
+			/(修复|解决|处理|实现|添加|新增|改进|改善|优化|调整|更新|修改|重做|重新|继续|执行|排查|定位|检查|验证|补充|删除|移除|同步|安装|打包|发布)/,
+			/(不够|不及时|不积极|不正确|不一致|有问题|出错|错误|失败|缺失|遗漏|漏掉|没有生效|没生效|怎么不|为什么不)/,
+			/\b(fix|resolve|handle|implement|add|create|improve|optimize|adjust|update|change|modify|redo|continue|run|execute|investigate|diagnose|verify|validate|remove|delete|sync|install|package|publish)\b/,
+			/\b(not enough|too slow|incorrect|inconsistent|broken|failing|missing|omitted|does not work|doesn't work|why (?:did|do|does)n?'?t)\b/,
+		]
+
+		return actionablePatterns.some((pattern) => pattern.test(normalized))
+	}
+
 	private establishUserFeedbackWorkTurn(continuationText: string): void {
 		this.latestUserContinuationFocus = continuationText.trim()
-		// User feedback itself establishes the new work turn, but the previous checklist
-		// remains valuable structured context. Preserve every item's truthful status and
-		// append the latest feedback; the model can then decide whether the instruction
-		// extends, revises, or replaces earlier work without reopening completed items.
-		const previousTodos = this.todoList?.map((todo) => ({ ...todo })) ?? []
-		this.supersededContinuationTodoSignature = previousTodos.length
-			? this.getTodoContentSignature(previousTodos)
+		this.supersededContinuationTodoSignature = this.todoList?.length
+			? this.getTodoContentSignature(this.todoList)
 			: undefined
-		this.activeUserFeedbackTodoId = `user-feedback-${crypto.randomUUID()}`
-		this.todoList = [
-			...previousTodos,
-			{
-				id: this.activeUserFeedbackTodoId,
-				content: continuationText,
-				status: "in_progress",
-			},
-		]
-		this.requiresProgressListExpansion = false
-
-		// getLatestTodo() rebuilds from the newest updateTodoList tool row. Extend that
-		// row with the feedback item so resume/overwrite paths retain both old context
-		// and the new work-turn boundary.
-		for (let i = this.clineMessages.length - 1; i >= 0; i--) {
-			const msg = this.clineMessages[i]
-			if (
-				!((msg.type === "ask" && msg.ask === "tool") || (msg.type === "say" && msg.say === "user_edit_todos"))
-			) {
-				continue
-			}
-
-			try {
-				const parsed = JSON.parse(msg.text ?? "{}") as { tool?: string }
-				if (parsed?.tool !== "updateTodoList") {
-					continue
-				}
-
-				msg.text = JSON.stringify({
-					tool: "updateTodoList",
-					todos: this.todoList,
-					extendedByContinuation: true,
-					hostManagedFeedbackTurn: true,
-				})
-				void this.saveClineMessages().catch((error) => {
-					console.error("Failed to extend updateTodoList for continuation:", error)
-				})
-				break
-			} catch {
-				// Ignore unparsable tool rows and keep scanning older messages.
-			}
-		}
+		// The host records only the routing gate. The model must explicitly author
+		// milestones with update_todo_list; no feedback text becomes a Todo here.
+		this.requiresProgressListExpansion = this.isLikelyActionableContinuation(continuationText)
 	}
 
 	public shouldRequireProgressListExpansion(): boolean {
@@ -2346,44 +2383,28 @@ ${protocolHint}
 	}
 
 	private buildUserContinuationText(continuationText: string): string {
-		return `\n\nNew user feedback starts a new work turn:\n<explicit_instructions type="task_continuation">The message below is the user's current instruction and has highest priority over any prior completion, summary, resume instruction, or delivery state. Treat this as a new active task turn while preserving relevant context from the conversation and existing checklist. The host has appended this feedback as an in-progress work item without changing earlier item statuses. Determine from meaning whether the feedback extends, revises, or replaces earlier work; preserve relevant items, revise or remove obsolete items, and add concrete milestones when useful. Never reopen completed items merely to keep the task active. Start concrete work on the latest instruction immediately. Do not call update_todo_list merely to acknowledge the new turn. Do not call attempt_completion until actual work for this feedback has been performed. Final acceptance must address this latest instruction specifically and distinguish completed work, verification evidence, and any remaining risk or blocker.</explicit_instructions>\n<user_message>\n${continuationText}\n</user_message>`
+		// kilocode_change start
+		// Put the human's words first. Progress, archive, and completion policy already
+		// exists in the system prompt; repeating it here made the model answer the host
+		// mechanism instead of the new instruction.
+		return `<latest_human_message>\n${continuationText}\n</latest_human_message>\n\nTreat the message above as the current instruction and respond to its meaning directly.`
+		// kilocode_change end
 	}
 
 	private preserveLatestContinuationFocus(messages: ApiMessage[]): ApiMessage[] {
-		const focus = this.latestUserContinuationFocus?.trim()
-		if (!focus || !this.shouldKeepNextCompletionActive) {
-			return messages
-		}
-
 		// kilocode_change start
-		// The generated summary is historical evidence, while this bounded capsule is
-		// authoritative live state. Rebuild it after every successful transaction so
-		// stale todo snapshots cannot outrank newer feedback or accumulate across
-		// repeated condensation. This is synchronous local work and adds no API wait.
+		// Older builds appended the full latest feedback as a synthetic role:user
+		// message after each context rewrite. "visibility=silent" was only prose:
+		// providers still treated that newest user message as an instruction to answer,
+		// which caused the agent to repeat the same focus on later turns. Real feedback
+		// already persists as user_feedback and as the host-owned in-progress todo that
+		// is emitted in environment_details for every request. Remove legacy capsules
+		// during any rewrite, but never add a new user-role control message.
 		const marker = '<current_task_focus source="latest_user_continuation">'
-		const messagesWithoutOldCapsule = messages.filter(
+		return messages.filter(
 			(message) =>
 				!(message.role === "user" && typeof message.content === "string" && message.content.startsWith(marker)),
 		)
-		const todos = this.todoList ?? []
-		const completedCount = todos.filter((todo) => todo.status === "completed").length
-		const openTodos = todos.filter((todo) => todo.status !== "completed").slice(0, 12)
-		const openTodoLines = openTodos.length
-			? openTodos.map((todo) => `- [${todo.status}] ${todo.content.slice(0, 300)}`).join("\n")
-			: "- None recorded; derive concrete next actions from the active instruction."
-		const omittedOpenCount = Math.max(0, todos.length - completedCount - openTodos.length)
-		const omittedLine =
-			omittedOpenCount > 0 ? `\n- ${omittedOpenCount} additional open checklist items omitted.` : ""
-
-		return [
-			...messagesWithoutOldCapsule,
-			{
-				role: "user",
-				// kilocode_change: keep host focus authoritative without repeating it in user-facing updates.
-				content: `${marker}\n${focus}\n</current_task_focus>\n<current_task_state authority="host" visibility="silent">\nThe instruction above is silent control state and the active acceptance target. It has priority over summaries, old completions, and checklist wording. Use it to choose and validate concrete work, but do not quote, paraphrase, or restate it in routine intermediary updates, tool preambles, or the final answer. Mention the target only when the user asks for status, when the target changes, or when a concise reference is necessary to explain a blocker or result.\nChecklist facts: ${completedCount} completed, ${todos.length - completedCount} open. Completed items are evidence only and must not be reopened automatically.\nOpen checklist snapshot:\n${openTodoLines}${omittedLine}\nResolve any conflict by following the active instruction while preserving truthful checklist statuses. Continue concrete work; validate against the active instruction before completion.\n</current_task_state>`,
-				ts: Date.now(),
-			},
-		]
 		// kilocode_change end
 	}
 
@@ -2476,10 +2497,12 @@ ${protocolHint}
 			return
 		}
 
+		// Do not project an unchanged native checklist into the task file here. Explicit
+		// work and defect feedback are gated below until the model authors a milestone;
+		// ambiguous messages still reach the model for semantic classification first.
 		await this.markTaskActiveForUserContinuation()
 		this.shouldKeepNextCompletionActive = true
 		this.activeContinuationWorkToolUsed = false
-		this.requiresProgressListExpansion = false
 		// The previous soft completion has been consumed by this user turn.
 		this.softCompletionBoundaryPending = false
 		this.endCurrentLoopAfterActiveCompletion = false
@@ -2754,8 +2777,23 @@ ${protocolHint}
 		contextCondense?: ContextCondense,
 		contextTruncation?: ContextTruncation,
 	): Promise<undefined> {
+		// A branch-replacement edit has already committed a replacement prefix for a
+		// new Task instance. Old stream, tool, usage, and retry callbacks must become
+		// no-ops instead of adding a late UI message that could be restored as context.
+		if (this.historyPersistenceFrozen) {
+			return undefined
+		}
+
 		if (this.abort) {
 			throw new Error(`[Kilo Code#say] task ${this.taskId}.${this.instanceId} aborted`)
+		}
+
+		if (type === "completion_result" && partial !== true && text) {
+			const completionResultKey = `${this.taskLoopGeneration}:${text}`
+			if (this.lastCompletionResultKey === completionResultKey) {
+				return undefined
+			}
+			this.lastCompletionResultKey = completionResultKey
 		}
 
 		if (partial !== undefined) {
@@ -2923,7 +2961,9 @@ ${protocolHint}
 		// kilocode_change end
 
 		// The todo list is already set in the constructor if initialTodos were provided
-		// No need to add any messages - the todoList property is already set
+		// No need to add any messages - the todoList property is already set. The
+		// focused task file is written only after the model judges new work and calls
+		// update_todo_list.
 
 		await this.providerRef.deref()?.postStateToWebview()
 
@@ -3009,9 +3049,8 @@ ${protocolHint}
 		this.clineMessages = await this.getSavedClineMessages()
 		// kilocode_change start
 		// Rehydrate the persisted checklist before a resumed user message establishes
-		// its host-managed work turn. Otherwise the feedback item replaces the in-memory
-		// projection and the model loses the structured context needed to decide whether
-		// the new instruction extends, revises, or replaces earlier work.
+		// its model-judged work turn. The existing file is read for context; it is not
+		// rewritten until the model submits an agent-authored update_todo_list call.
 		restoreTodoListForTask(this)
 		// kilocode_change end
 
@@ -3093,12 +3132,15 @@ ${protocolHint}
 		let responseImages: string[] | undefined
 
 		if (response === "messageResponse") {
+			const continuationText = text || "Continue from the latest user feedback"
 			await this.markTaskActiveForUserContinuation()
 			this.shouldKeepNextCompletionActive = true
 			this.activeContinuationWorkToolUsed = false
+			// Restored human input has the same priority as live input. Do not gate it on
+			// archived progress state before the model can understand the message.
 			this.requiresProgressListExpansion = false
 			if (!isEditedResend) {
-				this.establishUserFeedbackWorkTurn(text || "Continue from the latest user feedback")
+				this.establishUserFeedbackWorkTurn(continuationText)
 			}
 			await this.say("user_feedback", text, images)
 			responseText = text
@@ -3654,6 +3696,7 @@ ${protocolHint}
 		// Each loop owns a generation id. An older loop's finally must not clear
 		// isTaskLoopActive after a newer continuation has already begun.
 		const loopGeneration = ++this.taskLoopGeneration
+		this.lastCompletionResultKey = undefined
 		this.isTaskLoopActive = true
 		// kilocode_change end
 		this.emit(RooCodeEventName.TaskStarted)
@@ -5785,6 +5828,8 @@ ${protocolHint}
 		const metadata: ApiHandlerCreateMessageMetadata = {
 			mode: mode,
 			taskId: this.taskId,
+			// kilocode_change: preserve task tracking while isolating this Task instance's provider session.
+			sessionId: this.providerSessionId,
 			suppressPreviousResponseId: this.skipPrevResponseIdOnce,
 			// Include tools and tool protocol when using native protocol and model supports it
 			...(shouldIncludeTools
@@ -6289,6 +6334,210 @@ ${protocolHint}
 		this.tokenUsageSnapshotAt = this.clineMessages.at(-1)?.ts
 
 		return this.tokenUsageSnapshot
+	}
+
+	/**
+	 * Writes the focused task-file checklist before optionally projecting the same
+	 * list into the native UI. User feedback is never serialized: durable progress
+	 * contains only agent-authored work milestones.
+	 */
+	public async syncTaskProgressWithTodoList(todos: TodoItem[] = this.todoList ?? []): Promise<void> {
+		// An empty tool payload is not an authored checklist. Preserve the durable
+		// file and native UI instead of creating a fake milestone or clearing state.
+		if (!Array.isArray(todos) || todos.length === 0) {
+			return
+		}
+		const taskDirectory = path.join(this.cwd, "EXTRA", "task")
+		const initialTaskName = this.metadata?.task?.replace(/\s+/g, " ").trim() || "Active task"
+		// A long-lived DeepTask session can receive a distinct request after its old
+		// progress file was archived. If no active file still carries this task ID,
+		// name the new durable focus from the model-authored checklist instead of
+		// recreating the archived initial-task filename.
+		const actionableFocus = todos
+			.find((todo) => todo.status !== "completed")
+			?.content.replace(/\s+/g, " ")
+			.trim()
+		const taskName = this.shouldKeepNextCompletionActive && actionableFocus ? actionableFocus : initialTaskName
+		const progressPath = await this.findTaskProgressFilePath(taskDirectory, taskName, todos[0]?.content)
+		const taskIdMarker = `<!-- deeptask-task-id:${this.taskId} -->`
+		const nativeTodoMarker = "<!-- deeptask-native-todo-list -->"
+		const legacyActiveMarker = "<!-- deeptask-active-work-item -->"
+		const todoLines = todos.map((todo) => {
+			const checkbox = todo.status === "completed" ? "[x]" : todo.status === "in_progress" ? "[-]" : "[ ]"
+			const content = todo.content.replace(/\s+/g, " ").trim().slice(0, 500)
+			return `${"    ".repeat(todo.depth ?? 0)}- ${checkbox} ${content}`
+		})
+		const displayTaskName = taskName.replace(/\s+/g, " ").trim().slice(0, 160) || "Active task"
+		const syncedSection = `${nativeTodoMarker}\n## Task progress\n\n${todoLines.join("\n")}\n<!-- /deeptask-native-todo-list -->`
+		let content: string
+
+		try {
+			content = await fsp.readFile(progressPath, "utf8")
+			const nativeSectionPattern = new RegExp(
+				`${nativeTodoMarker}[\\s\\S]*?<!-- /deeptask-native-todo-list -->\\r?\\n?`,
+			)
+			if (nativeSectionPattern.test(content)) {
+				content = content.replace(nativeSectionPattern, `${syncedSection}\n`)
+			} else {
+				// The first sync may encounter a hand-authored checklist. It is the same
+				// work list that the native UI will display, so replace that block instead
+				// of appending a second copy. Preserve headings and non-checklist notes.
+				const lines = content
+					.replace(new RegExp(`${legacyActiveMarker}[\\s\\S]*?(?=\\n\\n|$)`), "")
+					.split(/\\r?\\n/)
+				const checklistLines = lines
+					.map((line, index) => ({ line, index }))
+					.filter(({ line }) => /^\\s*-\\s+\\[\\s*[ xX\\-~]\\s*\\]\\s+/.test(line))
+				const firstChecklistIndex = checklistLines[0]?.index
+				const lastChecklistIndex = checklistLines.at(-1)?.index
+				if (firstChecklistIndex !== undefined && lastChecklistIndex !== undefined) {
+					lines.splice(firstChecklistIndex, lastChecklistIndex - firstChecklistIndex + 1)
+				}
+				// Keep hand-authored context bounded. Progress files are durable state, not
+				// transcripts, so an accidental pasted prompt must not grow indefinitely.
+				const preservedContent = lines.join("\\n").trimEnd().slice(0, 4_000)
+				content = `${preservedContent}\n\n${syncedSection}\n`
+			}
+			const taskMarkerPattern = /<!-- deeptask-task-id:[^>]+ -->/g
+			content = taskMarkerPattern.test(content)
+				? content.replace(taskMarkerPattern, taskIdMarker)
+				: `${content.trimEnd()}\n\n${taskIdMarker}\n`
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+				throw error
+			}
+			content = `# DeepTask ${displayTaskName}\n\n${taskIdMarker}\n\n${syncedSection}\n`
+		}
+
+		await fsp.mkdir(taskDirectory, { recursive: true })
+		await fsp.writeFile(progressPath, content, "utf8")
+	}
+
+	private async hasActiveTaskProgressFile(): Promise<boolean> {
+		const taskDirectory = path.join(this.cwd, "EXTRA", "task")
+		const taskIdMarker = `<!-- deeptask-task-id:${this.taskId} -->`
+
+		try {
+			const entries = await fsp.readdir(taskDirectory, { withFileTypes: true })
+			for (const entry of entries) {
+				if (!entry.isFile() || !entry.name.endsWith(".md")) continue
+				const content = await fsp.readFile(path.join(taskDirectory, entry.name), "utf8")
+				if (content.includes(taskIdMarker)) return true
+			}
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+		}
+
+		return false
+	}
+
+	private async findTaskProgressFilePath(
+		taskDirectory: string,
+		taskName: string,
+		firstMilestone?: string,
+	): Promise<string> {
+		const defaultPath = path.join(taskDirectory, `${this.getTaskProgressFileStem(taskName)}.md`)
+		const markedMatches: string[] = []
+		const milestoneMatches: string[] = []
+		const normalizedMilestone = firstMilestone?.replace(/\s+/g, " ").trim()
+		try {
+			const entries = await fsp.readdir(taskDirectory, { withFileTypes: true })
+			for (const entry of entries) {
+				if (!entry.isFile() || !entry.name.endsWith(".md")) continue
+				const candidatePath = path.join(taskDirectory, entry.name)
+				const candidateContent = await fsp.readFile(candidatePath, "utf8")
+				if (candidateContent.includes(`<!-- deeptask-task-id:${this.taskId} -->`)) {
+					markedMatches.push(candidatePath)
+					continue
+				}
+				if (
+					normalizedMilestone &&
+					candidateContent.split(/\r?\n/).some((line) => {
+						const match = line.match(/^\s*(?:[-*+]\s+)?\[[ x-]\]\s+(.+)$/i)
+						return match?.[1].replace(/\s+/g, " ").trim() === normalizedMilestone
+					})
+				) {
+					milestoneMatches.push(candidatePath)
+				}
+			}
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+		}
+		// Prefer the current host identity. If a restart or competing host assigned a
+		// different ID, a unique authored milestone is sufficient to transfer the
+		// active file to this Task. Ambiguous milestone matches are never guessed.
+		if (markedMatches.length > 0) {
+			const canonicalPath = markedMatches.sort()[0]
+			// A previous host could have written the same marker to more than one file.
+			// Keep one deterministic owner and remove only duplicate active files; the
+			// finished archive is outside this directory scan and is never touched.
+			await Promise.all(
+				markedMatches.slice(1).map(async (duplicatePath) => {
+					try {
+						await fsp.unlink(duplicatePath)
+					} catch (error) {
+						if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+					}
+				}),
+			)
+			return canonicalPath
+		}
+		return milestoneMatches.length === 1 ? milestoneMatches[0] : defaultPath
+	}
+
+	private getTaskProgressFileStem(taskText: string): string {
+		const readableName = taskText
+			.normalize("NFKC")
+			.replace(/[^\p{L}\p{N}]+/gu, "_")
+			.replace(/^_+|_+$/g, "")
+			.slice(0, 80)
+
+		return readableName ? `DEEPTASK_${readableName}_PROGRESS` : `DEEPTASK_${this.taskId}_PROGRESS`
+	}
+
+	/**
+	 * Returns every unchecked task-progress checklist item under the current
+	 * workspace. The `finished` archive is intentionally excluded: completed
+	 * task records belong there and must not block unrelated future work.
+	 */
+	async getIncompleteTaskProgressItems(): Promise<string[]> {
+		const taskDirectory = path.join(this.cwd, "EXTRA", "task")
+		const finishedTaskDirectory = path.join(taskDirectory, "finished")
+		const incompleteItems: string[] = []
+
+		const collect = async (directory: string): Promise<void> => {
+			let entries: fs.Dirent[]
+			try {
+				entries = await fsp.readdir(directory, { withFileTypes: true })
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") return
+				throw error
+			}
+
+			for (const entry of entries) {
+				const entryPath = path.join(directory, entry.name)
+				if (entry.isDirectory()) {
+					if (entryPath === finishedTaskDirectory) {
+						continue
+					}
+					await collect(entryPath)
+					continue
+				}
+				if (!entry.isFile() || !entry.name.endsWith(".md")) continue
+
+				const content = await fsp.readFile(entryPath, "utf8")
+				const lines = content.split(/\r?\n/)
+				for (const line of lines) {
+					const match = line.match(/^\s*(?:[-*+]\s+)?\[\s*([ -])\s*\]\s+(.+)$/)
+					if (match) {
+						incompleteItems.push(`${path.relative(taskDirectory, entryPath)}: ${match[2]}`)
+					}
+				}
+			}
+		}
+
+		await collect(taskDirectory)
+		return incompleteItems
 	}
 
 	public get cwd() {

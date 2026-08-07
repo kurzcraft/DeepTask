@@ -40,7 +40,8 @@ export function formatReminderSection(
 	lines.push("| # | Content | Status |")
 	lines.push("|---|---------|--------|")
 	todoList.forEach((item, idx) => {
-		const escapedContent = item.content.replace(/\\/g, "\\\\").replace(/\|/g, "\\|")
+		const depthPrefix = item.depth ? `${"  ".repeat(item.depth)}↳ ` : ""
+		const escapedContent = `${depthPrefix}${item.content}`.replace(/\\/g, "\\\\").replace(/\|/g, "\\|")
 		lines.push(`| ${idx + 1} | ${escapedContent} | ${statusMap[item.status] || item.status} |`)
 	})
 	lines.push("")

@@ -177,10 +177,13 @@ export class OpenAiCodexHandler extends BaseProvider /* kilocode_change: impleme
 		// Notably: max_output_tokens and prompt_cache_retention may be rejected
 		const requestBody = this.buildRequestBody(model, formattedInput, systemPrompt, reasoningEffort, metadata)
 
-		// Make the request with retry on auth failure
+		// Make the request with retry on auth failure. A persisted taskId can survive
+		// an edited branch replacement, so use the instance-scoped session key for
+		// server-side session affinity instead of letting old remote context reattach.
+		const sessionId = metadata?.sessionId ?? this.sessionId
 		for (let attempt = 0; attempt < 2; attempt++) {
 			try {
-				yield* this.executeRequest(requestBody, model, accessToken, metadata?.taskId)
+				yield* this.executeRequest(requestBody, model, accessToken, sessionId)
 				return
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error)
@@ -342,7 +345,7 @@ export class OpenAiCodexHandler extends BaseProvider /* kilocode_change: impleme
 		requestBody: any,
 		model: OpenAiCodexModel,
 		accessToken: string,
-		taskId?: string,
+		sessionId?: string,
 	): ApiStream {
 		// Create AbortController for cancellation
 		this.abortController = new AbortController()
@@ -357,7 +360,7 @@ export class OpenAiCodexHandler extends BaseProvider /* kilocode_change: impleme
 				// Build Codex-specific headers. Authorization is provided by the SDK apiKey.
 				const codexHeaders: Record<string, string> = {
 					originator: "kilo-code", // kilocode_change
-					session_id: taskId || this.sessionId,
+					session_id: sessionId || this.sessionId,
 					"User-Agent": DEFAULT_HEADERS["User-Agent"], // kilocode_change
 					...(accountId ? { "ChatGPT-Account-Id": accountId } : {}),
 				}
@@ -394,7 +397,7 @@ export class OpenAiCodexHandler extends BaseProvider /* kilocode_change: impleme
 				}
 			} catch (_sdkErr) {
 				// Fallback to manual SSE via fetch (Codex backend).
-				yield* this.makeCodexRequest(requestBody, model, accessToken, taskId)
+				yield* this.makeCodexRequest(requestBody, model, accessToken, sessionId)
 			}
 		} finally {
 			this.abortController = undefined
@@ -489,7 +492,7 @@ export class OpenAiCodexHandler extends BaseProvider /* kilocode_change: impleme
 		requestBody: any,
 		model: OpenAiCodexModel,
 		accessToken: string,
-		taskId?: string,
+		sessionId?: string,
 	): ApiStream {
 		// Per the implementation guide: route to Codex backend with Bearer token
 		const url = `${CODEX_API_BASE_URL}/responses`
@@ -502,7 +505,7 @@ export class OpenAiCodexHandler extends BaseProvider /* kilocode_change: impleme
 			"Content-Type": "application/json",
 			Authorization: `Bearer ${accessToken}`,
 			originator: "kilo-code", // kilocode_change
-			session_id: taskId || this.sessionId,
+			session_id: sessionId || this.sessionId,
 			"User-Agent": DEFAULT_HEADERS["User-Agent"], // kilocode_change
 		}
 

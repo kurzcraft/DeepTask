@@ -86,10 +86,30 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 			task.consecutiveMistakeCount = 0
 
 			// kilocode_change start
-			// The host created this item when feedback arrived. Once concrete work has
-			// happened, close only that host-managed item before applying the user's
-			// normal open-todo completion policy.
-			await task.completeHostManagedFeedbackTodo?.()
+			// EXTRA/task is the durable source of truth for completion. Its active
+			// Markdown state takes precedence over the prompt and in-memory todo list:
+			// no active item, including a host-generated current-task item, may be
+			// silently excluded. Completed task archives in EXTRA/task/finished are
+			// intentionally outside this gate.
+			const incompleteTaskProgressItems = (await task.getIncompleteTaskProgressItems?.()) ?? []
+			if (incompleteTaskProgressItems.length > 0) {
+				task.consecutiveMistakeCount++
+				task.recordToolError("attempt_completion")
+				pushToolResult(
+					formatResponse.toolError(
+						"Cannot complete task while EXTRA/task contains incomplete checklist items. " +
+							"Update every matching task progress file first. Open items: " +
+							incompleteTaskProgressItems.slice(0, 10).join("; "),
+					),
+				)
+				return
+			}
+
+			// The progress file is user-visible durable state. Do not mutate a pending
+			// item merely because completion was requested; it must already be checked
+			// by explicit task work before this gate can pass. Only the model's explicit
+			// update_todo_list call may change Todo state.
+
 			const preventCompletionWithOpenTodos = vscode.workspace
 				.getConfiguration(Package.name)
 				.get<boolean>("preventCompletionWithOpenTodos", false)
@@ -259,11 +279,13 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 		const visibleResult = this.removeClosingTag("result", result, block.partial)
 
 		// kilocode_change start
-		// The final execute path rejects completion before concrete continuation work,
+		// The final execute path rejects task-progress and continuation violations,
 		// but native/XML streaming reaches handlePartial first. Do not render even an
-		// empty green completion row here; otherwise the rejected tool still looks like
-		// a successful repeat of the previous task completion.
-		if (task.shouldRejectPrematureActiveContinuationCompletion()) {
+		// empty green completion row for a rejected completion attempt. Use the same
+		// active task-file gate (excluding finished archives) as the final execution
+		// path.
+		const incompleteTaskProgressItems = (await task.getIncompleteTaskProgressItems?.()) ?? []
+		if (incompleteTaskProgressItems.length > 0 || task.shouldRejectPrematureActiveContinuationCompletion()) {
 			return
 		}
 

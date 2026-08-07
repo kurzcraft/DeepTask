@@ -354,25 +354,21 @@ export class TerminalProcess extends BaseTerminalProcess {
 			this.emitRemainingBufferIfListening()
 		} else {
 			const errorMsg =
-				"VSCE output start escape sequence (]633;C or ]133;C) not received, but the stream has started. Upstream VSCE Bug?"
-
+				"VSCE output start escape sequence (]633;C or ]133;C) not received, but the stream has started."
 			const inspectPreOutput = inspect(preOutput, { colors: false, breakLength: Infinity })
-			console.error(`[Terminal Process] ${errorMsg} preOutput: ${inspectPreOutput}`)
+			console.warn(`[Terminal Process] ${errorMsg} Falling back to raw stream output: ${inspectPreOutput}`)
 
-			// Emit no_shell_integration event
-			this.emit("no_shell_integration", errorMsg)
-
-			// Emit completed event with error message
+			// VSCodium can expose a readable command stream without emitting OSC 633/133
+			// start markers. The command has still run, so preserve its output instead of
+			// emitting no_shell_integration here. That event is a terminal-abort signal and
+			// its constructor listener would otherwise complete the process with a placeholder
+			// before the preserved raw output can be delivered.
+			this.fullOutput = this.removeEscapeSequences(preOutput)
 			this.emit(
 				"completed",
-				"<VSCE shell integration markers not found: terminal output and command execution status is unknown>\n" +
-					`<preOutput>${inspectPreOutput}</preOutput>\n` +
-					"AI MODEL: You MUST notify the user with the information above so they can open a bug report.",
+				`${this.fullOutput}\n<VSCE shell integration start marker missing; raw terminal output preserved.>`,
 			)
-
 			this.continue()
-
-			// Return early since we can't process output without shell integration markers
 			return
 		}
 
@@ -395,7 +391,8 @@ export class TerminalProcess extends BaseTerminalProcess {
 				"\n<VSCE shell execution end event not received after stream closed; treated stream close as command completion.>"
 		}
 		if (this.terminal.isClosed()) {
-			output += "\n<VSCE terminal shell closed before command completion; treated terminal closure as command completion.>"
+			output +=
+				"\n<VSCE terminal shell closed before command completion; treated terminal closure as command completion.>"
 		}
 		this.emit("completed", output)
 		this.emit("continue")

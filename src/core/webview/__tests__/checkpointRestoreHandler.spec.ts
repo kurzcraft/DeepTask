@@ -136,12 +136,14 @@ describe("checkpointRestoreHandler", () => {
 				apiConversationHistoryIndex: 2,
 			})
 
-			// Verify checkpoint restore was called with edit operation
+			// Verify checkpoint restore was called with edit operation and the exact
+			// API-history boundary used to isolate the replacement branch.
 			expect(mockCline.checkpointRestore).toHaveBeenCalledWith({
 				ts: 3,
 				commitHash: "abc123",
 				mode: "restore",
 				operation: "edit",
+				apiConversationHistoryIndex: 2,
 			})
 		})
 
@@ -209,6 +211,11 @@ describe("checkpointRestoreHandler", () => {
 				operation: "edit",
 				editData,
 			})
+
+			// Verify checkpoint restore was given the exact edit boundary.
+			expect(mockCline.checkpointRestore).toHaveBeenCalledWith(
+				expect.objectContaining({ apiConversationHistoryIndex: 2 }),
+			)
 
 			// Verify saveTaskMessages was NOT called for edit operation
 			expect(saveTaskMessages).not.toHaveBeenCalled()

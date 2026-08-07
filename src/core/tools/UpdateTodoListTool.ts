@@ -52,6 +52,7 @@ export class UpdateTodoListTool extends BaseTool<"update_todo_list"> {
 				id: t.id,
 				content: t.content,
 				status: normalizeStatus(t.status),
+				...(t.depth ? { depth: t.depth } : {}), // kilocode_change
 			}))
 			// kilocode_change start
 			const requestedAllCompleted =
@@ -97,8 +98,13 @@ export class UpdateTodoListTool extends BaseTool<"update_todo_list"> {
 				)
 			}
 
-			await setTodoListForTask(task, normalizedTodos)
 			// kilocode_change start
+			// The focused task Markdown is the durable source for a newly judged work
+			// item. Persist its agent-authored checklist before mutating the native list;
+			// this preserves the required file -> UI ordering even if the process stops
+			// between the two operations.
+			await task.syncTaskProgressWithTodoList(normalizedTodos)
+			await setTodoListForTask(task, normalizedTodos)
 			task.markProgressListExpandedForContinuation(normalizedTodos)
 			// kilocode_change end
 
@@ -183,6 +189,12 @@ export function getTodoListForTask(cline: Task): TodoItem[] | undefined {
 export async function setTodoListForTask(cline?: Task, todos?: TodoItem[]) {
 	if (cline === undefined) return
 	cline.todoList = Array.isArray(todos) ? todos : []
+
+	// `currentTaskTodos` is part of the provider state snapshot consumed by the
+	// expandable top todo panel. Updating only Task.todoList leaves that panel
+	// stale until an unrelated state refresh occurs, so publish the new list at
+	// the same durable-file -> native-list synchronization boundary.
+	await cline.providerRef.deref()?.postStateToWebview()
 }
 
 export function restoreTodoListForTask(cline: Task, todoList?: TodoItem[]) {
@@ -199,7 +211,7 @@ function todoListToMarkdown(todos: TodoItem[]): string {
 			let box = "[ ]"
 			if (t.status === "completed") box = "[x]"
 			else if (t.status === "in_progress") box = "[-]"
-			return `${box} ${t.content}`
+			return `${"    ".repeat(t.depth ?? 0)}${box} ${t.content}`
 		})
 		.join("\n")
 }
@@ -212,25 +224,27 @@ function normalizeStatus(status: string | undefined): TodoStatus {
 
 export function parseMarkdownChecklist(md: string): TodoItem[] {
 	if (typeof md !== "string") return []
-	const lines = md
+	const checklistLines = md
 		.split(/\r?\n/)
-		.map((l) => l.trim())
-		.filter(Boolean)
+		.filter((line) => line.trim())
+		.map((line) => ({ line, indent: line.match(/^\s*/)?.[0].replace(/\t/g, "    ").length ?? 0 }))
+		.filter(({ line }) => /^(\s*)(?:-\s*)?\[\s*[ xX\-~]\s*\]\s+/.test(line))
+	const baseIndent = checklistLines.length > 0 ? Math.min(...checklistLines.map(({ indent }) => indent)) : 0
 	const todos: TodoItem[] = []
-	for (const line of lines) {
-		const match = line.match(/^(?:-\s*)?\[\s*([ xX\-~])\s*\]\s+(.+)$/)
+	for (const { line, indent } of checklistLines) {
+		const match = line.match(/^\s*(?:-\s*)?\[\s*([ xX\-~])\s*\]\s+(.+)$/)
 		if (!match) continue
 		let status: TodoStatus = "pending"
 		if (match[1] === "x" || match[1] === "X") status = "completed"
 		else if (match[1] === "-" || match[1] === "~") status = "in_progress"
-		const id = crypto
-			.createHash("md5")
-			.update(match[2] + status)
-			.digest("hex")
+		const depth = Math.floor(Math.max(0, indent - baseIndent) / 4)
+		const content = match[2].trim()
+		const id = crypto.createHash("md5").update(`${depth}:${content}${status}`).digest("hex")
 		todos.push({
 			id,
-			content: match[2],
+			content,
 			status,
+			...(depth > 0 ? { depth } : {}),
 		})
 	}
 	return todos
@@ -249,6 +263,8 @@ function validateTodos(todos: any[]): { valid: boolean; error?: string } {
 			return { valid: false, error: `Item ${i + 1} is missing content` }
 		if (t.status && !todoStatusSchema.options.includes(t.status as TodoStatus))
 			return { valid: false, error: `Item ${i + 1} has invalid status` }
+		if (t.depth !== undefined && (!Number.isInteger(t.depth) || t.depth < 0))
+			return { valid: false, error: `Item ${i + 1} has invalid depth` }
 	}
 	return { valid: true }
 }

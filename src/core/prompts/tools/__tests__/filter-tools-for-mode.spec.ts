@@ -965,6 +965,27 @@ describe("getToolDescriptionsForMode", () => {
 		)
 		expect(result).toContain("ask_followup_question")
 	})
+
+	it("should exclude provider-profile switching when it is disabled", () => {
+		const result = getToolDescriptionsForMode(
+			"code",
+			"/test",
+			false,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			{ alwaysAllowProviderProfileSwitch: false } as any,
+		)
+
+		expect(result).not.toContain("switch_provider_profile")
+	})
 })
 // kilocode_change end
 describe("resolveToolAlias", () => {

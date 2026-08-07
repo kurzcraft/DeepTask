@@ -91,6 +91,39 @@ describe("TerminalProcess", () => {
 			expect(terminalProcess.isHot).toBe(false)
 		})
 
+		it("preserves raw output when VSCodium omits shell start markers", async () => {
+			let completedOutput = ""
+			const continueSpy = vi.fn()
+			const noShellIntegrationSpy = vi.fn()
+			const rawStream = (async function* () {
+				yield "raw command output\n"
+				terminalProcess.emit("shell_execution_complete", { exitCode: 0 })
+				yield "second output"
+			})()
+
+			terminalProcess.on("completed", (output) => {
+				completedOutput = output || ""
+			})
+			terminalProcess.on("continue", continueSpy)
+			terminalProcess.on("no_shell_integration", noShellIntegrationSpy)
+			mockTerminal.shellIntegration.executeCommand.mockReturnValue({
+				read: vi.fn().mockReturnValue(rawStream),
+			})
+
+			const runPromise = terminalProcess.run("printf raw output")
+			terminalProcess.emit("stream_available", rawStream)
+
+			await expect(runPromise).resolves.toBeUndefined()
+			expect(completedOutput).toContain("raw command output")
+			expect(completedOutput).toContain("second output")
+			expect(completedOutput).toContain("raw terminal output preserved")
+			expect(completedOutput).not.toContain("output is unknown")
+			// Missing OSC markers are a recoverable protocol gap when the stream is readable.
+			// Do not emit no_shell_integration because that event completes with a placeholder.
+			expect(noShellIntegrationSpy).not.toHaveBeenCalled()
+			expect(continueSpy).toHaveBeenCalledTimes(1)
+		})
+
 		it("handles terminals without shell integration", async () => {
 			// Temporarily suppress the expected console.warn for this test
 			const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
@@ -251,7 +284,7 @@ describe("TerminalProcess", () => {
 			})
 
 			const runPromise = terminalProcess.run(
-				"python3 task.py 2>&1 | tee output.log; status=${PIPESTATUS[0]}; printf '\\nexit_status=%s\\n' \"$status\"; exit \"$status\"",
+				'python3 task.py 2>&1 | tee output.log; status=${PIPESTATUS[0]}; printf \'\\nexit_status=%s\\n\' "$status"; exit "$status"',
 			)
 			terminalProcess.emit("shell_execution_complete", { exitCode: 0 })
 
@@ -260,6 +293,34 @@ describe("TerminalProcess", () => {
 			expect(completedOutput).not.toContain("output is unknown")
 			expect(continueSpy).toHaveBeenCalledTimes(1)
 			expect(terminalProcess.isHot).toBe(false)
+		})
+
+		it("preserves delayed raw output when completion precedes a VSCodium stream without start markers", async () => {
+			let completedOutput = ""
+			const noShellIntegrationSpy = vi.fn()
+			const rawStream = (async function* () {
+				yield "late raw output\n"
+				yield "final raw tail"
+			})()
+
+			terminalProcess.on("completed", (output) => {
+				completedOutput = output || ""
+			})
+			terminalProcess.on("no_shell_integration", noShellIntegrationSpy)
+			mockTerminal.shellIntegration.executeCommand.mockReturnValue({
+				read: vi.fn().mockReturnValue(rawStream),
+			})
+
+			const runPromise = terminalProcess.run('obsidian vault=Obsidian search query="intermittent"')
+			terminalProcess.emit("shell_execution_complete", { exitCode: 0 })
+			await new Promise<void>((resolve) => setTimeout(resolve, 10))
+			terminalProcess.emit("stream_available", rawStream)
+
+			await expect(runPromise).resolves.toBeUndefined()
+			expect(completedOutput).toContain("late raw output")
+			expect(completedOutput).toContain("final raw tail")
+			expect(completedOutput).toContain("raw terminal output preserved")
+			expect(noShellIntegrationSpy).not.toHaveBeenCalled()
 		})
 
 		it("completes when shell execution ends but the output stream never closes", async () => {

@@ -27,6 +27,21 @@ function TodoIcon({ status, size = "sm" }: { status: string; size?: "sm" | "xs" 
 	}
 }
 
+function getTodoDepthClass(depth?: number) {
+	switch (Math.min(depth ?? 0, 4)) {
+		case 1:
+			return "ml-4"
+		case 2:
+			return "ml-8"
+		case 3:
+			return "ml-12"
+		case 4:
+			return "ml-16"
+		default:
+			return ""
+	}
+}
+
 export function AgentTodoList({ stats, isIntegrated = false }: AgentTodoListProps) {
 	const { t } = useTranslation("chat")
 	const [isExpanded, setIsExpanded] = useState(false)
@@ -134,6 +149,7 @@ export function AgentTodoList({ stats, isIntegrated = false }: AgentTodoListProp
 								data-todo-item
 								className={cn(
 									"flex items-center gap-2 py-0.5 px-2 rounded transition-colors",
+									getTodoDepthClass(todo.depth),
 									todo.status === "in_progress" && "bg-vscode-charts-yellow/10",
 								)}>
 								<TodoIcon status={todo.status} size="xs" />

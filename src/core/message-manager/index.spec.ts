@@ -10,6 +10,7 @@ describe("MessageManager", () => {
 		mockTask = {
 			clineMessages: [],
 			apiConversationHistory: [],
+			freezeHistoryPersistenceForBranchReplacement: vi.fn(),
 			overwriteClineMessages: vi.fn(),
 			overwriteApiConversationHistory: vi.fn(),
 		}
@@ -795,6 +796,97 @@ describe("MessageManager", () => {
 			expect(apiCall[0].ts).toBe(50) // Initial user message preserved
 			expect(apiCall[1].ts).toBe(200) // Assistant message preserved (was incorrectly removed before fix)
 			expect(apiCall[1].role).toBe("assistant")
+		})
+
+		it("should freeze the discarded instance and strictly remove raced assistant output for an edited resend", async () => {
+			mockTask.clineMessages = [
+				{ ts: 50, say: "user", text: "Initial request" },
+				{ ts: 100, say: "user_feedback", text: "edited message" },
+			]
+
+			mockTask.apiConversationHistory = [
+				{ ts: 50, role: "user", content: [{ type: "text", text: "Initial request" }] },
+				{
+					ts: 200,
+					role: "assistant",
+					content: [{ type: "text", text: "stale output from discarded branch" }],
+				},
+			]
+
+			await manager.rewindToTimestamp(100, { strictCutoff: true })
+
+			expect(mockTask.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
+			expect(mockTask.overwriteClineMessages).toHaveBeenCalledWith(
+				[{ ts: 50, say: "user", text: "Initial request" }],
+				{ force: true },
+			)
+			expect(mockTask.overwriteApiConversationHistory).toHaveBeenCalledWith(
+				[{ ts: 50, role: "user", content: [{ type: "text", text: "Initial request" }] }],
+				{ force: true },
+			)
+		})
+
+		it("should use the exact API boundary to remove untimestamped stale branch entries", async () => {
+			mockTask.clineMessages = [
+				{ ts: 50, say: "user", text: "Initial request" },
+				{ ts: 100, say: "user_feedback", text: "edited message" },
+			]
+			mockTask.apiConversationHistory = [
+				{ ts: 50, role: "user", content: [{ type: "text", text: "Initial request" }] },
+				{
+					role: "assistant",
+					content: [{ type: "text", text: "untimestamped stale branch output" }],
+				},
+				{
+					ts: 200,
+					role: "assistant",
+					content: [{ type: "text", text: "later stale branch output" }],
+				},
+			]
+
+			await manager.rewindToTimestamp(100, { strictCutoff: true, apiCutoffIndex: 1 })
+
+			expect(mockTask.overwriteApiConversationHistory.mock.calls[0][0]).toEqual([
+				{ ts: 50, role: "user", content: [{ type: "text", text: "Initial request" }] },
+			])
+		})
+
+		it("should discard untimestamped entries when no exact edit boundary exists", async () => {
+			mockTask.clineMessages = [
+				{ ts: 50, say: "user", text: "Initial request" },
+				{ ts: 100, say: "user_feedback", text: "edited message" },
+			]
+			mockTask.apiConversationHistory = [
+				{ ts: 50, role: "user", content: [{ type: "text", text: "Initial request" }] },
+				{
+					role: "assistant",
+					content: [{ type: "text", text: "unprovable stale branch output" }],
+				},
+			]
+
+			await manager.rewindToTimestamp(100, { strictCutoff: true })
+
+			expect(mockTask.overwriteApiConversationHistory).toHaveBeenCalledWith(
+				[{ ts: 50, role: "user", content: [{ type: "text", text: "Initial request" }] }],
+				{ force: true },
+			)
+		})
+
+		it("commits an unchanged strict API prefix before task rehydration", async () => {
+			mockTask.clineMessages = [
+				{ ts: 50, say: "user", text: "Initial request" },
+				{ ts: 100, say: "user_feedback", text: "edited message" },
+			]
+			mockTask.apiConversationHistory = [
+				{ ts: 50, role: "user", content: [{ type: "text", text: "Initial request" }] },
+			]
+
+			await manager.rewindToTimestamp(100, { strictCutoff: true })
+
+			expect(mockTask.overwriteApiConversationHistory).toHaveBeenCalledWith(
+				[{ ts: 50, role: "user", content: [{ type: "text", text: "Initial request" }] }],
+				{ force: true },
+			)
 		})
 
 		it("should handle normal case where timestamps are properly ordered", async () => {

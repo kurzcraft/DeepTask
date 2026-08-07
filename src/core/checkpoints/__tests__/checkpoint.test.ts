@@ -240,7 +240,7 @@ describe("Checkpoint functionality", () => {
 			expect(mockProvider.cancelTask).toHaveBeenCalled()
 		})
 
-		it("should restore checkpoint for edit operation", async () => {
+		it("should remove the edited branch before rehydrating a checkpoint edit", async () => {
 			await checkpointRestore(mockTask, {
 				ts: 2,
 				commitHash: "abc123",
@@ -252,11 +252,8 @@ describe("Checkpoint functionality", () => {
 			expect(mockTask.overwriteApiConversationHistory).toHaveBeenCalledWith([
 				{ ts: 1, role: "user", content: [{ type: "text", text: "Message 1" }] },
 			])
-			// For edit operation, should include the message being edited
-			expect(mockTask.overwriteClineMessages).toHaveBeenCalledWith([
-				{ ts: 1, say: "user", text: "Message 1" },
-				{ ts: 2, say: "assistant", text: "Message 2" },
-			])
+			// An edit replaces the target turn, so the restored task must not reload it.
+			expect(mockTask.overwriteClineMessages).toHaveBeenCalledWith([{ ts: 1, say: "user", text: "Message 1" }])
 			expect(mockProvider.cancelTask).toHaveBeenCalled()
 		})
 

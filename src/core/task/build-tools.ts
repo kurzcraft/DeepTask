@@ -128,18 +128,22 @@ export async function buildNativeToolsArrayWithRestrictions(options: BuildToolsO
 	// request state as the capability-safe fallback.
 	const liveProviderProfiles = provider.providerSettingsManager
 		? await provider.providerSettingsManager.listConfig()
-		: options.state?.listApiConfigMeta ?? []
+		: (options.state?.listApiConfigMeta ?? [])
 	const providerProfiles = liveProviderProfiles.map((profile) => ({
 		name: profile.name,
 		modelId: profile.modelId,
 	}))
 
 	// Build native tools with request-scoped settings and live provider profiles.
+	// A disabled provider-profile switch must not be advertised to the model. The
+	// execution-time approval check remains a defense for calls reconstructed from
+	// older histories, but it cannot prevent newly generated calls by itself.
 	const nativeTools = getNativeTools({
 		partialReadsEnabled,
 		maxConcurrentFileReads,
 		supportsImages,
 		providerProfiles,
+		providerProfileSwitchEnabled: options.state?.alwaysAllowProviderProfileSwitch !== false,
 	})
 
 	// Filter native tools based on mode restrictions.

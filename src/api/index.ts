@@ -75,6 +75,13 @@ export interface ApiHandlerCreateMessageMetadata {
 	 */
 	taskId: string
 	/**
+	 * Instance-scoped session ID for providers that retain opaque server-side
+	 * conversation state. It deliberately differs from `taskId`: persisted task
+	 * history can be rehydrated or branch-replaced, while a new Task instance must
+	 * not inherit discarded server-side context through a reused session key.
+	 */
+	sessionId?: string
+	/**
 	 * Current mode slug for provider-specific tracking:
 	 * - Requesty: Sent in extra metadata
 	 * - Unbound: Sent in unbound_metadata

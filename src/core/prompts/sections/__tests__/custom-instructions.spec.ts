@@ -1055,7 +1055,32 @@ describe("addCustomInstructions", () => {
 		expect(result).toContain("Task Progress File:")
 		expect(result).toContain("current workspace's EXTRA/task/ directory")
 		expect(result).toContain("First look in EXTRA/task/ for an existing matching file")
+		expect(result).toContain("HTML marker deeptask-task-id followed by the task ID is the authoritative identity")
+		expect(result).toContain("never generate a second active Markdown file or checklist for the same ID")
+		expect(result).toContain("update the existing marked file in place")
+		expect(result).toContain("Name new files from a concise, filesystem-safe form of the task title")
+		expect(result).toContain("never a UUID or opaque generated identifier")
+		expect(result).toContain("Keep one task's evolving checklist in its same Markdown file")
+		expect(result).toContain("appropriately indented Markdown checklist children")
+		expect(result).toContain("Before completion, check every checklist item in the task Markdown")
 		expect(result).toContain("Do not create task progress files in the workspace root")
+		expect(result).toContain("ordinary user feedback, and edited resends within an existing task are not new tasks")
+		expect(result).toContain("do not repeat task-start actions such as querying Obsidian or other long-term memory")
+		expect(result).toContain("smallest independently verifiable subtask granularity")
+		expect(result).toContain("Before starting a subtask, immediately mark its exact checklist item in_progress")
+		expect(result).toContain(
+			"A plain acknowledgement, clarification, status report, edited resend, or feedback about the current task is not a new executable task",
+		)
+		expect(result).toContain("after implementation and verification succeed, immediately mark it completed")
+		expect(result).toContain(
+			"Also update promptly when a tool fails, a blocker appears, or a material decision changes the plan",
+		)
+		expect(result).toContain("Before completion, check every checklist item in the task Markdown")
+		expect(result).toContain("move the fully completed Markdown into EXTRA/task/finished/")
+		expect(result).toContain(
+			"Completion is prohibited while any Markdown outside EXTRA/task/finished/ contains a pending or in-progress checklist item",
+		)
+		expect(result).toContain("This uses the same workspace artifact layout as EXTRA/bash/")
 		expect(result).toContain("EXTRA/bash/ for long-command scripts")
 		expect(result).toContain("EXTRA/output/ for durable command logs")
 	})

@@ -8,6 +8,14 @@ export interface RewindOptions {
 	includeTargetMessage?: boolean
 	/** Skip cleanup for special cases (default: false) */
 	skipCleanup?: boolean
+	/**
+	 * Remove every API message at or after the UI cutoff, even when timestamps are
+	 * skewed by streaming races. Required for edited resends because all content
+	 * after the edited message belongs to the discarded branch.
+	 */
+	strictCutoff?: boolean
+	/** Exact API-history index of the replaced UI message, when available. */
+	apiCutoffIndex?: number
 }
 
 interface ContextEventIds {
@@ -43,7 +51,7 @@ export class MessageManager {
 	 * @throws Error if timestamp not found in clineMessages
 	 */
 	async rewindToTimestamp(ts: number, options: RewindOptions = {}): Promise<void> {
-		const { includeTargetMessage = false, skipCleanup = false } = options
+		const { includeTargetMessage = false, skipCleanup = false, strictCutoff = false, apiCutoffIndex } = options
 
 		// Find the index in clineMessages
 		const clineIndex = this.task.clineMessages.findIndex((m) => m.ts === ts)
@@ -54,7 +62,7 @@ export class MessageManager {
 		// Calculate the actual cutoff index
 		const cutoffIndex = includeTargetMessage ? clineIndex + 1 : clineIndex
 
-		await this.performRewind(cutoffIndex, ts, { skipCleanup })
+		await this.performRewind(cutoffIndex, ts, { skipCleanup, strictCutoff, apiCutoffIndex })
 	}
 
 	/**
@@ -73,16 +81,23 @@ export class MessageManager {
 	 * Internal method that performs the actual rewind operation.
 	 */
 	private async performRewind(toIndex: number, cutoffTs: number, options: RewindOptions): Promise<void> {
-		const { skipCleanup = false } = options
+		const { skipCleanup = false, strictCutoff = false, apiCutoffIndex } = options
+
+		// An edited resend discards a branch while its stream or tool promise can
+		// still be resolving. Freeze normal writes before computing or persisting the
+		// prefix; only this rewind's explicit force writes may commit afterwards.
+		if (strictCutoff) {
+			this.task.freezeHistoryPersistenceForBranchReplacement?.()
+		}
 
 		// Step 1: Collect context event IDs from messages being removed
 		const removedIds = this.collectRemovedContextEventIds(toIndex)
 
 		// Step 2: Truncate clineMessages
-		await this.truncateClineMessages(toIndex)
+		await this.truncateClineMessages(toIndex, strictCutoff)
 
 		// Step 3: Truncate and clean API history (combined with cleanup for efficiency)
-		await this.truncateApiHistoryWithCleanup(cutoffTs, removedIds, skipCleanup)
+		await this.truncateApiHistoryWithCleanup(cutoffTs, removedIds, skipCleanup, strictCutoff, apiCutoffIndex)
 	}
 
 	/**
@@ -121,8 +136,13 @@ export class MessageManager {
 	/**
 	 * Truncate clineMessages to the specified index.
 	 */
-	private async truncateClineMessages(toIndex: number): Promise<void> {
-		await this.task.overwriteClineMessages(this.task.clineMessages.slice(0, toIndex))
+	private async truncateClineMessages(toIndex: number, force: boolean): Promise<void> {
+		const messages = this.task.clineMessages.slice(0, toIndex)
+		if (force) {
+			await this.task.overwriteClineMessages(messages, { force: true })
+		} else {
+			await this.task.overwriteClineMessages(messages)
+		}
 	}
 
 	/**
@@ -146,9 +166,22 @@ export class MessageManager {
 		cutoffTs: number,
 		removedIds: ContextEventIds,
 		skipCleanup: boolean,
+		strictCutoff: boolean,
+		apiCutoffIndex?: number,
 	): Promise<void> {
 		const originalHistory = this.task.apiConversationHistory
 		let apiHistory = [...originalHistory]
+
+		// An exact API index is safer than timestamps for edits: timestamp races and
+		// legacy entries without `ts` must not allow discarded-branch context through.
+		const hasValidApiCutoffIndex =
+			strictCutoff &&
+			typeof apiCutoffIndex === "number" &&
+			apiCutoffIndex >= 0 &&
+			apiCutoffIndex <= apiHistory.length
+		if (hasValidApiCutoffIndex) {
+			apiHistory = apiHistory.slice(0, apiCutoffIndex)
+		}
 
 		// Step 1: Determine the actual cutoff timestamp
 		// Check if there's an API message with an exact timestamp match
@@ -158,12 +191,14 @@ export class MessageManager {
 
 		let actualCutoff: number = cutoffTs
 
-		if (!hasExactMatch && hasMessageBeforeCutoff) {
+		if (!hasValidApiCutoffIndex && !strictCutoff && !hasExactMatch && hasMessageBeforeCutoff) {
 			// No exact match but there are earlier messages means we might have a race
 			// condition where the clineMessage timestamp is earlier than any API message
 			// due to async execution. In this case, look for the first API user message
 			// at or after the cutoff to use as the actual boundary.
-			// This ensures assistant messages that preceded the user's response are preserved.
+			// This preserves assistant messages that preceded the user's response for
+			// ordinary delete/rewind operations. Edited resends opt into strictCutoff so
+			// no assistant output from the discarded branch can leak into the new turn.
 			const firstUserMsgIndexToRemove = apiHistory.findIndex(
 				(m) => m.ts !== undefined && m.ts >= cutoffTs && m.role === "user",
 			)
@@ -175,8 +210,14 @@ export class MessageManager {
 			// else: no user message found, use original cutoffTs (fallback)
 		}
 
-		// Step 2: Filter by the actual cutoff timestamp
-		apiHistory = apiHistory.filter((m) => !m.ts || m.ts < actualCutoff)
+		// Step 2: Filter by timestamp unless an exact structural boundary was used.
+		// A non-timestamped message cannot be proven to predate an edited branch, so
+		// strict edit rewinds discard it instead of allowing stale context to leak.
+		if (!hasValidApiCutoffIndex) {
+			apiHistory = apiHistory.filter((m) =>
+				strictCutoff ? m.ts !== undefined && m.ts < actualCutoff : !m.ts || m.ts < actualCutoff,
+			)
+		}
 
 		// Step 3: Remove Summaries whose condense_context was removed
 		if (removedIds.condenseIds.size > 0) {
@@ -212,11 +253,17 @@ export class MessageManager {
 		// resend would otherwise be rejected by native-tool providers.
 		apiHistory = sanitizeNativeToolHistory(apiHistory)
 
-		// Only write if the history actually changed
+		// A strict edit must always commit and await an API-history write, even when
+		// the calculated prefix happens to equal the in-memory array. An earlier
+		// asynchronous save from the discarded instance may already be running; without
+		// this forced, ordered commit, task rehydration can read that stale disk snapshot
+		// before the replacement Task is created.
 		const historyChanged =
 			apiHistory.length !== originalHistory.length || apiHistory.some((msg, i) => msg !== originalHistory[i])
 
-		if (historyChanged) {
+		if (strictCutoff) {
+			await this.task.overwriteApiConversationHistory(apiHistory, { force: true })
+		} else if (historyChanged) {
 			await this.task.overwriteApiConversationHistory(apiHistory)
 		}
 	}

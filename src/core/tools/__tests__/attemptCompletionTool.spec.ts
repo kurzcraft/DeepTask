@@ -68,6 +68,7 @@ describe("attemptCompletionTool", () => {
 			consecutiveMistakeCount: 0,
 			recordToolError: vi.fn(),
 			todoList: undefined,
+			getIncompleteTaskProgressItems: vi.fn().mockResolvedValue([]),
 		}
 	})
 
@@ -151,6 +152,62 @@ describe("attemptCompletionTool", () => {
 
 			expect(mockTask.consecutiveMistakeCount).toBe(0)
 			expect(mockTask.recordToolError).not.toHaveBeenCalled()
+		})
+
+		it("allows completion only after the complete unfiltered task-progress scan passes", async () => {
+			const block: AttemptCompletionToolUse = {
+				type: "tool_use",
+				name: "attempt_completion",
+				params: { result: "Task completed successfully" },
+				partial: false,
+			}
+			const mockSay = vi.fn().mockResolvedValue(undefined)
+			mockTask.say = mockSay
+			mockTask.emit = vi.fn() as any
+			;(mockTask as any).shouldRejectPrematureActiveContinuationCompletion = vi.fn().mockReturnValue(false)
+			;(mockTask as any).shouldDowngradeCompletionToActiveResponse = vi.fn().mockResolvedValue(true)
+			;(mockTask as any).markActiveResponseCompletionHandled = vi.fn()
+
+			const callbacks: AttemptCompletionCallbacks = {
+				askApproval: mockAskApproval,
+				handleError: mockHandleError,
+				pushToolResult: mockPushToolResult,
+				removeClosingTag: mockRemoveClosingTag,
+				askFinishSubTaskApproval: mockAskFinishSubTaskApproval,
+				toolDescription: mockToolDescription,
+				toolProtocol: "xml",
+			}
+			await attemptCompletionTool.handle(mockTask as Task, block, callbacks)
+
+			expect((mockTask as any).getIncompleteTaskProgressItems).toHaveBeenCalledWith()
+		})
+
+		it("should prevent completion when task progress files contain incomplete items", async () => {
+			const block: AttemptCompletionToolUse = {
+				type: "tool_use",
+				name: "attempt_completion",
+				params: { result: "Task completed successfully" },
+				partial: false,
+			}
+			;(mockTask as any).getIncompleteTaskProgressItems.mockResolvedValue(["release.md: publish the release"])
+
+			const callbacks: AttemptCompletionCallbacks = {
+				askApproval: mockAskApproval,
+				handleError: mockHandleError,
+				pushToolResult: mockPushToolResult,
+				removeClosingTag: mockRemoveClosingTag,
+				askFinishSubTaskApproval: mockAskFinishSubTaskApproval,
+				toolDescription: mockToolDescription,
+				toolProtocol: "xml",
+			}
+			await attemptCompletionTool.handle(mockTask as Task, block, callbacks)
+
+			expect((mockTask as any).getIncompleteTaskProgressItems).toHaveBeenCalledWith()
+			expect(mockTask.consecutiveMistakeCount).toBe(1)
+			expect(mockTask.recordToolError).toHaveBeenCalledWith("attempt_completion")
+			expect(mockPushToolResult).toHaveBeenCalledWith(
+				expect.stringContaining("EXTRA/task contains incomplete checklist items"),
+			)
 		})
 
 		it("should prevent completion when there are pending todos", async () => {
@@ -637,6 +694,23 @@ describe("attemptCompletionTool", () => {
 			)
 			expect(mockMarkHandled).toHaveBeenCalledTimes(1)
 			expect(mockEmit).not.toHaveBeenCalled()
+		})
+
+		it("does not stream a completion row while any task progress item is incomplete", async () => {
+			const mockSay = vi.fn().mockResolvedValue(undefined)
+			mockTask.say = mockSay
+			;(mockTask as any).getIncompleteTaskProgressItems.mockResolvedValue(["task-task-1.md: active work"])
+			;(mockTask as any).shouldRejectPrematureActiveContinuationCompletion = vi.fn().mockReturnValue(false)
+
+			await attemptCompletionTool.handlePartial(mockTask as Task, {
+				type: "tool_use",
+				name: "attempt_completion",
+				params: { result: "Done" },
+				partial: false,
+			})
+
+			expect((mockTask as any).getIncompleteTaskProgressItems).toHaveBeenCalledWith()
+			expect(mockSay).not.toHaveBeenCalled()
 		})
 
 		it("does not stream a completion row before continuation work has run", async () => {

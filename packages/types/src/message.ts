@@ -282,6 +282,8 @@ export const clineMessageSchema = z.object({
 	say: clineSaySchema.optional(),
 	text: z.string().optional(),
 	images: z.array(z.string()).optional(),
+	/** Marks a synthetic user prompt that should open directly in edit mode. */
+	editPrompt: z.boolean().optional(),
 	partial: z.boolean().optional(),
 	reasoning: z.string().optional(),
 	conversationHistoryIndex: z.number().optional(),

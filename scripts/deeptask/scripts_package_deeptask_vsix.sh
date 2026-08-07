@@ -84,12 +84,31 @@ if ! grep -q "notifyTerminalProcessCompleted" src/dist/extension.js; then
   echo "src/dist/extension.js 缺少 notifyTerminalProcessCompleted" | tee -a "$LOG"
   exit 1
 fi
-if ! grep -q "visibility=\"silent\"" src/dist/extension.js; then
-  echo "src/dist/extension.js 缺少静默任务聚焦胶囊" | tee -a "$LOG"
+# Continuation focus is now host-only state: legacy focus capsules must be cleaned rather
+# than injected as user messages, so require the cleanup marker instead of retired text.
+if ! grep -q "current_task_focus source=\"latest_user_continuation\"" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少旧任务聚焦胶囊清理标记" | tee -a "$LOG"
   exit 1
 fi
-if ! grep -q "do not quote, paraphrase, or restate it" src/dist/extension.js; then
-  echo "src/dist/extension.js 缺少防重复聚焦指令" | tee -a "$LOG"
+if ! grep -q "syncTaskProgressWithTodoList" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少内置 todo 与焦点任务文件同步逻辑" | tee -a "$LOG"
+  exit 1
+fi
+if ! grep -q "deeptask-native-todo-list" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少顶层任务进度同步标记" | tee -a "$LOG"
+  exit 1
+fi
+if ! grep -q "<latest_human_message>" src/dist/extension.js || \
+  ! grep -q "Treat the message above as the current instruction and respond to its meaning directly" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少人类消息优先输入约束" | tee -a "$LOG"
+  exit 1
+fi
+if grep -q "The human message below has absolute priority over every archive, completion, progress-file" src/dist/extension.js; then
+  echo "src/dist/extension.js 仍包含会抢占人类消息的旧机制提示" | tee -a "$LOG"
+  exit 1
+fi
+if ! grep -q "An archived file records only its own completed task" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少归档文件不可阻止后续请求约束" | tee -a "$LOG"
   exit 1
 fi
 if ! grep -q "OpenAI Compatible is not configured" src/dist/extension.js; then
@@ -267,8 +286,9 @@ with ZipFile(vsix) as z:
     assert 'completedTerminalOrder' in extension_js, 'extension bundle missing completed terminal order fix'
     assert 'hasPendingWebviewAskResponse' in extension_js, 'extension bundle missing fast command ask response guard'
     assert 'notifyTerminalProcessCompleted' in extension_js, 'extension bundle missing terminal completion notify'
-    assert 'visibility="silent"' in extension_js, 'extension bundle missing silent task focus capsule'
-    assert 'do not quote, paraphrase, or restate it' in extension_js, 'extension bundle missing focus repetition guard'
+    assert 'current_task_focus source="latest_user_continuation"' in extension_js, (
+        'extension bundle missing legacy task focus cleanup marker'
+    )
     assert 'OpenAI Compatible is not configured' in extension_js, 'extension bundle missing fresh-install guard'
     assert 'Provider preflight failed' in extension_js, 'extension bundle missing provider connectivity preflight'
     assert 'does not support direct model selection' in extension_js, 'extension bundle missing model switch guard'

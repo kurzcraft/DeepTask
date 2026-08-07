@@ -47,6 +47,7 @@ vi.mock("fs/promises", async (importOriginal) => {
 		mkdir: vi.fn().mockResolvedValue(undefined),
 		writeFile: vi.fn().mockResolvedValue(undefined),
 		appendFile: vi.fn().mockResolvedValue(undefined),
+		readdir: vi.fn().mockResolvedValue([]),
 		readFile: vi.fn().mockImplementation((filePath) => {
 			if (filePath.includes("ui_messages.json")) {
 				return Promise.resolve(JSON.stringify(mockMessages))
@@ -2320,7 +2321,7 @@ describe("Queued message processing after condense", () => {
 		)
 	})
 
-	it("returns true and makes live focus and todo facts authoritative over a conflicting summary", async () => {
+	it("keeps a condensed summary without injecting latest feedback as a user message", async () => {
 		const provider = createProvider()
 		const task = new Task({
 			provider,
@@ -2335,10 +2336,7 @@ describe("Queued message processing after condense", () => {
 		]
 		;(task as any).latestUserContinuationFocus = "修复压缩后新拓展任务失焦并完成真实验收"
 		;(task as any).shouldKeepNextCompletionActive = true
-		task.todoList = [
-			{ id: "done", content: "旧任务已完成", status: "completed" },
-			{ id: "active", content: "验证新的压缩聚焦", status: "in_progress" },
-		]
+		task.todoList = [{ id: "active", content: "验证新的压缩聚焦", status: "in_progress" }]
 		vi.spyOn(task as any, "getSystemPrompt").mockResolvedValue("system")
 		vi.mocked(summarizeConversation).mockResolvedValueOnce({
 			messages: [
@@ -2357,63 +2355,28 @@ describe("Queued message processing after condense", () => {
 
 		await expect(task.condenseContext()).resolves.toBe(true)
 
-		const historyText = JSON.stringify((task as any).apiConversationHistory)
-		expect(historyText).toContain('current_task_focus source=\\"latest_user_continuation\\"')
-		expect(historyText).toContain('current_task_state authority=\\"host\\" visibility=\\"silent\\"')
-		expect(historyText).toContain("修复压缩后新拓展任务失焦并完成真实验收")
-		expect(historyText).toContain("Checklist facts: 1 completed, 1 open")
-		expect(historyText).toContain("[in_progress] 验证新的压缩聚焦")
-		expect(historyText).toContain("priority over summaries, old completions, and checklist wording")
-		expect(historyText).toContain("do not quote, paraphrase, or restate it in routine intermediary updates")
-		expect(historyText).toContain("Mention the target only when the user asks for status")
-		expect((task as any).apiConversationHistory.at(-1)?.role).toBe("user")
+		const history = (task as any).apiConversationHistory as any[]
+		expect(history).toHaveLength(1)
+		expect(history[0]).toEqual(expect.objectContaining({ role: "assistant", isSummary: true }))
+		expect(JSON.stringify(history)).not.toContain("current_task_focus")
+		expect(JSON.stringify(history)).not.toContain("修复压缩后新拓展任务失焦并完成真实验收")
 	})
 
-	it("replaces a stale continuation capsule instead of accumulating anchors", () => {
+	it("removes legacy continuation capsules without adding a replacement user message", () => {
 		const task = Object.create(Task.prototype) as Task
-		;(task as any).latestUserContinuationFocus = "latest extension"
-		;(task as any).shouldKeepNextCompletionActive = true
-		task.todoList = [{ id: "new", content: "new open work", status: "pending" }]
 		const messages = [
 			{ role: "assistant", content: "summary", isSummary: true },
 			{
 				role: "user",
 				content:
-					'<current_task_focus source="latest_user_continuation">\nlatest extension\n</current_task_focus>\n<current_task_state authority="host">old checklist snapshot</current_task_state>',
+					'<current_task_focus source="latest_user_continuation">\nold focus\n</current_task_focus>\n<current_task_state authority="host">old checklist snapshot</current_task_state>',
 			},
 		] as any
 
 		const result = (task as any).preserveLatestContinuationFocus(messages) as any[]
-		const anchors = result.filter((message) => String(message.content).includes("<current_task_focus"))
 
-		expect(anchors).toHaveLength(1)
-		expect(anchors[0].content).toContain("new open work")
-		expect(anchors[0].content).toContain('visibility="silent"')
-		expect(anchors[0].content).toContain("do not quote, paraphrase, or restate it")
-		expect(anchors[0].content).not.toContain("old checklist snapshot")
-		expect(result[0]).toBe(messages[0])
-	})
-
-	it("bounds the authoritative todo snapshot to twelve open items", () => {
-		const task = Object.create(Task.prototype) as Task
-		;(task as any).latestUserContinuationFocus = "bounded focus"
-		;(task as any).shouldKeepNextCompletionActive = true
-		task.todoList = [
-			{ id: "done", content: "finished", status: "completed" },
-			...Array.from({ length: 15 }, (_, index) => ({
-				id: String(index),
-				content: `open-${index}`,
-				status: "pending" as const,
-			})),
-		]
-
-		const result = (task as any).preserveLatestContinuationFocus([]) as any[]
-		const capsule = String(result[0].content)
-
-		expect(capsule).toContain("Checklist facts: 1 completed, 15 open")
-		expect(capsule).toContain("open-11")
-		expect(capsule).not.toContain("open-12")
-		expect(capsule).toContain("3 additional open checklist items omitted")
+		expect(result).toEqual([messages[0]])
+		expect(result.some((message) => String(message.content).includes("current_task_focus"))).toBe(false)
 	})
 
 	it("discards a manual condense result when history changes while summarizing", async () => {
@@ -2793,6 +2756,36 @@ describe("Queued message processing after condense", () => {
 		})
 	})
 
+	it("rebuilds an edited resend from the persisted prefix without discarded branch context", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context,
+		})
+		const safePrefix = [{ role: "user", content: [{ type: "text", text: "keep this instruction" }], ts: 1 }]
+		const persistedUiMessages = [{ type: "say", say: "user_feedback", text: "keep this instruction", ts: 1 }]
+		const initiateSpy = vi.spyOn(task as any, "initiateTaskLoop").mockResolvedValue(undefined)
+		vi.spyOn(task as any, "getSavedClineMessages").mockResolvedValue(persistedUiMessages)
+		vi.spyOn(task as any, "getSavedApiConversationHistory").mockResolvedValue(safePrefix)
+		vi.spyOn(task as any, "getSystemPrompt").mockResolvedValue("system")
+
+		await task.resumeTaskFromHistory({
+			text: "replace the discarded instruction",
+			options: { kind: "edited_resend" },
+		})
+
+		const firstRequestContent = initiateSpy.mock.calls[0]?.[0]
+		// resumeTaskFromHistory merges the retained last user message into the new
+		// user payload, then clears it from persisted history to avoid consecutive
+		// user messages. The outbound loop payload is therefore the safety boundary.
+		expect(JSON.stringify(firstRequestContent)).toContain("keep this instruction")
+		expect(JSON.stringify(firstRequestContent)).toContain("replace the discarded instruction")
+		expect(JSON.stringify(firstRequestContent)).not.toContain("discarded branch")
+	})
+
 	it("drops completed attempt_completion tool context before applying continuation feedback", async () => {
 		const provider = createProvider()
 		const task = new Task({
@@ -2914,10 +2907,9 @@ describe("Queued message processing after condense", () => {
 
 		const continuationBlocks = initiateSpy.mock.calls[0]?.[0] as Array<{ text?: string }>
 		const continuationContent = continuationBlocks[0]?.text ?? ""
-		expect(continuationContent).toContain("fix the next bug now")
-		expect(continuationContent).toContain("highest priority over any prior completion, summary")
-		expect(continuationContent).toContain("Start concrete work on the latest instruction immediately")
-		expect(continuationContent).toContain("Treat this as a new active task turn")
+		expect(continuationContent).toMatch(/^<latest_human_message>\nfix the next bug now\n<\/latest_human_message>/)
+		expect(continuationContent).not.toContain("archive")
+		expect(continuationContent).not.toContain("progress-file")
 	})
 
 	it("reactivates completed task history before continuing from a user message", async () => {
@@ -3010,19 +3002,14 @@ describe("Queued message processing after condense", () => {
 		const continuationContent = continuationBlocks[0]?.text ?? ""
 		expect(provider.updateTaskHistory).toHaveBeenCalledWith(expect.objectContaining({ status: "active" }))
 		expect(provider.updateTaskHistory).toHaveBeenLastCalledWith(expect.objectContaining({ status: "active" }))
-		expect(task.todoList).toEqual([
-			{ id: "1", content: "done", status: "completed" },
-			expect.objectContaining({ content: "continue with a new real task", status: "in_progress" }),
-		])
+		expect(task.todoList).toEqual([{ id: "1", content: "done", status: "completed" }])
 		expect(task.shouldRejectPrematureActiveContinuationCompletion()).toBe(true)
 		await expect(task.shouldDowngradeCompletionToActiveResponse()).resolves.toBe(false)
-		expect(continuationContent).toContain("continue with a new real task")
-		expect(continuationContent).toContain("Treat this as a new active task turn")
-		expect(continuationContent).toContain(
-			"preserving relevant context from the conversation and existing checklist",
+		expect(continuationContent).toMatch(
+			/^<latest_human_message>\ncontinue with a new real task\n<\/latest_human_message>/,
 		)
-		expect(continuationContent).toContain("extends, revises, or replaces earlier work")
-		expect(continuationContent).toContain("Do not call attempt_completion")
+		expect(continuationContent).not.toContain("attempt_completion")
+		expect(continuationContent).not.toContain("same-task work")
 	})
 
 	it("recognizes a soft completion when resuming history from another workspace", async () => {
@@ -3068,8 +3055,10 @@ describe("Queued message processing after condense", () => {
 		expect(askSpy).toHaveBeenCalledOnce()
 		expect(askSpy).toHaveBeenCalledWith("resume_completed_task")
 		expect(initiateSpy).toHaveBeenCalledOnce()
-		expect(continuationContent).toContain("continue in the external workspace")
-		expect(continuationContent).toContain("Treat this as a new active task turn")
+		expect(continuationContent).toContain(
+			"<latest_human_message>\ncontinue in the external workspace\n</latest_human_message>",
+		)
+		expect(continuationContent).not.toContain("archived")
 	})
 
 	it("atomically injects a cancelled continuation without creating a competing resume ask", async () => {
@@ -3100,12 +3089,13 @@ describe("Queued message processing after condense", () => {
 		expect(initiateSpy).toHaveBeenCalledOnce()
 		const continuationBlocks = initiateSpy.mock.calls[0]?.[0] as Array<{ type?: string; text?: string }>
 		const continuationContent = continuationBlocks.map((block) => block.text ?? "").join("\n")
-		expect(continuationContent).toContain("fix the remaining freeze")
-		expect(continuationContent).toContain("Treat this as a new active task turn")
-		expect(task.shouldRequireProgressListExpansion()).toBe(false)
-		expect(task.todoList).toEqual([
-			expect.objectContaining({ content: "fix the remaining freeze", status: "in_progress" }),
-		])
+		expect(continuationContent).toContain(
+			"<latest_human_message>\nfix the remaining freeze\n</latest_human_message>",
+		)
+		expect(continuationContent).not.toContain("concrete user request")
+		// Restoration must preserve the same explicit-work milestone gate as a live turn.
+		expect(task.shouldRequireProgressListExpansion()).toBe(true)
+		expect(task.todoList).toEqual([])
 	})
 
 	it("preserves edited resend semantics in an atomically injected restoration", async () => {
@@ -3168,7 +3158,6 @@ describe("Queued message processing after condense", () => {
 		expect(task.todoList).toEqual([
 			{ id: "1", content: "finished item", status: "completed" },
 			{ id: "2", content: "final summary", status: "completed" },
-			expect.objectContaining({ content: "this is a new task after completion", status: "in_progress" }),
 		])
 		expect(task.shouldRejectPrematureActiveContinuationCompletion()).toBe(true)
 		await expect(task.shouldDowngradeCompletionToActiveResponse()).resolves.toBe(false)
@@ -3198,11 +3187,10 @@ describe("Queued message processing after condense", () => {
 		expect(task.todoList).toEqual([
 			{ id: "1", content: "old finished item", status: "completed" },
 			{ id: "2", content: "old leftover item", status: "in_progress" },
-			expect.objectContaining({ content: "new task: expand progress and do new work", status: "in_progress" }),
 		])
 	})
 
-	it("establishes a host-managed feedback turn without requiring a todo tool call", async () => {
+	it("requires an authored milestone before acting on explicit defect feedback", async () => {
 		const provider = createProvider()
 		const task = new Task({
 			provider,
@@ -3216,22 +3204,15 @@ describe("Queued message processing after condense", () => {
 		vi.spyOn(task as any, "getSavedApiConversationHistory").mockResolvedValue([])
 		vi.spyOn(task as any, "initiateTaskLoop").mockResolvedValue(undefined)
 
-		await task.continueTaskFromUserMessage("fix the new feedback now")
+		await task.continueTaskFromUserMessage("把用户的话转化为任务不够积极，修复")
 
-		expect(task.todoList).toEqual([
-			{ id: "old", content: "old completed delivery", status: "completed" },
-			expect.objectContaining({ content: "fix the new feedback now", status: "in_progress" }),
-		])
-		expect(task.shouldRequireProgressListExpansion()).toBe(false)
-		expect(task.shouldRejectToolUntilProgressListExpanded("read_file")).toBe(false)
-		expect(task.shouldRejectPrematureActiveContinuationCompletion()).toBe(true)
-		task.markActiveContinuationWorkToolUsed("update_todo_list")
-		expect(task.shouldRejectPrematureActiveContinuationCompletion()).toBe(true)
-		task.markActiveContinuationWorkToolUsed("read_file")
-		expect(task.shouldRejectPrematureActiveContinuationCompletion()).toBe(false)
+		expect(task.todoList).toEqual([{ id: "old", content: "old completed delivery", status: "completed" }])
+		expect(task.shouldRequireProgressListExpansion()).toBe(true)
+		expect(task.shouldRejectToolUntilProgressListExpanded("read_file")).toBe(true)
+		expect(task.shouldRejectToolUntilProgressListExpanded("update_todo_list")).toBe(false)
 	})
 
-	it("completes and persists the host-managed feedback item after concrete work", async () => {
+	it("does not require a milestone for a pure status question", async () => {
 		const provider = createProvider()
 		const task = new Task({
 			provider,
@@ -3244,19 +3225,10 @@ describe("Queued message processing after condense", () => {
 		vi.spyOn(task as any, "getSavedApiConversationHistory").mockResolvedValue([])
 		vi.spyOn(task as any, "initiateTaskLoop").mockResolvedValue(undefined)
 
-		await task.continueTaskFromUserMessage("verify the repaired completion flow")
-		const saySpy = vi.spyOn(task, "say").mockResolvedValue(undefined)
-		task.markActiveContinuationWorkToolUsed("read_file")
+		await task.continueTaskFromUserMessage("现在进度到哪里了？")
 
-		await task.completeHostManagedFeedbackTodo()
-
-		expect(task.todoList).toEqual([
-			expect.objectContaining({ content: "verify the repaired completion flow", status: "completed" }),
-		])
-		expect(saySpy).toHaveBeenCalledWith(
-			"user_edit_todos",
-			expect.stringContaining('"hostManagedFeedbackTurn":true'),
-		)
+		expect(task.shouldRequireProgressListExpansion()).toBe(false)
+		expect(task.shouldRejectToolUntilProgressListExpanded("read_file")).toBe(false)
 	})
 
 	it("does not accept a status-only replay of the superseded checklist as new work", async () => {
@@ -3288,7 +3260,6 @@ describe("Queued message processing after condense", () => {
 		expect(task.todoList).toEqual([
 			{ id: "1", content: "implement old fix", status: "completed" },
 			{ id: "2", content: "systematically update universe memory", status: "completed" },
-			expect.objectContaining({ content: "fix a different new issue", status: "in_progress" }),
 		])
 	})
 
@@ -3313,7 +3284,7 @@ describe("Queued message processing after condense", () => {
 				{ id: "2", content: "完成最终交付", status: "pending" },
 			]),
 		).toBe(false)
-		expect(task.shouldRequireProgressListExpansion()).toBe(false)
+		expect(task.shouldRequireProgressListExpansion()).toBe(true)
 	})
 
 	it("extends latest updateTodoList message while preserving prior context", async () => {
@@ -3346,16 +3317,11 @@ describe("Queued message processing after condense", () => {
 
 		await task.continueTaskFromUserMessage("start a brand new instruction")
 
-		expect(task.todoList).toEqual([
-			{ id: "1", content: "old finished", status: "completed" },
-			expect.objectContaining({ content: "start a brand new instruction", status: "in_progress" }),
-		])
+		expect(task.todoList).toEqual([{ id: "1", content: "old finished", status: "completed" }])
 		const latestTodoMsg = JSON.parse((task as any).clineMessages[0].text)
 		expect(latestTodoMsg).toEqual({
 			tool: "updateTodoList",
 			todos: task.todoList,
-			extendedByContinuation: true,
-			hostManagedFeedbackTurn: true,
 		})
 		expect(saveSpy).toHaveBeenCalled()
 	})
@@ -3388,7 +3354,7 @@ describe("Queued message processing after condense", () => {
 		expect(resendContent).not.toContain('type=\\"task_continuation\\"')
 	})
 
-	it("tells the model the host already established the new feedback work turn", async () => {
+	it("puts human feedback before host mechanics in the continuation prompt", async () => {
 		const provider = createProvider()
 		const task = new Task({
 			provider,
@@ -3405,11 +3371,15 @@ describe("Queued message processing after condense", () => {
 
 		await task.continueTaskFromUserMessage("expand list and work")
 
-		const continuationContent = JSON.stringify(initiateSpy.mock.calls[0][0])
-		expect(continuationContent).toContain("host has appended this feedback as an in-progress work item")
-		expect(continuationContent).toContain("extends, revises, or replaces earlier work")
-		expect(continuationContent).toContain("Start concrete work on the latest instruction immediately")
-		expect(continuationContent).toContain("Do not call update_todo_list merely to acknowledge")
+		const continuationBlocks = initiateSpy.mock.calls[0][0] as Array<{ text?: string }>
+		const continuationContent = continuationBlocks[0]?.text ?? ""
+		expect(continuationContent).toMatch(/^<latest_human_message>\nexpand list and work\n<\/latest_human_message>/)
+		expect(continuationContent).toContain(
+			"Treat the message above as the current instruction and respond to its meaning directly.",
+		)
+		expect(continuationContent).not.toContain("update_todo_list")
+		expect(continuationContent).not.toContain("progress-file")
+		expect(continuationContent).not.toContain("archive")
 	})
 
 	it("strips trailing text-only assistant summaries on continuation after DeepTask downgrade", async () => {
@@ -3434,11 +3404,11 @@ describe("Queued message processing after condense", () => {
 		expect((task as any).apiConversationHistory).toEqual([
 			{ role: "user", content: [{ type: "text", text: "original task" }], ts: 1 },
 		])
-		const continuationContent = initiateSpy.mock.calls[0][0]
-		expect(JSON.stringify(continuationContent)).toContain(
-			"preserving relevant context from the conversation and existing checklist",
-		)
-		expect(JSON.stringify(continuationContent)).toContain("extends, revises, or replaces earlier work")
+		const continuationContent = JSON.stringify(initiateSpy.mock.calls[0][0])
+		expect(continuationContent).toContain("new task without reciting old completions")
+		expect(continuationContent).toContain("latest_human_message")
+		expect(continuationContent).not.toContain("same-task work")
+		expect(continuationContent).not.toContain("archival")
 	})
 
 	it("rejects active continuation completion until concrete work tool runs", async () => {
@@ -3485,7 +3455,7 @@ describe("Queued message processing after condense", () => {
 		await expect(task.shouldDowngradeCompletionToActiveResponse()).resolves.toBe(false)
 	})
 
-	it("always downgrades attempt completion to an active response in DeepTask mode", async () => {
+	it("allows an initial DeepTask response to reach a real task completion boundary", async () => {
 		const provider = createProvider()
 		const task = new Task({
 			provider,
@@ -3499,7 +3469,7 @@ describe("Queued message processing after condense", () => {
 		;(task as any).shouldKeepNextCompletionActive = false
 		;(task as any).activeContinuationWorkToolUsed = false
 
-		await expect(task.shouldDowngradeCompletionToActiveResponse()).resolves.toBe(true)
+		await expect(task.shouldDowngradeCompletionToActiveResponse()).resolves.toBe(false)
 	})
 
 	it("promotes a provider plain-text final answer to a green soft completion in place", async () => {
@@ -3519,6 +3489,7 @@ describe("Queued message processing after condense", () => {
 			partial: false,
 		}
 		;(task as any).clineMessages = [message]
+		vi.spyOn(task, "getIncompleteTaskProgressItems").mockResolvedValue([])
 		const saveSpy = vi.spyOn(task as any, "saveClineMessages").mockResolvedValue(undefined)
 		const updateSpy = vi.spyOn(task as any, "updateClineMessage").mockResolvedValue(undefined)
 
@@ -3528,6 +3499,32 @@ describe("Queued message processing after condense", () => {
 		expect(message.say).toBe("completion_result")
 		expect(saveSpy).toHaveBeenCalledTimes(1)
 		expect(updateSpy).toHaveBeenCalledWith(message)
+	})
+
+	it("does not promote a provider plain-text answer while an active task checklist is incomplete", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context, // kilocode_change
+		})
+		const message = {
+			ts: 1,
+			type: "say" as const,
+			say: "text" as const,
+			text: "provider answer without a completion tool",
+			partial: false,
+		}
+		;(task as any).clineMessages = [message]
+		vi.spyOn(task, "getIncompleteTaskProgressItems").mockResolvedValue(["active.md: run verification"])
+		const saveSpy = vi.spyOn(task as any, "saveClineMessages").mockResolvedValue(undefined)
+
+		await expect((task as any).promoteLastAssistantTextToSoftCompletion()).resolves.toBe(false)
+
+		expect(message.say).toBe("text")
+		expect(saveSpy).not.toHaveBeenCalled()
 	})
 
 	it("does not fabricate a soft completion when no visible assistant text exists", async () => {
@@ -3540,6 +3537,7 @@ describe("Queued message processing after condense", () => {
 			context: provider.context, // kilocode_change
 		})
 		;(task as any).clineMessages = [{ ts: 1, type: "say", say: "reasoning", text: "thinking" }]
+		vi.spyOn(task, "getIncompleteTaskProgressItems").mockResolvedValue([])
 		const saveSpy = vi.spyOn(task as any, "saveClineMessages").mockResolvedValue(undefined)
 
 		await expect((task as any).promoteLastAssistantTextToSoftCompletion()).resolves.toBe(false)
@@ -3664,13 +3662,20 @@ describe("Queued message processing after condense", () => {
 		vi.spyOn(task as any, "getSavedApiConversationHistory").mockResolvedValue((task as any).apiConversationHistory)
 		vi.spyOn(task as any, "say").mockResolvedValue(undefined)
 
-		await task.continueTaskFromUserMessage("修复任务结束后重复交付最终结果；新消息应添加任务条目并修改完成条件")
+		const latestHumanMessage = "修复任务结束后重复交付最终结果；新消息应添加任务条目并修改完成条件"
+		await task.continueTaskFromUserMessage(latestHumanMessage)
 
 		const continuationBlocks = initiateSpy.mock.calls[0]?.[0] as Array<{ text?: string }>
 		const continuationContent = continuationBlocks?.[0]?.text ?? ""
-		expect(continuationContent).toContain("修复任务结束后重复交付最终结果")
-		expect(continuationContent).toContain("Treat this as a new active task turn")
-		expect(continuationContent).toContain("host has appended this feedback as an in-progress work item")
+		expect(continuationContent).toMatch(
+			new RegExp(`^<latest_human_message>\\n${latestHumanMessage}\\n</latest_human_message>`),
+		)
+		expect(continuationContent).toContain(
+			"Treat the message above as the current instruction and respond to its meaning directly.",
+		)
+		expect(continuationContent).not.toContain("archive")
+		expect(continuationContent).not.toContain("progress-file")
+		expect(continuationContent).not.toContain("update_todo_list")
 		expect(continuationContent).not.toContain("https://github.com/kurzgesagtcraft/deeptask/releases/tag/v5.5.0")
 	})
 
@@ -3711,6 +3716,23 @@ describe("Queued message processing after condense", () => {
 		])
 
 		expect(normalizedTodos).toEqual([{ id: "1", content: "regular completion", status: "completed" }])
+	})
+
+	it("bounds the host-managed continuation item while preserving the full request separately", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context, // kilocode_change
+		})
+		const longInstruction = `${"prefix ".repeat(100)}IMPORTANT-END`
+
+		;(task as any).establishUserFeedbackWorkTurn(longInstruction)
+
+		expect(task.todoList).toBeUndefined()
+		expect((task as any).latestUserContinuationFocus).toBe(longInstruction)
 	})
 
 	it("deduplicates identical continuation requests arriving in a short window", async () => {
@@ -4150,6 +4172,439 @@ describe("Queued message processing after condense", () => {
 
 		expect(spyB).not.toHaveBeenCalled()
 		expect(taskB.messageQueueService.isEmpty()).toBe(true)
+	})
+})
+
+describe("completion result deduplication", () => {
+	const createSayTask = () => {
+		const task = Object.create(Task.prototype) as Task
+		Object.assign(task, {
+			abort: false,
+			clineMessages: [],
+			historyPersistenceFrozen: false,
+			taskLoopGeneration: 1,
+		})
+		vi.spyOn(task as any, "nextClineMessageTimestamp_kilocode")
+			.mockResolvedValueOnce(1)
+			.mockResolvedValueOnce(2)
+		vi.spyOn(task as any, "addToClineMessages").mockImplementation(async (message: any) => {
+			task.clineMessages.push(message)
+		})
+		return task
+	}
+
+	it("suppresses duplicate provider completion summaries within one loop", async () => {
+		const task = createSayTask()
+
+		await task.say("completion_result", "provider summary")
+		await task.say("completion_result", "provider summary")
+
+		expect(task.clineMessages).toHaveLength(1)
+		expect(task.clineMessages[0]).toMatchObject({ say: "completion_result", text: "provider summary" })
+	})
+
+	it("allows the same completion text again after a new loop begins", async () => {
+		const task = createSayTask()
+
+		await task.say("completion_result", "provider summary")
+		;(task as any).taskLoopGeneration = 2
+		;(task as any).lastCompletionResultKey = undefined
+		await task.say("completion_result", "provider summary")
+
+		expect(task.clineMessages).toHaveLength(2)
+	})
+})
+
+describe("task progress completion barrier", () => {
+	afterEach(() => {
+		vi.mocked(fs.readdir).mockReset()
+		vi.mocked(fs.readFile).mockReset()
+	})
+
+	it("collects every pending and in-progress checklist item from nested Markdown task files", async () => {
+		const taskDirectory = "/workspace/EXTRA/task"
+		vi.mocked(fs.readdir).mockImplementation(async (directory) => {
+			if (directory === taskDirectory) {
+				return [
+					{ name: "release.md", isDirectory: () => false, isFile: () => true },
+					{ name: "nested", isDirectory: () => true, isFile: () => false },
+				] as any
+			}
+			if (directory === path.join(taskDirectory, "nested")) {
+				return [{ name: "validation.md", isDirectory: () => false, isFile: () => true }] as any
+			}
+			return [] as any
+		})
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			if (filePath === path.join(taskDirectory, "release.md")) {
+				return "- [x] packaged\n- [ ] publish release\n"
+			}
+			return "- [-] run VSCodium validation\n- [x] verified\n"
+		})
+
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+
+		await expect(task.getIncompleteTaskProgressItems()).resolves.toEqual([
+			"release.md: publish release",
+			"nested/validation.md: run VSCodium validation",
+		])
+	})
+
+	it("ignores archived checklist items under the finished task directory", async () => {
+		const taskDirectory = "/workspace/EXTRA/task"
+		const finishedDirectory = path.join(taskDirectory, "finished")
+		vi.mocked(fs.readdir).mockImplementation(async (directory) => {
+			if (directory === taskDirectory) {
+				return [
+					{ name: "active.md", isDirectory: () => false, isFile: () => true },
+					{ name: "finished", isDirectory: () => true, isFile: () => false },
+				] as any
+			}
+			if (directory === finishedDirectory) {
+				throw new Error("The archive directory must not be scanned")
+			}
+			return [] as any
+		})
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			if (filePath === path.join(taskDirectory, "active.md")) {
+				return "- [ ] active verification\n"
+			}
+			throw new Error("The archive file must not be read")
+		})
+
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+
+		await expect(task.getIncompleteTaskProgressItems()).resolves.toEqual(["active.md: active verification"])
+		await expect(task.getIncompleteTaskProgressItems()).resolves.not.toContain(
+			"finished/archive.md: historical unchecked item",
+		)
+	})
+
+	it("treats the current generated active item as a completion blocker until explicitly checked", async () => {
+		const taskDirectory = "/workspace/EXTRA/task"
+		vi.mocked(fs.readdir).mockImplementation(async (directory) => {
+			if (directory === taskDirectory) {
+				return [
+					{ name: "task-task-1.md", isDirectory: () => false, isFile: () => true },
+					{ name: "other.md", isDirectory: () => false, isFile: () => true },
+				] as any
+			}
+			return [] as any
+		})
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			if (filePath === path.join(taskDirectory, "task-task-1.md")) {
+				return "<!-- deeptask-active-work-item -->\n- [-] generated current work\n- [ ] user-owned follow-up\n"
+			}
+			return "- [ ] another task is open\n"
+		})
+
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+
+		await expect(task.getIncompleteTaskProgressItems()).resolves.toEqual([
+			"task-task-1.md: generated current work",
+			"task-task-1.md: user-owned follow-up",
+			"other.md: another task is open",
+		])
+	})
+
+	it("treats a missing task directory as an empty progress checklist", async () => {
+		vi.mocked(fs.readdir).mockRejectedValue(Object.assign(new Error("missing"), { code: "ENOENT" }))
+
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+
+		await expect(task.getIncompleteTaskProgressItems()).resolves.toEqual([])
+	})
+
+	it("does not create or clear progress when an empty todo payload is received", async () => {
+		const writeFile = vi.mocked(fs.writeFile)
+		const writeCountBefore = writeFile.mock.calls.length
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "todoList", { value: [] })
+
+		await task.syncTaskProgressWithTodoList([])
+
+		expect(fs.readdir).not.toHaveBeenCalled()
+		expect(fs.readFile).not.toHaveBeenCalled()
+		expect(writeFile.mock.calls.length).toBe(writeCountBefore)
+	})
+
+	it("synchronizes the native todo list to the stable task title file without user feedback", async () => {
+		const taskDirectory = "/workspace/EXTRA/task"
+		const progressPath = path.join(taskDirectory, "DEEPTASK_Release_validation_PROGRESS.md")
+		const writeFile = vi.mocked(fs.writeFile)
+		const mkdir = vi.mocked(fs.mkdir)
+		vi.mocked(fs.readdir).mockResolvedValue([] as any)
+		vi.mocked(fs.readFile).mockResolvedValue(
+			"# DeepTask Release validation\n\n<!-- deeptask-active-work-item -->\n- [-] old user request\n",
+		)
+
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "metadata", { value: { task: "Release validation" } })
+		Object.defineProperty(task, "todoList", {
+			value: [
+				{ id: "1", content: "verify build", status: "completed" },
+				{ id: "2", content: "install VSIX", status: "in_progress", depth: 1 },
+			],
+		})
+
+		await task.syncTaskProgressWithTodoList()
+
+		expect(mkdir).toHaveBeenCalledWith(taskDirectory, { recursive: true })
+		expect(writeFile).toHaveBeenLastCalledWith(
+			progressPath,
+			expect.stringContaining("- [x] verify build\n    - [-] install VSIX"),
+			"utf8",
+		)
+		expect(writeFile).toHaveBeenLastCalledWith(
+			progressPath,
+			expect.not.stringContaining("old user request"),
+			"utf8",
+		)
+	})
+
+	it("requires a fresh progress expansion when only archived files remain", async () => {
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-archived" })
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "finished", isDirectory: () => true, isFile: () => false },
+		] as any)
+
+		await expect((task as any).hasActiveTaskProgressFile()).resolves.toBe(false)
+	})
+
+	it("keeps an active task boundary when its top-level progress file has the task marker", async () => {
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-active" })
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "active.md", isDirectory: () => false, isFile: () => true },
+		] as any)
+		vi.mocked(fs.readFile).mockResolvedValue("# Active\n\n<!-- deeptask-task-id:task-active -->\n")
+
+		await expect((task as any).hasActiveTaskProgressFile()).resolves.toBe(true)
+	})
+
+	it("does not reactivate a matching marker from the finished archive", async () => {
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-finished" })
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "finished", isDirectory: () => true, isFile: () => false },
+		] as any)
+
+		await expect((task as any).hasActiveTaskProgressFile()).resolves.toBe(false)
+		expect(fs.readFile).not.toHaveBeenCalled()
+	})
+
+	it("creates a new milestone-named progress file for actionable work after archival", async () => {
+		const taskDirectory = "/workspace/EXTRA/task"
+		const progressPath = path.join(taskDirectory, "DEEPTASK_Fix_archived_task_lifecycle_PROGRESS.md")
+		const writeFile = vi.mocked(fs.writeFile)
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "finished", isDirectory: () => true, isFile: () => false },
+		] as any)
+		vi.mocked(fs.readFile).mockRejectedValue(Object.assign(new Error("missing"), { code: "ENOENT" }))
+
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "metadata", { value: { task: "Already archived release" } })
+		Object.defineProperty(task, "shouldKeepNextCompletionActive", { value: true, writable: true })
+
+		await task.syncTaskProgressWithTodoList([
+			{ id: "1", content: "Fix archived task lifecycle", status: "in_progress" },
+			{ id: "2", content: "Add regression coverage", status: "pending" },
+		])
+
+		expect(writeFile).toHaveBeenLastCalledWith(
+			progressPath,
+			expect.stringContaining("# DeepTask Fix archived task lifecycle"),
+			"utf8",
+		)
+		expect(writeFile).not.toHaveBeenCalledWith(
+			path.join(taskDirectory, "DEEPTASK_Already_archived_release_PROGRESS.md"),
+			expect.any(String),
+			"utf8",
+		)
+	})
+
+	it("reuses the task-id-marked progress file after restart instead of generating a new title file", async () => {
+		const taskDirectory = "/workspace/EXTRA/task"
+		const restoredPath = path.join(taskDirectory, "DEEPTASK_legacy_long_title_PROGRESS.md")
+		const writeFile = vi.mocked(fs.writeFile)
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "DEEPTASK_legacy_long_title_PROGRESS.md", isDirectory: () => false, isFile: () => true },
+		] as any)
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			if (filePath === restoredPath) {
+				return "# DeepTask restored\n\n<!-- deeptask-task-id:task-1 -->\n\n<!-- deeptask-native-todo-list -->\n## Task progress\n\n- [-] stale item\n<!-- /deeptask-native-todo-list -->\n"
+			}
+			return "[]"
+		})
+
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "metadata", { value: { task: "A renamed task title" } })
+		Object.defineProperty(task, "todoList", {
+			value: [{ id: "1", content: "restored live milestone", status: "in_progress" }],
+		})
+
+		await task.syncTaskProgressWithTodoList()
+
+		expect(writeFile).toHaveBeenLastCalledWith(
+			restoredPath,
+			expect.stringContaining("- [-] restored live milestone"),
+			"utf8",
+		)
+		expect(writeFile).not.toHaveBeenCalledWith(
+			path.join(taskDirectory, "DEEPTASK_A_renamed_task_title_PROGRESS.md"),
+			expect.any(String),
+			"utf8",
+		)
+	})
+
+	it("reuses one deterministic file when duplicate active files carry the same task ID", async () => {
+		const taskDirectory = "/workspace/EXTRA/task"
+		const firstPath = path.join(taskDirectory, "DEEPTASK_a_PROGRESS.md")
+		const secondPath = path.join(taskDirectory, "DEEPTASK_z_PROGRESS.md")
+		const writeFile = vi.mocked(fs.writeFile)
+		const unlink = vi.mocked(fs.unlink)
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "DEEPTASK_z_PROGRESS.md", isDirectory: () => false, isFile: () => true },
+			{ name: "DEEPTASK_a_PROGRESS.md", isDirectory: () => false, isFile: () => true },
+		] as any)
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			if (filePath === firstPath || filePath === secondPath) {
+				return `# Existing\n\n<!-- deeptask-task-id:task-1 -->\n`
+			}
+			throw Object.assign(new Error("missing"), { code: "ENOENT" })
+		})
+
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "metadata", { value: { task: "Renamed task" } })
+
+		await task.syncTaskProgressWithTodoList([{ id: "1", content: "keep one file", status: "in_progress" }])
+
+		expect(writeFile).toHaveBeenLastCalledWith(firstPath, expect.any(String), "utf8")
+		expect(writeFile).not.toHaveBeenCalledWith(secondPath, expect.any(String), "utf8")
+		expect(unlink).toHaveBeenCalledWith(secondPath)
+	})
+
+	it("adopts the unique unclaimed progress file that already contains the first authored milestone", async () => {
+		const taskDirectory = "/workspace/EXTRA/task"
+		const authoredPath = path.join(taskDirectory, "DEEPTASK_authored_focus_PROGRESS.md")
+		const writeFile = vi.mocked(fs.writeFile)
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "DEEPTASK_authored_focus_PROGRESS.md", isDirectory: () => false, isFile: () => true },
+		] as any)
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			if (filePath === authoredPath) {
+				return "# DeepTask authored focus\n\n- [-] inspect archive routing\n- [ ] add coverage\n"
+			}
+			throw Object.assign(new Error("missing"), { code: "ENOENT" })
+		})
+
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "metadata", { value: { task: "Original user request" } })
+		Object.defineProperty(task, "shouldKeepNextCompletionActive", { value: true, writable: true })
+
+		await task.syncTaskProgressWithTodoList([
+			{ id: "1", content: "inspect archive routing", status: "in_progress" },
+			{ id: "2", content: "add coverage", status: "pending" },
+		])
+
+		expect(writeFile).toHaveBeenLastCalledWith(
+			authoredPath,
+			expect.stringContaining("<!-- deeptask-task-id:task-1 -->"),
+			"utf8",
+		)
+		expect(writeFile).not.toHaveBeenCalledWith(
+			path.join(taskDirectory, "DEEPTASK_inspect_archive_routing_PROGRESS.md"),
+			expect.any(String),
+			"utf8",
+		)
+	})
+
+	it("adopts the unique milestone-matched active file even when a stale host task ID marked it", async () => {
+		const taskDirectory = "/workspace/EXTRA/task"
+		const authoredPath = path.join(taskDirectory, "DEEPTASK_existing_focus_PROGRESS.md")
+		const writeFile = vi.mocked(fs.writeFile)
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "DEEPTASK_existing_focus_PROGRESS.md", isDirectory: () => false, isFile: () => true },
+		] as any)
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			if (filePath === authoredPath) {
+				return "# Existing\n\n<!-- deeptask-task-id:old-host-task -->\n\n- [-] inspect archive routing\n"
+			}
+			throw Object.assign(new Error("missing"), { code: "ENOENT" })
+		})
+
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "new-host-task" })
+		Object.defineProperty(task, "metadata", { value: { task: "Original user request" } })
+		Object.defineProperty(task, "shouldKeepNextCompletionActive", { value: true, writable: true })
+
+		await task.syncTaskProgressWithTodoList([
+			{ id: "1", content: "inspect archive routing", status: "in_progress" },
+		])
+
+		expect(writeFile).toHaveBeenLastCalledWith(
+			authoredPath,
+			expect.stringContaining("<!-- deeptask-task-id:new-host-task -->"),
+			"utf8",
+		)
+		expect(writeFile).toHaveBeenLastCalledWith(
+			authoredPath,
+			expect.not.stringContaining("<!-- deeptask-task-id:old-host-task -->"),
+			"utf8",
+		)
+	})
+
+	it("does not claim an unmarked progress file when the first milestone matches multiple files", async () => {
+		const taskDirectory = "/workspace/EXTRA/task"
+		const defaultPath = path.join(taskDirectory, "DEEPTASK_inspect_archive_routing_PROGRESS.md")
+		const writeFile = vi.mocked(fs.writeFile)
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "first.md", isDirectory: () => false, isFile: () => true },
+			{ name: "second.md", isDirectory: () => false, isFile: () => true },
+		] as any)
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			if (filePath === defaultPath) {
+				throw Object.assign(new Error("missing"), { code: "ENOENT" })
+			}
+			return "# Existing task\n\n- [-] inspect archive routing\n"
+		})
+
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "metadata", { value: { task: "Original user request" } })
+		Object.defineProperty(task, "shouldKeepNextCompletionActive", { value: true, writable: true })
+
+		await task.syncTaskProgressWithTodoList([
+			{ id: "1", content: "inspect archive routing", status: "in_progress" },
+		])
+
+		expect(writeFile).toHaveBeenLastCalledWith(
+			defaultPath,
+			expect.stringContaining("<!-- deeptask-task-id:task-1 -->"),
+			"utf8",
+		)
 	})
 })
 

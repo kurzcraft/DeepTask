@@ -124,6 +124,13 @@ export function getToolDescriptionsForMode(
 	// Add always available tools
 	ALWAYS_AVAILABLE_TOOLS.forEach((tool) => tools.add(tool))
 
+	// A disabled provider-profile switch must not be advertised in legacy tool
+	// descriptions either. Execution still asks for approval for a call restored
+	// from older history, but new model turns cannot select the hidden tool.
+	if (clineProviderState?.alwaysAllowProviderProfileSwitch === false) {
+		tools.delete("switch_provider_profile")
+	}
+
 	// kilocode_change start
 	// Conditionally exclude ask_followup_question in yolo mode
 	// This prevents the agent from asking itself questions and auto-answering them

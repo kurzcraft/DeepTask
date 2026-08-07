@@ -192,8 +192,13 @@ export abstract class ShadowCheckpointService extends EventEmitter {
 			await git.addConfig("user.email", "noreply@example.com")
 			await this.writeExcludeFile()
 			await this.stageAll(git)
-			const { commit } = await git.commit("initial commit", { "--allow-empty": null })
-			this.baseHash = commit
+			// kilocode_change start - simple-git localizes commit summaries
+			await git.commit("initial commit", { "--allow-empty": null })
+			// In a non-English Git locale, CommitResult.commit can include a translated
+			// "root commit" label rather than a bare object ID. Resolve HEAD directly
+			// so later reset/diff commands always receive a valid revision.
+			this.baseHash = (await git.revparse(["HEAD"])).trim()
+			// kilocode_change end
 			created = true
 		}
 
@@ -325,7 +330,8 @@ export abstract class ShadowCheckpointService extends EventEmitter {
 			const commitArgs = options?.allowEmpty ? { "--allow-empty": null } : undefined
 			const result = await this.git.commit(message, commitArgs)
 			const fromHash = this._checkpoints[this._checkpoints.length - 1] ?? this.baseHash!
-			const toHash = result.commit || fromHash
+			// kilocode_change - CommitResult.commit can contain localized prose
+			const toHash = result.commit ? (await this.git.revparse(["HEAD"])).trim() : fromHash
 			this._checkpoints.push(toHash)
 			const duration = Date.now() - startTime
 

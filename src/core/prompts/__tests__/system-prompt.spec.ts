@@ -266,7 +266,9 @@ describe("SYSTEM_PROMPT", () => {
 		)
 
 		expect(prompt).toContain("RELIABLE COMMAND EXECUTION")
-		expect(prompt).toContain("Never send a long or complex command directly to execute_command")
+		expect(prompt).toContain("Never send a long, complex, or escape-sensitive command directly to execute_command")
+		expect(prompt).toContain("VSCodium terminal integration")
+		expect(prompt).toContain("escape-sensitive command")
 		expect(prompt).toContain("current workspace's `EXTRA/bash/` directory")
 		expect(prompt).toContain("current workspace's `EXTRA/output/` directory")
 		expect(prompt).toContain("persist complete stdout and stderr to a task-specific log file")
@@ -952,8 +954,43 @@ describe("SYSTEM_PROMPT", () => {
 		expect(enabledPrompt).toContain("TASK PROGRESS FILE")
 		expect(enabledPrompt).toContain("current workspace's EXTRA/task/ directory")
 		expect(enabledPrompt).toContain("create a concise task-specific Markdown progress file under EXTRA/task/")
+		expect(enabledPrompt).toContain(
+			"Name a genuinely new task file from a concise, filesystem-safe form of its task title",
+		)
+		expect(enabledPrompt).toContain(
+			"HTML marker deeptask-task-id followed by the task ID is the authoritative identity",
+		)
+		expect(enabledPrompt).toContain(
+			"never generate a second active Markdown file or a second checklist for the same ID",
+		)
+		expect(enabledPrompt).toContain("update the existing marked file in place")
+		expect(enabledPrompt).toContain("never a UUID or opaque generated identifier")
+		expect(enabledPrompt).toContain("Keep one task's evolving checklist in its same Markdown file")
+		expect(enabledPrompt).toContain("use clearly visible hierarchical indentation")
+		expect(enabledPrompt).toContain("Before completion, check every checklist item in the task Markdown")
 		expect(enabledPrompt).toContain("creating the directory when needed")
 		expect(enabledPrompt).toContain("Do not create task progress files in the workspace root")
+		expect(enabledPrompt).toContain("An archived file records only that its own task is finished")
+		expect(enabledPrompt).toContain("create a new task-specific progress file and continue immediately")
+		expect(enabledPrompt).toContain(
+			"ordinary user feedback, and edited resends within an existing task are not new tasks",
+		)
+		expect(enabledPrompt).toContain(
+			"do not repeat task-start actions such as querying Obsidian or other long-term memory",
+		)
+		expect(enabledPrompt).toContain("smallest independently verifiable subtask granularity")
+		expect(enabledPrompt).toContain("not at individual tool-call granularity")
+		expect(enabledPrompt).toContain(
+			"Multiple tool calls within one subtask do not require repeated progress-file writes",
+		)
+		expect(enabledPrompt).toContain("Do not defer several completed items until the end of the task")
+		expect(enabledPrompt).toContain("do not repeatedly rewrite the checklist when no item state changed")
+		expect(enabledPrompt).toContain("Before completion, check every checklist item in the task Markdown")
+		expect(enabledPrompt).toContain("move the fully completed Markdown into EXTRA/task/finished/")
+		expect(enabledPrompt).toContain(
+			"any Markdown outside EXTRA/task/finished/ contains a pending or in-progress checklist item",
+		)
+		expect(enabledPrompt).toContain("a tool fails, a blocker appears, a material decision changes the plan")
 		expect(enabledPrompt).toContain("long-command scripts in EXTRA/bash/")
 		expect(enabledPrompt).toContain("durable command output in EXTRA/output/")
 	})

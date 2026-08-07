@@ -86,7 +86,6 @@ import { toggleWorkflow, toggleRule, createRuleFile, deleteRuleFile } from "./ki
 import { mermaidFixPrompt } from "../prompts/utilities/mermaid" // kilocode_change
 // kilocode_change start
 import {
-	editMessageHandler,
 	fetchKilocodeNotificationsHandler,
 	deviceAuthMessageHandler,
 } from "../kilocode/webview/webviewMessageHandlerUtils"
@@ -167,6 +166,83 @@ export const webviewMessageHandler = async (
 		const apiConversationHistoryIndex = preferred?.idx ?? -1
 
 		return { messageIndex, apiConversationHistoryIndex }
+	}
+
+	/**
+	 * Finds the structural API boundary for an edited user message.
+	 *
+	 * UI and API timestamps are intentionally asynchronous: a user_feedback row can
+	 * be rendered before the matching API user turn is persisted, and a condensed
+	 * summary can represent a later branch using an earlier timestamp. Therefore an
+	 * edited resend must never guess this boundary from timestamps. If the original
+	 * user payload cannot be identified uniquely in the stored API history, return
+	 * zero so the replacement Task starts from a known-clean history instead of
+	 * exposing an unprovable prefix to the model.
+	 */
+	const findStrictEditApiCutoffIndex = (currentCline: any, targetMessage: ClineMessage): number => {
+		const targetText = targetMessage.text
+		if (typeof targetText !== "string" || !targetText) {
+			return 0
+		}
+
+		const taskEnvelope = `<task>\n${targetText}\n</task>`
+		const feedbackEnvelope = `<user_message>\n${targetText}\n</user_message>`
+		const apiConversationHistory = Array.isArray(currentCline.apiConversationHistory)
+			? currentCline.apiConversationHistory
+			: []
+		const matchingIndices = apiConversationHistory
+			.map((message: ApiMessage, index: number) => ({ message, index }))
+			.filter(({ message }: { message: ApiMessage }) => {
+				if (message.role !== "user" || message.isSummary) {
+					return false
+				}
+
+				const textBlocks = Array.isArray(message.content)
+					? message.content.filter((block) => block.type === "text").map((block) => block.text)
+					: [message.content]
+
+				return textBlocks.some(
+					(text) =>
+						typeof text === "string" &&
+						(text === targetText || text === taskEnvelope || text.includes(feedbackEnvelope)),
+				)
+			})
+
+		if (matchingIndices.length !== 1) {
+			return 0
+		}
+
+		// A matched user message may already be hidden by a summary or truncation
+		// marker. The marker is stored before the hidden messages and can itself be
+		// hidden by a later marker, so walk the parent chain and move the boundary
+		// before every ancestor. Keeping the matched index alone would retain a
+		// summary that contains the very branch the user is replacing.
+		let cutoffIndex = matchingIndices[0].index
+		let currentMessage: ApiMessage | undefined = matchingIndices[0].message
+		const visitedParentIds = new Set<string>()
+
+		while (currentMessage) {
+			const parentId = currentMessage.condenseParent ?? currentMessage.truncationParent
+			if (!parentId || visitedParentIds.has(parentId)) {
+				break
+			}
+			visitedParentIds.add(parentId)
+
+			const parentIndex = apiConversationHistory.findIndex(
+				(message: ApiMessage) =>
+					(message.isSummary && message.condenseId === parentId) ||
+					(message.isTruncationMarker && message.truncationId === parentId),
+			)
+			if (parentIndex === -1) {
+				// An orphaned parent cannot prove which part of the history is safe.
+				return 0
+			}
+
+			cutoffIndex = Math.min(cutoffIndex, parentIndex)
+			currentMessage = apiConversationHistory[parentIndex]
+		}
+
+		return cutoffIndex
 	}
 
 	/**
@@ -358,8 +434,10 @@ export const webviewMessageHandler = async (
 			return
 		}
 
-		// Use findMessageIndices to find messages based on timestamp
-		const { messageIndex, apiConversationHistoryIndex } = findMessageIndices(messageTs, currentCline)
+		// Use the UI timestamp only to locate the rendered row. The API boundary is
+		// derived from the original user payload below because API timestamps can be
+		// reordered by streaming and condensation.
+		const { messageIndex } = findMessageIndices(messageTs, currentCline)
 
 		if (messageIndex === -1) {
 			// kilocode_change start
@@ -404,6 +482,7 @@ export const webviewMessageHandler = async (
 			// kilocode_change end
 
 			const targetMessage = currentCline.clineMessages[messageIndex]
+			const strictApiCutoffIndex = findStrictEditApiCutoffIndex(currentCline, targetMessage)
 
 			// If checkpoint restoration is requested, find and restore to the last checkpoint before this message
 			if (restoreCheckpoint) {
@@ -425,7 +504,7 @@ export const webviewMessageHandler = async (
 						editData: {
 							editedContent,
 							images,
-							apiConversationHistoryIndex,
+							apiConversationHistoryIndex: strictApiCutoffIndex,
 						},
 					})
 					// The task will be cancelled and reinitialized by checkpointRestore
@@ -453,10 +532,19 @@ export const webviewMessageHandler = async (
 				}
 			}
 
-			// Delete the original (user) message and all subsequent messages using MessageManager
+			// Delete the original (user) message and all subsequent messages using MessageManager.
+			// An edit replaces a branch, so unlike ordinary deletion it must not retain
+			// assistant messages that raced ahead of the user-message API timestamp.
 			const rewindTs = currentCline.clineMessages[deleteFromMessageIndex]?.ts
 			if (rewindTs) {
-				await currentCline.messageManager.rewindToTimestamp(rewindTs, { includeTargetMessage: false })
+				await currentCline.messageManager.rewindToTimestamp(rewindTs, {
+					includeTargetMessage: false,
+					strictCutoff: true,
+					// `0` deliberately clears the unprovable prefix. A timestamp fallback
+					// can retain a condensed summary or raced assistant output that already
+					// contains the discarded branch.
+					apiCutoffIndex: strictApiCutoffIndex,
+				})
 			}
 
 			// Restore checkpoint associations for preserved messages
@@ -477,26 +565,17 @@ export const webviewMessageHandler = async (
 			// Update the UI to reflect the deletion
 			await provider.postStateToWebview()
 
-			// kilocode_change start
-			// Editing/resending invalidates the history currently owned by a live loop.
-			// Unlike an ordinary follow-up, this must restart even when the old loop is
-			// between HTTP chunks or waiting on a tool (`isStreaming === false`). Starting
-			// another loop on the same Task races shared parser/content/ask state: the first
-			// resend appears stuck and a second one can hit the consecutive-mistake dialog.
-			// The rewind has already been persisted, so park the edited prompt and rehydrate
-			// a fresh Task from that clean boundary before consuming it.
-			if (currentCline.isActivelyRunningTaskLoop?.()) {
-				provider.setPendingCancelledTaskContinuation?.(editedContent, images, {
-					kind: "edited_resend",
-				})
-				await provider.cancelTask()
-				return
-			}
-			// kilocode_change end
-
-			await currentCline.continueTaskFromUserMessage(editedContent, images, {
+			// A strict edit has frozen the old Task's persistence so late stream/tool
+			// callbacks cannot restore the discarded branch. That old instance must never
+			// be reused, even when its loop appears idle: reusing it would either let a
+			// pending callback mutate shared state or make the replacement prompt bypass
+			// the freshly persisted API prefix. Always consume the edit on a rehydrated
+			// Task from the strict boundary.
+			provider.setPendingCancelledTaskContinuation?.(editedContent, images, {
 				kind: "edited_resend",
 			})
+			await provider.cancelTask()
+			return
 		} catch (error) {
 			console.error("Error in edit message:", error)
 			vscode.window.showErrorMessage(
@@ -505,6 +584,117 @@ export const webviewMessageHandler = async (
 				}),
 			)
 		}
+	}
+
+	/**
+	 * Replaces an assistant response while preserving it as assistant context, then
+	 * appends an editable synthetic user turn so the user can continue from that point.
+	 */
+	const handleAssistantMessageEdit = async (messageTs: number, editedContent: string, images?: string[]) => {
+		const currentCline = provider.getCurrentTask()
+		if (!currentCline) return
+
+		const { messageIndex, apiConversationHistoryIndex: exactApiIndex } = findMessageIndices(messageTs, currentCline)
+		if (messageIndex === -1) {
+			await provider.postStateToWebview()
+			return
+		}
+
+		const targetMessage = currentCline.clineMessages[messageIndex]
+		const apiConversationHistory = Array.isArray(currentCline.apiConversationHistory)
+			? currentCline.apiConversationHistory
+			: []
+		// Streaming and condensation can change API timestamps. Resolve the assistant
+		// by its rendered payload before treating the edit as stale.
+		const apiConversationHistoryIndex =
+			exactApiIndex !== -1
+				? exactApiIndex
+				: apiConversationHistory.findIndex((apiMessage: ApiMessage) => {
+						if (apiMessage.role !== "assistant") return false
+						if (typeof apiMessage.content === "string") return apiMessage.content === targetMessage.text
+						return apiMessage.content?.some(
+							(block: any) =>
+								(block.type === "text" && block.text === targetMessage.text) ||
+								(block.type === "tool_use" &&
+									block.name === "attempt_completion" &&
+									block.input?.result === targetMessage.text),
+						)
+					})
+		if (apiConversationHistoryIndex === -1) {
+			await provider.postStateToWebview()
+			return
+		}
+
+		if (targetMessage.type !== "say" || !["text", "completion_result"].includes(targetMessage.say || "")) {
+			return
+		}
+
+		const apiMessage = currentCline.apiConversationHistory[apiConversationHistoryIndex]
+		if (apiMessage.role !== "assistant") return
+
+		const editedApiMessage: ApiMessage = { ...apiMessage }
+		if (Array.isArray(apiMessage.content)) {
+			let replaced = false
+			const content = apiMessage.content.map((block: any) => {
+				if (block.type === "text") {
+					replaced = true
+					return { ...block, text: editedContent }
+				}
+				if (block.type === "tool_use" && block.name === "attempt_completion") {
+					replaced = true
+					return { ...block, input: { ...block.input, result: editedContent } }
+				}
+				return block
+			})
+			if (!replaced) return
+			editedApiMessage.content = content
+		} else {
+			editedApiMessage.content = editedContent
+		}
+
+		const continuationTs = Math.max(Date.now(), messageTs + 1)
+		const continuationMessage: ClineMessage = {
+			ts: continuationTs,
+			type: "say",
+			say: "user_feedback",
+			text: "继续",
+			images,
+			editPrompt: true,
+		}
+		const continuationApiMessage: ApiMessage = {
+			role: "user",
+			content: [{ type: "text", text: "继续" }],
+			ts: continuationTs,
+		}
+
+		await currentCline.overwriteClineMessages(
+			[
+				...currentCline.clineMessages.slice(0, messageIndex),
+				{ ...targetMessage, text: editedContent, images },
+				continuationMessage,
+			],
+			{ force: true },
+		)
+		await currentCline.overwriteApiConversationHistory(
+			[
+				...currentCline.apiConversationHistory.slice(0, apiConversationHistoryIndex),
+				editedApiMessage,
+				continuationApiMessage,
+			],
+			{ force: true },
+		)
+		await saveTaskMessages({
+			messages: currentCline.clineMessages,
+			taskId: currentCline.taskId,
+			globalStoragePath: provider.contextProxy.globalStorageUri.fsPath,
+		})
+		await provider.postStateToWebview()
+
+		// Treat assistant edits as branch replacements too. The old Task must be
+		// cancelled and rehydrated so late stream/tool callbacks cannot restore the
+		// discarded tail. Do not park the edited assistant text as a continuation:
+		// the synthetic "继续" row is intentionally left in edit mode for the user.
+		await provider.cancelTask()
 	}
 
 	/**
@@ -739,10 +929,21 @@ export const webviewMessageHandler = async (
 					provider.setPendingCancelledTaskContinuation?.(resolved.text ?? "", resolved.images)
 					await provider.postStateToWebview()
 				} else if (task && isCompletionContinuation) {
+					// A completed task is a hard context boundary. Reusing its mutable loop,
+					// checklist, and completion gates lets old mechanics preempt the latest
+					// human instruction. createTask() replaces the old top-level task before
+					// delivering the full message to a fresh model turn.
 					task.clearStaleWebviewAskResponse()
 					task.messageQueueService.clear()
-					void task.continueTaskFromUserMessage(resolved.text ?? "", resolved.images)
-					await provider.postStateToWebview()
+					try {
+						await provider.createTask(resolved.text ?? "", resolved.images)
+						await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
+					} catch (error) {
+						await provider.postStateToWebview()
+						vscode.window.showErrorMessage(
+							`Failed to create task: ${error instanceof Error ? error.message : String(error)}`,
+						)
+					}
 				} else if (task && hasPendingAsk && isAskResponseForCurrentAsk) {
 					task.handleWebviewAskResponse(message.askResponse!, resolved.text, resolved.images)
 				} else if (
@@ -765,9 +966,7 @@ export const webviewMessageHandler = async (
 						task.findMessageByTimestamp?.(message.askTs) ??
 						task.clineMessages?.find((clineMessage) => clineMessage.ts === message.askTs)
 					const isDropOnlyAutoApprovedToolAsk =
-						answeredAsk?.type === "ask" &&
-						answeredAsk.isAnswered === true &&
-						answeredAsk.ask === "tool"
+						answeredAsk?.type === "ask" && answeredAsk.isAnswered === true && answeredAsk.ask === "tool"
 					if (isDropOnlyAutoApprovedToolAsk) {
 						task.clearStaleWebviewAskResponse()
 						task.messageQueueService.clear()
@@ -2181,6 +2380,12 @@ export const webviewMessageHandler = async (
 			}
 
 			await handleMessageModificationsOperation(message.value, "delete")
+			break
+		}
+		case "submitEditedAssistantMessage": {
+			if (typeof message.value === "number" && typeof message.editedMessageContent === "string") {
+				await handleAssistantMessageEdit(message.value, message.editedMessageContent, message.images)
+			}
 			break
 		}
 		case "submitEditedMessage": {
@@ -4215,7 +4420,20 @@ export const webviewMessageHandler = async (
 		}
 		// kilocode_change start
 		case "editMessage": {
-			await editMessageHandler(provider, message)
+			// Keep the legacy event compatible, but route it through the same strict
+			// branch-replacement path as current edit confirmations. The former legacy
+			// handler used an imprecise timestamp offset and a second direct resend,
+			// which could restore the discarded branch into the replacement request.
+			const messageTs = message.values?.ts
+			const editedContent = message.values?.text
+			if (typeof messageTs === "number" && typeof editedContent === "string" && editedContent.trim()) {
+				await handleEditMessageConfirm(
+					messageTs,
+					editedContent,
+					message.values?.revert === true,
+					message.values?.images,
+				)
+			}
 			break
 		}
 		case "fetchKilocodeNotifications": {
@@ -4566,6 +4784,24 @@ export const webviewMessageHandler = async (
 			// swallowed by a stale pending ask.
 			const resolved = await resolveIncomingImages({ text: message.text, images: message.images })
 			const task = provider.getCurrentTask()
+			const hasMessagePayload = !!(resolved.text?.trim() || resolved.images?.length)
+
+			if (!task) {
+				// Older webviews can emit queueMessage after completion cleanup. Never
+				// discard a real human payload at that boundary.
+				if (hasMessagePayload) {
+					try {
+						await provider.createTask(resolved.text ?? "", resolved.images)
+						await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
+					} catch (error) {
+						await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
+						vscode.window.showErrorMessage(
+							`Failed to create task: ${error instanceof Error ? error.message : String(error)}`,
+						)
+					}
+				}
+				break
+			}
 
 			if (task) {
 				const hasMessagePayload = !!(resolved.text?.trim() || resolved.images?.length)
