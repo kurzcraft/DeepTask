@@ -31,6 +31,9 @@ export const historyItemSchema = z.object({
 	 */
 	toolProtocol: z.enum(["xml", "native"]).optional(),
 	apiConfigName: z.string().optional(), // Provider profile name for sticky profile feature
+	/** Stable workspace-relative progress checklist binding for cross-host restoration. */
+	taskProgressFilePath: z.string().optional(),
+	taskProgressInstanceId: z.string().optional(),
 	status: z.enum(["active", "completed", "delegated"]).optional(),
 	delegatedToId: z.string().optional(), // Last child this parent delegated to
 	childIds: z.array(z.string()).optional(), // All children spawned by this task

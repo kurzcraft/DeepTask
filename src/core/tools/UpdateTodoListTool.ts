@@ -99,13 +99,10 @@ export class UpdateTodoListTool extends BaseTool<"update_todo_list"> {
 			}
 
 			// kilocode_change start
-			// The focused task Markdown is the durable source for a newly judged work
-			// item. Persist its agent-authored checklist before mutating the native list;
-			// this preserves the required file -> UI ordering even if the process stops
-			// between the two operations.
-			await task.syncTaskProgressWithTodoList(normalizedTodos)
-			await setTodoListForTask(task, normalizedTodos)
-			task.markProgressListExpandedForContinuation(normalizedTodos)
+			// The Markdown task file is authoritative. This call verifies the tool payload
+			// against that file, then projects the parsed file hierarchy into native state.
+			const synchronizedTodos = await setTodoListForTask(task, normalizedTodos)
+			task.markProgressListExpandedForContinuation(synchronizedTodos)
 			// kilocode_change end
 
 			if (isTodoListChanged) {
@@ -186,15 +183,21 @@ export function getTodoListForTask(cline: Task): TodoItem[] | undefined {
 	return cline.todoList?.slice()
 }
 
-export async function setTodoListForTask(cline?: Task, todos?: TodoItem[]) {
-	if (cline === undefined) return
-	cline.todoList = Array.isArray(todos) ? todos : []
+export async function setTodoListForTask(cline?: Task, todos?: TodoItem[]): Promise<TodoItem[]> {
+	if (cline === undefined) return []
+	const normalizedTodos = Array.isArray(todos) ? todos : []
+
+	// kilocode_change start
+	// Read and validate the unique durable checklist before exposing native state.
+	// The tool payload cannot create or rewrite a task file through this boundary.
+	const synchronizedTodos = await cline.syncTaskProgressWithTodoList(normalizedTodos)
+	cline.todoList = synchronizedTodos
 
 	// `currentTaskTodos` is part of the provider state snapshot consumed by the
-	// expandable top todo panel. Updating only Task.todoList leaves that panel
-	// stale until an unrelated state refresh occurs, so publish the new list at
-	// the same durable-file -> native-list synchronization boundary.
+	// expandable top todo panel. Publish only after the source file was validated.
 	await cline.providerRef.deref()?.postStateToWebview()
+	return synchronizedTodos
+	// kilocode_change end
 }
 
 export function restoreTodoListForTask(cline: Task, todoList?: TodoItem[]) {

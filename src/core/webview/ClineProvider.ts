@@ -1405,9 +1405,21 @@ export class ClineProvider
 			} catch (error) {
 				this.log(`[createTaskWithHistoryItem] Error restoring task history: ${error}`)
 
-				// Human input must not be lost when history restoration fails. The restored
-				// task is unusable, so hand the already-captured latest message to a fresh
-				// task and let the normal model prompt process it as a new turn.
+				// An edited resend is a branch replacement inside the existing task. Do not
+				// fall back to createTask(): that would discard the task identity and all
+				// preserved reasoning/tool context exactly when the user asked for a small
+				// prompt correction. Keep the rehydrated task visible for diagnosis/retry.
+				if (pendingContinuation?.options?.kind === "edited_resend") {
+					await this.postStateToWebview()
+					vscode.window.showErrorMessage(
+						`Failed to restore edited message in the existing task: ${error instanceof Error ? error.message : String(error)}`,
+					)
+					return task
+				}
+
+				// Human input must not be lost when ordinary continuation restoration fails.
+				// The restored task is unusable, so hand the already-captured latest message
+				// to a fresh task and let the normal model prompt process it as a new turn.
 				if (pendingContinuation) {
 					const current = this.getCurrentTask()
 					if (current === task) {

@@ -103,7 +103,7 @@ import { buildNativeToolsArrayWithRestrictions } from "./build-tools"
 
 // core modules
 import { ToolRepetitionDetector } from "../tools/ToolRepetitionDetector"
-import { restoreTodoListForTask } from "../tools/UpdateTodoListTool"
+import { parseMarkdownChecklist, restoreTodoListForTask } from "../tools/UpdateTodoListTool"
 import { FileContextTracker } from "../context-tracking/FileContextTracker"
 import { RooIgnoreController } from "../ignore/RooIgnoreController"
 import { RooProtectedController } from "../protect/RooProtectedController"
@@ -323,6 +323,13 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	 * @private
 	 */
 	private taskApiConfigReady: Promise<void>
+
+	// kilocode_change start
+	private taskProgressFileWatcher?: vscode.FileSystemWatcher
+	private taskProgressRefreshInFlight?: Promise<void>
+	private taskProgressFilePath?: string
+	private taskProgressInstanceId?: string
+	// kilocode_change end
 
 	providerRef: WeakRef<ClineProvider>
 	private readonly globalStoragePath: string
@@ -595,9 +602,14 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		}
 
 		this.taskId = historyItem ? historyItem.id : uuidv7()
-		// kilocode_change: request-session identity must not survive branch replacement.
+		// kilocode_change start
+		// Request-session identity must not survive branch replacement. Progress-file
+		// identity does: it belongs to the durable checklist instance, not this host run.
 		this.providerSessionId = crypto.randomUUID()
-		this.taskIsFavorited = historyItem?.isFavorited // kilocode_change
+		this.taskProgressFilePath = historyItem?.taskProgressFilePath
+		this.taskProgressInstanceId = historyItem?.taskProgressInstanceId
+		this.taskIsFavorited = historyItem?.isFavorited
+		// kilocode_change end
 		this.rootTaskId = historyItem ? historyItem.rootTaskId : rootTask?.taskId
 		this.parentTaskId = historyItem ? historyItem.parentTaskId : parentTask?.taskId
 		this.childTaskId = undefined
@@ -709,6 +721,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		this.assistantMessageParser = effectiveProtocol !== "native" ? new AssistantMessageParser() : undefined
 
 		this.messageQueueService = new MessageQueueService()
+		this.setupTaskProgressFileWatcher()
 
 		this.messageQueueStateChangedHandler = () => {
 			this.emit(RooCodeEventName.TaskUserMessage, this.taskId)
@@ -1594,6 +1607,8 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 					workspace: this.cwd,
 					mode: this._taskMode || defaultModeSlug, // Use the task's own mode, not the current provider mode.
 					apiConfigName: this._taskApiConfigName, // Use the task's own provider profile, not the current provider profile.
+					taskProgressFilePath: this.taskProgressFilePath,
+					taskProgressInstanceId: this.taskProgressInstanceId,
 					initialStatus: this.continuationStatusOverride ?? this.initialStatus,
 					toolProtocol: this._taskToolProtocol, // Persist the locked tool protocol.
 				})
@@ -2105,7 +2120,10 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	}
 
 	// kilocode_change start
-	private stripCompletedAttemptCompletionFromHistory(history?: ApiMessage[]): ApiMessage[] {
+	private stripCompletedAttemptCompletionFromHistory(
+		history?: ApiMessage[],
+		stripTextAssistantTails = true,
+	): ApiMessage[] {
 		const source = history ?? this.apiConversationHistory
 		const isAttemptCompletionAssistantMessage = (message: ApiMessage | undefined): boolean => {
 			if (!message || message.role !== "assistant") {
@@ -2129,31 +2147,26 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			return stripped
 		}
 
-		// DeepTask downgrades attempt_completion to ordinary assistant text. Those
-		// trailing text-only assistant turns still look like "final results" and
-		// cause the model to restate old accomplishments on the next user message.
-		// Drop pure text/reasoning assistant tails so the new instruction is the focus.
-		let stripped = [...source]
-		while (stripped.length > 0) {
-			const lastMessage = stripped[stripped.length - 1]
-			if (!lastMessage || lastMessage.role !== "assistant") {
-				break
-			}
+		if (!stripTextAssistantTails) {
+			// A plain assistant text turn is not sufficient evidence of completion while
+			// restoring or resending history. Removing it here shortens valid context.
+			return source
+		}
 
-			const content = Array.isArray(lastMessage.content)
+		// Live continuation after a DeepTask soft completion has an explicit UI/task
+		// boundary, so trailing text-only assistant summaries belong to the completed
+		// turn and should not bias the next instruction.
+		let stripped = [...source]
+		while (true) {
+			const lastMessage = stripped.at(-1)
+			if (!lastMessage || lastMessage.role !== "assistant") break
+			const content: Anthropic.Messages.ContentBlockParam[] = Array.isArray(lastMessage.content)
 				? lastMessage.content
 				: [{ type: "text", text: lastMessage.content }]
-			const hasToolUse = content.some((block) => block.type === "tool_use")
-			if (hasToolUse) {
-				break
-			}
-
+			if (content.some((block) => block.type === "tool_use")) break
 			stripped = stripped.slice(0, -1)
 		}
-
-		if (history === undefined) {
-			this.apiConversationHistory = stripped
-		}
+		if (history === undefined) this.apiConversationHistory = stripped
 		return stripped
 	}
 
@@ -2384,10 +2397,9 @@ ${protocolHint}
 
 	private buildUserContinuationText(continuationText: string): string {
 		// kilocode_change start
-		// Put the human's words first. Progress, archive, and completion policy already
-		// exists in the system prompt; repeating it here made the model answer the host
-		// mechanism instead of the new instruction.
-		return `<latest_human_message>\n${continuationText}\n</latest_human_message>\n\nTreat the message above as the current instruction and respond to its meaning directly.`
+		// Put the human's words first and make their control priority explicit. A
+		// completed historical turn must never preempt new input.
+		return `<latest_human_message>\n${continuationText}\n</latest_human_message>\n\nTreat the message above as the current instruction and respond to its meaning directly. It supersedes any earlier state or conclusion. Never call attempt_completion merely because earlier work was completed. First classify this latest message: if it is only a question, clarification, acknowledgement, or ordinary discussion, answer conversationally without creating or expanding a task list. If it requests concrete work, create or expand the task list with new actionable milestones before doing that work, then proceed until that work is handled. Do not call attempt_completion for a discussion-only reply.`
 		// kilocode_change end
 	}
 
@@ -3059,8 +3071,11 @@ ${protocolHint}
 		// apiConversationHistory wouldn't be initialized when opening a old
 		// task, and it was because we were waiting for resume).
 		// This is important in case the user deletes messages without resuming
-		// the task first.
-		this.apiConversationHistory = await this.getSavedApiConversationHistory()
+		// the task first. During cancellation rehydration, retain the current
+		// in-memory history because storage may still contain the pre-rewind snapshot.
+		if (this.apiConversationHistory.length === 0) {
+			this.apiConversationHistory = await this.getSavedApiConversationHistory()
+		}
 
 		// If we don't have a persisted tool protocol (old tasks before this feature),
 		// detect it from the API history. This ensures tasks that previously used
@@ -3149,8 +3164,14 @@ ${protocolHint}
 		// kilocode_change end
 
 		// Make sure that the api conversation history can be resumed by the API,
-		// even if it goes out of sync with cline messages.
-		let existingApiConversationHistory: ApiMessage[] = await this.getSavedApiConversationHistory()
+		// even if it goes out of sync with cline messages. During cancellation
+		// rehydration, the current Task already owns the latest in-memory history;
+		// reading storage again here can resurrect a stale snapshot written before
+		// the resend rewind and make the restored context appear much shorter.
+		let existingApiConversationHistory: ApiMessage[] =
+			this.apiConversationHistory.length > 0
+				? [...this.apiConversationHistory]
+				: await this.getSavedApiConversationHistory()
 
 		// v2.0 xml tags refactor caveat: since we don't use tools anymore for XML protocol,
 		// we need to replace all tool use blocks with a text block since the API disallows
@@ -3372,8 +3393,10 @@ ${protocolHint}
 		// When the user resumes with a new instruction, strip completion-style tails
 		// (including DeepTask text-only summaries) so the model cannot restate them.
 		if (responseText) {
-			modifiedApiConversationHistory =
-				this.stripCompletedAttemptCompletionFromHistory(modifiedApiConversationHistory)
+			modifiedApiConversationHistory = this.stripCompletedAttemptCompletionFromHistory(
+				modifiedApiConversationHistory,
+				false,
+			)
 		}
 
 		await this.overwriteApiConversationHistory(modifiedApiConversationHistory)
@@ -3504,6 +3527,15 @@ ${protocolHint}
 		} catch (error) {
 			console.error("Error removing provider profile change listener:", error)
 		}
+
+		// kilocode_change start
+		try {
+			this.taskProgressFileWatcher?.dispose()
+			this.taskProgressFileWatcher = undefined
+		} catch (error) {
+			console.error("Error disposing task progress file watcher:", error)
+		}
+		// kilocode_change end
 
 		// Dispose message queue and remove event listeners.
 		try {
@@ -5261,6 +5293,7 @@ ${protocolHint}
 				this.api.getModel().id,
 				provider.getSkillsManager(),
 				state, // kilocode_change
+				this.taskId, // kilocode_change: bind first task progress file to the host task
 			)
 		})()
 	}
@@ -6337,162 +6370,176 @@ ${protocolHint}
 	}
 
 	/**
-	 * Writes the focused task-file checklist before optionally projecting the same
-	 * list into the native UI. User feedback is never serialized: durable progress
-	 * contains only agent-authored work milestones.
+	 * Reads the bound Markdown checklist and projects it into native state. The file
+	 * is authoritative: this method never creates, renames, deletes, or rewrites
+	 * task files. The host owns the synchronization boundary: it creates the first
+	 * checklist with the host task ID and updates only the checklist body of an
+	 * already-bound file, preserving its marker and title.
 	 */
-	public async syncTaskProgressWithTodoList(todos: TodoItem[] = this.todoList ?? []): Promise<void> {
-		// An empty tool payload is not an authored checklist. Preserve the durable
-		// file and native UI instead of creating a fake milestone or clearing state.
-		if (!Array.isArray(todos) || todos.length === 0) {
-			return
+	public async syncTaskProgressWithTodoList(todos: TodoItem[] = this.todoList ?? []): Promise<TodoItem[]> {
+		if (todos.length === 0) {
+			const existingPath = await this.findOwnedTaskProgressFilePath()
+			if (!existingPath) throw new Error(`Cannot synchronize an empty checklist without an active task file`)
 		}
-		const taskDirectory = path.join(this.cwd, "EXTRA", "task")
-		const initialTaskName = this.metadata?.task?.replace(/\s+/g, " ").trim() || "Active task"
-		// A long-lived DeepTask session can receive a distinct request after its old
-		// progress file was archived. If no active file still carries this task ID,
-		// name the new durable focus from the model-authored checklist instead of
-		// recreating the archived initial-task filename.
-		const actionableFocus = todos
-			.find((todo) => todo.status !== "completed")
-			?.content.replace(/\s+/g, " ")
-			.trim()
-		const taskName = this.shouldKeepNextCompletionActive && actionableFocus ? actionableFocus : initialTaskName
-		const progressPath = await this.findTaskProgressFilePath(taskDirectory, taskName, todos[0]?.content)
-		const taskIdMarker = `<!-- deeptask-task-id:${this.taskId} -->`
-		const nativeTodoMarker = "<!-- deeptask-native-todo-list -->"
-		const legacyActiveMarker = "<!-- deeptask-active-work-item -->"
-		const todoLines = todos.map((todo) => {
-			const checkbox = todo.status === "completed" ? "[x]" : todo.status === "in_progress" ? "[-]" : "[ ]"
-			const content = todo.content.replace(/\s+/g, " ").trim().slice(0, 500)
-			return `${"    ".repeat(todo.depth ?? 0)}- ${checkbox} ${content}`
-		})
-		const displayTaskName = taskName.replace(/\s+/g, " ").trim().slice(0, 160) || "Active task"
-		const syncedSection = `${nativeTodoMarker}\n## Task progress\n\n${todoLines.join("\n")}\n<!-- /deeptask-native-todo-list -->`
-		let content: string
 
-		try {
-			content = await fsp.readFile(progressPath, "utf8")
-			const nativeSectionPattern = new RegExp(
-				`${nativeTodoMarker}[\\s\\S]*?<!-- /deeptask-native-todo-list -->\\r?\\n?`,
-			)
-			if (nativeSectionPattern.test(content)) {
-				content = content.replace(nativeSectionPattern, `${syncedSection}\n`)
-			} else {
-				// The first sync may encounter a hand-authored checklist. It is the same
-				// work list that the native UI will display, so replace that block instead
-				// of appending a second copy. Preserve headings and non-checklist notes.
-				const lines = content
-					.replace(new RegExp(`${legacyActiveMarker}[\\s\\S]*?(?=\\n\\n|$)`), "")
-					.split(/\\r?\\n/)
-				const checklistLines = lines
-					.map((line, index) => ({ line, index }))
-					.filter(({ line }) => /^\\s*-\\s+\\[\\s*[ xX\\-~]\\s*\\]\\s+/.test(line))
-				const firstChecklistIndex = checklistLines[0]?.index
-				const lastChecklistIndex = checklistLines.at(-1)?.index
-				if (firstChecklistIndex !== undefined && lastChecklistIndex !== undefined) {
-					lines.splice(firstChecklistIndex, lastChecklistIndex - firstChecklistIndex + 1)
+		let progressPath = await this.findOwnedTaskProgressFilePath()
+		if (!progressPath) {
+			const taskDirectory = path.join(this.cwd, "EXTRA", "task")
+			try {
+				const entries = await fsp.readdir(taskDirectory, { withFileTypes: true })
+				const candidates = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+				for (const entry of candidates) {
+					const candidatePath = path.join(taskDirectory, entry.name)
+					const candidateContent = await fsp.readFile(candidatePath, "utf8")
+					const identity = this.getTaskProgressIdentity(candidateContent)
+					if (identity === this.taskId || identity?.startsWith(`${this.taskId}:`)) {
+						progressPath = candidatePath
+						break
+					}
 				}
-				// Keep hand-authored context bounded. Progress files are durable state, not
-				// transcripts, so an accidental pasted prompt must not grow indefinitely.
-				const preservedContent = lines.join("\\n").trimEnd().slice(0, 4_000)
-				content = `${preservedContent}\n\n${syncedSection}\n`
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
 			}
-			const taskMarkerPattern = /<!-- deeptask-task-id:[^>]+ -->/g
-			content = taskMarkerPattern.test(content)
-				? content.replace(taskMarkerPattern, taskIdMarker)
-				: `${content.trimEnd()}\n\n${taskIdMarker}\n`
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-				throw error
+		}
+		if (!progressPath) {
+			const taskDirectory = path.join(this.cwd, "EXTRA", "task")
+			try {
+				const entries = await fsp.readdir(taskDirectory, { withFileTypes: true })
+				if (entries.length > 0) {
+					throw new Error(`No active task progress file for host task ${this.taskId}`)
+				}
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
 			}
-			content = `# DeepTask ${displayTaskName}\n\n${taskIdMarker}\n\n${syncedSection}\n`
+			await fsp.mkdir(taskDirectory, { recursive: true })
+			const safeTaskId = this.taskId.replace(/[^a-zA-Z0-9._:-]+/g, "-")
+			progressPath = path.join(taskDirectory, `task-${safeTaskId}.md`)
+			const initialContent = `<!-- deeptask-task-id:${this.taskId} -->\n# Task Progress\n\n${this.serializeTaskProgressChecklist(todos)}\n`
+			await fsp.writeFile(progressPath, initialContent, "utf8")
+			await this.persistTaskProgressBinding(progressPath, this.taskId)
+			return parseMarkdownChecklist(initialContent)
 		}
 
-		await fsp.mkdir(taskDirectory, { recursive: true })
-		await fsp.writeFile(progressPath, content, "utf8")
+		const content = await fsp.readFile(progressPath, "utf8")
+		const fileTodos = parseMarkdownChecklist(content)
+		if (fileTodos.length === 0) {
+			throw new Error(`The active task progress file has no Markdown checklist: ${progressPath}`)
+		}
+
+		// The Markdown file is authoritative after its first creation. A stale native
+		// payload is recoverable drift: project the file into native state without
+		// rewriting its marker, title, or checklist.
+		return fileTodos
+	}
+
+	private serializeTaskProgressChecklist(todos: TodoItem[]): string {
+		return todos
+			.map((todo) => {
+				const marker = todo.status === "completed" ? "x" : todo.status === "in_progress" ? "-" : " "
+				return `${"    ".repeat(todo.depth ?? 0)}- [${marker}] ${todo.content.trim()}`
+			})
+			.join("\n")
+	}
+
+	private setupTaskProgressFileWatcher(): void {
+		const pattern = new vscode.RelativePattern(this.cwd, "EXTRA/task/*.md")
+		this.taskProgressFileWatcher = vscode.workspace.createFileSystemWatcher(pattern)
+		const refresh = () => this.queueTaskProgressFileRefresh()
+		this.taskProgressFileWatcher.onDidCreate(refresh)
+		this.taskProgressFileWatcher.onDidChange(refresh)
+		this.taskProgressFileWatcher.onDidDelete(refresh)
+	}
+
+	private queueTaskProgressFileRefresh(): void {
+		if (this.taskProgressRefreshInFlight) return
+		this.taskProgressRefreshInFlight = this.refreshNativeTodoListFromTaskProgressFile()
+			.catch((error) => {
+				console.error(`[Task#${this.taskId}] Failed to refresh native todos from task progress file:`, error)
+			})
+			.finally(() => {
+				this.taskProgressRefreshInFlight = undefined
+			})
+	}
+
+	public async refreshNativeTodoListFromTaskProgressFile(): Promise<void> {
+		const progressPath = await this.findOwnedTaskProgressFilePath()
+		if (!progressPath) return
+		const content = await fsp.readFile(progressPath, "utf8")
+		const fileTodos = parseMarkdownChecklist(content)
+		if (fileTodos.length === 0) return
+		this.todoList = fileTodos
+		await this.providerRef.deref()?.postStateToWebview()
 	}
 
 	private async hasActiveTaskProgressFile(): Promise<boolean> {
-		const taskDirectory = path.join(this.cwd, "EXTRA", "task")
-		const taskIdMarker = `<!-- deeptask-task-id:${this.taskId} -->`
-
-		try {
-			const entries = await fsp.readdir(taskDirectory, { withFileTypes: true })
-			for (const entry of entries) {
-				if (!entry.isFile() || !entry.name.endsWith(".md")) continue
-				const content = await fsp.readFile(path.join(taskDirectory, entry.name), "utf8")
-				if (content.includes(taskIdMarker)) return true
-			}
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-		}
-
-		return false
+		return (await this.findOwnedTaskProgressFilePath()) !== undefined
 	}
 
-	private async findTaskProgressFilePath(
-		taskDirectory: string,
-		taskName: string,
-		firstMilestone?: string,
-	): Promise<string> {
-		const defaultPath = path.join(taskDirectory, `${this.getTaskProgressFileStem(taskName)}.md`)
-		const markedMatches: string[] = []
-		const milestoneMatches: string[] = []
-		const normalizedMilestone = firstMilestone?.replace(/\s+/g, " ").trim()
+	private getTaskProgressIdentity(content: string): string | undefined {
+		return content.match(/<!--\s*deeptask-task-id:([^>]+?)\s*-->/)?.[1]?.trim()
+	}
+
+	private async persistTaskProgressBinding(progressPath: string, identity: string): Promise<void> {
+		this.taskProgressFilePath = path.relative(this.cwd, progressPath)
+		this.taskProgressInstanceId = identity
+		const provider = this.providerRef?.deref()
+		const historyItem = provider?.getTaskHistory?.().find((item) => item.id === this.taskId)
+		if (historyItem) {
+			await provider?.updateTaskHistory({
+				...historyItem,
+				taskProgressFilePath: this.taskProgressFilePath,
+				taskProgressInstanceId: identity,
+			})
+		}
+	}
+
+	private async findOwnedTaskProgressFilePath(): Promise<string | undefined> {
+		const taskDirectory = path.join(this.cwd, "EXTRA", "task")
+		if (this.taskProgressFilePath || this.taskProgressInstanceId) {
+			if (!this.taskProgressFilePath || !this.taskProgressInstanceId) {
+				throw new Error(`Task ${this.taskId} has an incomplete task progress binding`)
+			}
+			const boundPath = path.resolve(this.cwd, this.taskProgressFilePath)
+			if (path.dirname(boundPath) !== taskDirectory || path.extname(boundPath) !== ".md") {
+				throw new Error(`Task ${this.taskId} has an invalid task progress file binding`)
+			}
+			try {
+				const content = await fsp.readFile(boundPath, "utf8")
+				if (this.getTaskProgressIdentity(content) !== this.taskProgressInstanceId) {
+					throw new Error(`The bound task progress file identity does not match its persisted binding`)
+				}
+				return boundPath
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+				throw error
+			}
+		}
+
+		const matches: Array<{ path: string; identity: string }> = []
 		try {
 			const entries = await fsp.readdir(taskDirectory, { withFileTypes: true })
 			for (const entry of entries) {
 				if (!entry.isFile() || !entry.name.endsWith(".md")) continue
 				const candidatePath = path.join(taskDirectory, entry.name)
 				const candidateContent = await fsp.readFile(candidatePath, "utf8")
-				if (candidateContent.includes(`<!-- deeptask-task-id:${this.taskId} -->`)) {
-					markedMatches.push(candidatePath)
-					continue
-				}
-				if (
-					normalizedMilestone &&
-					candidateContent.split(/\r?\n/).some((line) => {
-						const match = line.match(/^\s*(?:[-*+]\s+)?\[[ x-]\]\s+(.+)$/i)
-						return match?.[1].replace(/\s+/g, " ").trim() === normalizedMilestone
-					})
-				) {
-					milestoneMatches.push(candidatePath)
+				const identity = this.getTaskProgressIdentity(candidateContent)
+				if (identity === this.taskId || identity?.startsWith(`${this.taskId}:`)) {
+					matches.push({ path: candidatePath, identity })
 				}
 			}
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
 		}
-		// Prefer the current host identity. If a restart or competing host assigned a
-		// different ID, a unique authored milestone is sufficient to transfer the
-		// active file to this Task. Ambiguous milestone matches are never guessed.
-		if (markedMatches.length > 0) {
-			const canonicalPath = markedMatches.sort()[0]
-			// A previous host could have written the same marker to more than one file.
-			// Keep one deterministic owner and remove only duplicate active files; the
-			// finished archive is outside this directory scan and is never touched.
-			await Promise.all(
-				markedMatches.slice(1).map(async (duplicatePath) => {
-					try {
-						await fsp.unlink(duplicatePath)
-					} catch (error) {
-						if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-					}
-				}),
-			)
-			return canonicalPath
+		if (matches.length > 1) {
+			const details = matches
+				.sort((left, right) => left.path.localeCompare(right.path))
+				.map((match) => `${match.identity} at ${match.path}`)
+				.join(", ")
+			throw new Error(`Multiple active task progress files belong to host task ${this.taskId}: ${details}`)
 		}
-		return milestoneMatches.length === 1 ? milestoneMatches[0] : defaultPath
-	}
-
-	private getTaskProgressFileStem(taskText: string): string {
-		const readableName = taskText
-			.normalize("NFKC")
-			.replace(/[^\p{L}\p{N}]+/gu, "_")
-			.replace(/^_+|_+$/g, "")
-			.slice(0, 80)
-
-		return readableName ? `DEEPTASK_${readableName}_PROGRESS` : `DEEPTASK_${this.taskId}_PROGRESS`
+		const match = matches[0]
+		if (match) await this.persistTaskProgressBinding(match.path, match.identity)
+		return match?.path
 	}
 
 	/**

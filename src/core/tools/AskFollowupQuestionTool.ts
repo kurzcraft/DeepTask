@@ -70,12 +70,16 @@ export class AskFollowupQuestionTool extends BaseTool<"ask_followup_question"> {
 
 		try {
 			// kilocode_change start
-			// Check if yolo mode is enabled - if so, don't ask questions
 			const state = await task.providerRef.deref()?.getState()
-			if (state?.yoloMode) {
+			const questionsDisabled =
+				state?.yoloMode || (state?.autoApprovalEnabled === true && state.alwaysAllowFollowupQuestions !== true)
+			if (questionsDisabled) {
+				task.consecutiveMistakeCount++
+				task.recordToolError("ask_followup_question")
+				task.didToolFailInCurrentTurn = true
 				pushToolResult(
-					formatResponse.toolResult(
-						"<error>This tool is not available in yolo mode. Do not ask questions - make your best judgment and proceed with the task.</error>",
+					formatResponse.toolError(
+						"The Questions permission is disabled. Do not ask the user a follow-up question; make the best safe judgment available and continue.",
 					),
 				)
 				return
@@ -107,9 +111,9 @@ export class AskFollowupQuestionTool extends BaseTool<"ask_followup_question"> {
 
 	override async handlePartial(task: Task, block: ToolUse<"ask_followup_question">): Promise<void> {
 		// kilocode_change start
-		// Don't show the question in yolo mode - the tool will be rejected in execute()
+		// Do not render a transient question for a tool call that execute() will reject.
 		const state = await task.providerRef.deref()?.getState()
-		if (state?.yoloMode) {
+		if (state?.yoloMode || (state?.autoApprovalEnabled === true && state.alwaysAllowFollowupQuestions !== true)) {
 			return
 		}
 		// kilocode_change end

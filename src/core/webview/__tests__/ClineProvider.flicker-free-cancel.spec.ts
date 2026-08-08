@@ -432,6 +432,39 @@ describe("ClineProvider flicker-free cancel", () => {
 		expect((provider as any).pendingCancelledTaskContinuation).toBeUndefined()
 	})
 
+	it("does not create a new task when edited resend restoration fails", async () => {
+		;(provider as any).clineStack = [mockTask1]
+		;(provider as any).taskEventListeners = new WeakMap()
+		;(provider as any).taskEventListeners.set(mockTask1, [vi.fn()])
+		mockTask2.resumeTaskFromHistory.mockRejectedValueOnce(new Error("edited history unavailable"))
+		const createTask = vi.spyOn(provider, "createTask").mockResolvedValue(mockTask2 as any)
+		provider.setPendingCancelledTaskContinuation("small prompt correction", undefined, {
+			kind: "edited_resend",
+		})
+
+		const historyItem: HistoryItem = {
+			id: "task-1",
+			number: 1,
+			task: "test task",
+			ts: Date.now(),
+			tokensIn: 100,
+			tokensOut: 200,
+			totalCost: 0.001,
+			workspace: "/test/workspace",
+		}
+
+		await provider.createTaskWithHistoryItem(historyItem)
+
+		expect(mockTask2.resumeTaskFromHistory).toHaveBeenCalledWith({
+			text: "small prompt correction",
+			images: undefined,
+			options: { kind: "edited_resend" },
+			createdAt: expect.any(Number),
+		})
+		expect(createTask).not.toHaveBeenCalled()
+		expect((provider as any).clineStack).toContain(mockTask2)
+	})
+
 	it("delivers the latest human message through a fresh task when history restoration fails", async () => {
 		;(provider as any).clineStack = [mockTask1]
 		;(provider as any).taskEventListeners = new WeakMap()

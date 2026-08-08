@@ -132,9 +132,11 @@ export function getToolDescriptionsForMode(
 	}
 
 	// kilocode_change start
-	// Conditionally exclude ask_followup_question in yolo mode
-	// This prevents the agent from asking itself questions and auto-answering them
-	if (clineProviderState?.yoloMode) {
+	// Keep legacy/XML tool descriptions consistent with the native capability gate.
+	if (
+		clineProviderState?.yoloMode ||
+		(clineProviderState?.autoApprovalEnabled === true && clineProviderState.alwaysAllowFollowupQuestions !== true)
+	) {
 		tools.delete("ask_followup_question")
 	}
 	// kilocode_change end

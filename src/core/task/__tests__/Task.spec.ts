@@ -2786,6 +2786,35 @@ describe("Queued message processing after condense", () => {
 		expect(JSON.stringify(firstRequestContent)).not.toContain("discarded branch")
 	})
 
+	it("keeps the latest in-memory history when injected resend storage is stale", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context,
+		})
+		;(task as any).apiConversationHistory = [
+			{ role: "user", content: [{ type: "text", text: "complete preserved prefix" }], ts: 1 },
+			{ role: "assistant", content: [{ type: "text", text: "latest preserved response" }], ts: 2 },
+		]
+		vi.spyOn(task as any, "getSavedClineMessages").mockResolvedValue([])
+		vi.spyOn(task as any, "getSavedApiConversationHistory").mockResolvedValue([
+			{ role: "user", content: [{ type: "text", text: "stale short snapshot" }], ts: 1 },
+		])
+		const initiateSpy = vi.spyOn(task as any, "initiateTaskLoop").mockResolvedValue(undefined)
+
+		await task.resumeTaskFromHistory({ text: "latest resend", images: [] })
+
+		const preservedHistory = JSON.stringify((task as any).apiConversationHistory)
+		const request = JSON.stringify(initiateSpy.mock.calls[0]?.[0])
+		expect(preservedHistory).toContain("complete preserved prefix")
+		expect(preservedHistory).toContain("latest preserved response")
+		expect(preservedHistory).not.toContain("stale short snapshot")
+		expect(request).toContain("latest resend")
+	})
+
 	it("drops completed attempt_completion tool context before applying continuation feedback", async () => {
 		const provider = createProvider()
 		const task = new Task({
@@ -3008,7 +3037,7 @@ describe("Queued message processing after condense", () => {
 		expect(continuationContent).toMatch(
 			/^<latest_human_message>\ncontinue with a new real task\n<\/latest_human_message>/,
 		)
-		expect(continuationContent).not.toContain("attempt_completion")
+		expect(continuationContent).toContain("Do not call attempt_completion for a discussion-only reply")
 		expect(continuationContent).not.toContain("same-task work")
 	})
 
@@ -3670,6 +3699,7 @@ describe("Queued message processing after condense", () => {
 		expect(continuationContent).toMatch(
 			new RegExp(`^<latest_human_message>\\n${latestHumanMessage}\\n</latest_human_message>`),
 		)
+		expect(continuationContent).toContain("It supersedes any earlier state or conclusion.")
 		expect(continuationContent).toContain(
 			"Treat the message above as the current instruction and respond to its meaning directly.",
 		)
@@ -4216,6 +4246,11 @@ describe("completion result deduplication", () => {
 })
 
 describe("task progress completion barrier", () => {
+	beforeEach(() => {
+		vi.mocked(fs.writeFile).mockClear()
+		vi.mocked(fs.unlink).mockClear()
+	})
+
 	afterEach(() => {
 		vi.mocked(fs.readdir).mockReset()
 		vi.mocked(fs.readFile).mockReset()
@@ -4320,54 +4355,76 @@ describe("task progress completion barrier", () => {
 		await expect(task.getIncompleteTaskProgressItems()).resolves.toEqual([])
 	})
 
-	it("does not create or clear progress when an empty todo payload is received", async () => {
-		const writeFile = vi.mocked(fs.writeFile)
-		const writeCountBefore = writeFile.mock.calls.length
-		const task = Object.create(Task.prototype) as Task
-		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
-		Object.defineProperty(task, "todoList", { value: [] })
-
-		await task.syncTaskProgressWithTodoList([])
-
-		expect(fs.readdir).not.toHaveBeenCalled()
-		expect(fs.readFile).not.toHaveBeenCalled()
-		expect(writeFile.mock.calls.length).toBe(writeCountBefore)
-	})
-
-	it("synchronizes the native todo list to the stable task title file without user feedback", async () => {
-		const taskDirectory = "/workspace/EXTRA/task"
-		const progressPath = path.join(taskDirectory, "DEEPTASK_Release_validation_PROGRESS.md")
-		const writeFile = vi.mocked(fs.writeFile)
-		const mkdir = vi.mocked(fs.mkdir)
+	it("creates the first checklist with the host task ID marker", async () => {
 		vi.mocked(fs.readdir).mockResolvedValue([] as any)
-		vi.mocked(fs.readFile).mockResolvedValue(
-			"# DeepTask Release validation\n\n<!-- deeptask-active-work-item -->\n- [-] old user request\n",
-		)
-
 		const task = Object.create(Task.prototype) as Task
 		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
 		Object.defineProperty(task, "taskId", { value: "task-1" })
-		Object.defineProperty(task, "metadata", { value: { task: "Release validation" } })
-		Object.defineProperty(task, "todoList", {
-			value: [
-				{ id: "1", content: "verify build", status: "completed" },
-				{ id: "2", content: "install VSIX", status: "in_progress", depth: 1 },
-			],
+		Object.defineProperty(task, "providerRef", { value: { deref: () => undefined } })
+
+		await expect(
+			task.syncTaskProgressWithTodoList([{ id: "1", content: "first milestone", status: "in_progress" }]),
+		).resolves.toMatchObject([{ content: "first milestone", status: "in_progress" }])
+		expect(fs.mkdir).toHaveBeenCalledWith(path.join("/workspace", "EXTRA", "task"), { recursive: true })
+		expect(fs.writeFile).toHaveBeenCalledWith(
+			path.join("/workspace", "EXTRA", "task", "task-task-1.md"),
+			expect.stringContaining("<!-- deeptask-task-id:task-1 -->"),
+			"utf8",
+		)
+	})
+
+	it("reads the authoritative multilevel checklist without rewriting its file", async () => {
+		const taskDirectory = "/workspace/EXTRA/task"
+		const progressPath = path.join(taskDirectory, "release.md")
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "release.md", isDirectory: () => false, isFile: () => true },
+		] as any)
+		vi.mocked(fs.readFile).mockResolvedValue(
+			"<!-- deeptask-task-id:task-1 -->\n- [x] verify build\n    - [-] install VSIX\n",
+		)
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+
+		const result = await task.syncTaskProgressWithTodoList([
+			{ id: "request-1", content: "stale request", status: "pending" },
+		])
+
+		expect(result).toMatchObject([
+			{ content: "verify build", status: "completed" },
+			{ content: "install VSIX", status: "in_progress", depth: 1 },
+		])
+		expect(fs.readFile).toHaveBeenCalledWith(progressPath, "utf8")
+		expect(fs.writeFile).not.toHaveBeenCalled()
+	})
+
+	it("refreshes native todos from a model-edited file while preserving every hierarchy level", async () => {
+		const postStateToWebview = vi.fn().mockResolvedValue(undefined)
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "release.md", isDirectory: () => false, isFile: () => true },
+		] as any)
+		vi.mocked(fs.readFile).mockResolvedValue(
+			"<!-- deeptask-task-id:task-1 -->\n" +
+				"- [x] release\n" +
+				"    - [-] validate\n" +
+				"        - [ ] inspect artifact\n",
+		)
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "providerRef", {
+			value: { deref: () => ({ postStateToWebview }) },
 		})
 
-		await task.syncTaskProgressWithTodoList()
+		await task.refreshNativeTodoListFromTaskProgressFile()
 
-		expect(mkdir).toHaveBeenCalledWith(taskDirectory, { recursive: true })
-		expect(writeFile).toHaveBeenLastCalledWith(
-			progressPath,
-			expect.stringContaining("- [x] verify build\n    - [-] install VSIX"),
-			"utf8",
-		)
-		expect(writeFile).toHaveBeenLastCalledWith(
-			progressPath,
-			expect.not.stringContaining("old user request"),
-			"utf8",
-		)
+		expect(task.todoList).toMatchObject([
+			{ content: "release", status: "completed" },
+			{ content: "validate", status: "in_progress", depth: 1 },
+			{ content: "inspect artifact", status: "pending", depth: 2 },
+		])
+		expect(postStateToWebview).toHaveBeenCalledOnce()
+		expect(fs.writeFile).not.toHaveBeenCalled()
 	})
 
 	it("requires a fresh progress expansion when only archived files remain", async () => {
@@ -4405,206 +4462,147 @@ describe("task progress completion barrier", () => {
 		expect(fs.readFile).not.toHaveBeenCalled()
 	})
 
-	it("creates a new milestone-named progress file for actionable work after archival", async () => {
-		const taskDirectory = "/workspace/EXTRA/task"
-		const progressPath = path.join(taskDirectory, "DEEPTASK_Fix_archived_task_lifecycle_PROGRESS.md")
-		const writeFile = vi.mocked(fs.writeFile)
+	it("does not recreate an archived checklist when no active instance remains", async () => {
 		vi.mocked(fs.readdir).mockResolvedValue([
 			{ name: "finished", isDirectory: () => true, isFile: () => false },
 		] as any)
-		vi.mocked(fs.readFile).mockRejectedValue(Object.assign(new Error("missing"), { code: "ENOENT" }))
-
 		const task = Object.create(Task.prototype) as Task
 		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
 		Object.defineProperty(task, "taskId", { value: "task-1" })
-		Object.defineProperty(task, "metadata", { value: { task: "Already archived release" } })
-		Object.defineProperty(task, "shouldKeepNextCompletionActive", { value: true, writable: true })
 
-		await task.syncTaskProgressWithTodoList([
-			{ id: "1", content: "Fix archived task lifecycle", status: "in_progress" },
-			{ id: "2", content: "Add regression coverage", status: "pending" },
-		])
+		await expect(
+			task.syncTaskProgressWithTodoList([{ id: "1", content: "new work", status: "in_progress" }]),
+		).rejects.toThrow("No active task progress file")
+		expect(fs.writeFile).not.toHaveBeenCalled()
+	})
 
-		expect(writeFile).toHaveBeenLastCalledWith(
-			progressPath,
-			expect.stringContaining("# DeepTask Fix archived task lifecycle"),
+	it("creates the first checklist with the host task marker when the task directory is empty", async () => {
+		vi.mocked(fs.readdir).mockRejectedValue({ code: "ENOENT" })
+		const updateTaskHistory = vi.fn().mockResolvedValue([])
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "host-task-123" })
+		Object.defineProperty(task, "providerRef", {
+			value: {
+				deref: () => ({
+					getTaskHistory: () => [{ id: "host-task-123" }],
+					updateTaskHistory,
+				}),
+			},
+		})
+
+		await expect(
+			task.syncTaskProgressWithTodoList([{ id: "1", content: "create first file", status: "in_progress" }]),
+		).resolves.toMatchObject([{ content: "create first file", status: "in_progress" }])
+		expect(fs.writeFile).toHaveBeenCalledWith(
+			"/workspace/EXTRA/task/task-host-task-123.md",
+			expect.stringContaining("<!-- deeptask-task-id:host-task-123 -->"),
 			"utf8",
 		)
-		expect(writeFile).not.toHaveBeenCalledWith(
-			path.join(taskDirectory, "DEEPTASK_Already_archived_release_PROGRESS.md"),
-			expect.any(String),
-			"utf8",
+		expect(updateTaskHistory).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: "host-task-123",
+				taskProgressFilePath: "EXTRA/task/task-host-task-123.md",
+				taskProgressInstanceId: "host-task-123",
+			}),
 		)
 	})
 
-	it("reuses the task-id-marked progress file after restart instead of generating a new title file", async () => {
-		const taskDirectory = "/workspace/EXTRA/task"
-		const restoredPath = path.join(taskDirectory, "DEEPTASK_legacy_long_title_PROGRESS.md")
-		const writeFile = vi.mocked(fs.writeFile)
+	it("accepts a host-prefixed work instance ID for a later request in the same conversation", async () => {
 		vi.mocked(fs.readdir).mockResolvedValue([
-			{ name: "DEEPTASK_legacy_long_title_PROGRESS.md", isDirectory: () => false, isFile: () => true },
+			{ name: "second-work.md", isDirectory: () => false, isFile: () => true },
 		] as any)
+		vi.mocked(fs.readFile).mockResolvedValue(
+			"<!-- deeptask-task-id:task-1:work-2 -->\n- [-] second independent request\n",
+		)
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+
+		await expect(
+			task.syncTaskProgressWithTodoList([
+				{ id: "1", content: "second independent request", status: "in_progress" },
+			]),
+		).resolves.toMatchObject([{ content: "second independent request", status: "in_progress" }])
+	})
+
+	it("projects the authoritative file when the native request is stale", async () => {
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "release.md", isDirectory: () => false, isFile: () => true },
+		] as any)
+		vi.mocked(fs.readFile).mockResolvedValue("<!-- deeptask-task-id:task-1 -->\n# Keep title\n\n- [ ] old item\n")
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+
+		await expect(
+			task.syncTaskProgressWithTodoList([{ id: "1", content: "new item", status: "in_progress" }]),
+		).resolves.toMatchObject([{ content: "old item", status: "pending" }])
+		expect(fs.writeFile).not.toHaveBeenCalled()
+	})
+
+	it("uses the authoritative checklist when the native request is stale", async () => {
+		const taskDirectory = "/workspace/EXTRA/task"
+		const progressPath = path.join(taskDirectory, "release.md")
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "release.md", isDirectory: () => false, isFile: () => true },
+		] as any)
+		vi.mocked(fs.readFile).mockResolvedValue("<!-- deeptask-task-id:task-1 -->\n- [-] authoritative item\n")
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+
+		await expect(
+			task.syncTaskProgressWithTodoList([{ id: "1", content: "stale request", status: "pending" }]),
+		).resolves.toMatchObject([{ content: "authoritative item", status: "in_progress" }])
+		expect(fs.writeFile).not.toHaveBeenCalled()
+	})
+
+	it("restores a persisted old-host binding without rewriting the checklist", async () => {
+		const progressPath = path.resolve("/workspace/EXTRA/task/old-host.md")
+		const updateTaskHistory = vi.fn().mockResolvedValue([])
 		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
-			if (filePath === restoredPath) {
-				return "# DeepTask restored\n\n<!-- deeptask-task-id:task-1 -->\n\n<!-- deeptask-native-todo-list -->\n## Task progress\n\n- [-] stale item\n<!-- /deeptask-native-todo-list -->\n"
+			if (path.resolve(String(filePath)) === progressPath) {
+				return "<!-- deeptask-task-id:old-host-id -->\n- [-] continue old work\n"
 			}
 			return "[]"
 		})
-
 		const task = Object.create(Task.prototype) as Task
 		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
-		Object.defineProperty(task, "taskId", { value: "task-1" })
-		Object.defineProperty(task, "metadata", { value: { task: "A renamed task title" } })
-		Object.defineProperty(task, "todoList", {
-			value: [{ id: "1", content: "restored live milestone", status: "in_progress" }],
+		Object.defineProperty(task, "taskId", { value: "new-host-id" })
+		Object.defineProperty(task, "taskProgressFilePath", { value: "EXTRA/task/old-host.md", writable: true })
+		Object.defineProperty(task, "taskProgressInstanceId", { value: "old-host-id", writable: true })
+		Object.defineProperty(task, "providerRef", {
+			value: { deref: () => ({ getTaskHistory: () => [], updateTaskHistory }) },
 		})
+		vi.mocked(fs.writeFile).mockClear()
 
-		await task.syncTaskProgressWithTodoList()
-
-		expect(writeFile).toHaveBeenLastCalledWith(
-			restoredPath,
-			expect.stringContaining("- [-] restored live milestone"),
-			"utf8",
-		)
-		expect(writeFile).not.toHaveBeenCalledWith(
-			path.join(taskDirectory, "DEEPTASK_A_renamed_task_title_PROGRESS.md"),
-			expect.any(String),
-			"utf8",
-		)
+		await expect(
+			task.syncTaskProgressWithTodoList([{ id: "1", content: "continue old work", status: "in_progress" }]),
+		).resolves.toMatchObject([{ content: "continue old work", status: "in_progress" }])
+		expect(fs.writeFile).not.toHaveBeenCalled()
+		expect(updateTaskHistory).not.toHaveBeenCalled()
 	})
 
-	it("reuses one deterministic file when duplicate active files carry the same task ID", async () => {
-		const taskDirectory = "/workspace/EXTRA/task"
-		const firstPath = path.join(taskDirectory, "DEEPTASK_a_PROGRESS.md")
-		const secondPath = path.join(taskDirectory, "DEEPTASK_z_PROGRESS.md")
-		const writeFile = vi.mocked(fs.writeFile)
-		const unlink = vi.mocked(fs.unlink)
-		vi.mocked(fs.readdir).mockResolvedValue([
-			{ name: "DEEPTASK_z_PROGRESS.md", isDirectory: () => false, isFile: () => true },
-			{ name: "DEEPTASK_a_PROGRESS.md", isDirectory: () => false, isFile: () => true },
-		] as any)
-		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
-			if (filePath === firstPath || filePath === secondPath) {
-				return `# Existing\n\n<!-- deeptask-task-id:task-1 -->\n`
-			}
-			throw Object.assign(new Error("missing"), { code: "ENOENT" })
-		})
-
-		const task = Object.create(Task.prototype) as Task
-		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
-		Object.defineProperty(task, "taskId", { value: "task-1" })
-		Object.defineProperty(task, "metadata", { value: { task: "Renamed task" } })
-
-		await task.syncTaskProgressWithTodoList([{ id: "1", content: "keep one file", status: "in_progress" }])
-
-		expect(writeFile).toHaveBeenLastCalledWith(firstPath, expect.any(String), "utf8")
-		expect(writeFile).not.toHaveBeenCalledWith(secondPath, expect.any(String), "utf8")
-		expect(unlink).toHaveBeenCalledWith(secondPath)
-	})
-
-	it("adopts the unique unclaimed progress file that already contains the first authored milestone", async () => {
-		const taskDirectory = "/workspace/EXTRA/task"
-		const authoredPath = path.join(taskDirectory, "DEEPTASK_authored_focus_PROGRESS.md")
-		const writeFile = vi.mocked(fs.writeFile)
-		vi.mocked(fs.readdir).mockResolvedValue([
-			{ name: "DEEPTASK_authored_focus_PROGRESS.md", isDirectory: () => false, isFile: () => true },
-		] as any)
-		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
-			if (filePath === authoredPath) {
-				return "# DeepTask authored focus\n\n- [-] inspect archive routing\n- [ ] add coverage\n"
-			}
-			throw Object.assign(new Error("missing"), { code: "ENOENT" })
-		})
-
-		const task = Object.create(Task.prototype) as Task
-		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
-		Object.defineProperty(task, "taskId", { value: "task-1" })
-		Object.defineProperty(task, "metadata", { value: { task: "Original user request" } })
-		Object.defineProperty(task, "shouldKeepNextCompletionActive", { value: true, writable: true })
-
-		await task.syncTaskProgressWithTodoList([
-			{ id: "1", content: "inspect archive routing", status: "in_progress" },
-			{ id: "2", content: "add coverage", status: "pending" },
-		])
-
-		expect(writeFile).toHaveBeenLastCalledWith(
-			authoredPath,
-			expect.stringContaining("<!-- deeptask-task-id:task-1 -->"),
-			"utf8",
-		)
-		expect(writeFile).not.toHaveBeenCalledWith(
-			path.join(taskDirectory, "DEEPTASK_inspect_archive_routing_PROGRESS.md"),
-			expect.any(String),
-			"utf8",
-		)
-	})
-
-	it("adopts the unique milestone-matched active file even when a stale host task ID marked it", async () => {
-		const taskDirectory = "/workspace/EXTRA/task"
-		const authoredPath = path.join(taskDirectory, "DEEPTASK_existing_focus_PROGRESS.md")
-		const writeFile = vi.mocked(fs.writeFile)
-		vi.mocked(fs.readdir).mockResolvedValue([
-			{ name: "DEEPTASK_existing_focus_PROGRESS.md", isDirectory: () => false, isFile: () => true },
-		] as any)
-		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
-			if (filePath === authoredPath) {
-				return "# Existing\n\n<!-- deeptask-task-id:old-host-task -->\n\n- [-] inspect archive routing\n"
-			}
-			throw Object.assign(new Error("missing"), { code: "ENOENT" })
-		})
-
-		const task = Object.create(Task.prototype) as Task
-		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
-		Object.defineProperty(task, "taskId", { value: "new-host-task" })
-		Object.defineProperty(task, "metadata", { value: { task: "Original user request" } })
-		Object.defineProperty(task, "shouldKeepNextCompletionActive", { value: true, writable: true })
-
-		await task.syncTaskProgressWithTodoList([
-			{ id: "1", content: "inspect archive routing", status: "in_progress" },
-		])
-
-		expect(writeFile).toHaveBeenLastCalledWith(
-			authoredPath,
-			expect.stringContaining("<!-- deeptask-task-id:new-host-task -->"),
-			"utf8",
-		)
-		expect(writeFile).toHaveBeenLastCalledWith(
-			authoredPath,
-			expect.not.stringContaining("<!-- deeptask-task-id:old-host-task -->"),
-			"utf8",
-		)
-	})
-
-	it("does not claim an unmarked progress file when the first milestone matches multiple files", async () => {
-		const taskDirectory = "/workspace/EXTRA/task"
-		const defaultPath = path.join(taskDirectory, "DEEPTASK_inspect_archive_routing_PROGRESS.md")
-		const writeFile = vi.mocked(fs.writeFile)
+	it("rejects multiple active checklist instances for the same host without deleting either file", async () => {
 		vi.mocked(fs.readdir).mockResolvedValue([
 			{ name: "first.md", isDirectory: () => false, isFile: () => true },
 			{ name: "second.md", isDirectory: () => false, isFile: () => true },
 		] as any)
-		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
-			if (filePath === defaultPath) {
-				throw Object.assign(new Error("missing"), { code: "ENOENT" })
-			}
-			return "# Existing task\n\n- [-] inspect archive routing\n"
-		})
-
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) =>
+			String(filePath).endsWith("first.md")
+				? "<!-- deeptask-task-id:task-1:work-1 -->\n- [-] first\n"
+				: "<!-- deeptask-task-id:task-1:work-2 -->\n- [-] second\n",
+		)
 		const task = Object.create(Task.prototype) as Task
 		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
 		Object.defineProperty(task, "taskId", { value: "task-1" })
-		Object.defineProperty(task, "metadata", { value: { task: "Original user request" } })
-		Object.defineProperty(task, "shouldKeepNextCompletionActive", { value: true, writable: true })
 
-		await task.syncTaskProgressWithTodoList([
-			{ id: "1", content: "inspect archive routing", status: "in_progress" },
-		])
-
-		expect(writeFile).toHaveBeenLastCalledWith(
-			defaultPath,
-			expect.stringContaining("<!-- deeptask-task-id:task-1 -->"),
-			"utf8",
-		)
+		await expect(
+			task.syncTaskProgressWithTodoList([{ id: "1", content: "second", status: "in_progress" }]),
+		).rejects.toThrow("Multiple active task progress files belong to host task task-1")
+		expect(fs.unlink).not.toHaveBeenCalled()
+		expect(fs.writeFile).not.toHaveBeenCalled()
 	})
 })
 

@@ -74,7 +74,9 @@ export interface ChatViewRef {
 
 export const MAX_IMAGES_PER_MESSAGE = 20 // This is the Anthropic limit.
 
-const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0
+const platform = navigator.platform.toUpperCase()
+const isMac = platform.includes("MAC")
+const isLinux = platform.includes("LINUX")
 
 // kilocode_change start: Deeptask home logo component
 const KiloLogo = () => {
@@ -324,6 +326,15 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				return
 			}
 
+			// kilocode_change start
+			// Linux Electron webviews can block event-driven WebAudio playback before a
+			// user gesture. Route through the extension host's PipeWire/Pulse/ALSA player.
+			if (isLinux) {
+				vscode.postMessage({ type: "playSound", audioType, value: volume })
+				return
+			}
+			// kilocode_change end
+
 			switch (audioType) {
 				case "notification":
 					playNotification()
@@ -338,7 +349,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 					console.warn(`Unknown audio type: ${audioType}`)
 			}
 		},
-		[soundEnabled, playNotification, playCelebration, playProgressLoop],
+		[soundEnabled, volume, playNotification, playCelebration, playProgressLoop],
 	)
 
 	function playTts(text: string) {
@@ -1463,7 +1474,10 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							setPrimaryButtonText(t("chat:proceedWhileRunning.title"))
 							setSecondaryButtonText(t("chat:killCommand.title"))
 						} else if (status === "output") {
-							if (commandExitBarrierRef.current || settledCommandExecutionIdsRef.current.has(executionId)) {
+							if (
+								commandExitBarrierRef.current ||
+								settledCommandExecutionIdsRef.current.has(executionId)
+							) {
 								break
 							}
 							activeCommandExecutionIdsRef.current.add(executionId)

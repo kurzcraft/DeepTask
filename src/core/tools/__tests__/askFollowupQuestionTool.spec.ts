@@ -13,6 +13,8 @@ describe("askFollowupQuestionTool", () => {
 		mockCline = {
 			ask: vi.fn().mockResolvedValue({ text: "Test response" }),
 			say: vi.fn().mockResolvedValue(undefined),
+			recordToolError: vi.fn(),
+			didToolFailInCurrentTurn: false,
 			consecutiveMistakeCount: 0,
 			// kilocode_change start
 			providerRef: {
@@ -142,8 +144,65 @@ describe("askFollowupQuestionTool", () => {
 
 			// Should not call ask in yoloMode
 			expect(yoloMockCline.ask).not.toHaveBeenCalled()
-			// Should return an error message
-			expect(toolResult).toContain("not available in yolo mode")
+			// Should return the shared Questions-permission error.
+			expect(toolResult).toContain("Questions permission is disabled")
+		})
+	})
+
+	describe("auto-approval Questions permission", () => {
+		it("rejects a complete question call when Questions is disabled", async () => {
+			mockCline.providerRef.deref = () => ({
+				getState: () =>
+					Promise.resolve({
+						yoloMode: false,
+						autoApprovalEnabled: true,
+						alwaysAllowFollowupQuestions: false,
+					}),
+			})
+			const block: ToolUse<"ask_followup_question"> = {
+				type: "tool_use",
+				name: "ask_followup_question",
+				params: {
+					question: "Should this be shown?",
+					follow_up: "<suggest>No</suggest>",
+				},
+				partial: false,
+			}
+
+			await askFollowupQuestionTool.handle(mockCline, block, {
+				askApproval: vi.fn(),
+				handleError: vi.fn(),
+				pushToolResult: mockPushToolResult,
+				removeClosingTag: vi.fn((tag, content) => content || ""),
+				toolProtocol: "xml",
+			})
+
+			expect(mockCline.ask).not.toHaveBeenCalled()
+			expect(mockCline.recordToolError).toHaveBeenCalledWith("ask_followup_question")
+			expect(mockCline.didToolFailInCurrentTurn).toBe(true)
+			expect(toolResult).toContain("Questions permission is disabled")
+		})
+
+		it("does not render a partial question when Questions is disabled", async () => {
+			mockCline.providerRef.deref = () => ({
+				getState: () => Promise.resolve({ autoApprovalEnabled: true, alwaysAllowFollowupQuestions: false }),
+			})
+			const block: ToolUse<"ask_followup_question"> = {
+				type: "tool_use",
+				name: "ask_followup_question",
+				params: { question: "Transient question" },
+				partial: true,
+			}
+
+			await askFollowupQuestionTool.handle(mockCline, block, {
+				askApproval: vi.fn(),
+				handleError: vi.fn(),
+				pushToolResult: mockPushToolResult,
+				removeClosingTag: vi.fn((tag, content) => content || ""),
+				toolProtocol: "native",
+			})
+
+			expect(mockCline.ask).not.toHaveBeenCalled()
 		})
 	})
 	// kilocode_change end

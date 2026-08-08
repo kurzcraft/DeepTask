@@ -594,7 +594,7 @@ describe("webviewMessageHandler - image mentions", () => {
 			abandoned: false,
 			abortReason: undefined,
 			isActivelyRunningTaskLoop: vi.fn().mockReturnValue(true),
-			clineMessages: [{ ts: 1, type: "say", say: "completion_result", text: "old done", partial: false }],
+			clineMessages: [{ ts: 1, type: "say", say: "text", text: "still working", partial: true }],
 			hasPendingWebviewAskResponse: vi.fn().mockReturnValue(false),
 			handleWebviewAskResponse: mockHandleWebviewAskResponse,
 			clearStaleWebviewAskResponse: mockClearStaleWebviewAskResponse,
@@ -622,7 +622,41 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
 	})
 
-	it("starts a fresh top-level task when a message arrives at a completion boundary", async () => {
+	it("restores the webview when cancelling a live stream fails", async () => {
+		const mockClearStaleWebviewAskResponse = vi.fn()
+		const mockClearQueue = vi.fn()
+		const mockCancelTask = vi.fn().mockRejectedValue(new Error("history persistence failed"))
+		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
+			cwd: "/mock/workspace",
+			rooIgnoreController: undefined,
+			isStreaming: true,
+			abandoned: false,
+			abortReason: undefined,
+			isActivelyRunningTaskLoop: vi.fn().mockReturnValue(true),
+			hasPendingWebviewAskResponse: vi.fn().mockReturnValue(false),
+			clearStaleWebviewAskResponse: mockClearStaleWebviewAskResponse,
+			messageQueueService: { clear: mockClearQueue },
+		} as any)
+		;(mockClineProvider as any).cancelTask = mockCancelTask
+
+		await expect(
+			webviewMessageHandler(mockClineProvider, {
+				type: "askResponse",
+				askResponse: "messageResponse",
+				text: "recover after failed cancel",
+				images: [],
+			}),
+		).resolves.toBeUndefined()
+
+		expect(mockCancelTask).toHaveBeenCalledTimes(1)
+		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "action",
+			action: "chatButtonClicked",
+		})
+		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
+	})
+
+	it("continues the existing task when a message arrives at a completion boundary", async () => {
 		const mockClearStaleWebviewAskResponse = vi.fn()
 		const mockClearQueue = vi.fn()
 		const mockSetPendingCancelledTaskContinuation = vi.fn()
@@ -653,13 +687,48 @@ describe("webviewMessageHandler - image mentions", () => {
 			images: [],
 		})
 
-		expect(mockCreateTask).toHaveBeenCalledWith("reply immediately after completion", [
-			"data:image/png;base64,from-mention",
-		])
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
-		expect(mockSetPendingCancelledTaskContinuation).not.toHaveBeenCalled()
-		expect(mockCancelTask).not.toHaveBeenCalled()
-		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
+		expect(mockCreateTask).not.toHaveBeenCalled()
+		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
+			"reply immediately after completion",
+			["data:image/png;base64,from-mention"],
+			{ kind: "continuation" },
+		)
+		expect(mockCancelTask).toHaveBeenCalledTimes(1)
+		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
+	})
+
+	it("routes a completion message to continuation while the old stream is still unwinding", async () => {
+		const mockClearStaleWebviewAskResponse = vi.fn()
+		const mockClearQueue = vi.fn()
+		const mockContinueTaskFromUserMessage = vi.fn().mockResolvedValue(undefined)
+		const mockCancelTask = vi.fn().mockResolvedValue(undefined)
+		const completionMessage = { ts: 1, type: "say", say: "completion_result", text: "done", partial: false }
+		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
+			cwd: "/mock/workspace",
+			isStreaming: true,
+			abandoned: false,
+			abortReason: undefined,
+			isSoftCompletionBoundaryPending: vi.fn().mockReturnValue(false),
+			clineMessages: [completionMessage],
+			hasPendingWebviewAskResponse: vi.fn().mockReturnValue(false),
+			clearStaleWebviewAskResponse: mockClearStaleWebviewAskResponse,
+			messageQueueService: { clear: mockClearQueue },
+			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
+		} as any)
+		;(mockClineProvider as any).cancelTask = mockCancelTask
+
+		await webviewMessageHandler(mockClineProvider, {
+			type: "askResponse",
+			askResponse: "messageResponse",
+			text: "extend the completed work",
+			images: [],
+		})
+
+		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
+		expect(mockCancelTask).toHaveBeenCalledTimes(1)
+		expect(mockClearStaleWebviewAskResponse).toHaveBeenCalledTimes(1)
+		expect(mockClearQueue).toHaveBeenCalledTimes(1)
 	})
 
 	it("does not let historical soft completion preempt a live tool ask", async () => {
@@ -699,6 +768,53 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockHandleWebviewAskResponse).toHaveBeenCalledWith("messageResponse", "answer the tool ask", [
 			"data:image/png;base64,from-mention",
 		])
+	})
+
+	it("routes a message past a stale ask that predates the final completion row", async () => {
+		const mockHandleWebviewAskResponse = vi.fn()
+		const mockClearStaleWebviewAskResponse = vi.fn()
+		const mockClearQueue = vi.fn()
+		const mockContinueTaskFromUserMessage = vi.fn().mockResolvedValue(undefined)
+		const mockSetPendingCancelledTaskContinuation = vi.fn()
+		const mockCancelTask = vi.fn().mockResolvedValue(undefined)
+		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
+			cwd: "/mock/workspace",
+			rooIgnoreController: undefined,
+			isStreaming: false,
+			abandoned: false,
+			abortReason: undefined,
+			isSoftCompletionBoundaryPending: vi.fn().mockReturnValue(false),
+			clineMessages: [
+				{ ts: 2, type: "ask", ask: "followup", text: "stale", partial: false },
+				{ ts: 3, type: "say", say: "completion_result", text: "done", partial: false },
+			],
+			getPendingWebviewAskTs: vi.fn().mockReturnValue(2),
+			hasPendingWebviewAskResponse: vi.fn().mockReturnValue(true),
+			findMessageByTimestamp: vi.fn().mockReturnValue({ ts: 2, type: "ask", ask: "followup" }),
+			handleWebviewAskResponse: mockHandleWebviewAskResponse,
+			clearStaleWebviewAskResponse: mockClearStaleWebviewAskResponse,
+			messageQueueService: { clear: mockClearQueue },
+			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
+		} as any)
+		;(mockClineProvider as any).setPendingCancelledTaskContinuation = mockSetPendingCancelledTaskContinuation
+		;(mockClineProvider as any).cancelTask = mockCancelTask
+
+		await webviewMessageHandler(mockClineProvider, {
+			type: "askResponse",
+			askResponse: "messageResponse",
+			askTs: 2,
+			text: "continue after the completed task",
+			images: [],
+		})
+
+		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
+		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
+			"continue after the completed task",
+			["data:image/png;base64,from-mention"],
+			{ kind: "continuation" },
+		)
+		expect(mockCancelTask).toHaveBeenCalledTimes(1)
+		expect(mockHandleWebviewAskResponse).not.toHaveBeenCalled()
 	})
 
 	it("answers a command_output ask instead of parking/cancelling while the loop is active", async () => {
@@ -842,12 +958,14 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
 	})
 
-	it("starts a fresh task for completion_result feedback when no ask is pending", async () => {
+	it("rehydrates completion_result feedback when no ask is pending", async () => {
 		const mockHandleWebviewAskResponse = vi.fn()
 		const mockClearStaleWebviewAskResponse = vi.fn()
 		const mockClearQueue = vi.fn()
 		const mockContinueTaskFromUserMessage = vi.fn().mockResolvedValue(undefined)
 		const mockCreateTask = vi.fn().mockResolvedValue(undefined)
+		const mockSetPendingCancelledTaskContinuation = vi.fn()
+		const mockCancelTask = vi.fn().mockResolvedValue(undefined)
 		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
 			cwd: "/mock/workspace",
 			rooIgnoreController: undefined,
@@ -859,6 +977,8 @@ describe("webviewMessageHandler - image mentions", () => {
 			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
 		} as any)
 		;(mockClineProvider as any).createTask = mockCreateTask
+		;(mockClineProvider as any).setPendingCancelledTaskContinuation = mockSetPendingCancelledTaskContinuation
+		;(mockClineProvider as any).cancelTask = mockCancelTask
 
 		await webviewMessageHandler(mockClineProvider, {
 			type: "askResponse",
@@ -871,16 +991,22 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockClearStaleWebviewAskResponse).toHaveBeenCalledTimes(1)
 		expect(mockClearQueue).toHaveBeenCalledTimes(1)
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
-		expect(mockCreateTask).toHaveBeenCalledWith("continue from final feedback", [
-			"data:image/png;base64,from-mention",
-		])
+		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
+			"continue from final feedback",
+			["data:image/png;base64,from-mention"],
+			{ kind: "continuation" },
+		)
+		expect(mockCancelTask).toHaveBeenCalledTimes(1)
+		expect(mockCreateTask).not.toHaveBeenCalled()
 	})
-	it("starts a fresh task before consuming a stale pending completion ask", async () => {
+	it("rehydrates the task before consuming a stale pending completion ask", async () => {
 		const mockHandleWebviewAskResponse = vi.fn()
 		const mockClearStaleWebviewAskResponse = vi.fn()
 		const mockClearQueue = vi.fn()
 		const mockContinueTaskFromUserMessage = vi.fn().mockResolvedValue(undefined)
 		const mockCreateTask = vi.fn().mockResolvedValue(undefined)
+		const mockSetPendingCancelledTaskContinuation = vi.fn()
+		const mockCancelTask = vi.fn().mockResolvedValue(undefined)
 		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
 			cwd: "/mock/workspace",
 			rooIgnoreController: undefined,
@@ -893,6 +1019,8 @@ describe("webviewMessageHandler - image mentions", () => {
 			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
 		} as any)
 		;(mockClineProvider as any).createTask = mockCreateTask
+		;(mockClineProvider as any).setPendingCancelledTaskContinuation = mockSetPendingCancelledTaskContinuation
+		;(mockClineProvider as any).cancelTask = mockCancelTask
 
 		await webviewMessageHandler(mockClineProvider, {
 			type: "askResponse",
@@ -903,18 +1031,24 @@ describe("webviewMessageHandler - image mentions", () => {
 
 		expect(mockHandleWebviewAskResponse).not.toHaveBeenCalled()
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
-		expect(mockCreateTask).toHaveBeenCalledWith("continue even if completion looked pending", [
-			"data:image/png;base64,from-mention",
-		])
-		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
+		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
+			"continue even if completion looked pending",
+			["data:image/png;base64,from-mention"],
+			{ kind: "continuation" },
+		)
+		expect(mockCancelTask).toHaveBeenCalledTimes(1)
+		expect(mockCreateTask).not.toHaveBeenCalled()
+		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
 	})
 
-	it("starts a fresh task for post-completion text even when completion is no longer last", async () => {
+	it("rehydrates post-completion text even when completion is no longer last", async () => {
 		const mockHandleWebviewAskResponse = vi.fn()
 		const mockClearStaleWebviewAskResponse = vi.fn()
 		const mockClearQueue = vi.fn()
 		const mockContinueTaskFromUserMessage = vi.fn().mockResolvedValue(undefined)
 		const mockCreateTask = vi.fn().mockResolvedValue(undefined)
+		const mockSetPendingCancelledTaskContinuation = vi.fn()
+		const mockCancelTask = vi.fn().mockResolvedValue(undefined)
 		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
 			cwd: "/mock/workspace",
 			rooIgnoreController: undefined,
@@ -930,6 +1064,8 @@ describe("webviewMessageHandler - image mentions", () => {
 			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
 		} as any)
 		;(mockClineProvider as any).createTask = mockCreateTask
+		;(mockClineProvider as any).setPendingCancelledTaskContinuation = mockSetPendingCancelledTaskContinuation
+		;(mockClineProvider as any).cancelTask = mockCancelTask
 
 		await webviewMessageHandler(mockClineProvider, {
 			type: "askResponse",
@@ -942,21 +1078,23 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockClearStaleWebviewAskResponse).toHaveBeenCalledTimes(1)
 		expect(mockClearQueue).toHaveBeenCalledTimes(1)
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
-		expect(mockCreateTask).toHaveBeenCalledWith("do the next fix", ["data:image/png;base64,from-mention"])
-		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
+		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
+			"do the next fix",
+			["data:image/png;base64,from-mention"],
+			{ kind: "continuation" },
+		)
+		expect(mockCancelTask).toHaveBeenCalledTimes(1)
+		expect(mockCreateTask).not.toHaveBeenCalled()
+		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
 	})
 
-	it("awaits fresh task creation before resetting the post-completion chat", async () => {
+	it("does not reset the chat while rehydrating after completion", async () => {
 		const mockClearStaleWebviewAskResponse = vi.fn()
 		const mockClearQueue = vi.fn()
 		const mockContinueTaskFromUserMessage = vi.fn().mockResolvedValue(undefined)
-		let resolveCreateTask!: () => void
-		let signalCreateTaskStarted!: () => void
-		const createTaskStarted = new Promise<void>((resolve) => (signalCreateTaskStarted = resolve))
-		const mockCreateTask = vi.fn().mockImplementation(() => {
-			signalCreateTaskStarted()
-			return new Promise<void>((resolve) => (resolveCreateTask = resolve))
-		})
+		const mockCreateTask = vi.fn().mockResolvedValue(undefined)
+		const mockSetPendingCancelledTaskContinuation = vi.fn()
+		const mockCancelTask = vi.fn().mockResolvedValue(undefined)
 		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
 			cwd: "/mock/workspace",
 			rooIgnoreController: undefined,
@@ -967,24 +1105,25 @@ describe("webviewMessageHandler - image mentions", () => {
 			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
 		} as any)
 		;(mockClineProvider as any).createTask = mockCreateTask
+		;(mockClineProvider as any).setPendingCancelledTaskContinuation = mockSetPendingCancelledTaskContinuation
+		;(mockClineProvider as any).cancelTask = mockCancelTask
 
-		const handled = webviewMessageHandler(mockClineProvider, {
+		await webviewMessageHandler(mockClineProvider, {
 			type: "askResponse",
 			askResponse: "messageResponse",
 			text: "continue from final feedback",
 			images: [],
 		})
 
-		await createTaskStarted
-		expect(mockCreateTask).toHaveBeenCalledWith("continue from final feedback", [
-			"data:image/png;base64,from-mention",
-		])
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
+		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
+			"continue from final feedback",
+			["data:image/png;base64,from-mention"],
+			{ kind: "continuation" },
+		)
+		expect(mockCancelTask).toHaveBeenCalledTimes(1)
+		expect(mockCreateTask).not.toHaveBeenCalled()
 		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
-
-		resolveCreateTask()
-		await handled
-		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
 	})
 
 	it("creates a new task when askResponse arrives without a current task", async () => {
@@ -1898,28 +2037,32 @@ describe("webviewMessageHandler - message dialog preferences", () => {
 	})
 
 	describe("submitEditedMessage", () => {
-		it("rehydrates every edited resend instead of reusing the rewound Task instance", async () => {
+		it("replaces the original user branch instead of appending a new turn", async () => {
 			const rewindToTimestamp = vi.fn().mockResolvedValue(undefined)
-			const continueTaskFromUserMessage = vi.fn().mockResolvedValue(undefined)
-			const clear = vi.fn()
-			const setPendingCancelledTaskContinuation = vi.fn()
+			const overwriteClineMessages = vi.fn().mockResolvedValue(undefined)
+			const overwriteApiConversationHistory = vi.fn().mockResolvedValue(undefined)
 			const cancelTask = vi.fn().mockResolvedValue(undefined)
-			;(mockClineProvider as any).setPendingCancelledTaskContinuation = setPendingCancelledTaskContinuation
+			const clineMessages = [
+				{ type: "say", say: "user_feedback", ts: 111, text: "previous context" },
+				{ type: "say", say: "user_feedback", ts: 123456789, text: "old content" },
+				{ type: "say", say: "text", ts: 123456790, text: "later response" },
+			]
+			const apiConversationHistory = [
+				{ role: "user", ts: 111, content: [{ type: "text", text: "previous context" }] },
+				{ role: "user", ts: 123456789, content: [{ type: "text", text: "old content" }] },
+				{ role: "assistant", ts: 123456790, content: [{ type: "text", text: "later response" }] },
+			]
 			;(mockClineProvider as any).cancelTask = cancelTask
 
 			vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
 				taskId: "test-task-id",
-				clineMessages: [
-					{ type: "say", say: "user_feedback", ts: 111, text: "previous context" },
-					{ type: "say", say: "user_feedback", ts: 123456789, text: "old content" },
-					{ type: "say", say: "text", ts: 123456790, text: "stale future response" },
-				],
-				apiConversationHistory: [],
-				messageQueueService: { clear },
+				clineMessages,
+				apiConversationHistory,
+				messageQueueService: { clear: vi.fn() },
 				clearStaleWebviewAskResponse: vi.fn(),
+				overwriteClineMessages,
+				overwriteApiConversationHistory,
 				messageManager: { rewindToTimestamp },
-				continueTaskFromUserMessage,
-				isActivelyRunningTaskLoop: vi.fn().mockReturnValue(false),
 			} as any)
 
 			await webviewMessageHandler(mockClineProvider, {
@@ -1928,116 +2071,57 @@ describe("webviewMessageHandler - message dialog preferences", () => {
 				editedMessageContent: "edited content",
 			})
 
-			expect(clear).toHaveBeenCalledTimes(1)
 			expect(rewindToTimestamp).toHaveBeenCalledWith(123456789, {
 				includeTargetMessage: false,
-				strictCutoff: true,
-				apiCutoffIndex: 0,
 			})
-			expect(setPendingCancelledTaskContinuation).toHaveBeenCalledWith("edited content", undefined, {
-				kind: "edited_resend",
-			})
-			expect(cancelTask).toHaveBeenCalledTimes(1)
-			expect(continueTaskFromUserMessage).not.toHaveBeenCalled()
-			expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalledWith(
-				expect.objectContaining({ type: "showEditMessageDialog" }),
+			expect(overwriteClineMessages).not.toHaveBeenCalled()
+			expect(overwriteApiConversationHistory).not.toHaveBeenCalled()
+			expect(mockClineProvider.setPendingCancelledTaskContinuation).toHaveBeenCalledWith(
+				"edited content",
+				undefined,
+				expect.objectContaining({ kind: "edited_resend" }),
 			)
+			expect(cancelTask).toHaveBeenCalledTimes(1)
 		})
 
-		it("keeps a second resend after the original timestamp was already rewound", async () => {
-			const continueTaskFromUserMessage = vi.fn().mockResolvedValue(undefined)
-			const clear = vi.fn()
-
-			vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
-				taskId: "test-task-id",
-				clineMessages: [{ type: "say", say: "user_feedback", ts: 111, text: "previous context" }],
-				apiConversationHistory: [],
-				messageQueueService: { clear },
-				clearStaleWebviewAskResponse: vi.fn(),
-				continueTaskFromUserMessage,
-				isActivelyRunningTaskLoop: vi.fn().mockReturnValue(false),
-			} as any)
-
-			await webviewMessageHandler(mockClineProvider, {
-				type: "submitEditedMessage",
-				value: 123456789,
-				editedMessageContent: "second resend content",
-			})
-
-			expect(clear).toHaveBeenCalledTimes(1)
-			expect(continueTaskFromUserMessage).toHaveBeenCalledWith("second resend content", undefined, {
-				kind: "edited_resend",
-			})
-			expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
-		})
-
-		it("updates the parked payload when a second resend arrives during cancellation", async () => {
-			const setPendingCancelledTaskContinuation = vi.fn()
-			const continueTaskFromUserMessage = vi.fn().mockResolvedValue(undefined)
-			;(mockClineProvider as any).setPendingCancelledTaskContinuation = setPendingCancelledTaskContinuation
-
-			vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
-				taskId: "test-task-id",
-				clineMessages: [{ type: "say", say: "user_feedback", ts: 111, text: "previous context" }],
-				apiConversationHistory: [],
-				messageQueueService: { clear: vi.fn() },
-				clearStaleWebviewAskResponse: vi.fn(),
-				continueTaskFromUserMessage,
-				abortReason: "user_cancelled",
-				abandoned: true,
-			} as any)
-
-			await webviewMessageHandler(mockClineProvider, {
-				type: "submitEditedMessage",
-				value: 123456789,
-				editedMessageContent: "latest resend content",
-			})
-
-			expect(setPendingCancelledTaskContinuation).toHaveBeenCalledWith("latest resend content", undefined, {
-				kind: "edited_resend",
-			})
-			expect(continueTaskFromUserMessage).not.toHaveBeenCalled()
-		})
-
-		it("rehydrates before resending when the rewound history still has a live task loop", async () => {
+		it("rewinds repeated user text by UI timestamp and preserves the earlier branch", async () => {
 			const rewindToTimestamp = vi.fn().mockResolvedValue(undefined)
-			const continueTaskFromUserMessage = vi.fn().mockResolvedValue(undefined)
-			const setPendingCancelledTaskContinuation = vi.fn()
 			const cancelTask = vi.fn().mockResolvedValue(undefined)
-			;(mockClineProvider as any).setPendingCancelledTaskContinuation = setPendingCancelledTaskContinuation
+			const clineMessages = [
+				{ type: "say", say: "user_feedback", ts: 111, text: "preserved reasoning context" },
+				{ type: "say", say: "user_feedback", ts: 222, text: "repeated prompt" },
+			]
+			const apiConversationHistory = [
+				{ role: "user", ts: 111, content: [{ type: "text", text: "preserved reasoning context" }] },
+				{ role: "user", ts: 200, content: [{ type: "text", text: "repeated prompt" }] },
+				{ role: "assistant", ts: 210, content: [{ type: "text", text: "first branch reasoning" }] },
+				{ role: "user", ts: 222, content: [{ type: "text", text: "repeated prompt" }] },
+			]
 			;(mockClineProvider as any).cancelTask = cancelTask
-
 			vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
 				taskId: "test-task-id",
-				clineMessages: [
-					{ type: "say", say: "user_feedback", ts: 111, text: "previous context" },
-					{ type: "say", say: "user_feedback", ts: 123456789, text: "old content" },
-					{ type: "ask", ask: "tool", ts: 123456790, text: "stale tool wait" },
-				],
-				apiConversationHistory: [],
+				clineMessages,
+				apiConversationHistory,
 				messageQueueService: { clear: vi.fn() },
 				clearStaleWebviewAskResponse: vi.fn(),
 				messageManager: { rewindToTimestamp },
-				continueTaskFromUserMessage,
-				isActivelyRunningTaskLoop: vi.fn().mockReturnValue(true),
 			} as any)
 
 			await webviewMessageHandler(mockClineProvider, {
 				type: "submitEditedMessage",
-				value: 123456789,
-				editedMessageContent: "edited content",
+				value: 222,
+				editedMessageContent: "small correction",
 			})
 
-			expect(rewindToTimestamp).toHaveBeenCalledWith(123456789, {
+			expect(rewindToTimestamp).toHaveBeenCalledWith(222, {
 				includeTargetMessage: false,
-				strictCutoff: true,
-				apiCutoffIndex: 0,
 			})
-			expect(setPendingCancelledTaskContinuation).toHaveBeenCalledWith("edited content", undefined, {
-				kind: "edited_resend",
-			})
+			expect(mockClineProvider.setPendingCancelledTaskContinuation).toHaveBeenCalledWith(
+				"small correction",
+				undefined,
+				expect.objectContaining({ kind: "edited_resend" }),
+			)
 			expect(cancelTask).toHaveBeenCalledTimes(1)
-			expect(continueTaskFromUserMessage).not.toHaveBeenCalled()
 		})
 	})
 })

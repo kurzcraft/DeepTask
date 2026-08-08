@@ -1,5 +1,14 @@
 # Deeptask
 
+## 9.0.0
+
+### Major Changes
+
+- Make one model-maintained Markdown file the sole persistent task checklist while preserving arbitrary nested levels and projecting file updates into the built-in todo list in real time.
+- Bind the first task progress file to the exact host task ID in the system prompt, so initial creation succeeds without a second marker-edit attempt; keep strict discovery and stable `deeptask-task-id` isolation for existing files.
+- Keep unattended auto-approved tasks moving by hiding the follow-up question tool whenever asking is not approved.
+- Restore notification and task event sounds on Linux through host-native audio playback with non-blocking diagnostics.
+
 ## 5.6.0
 
 ### Minor Changes

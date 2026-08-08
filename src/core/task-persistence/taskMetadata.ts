@@ -23,6 +23,8 @@ export type TaskMetadataOptions = {
 	mode?: string
 	/** Provider profile name for the task (sticky profile feature) */
 	apiConfigName?: string
+	taskProgressFilePath?: string
+	taskProgressInstanceId?: string
 	/** Initial status for the task (e.g., "active" for child tasks) */
 	initialStatus?: "active" | "delegated" | "completed"
 	/**
@@ -42,6 +44,8 @@ export async function taskMetadata({
 	workspace,
 	mode,
 	apiConfigName,
+	taskProgressFilePath,
+	taskProgressInstanceId,
 	initialStatus,
 	toolProtocol,
 }: TaskMetadataOptions) {
@@ -120,6 +124,8 @@ export async function taskMetadata({
 		mode,
 		...(toolProtocol && { toolProtocol }),
 		...(typeof apiConfigName === "string" && apiConfigName.length > 0 ? { apiConfigName } : {}),
+		...(taskProgressFilePath && { taskProgressFilePath }),
+		...(taskProgressInstanceId && { taskProgressInstanceId }),
 		...(initialStatus && { status: initialStatus }),
 	}
 

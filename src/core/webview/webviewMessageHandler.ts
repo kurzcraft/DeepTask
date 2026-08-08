@@ -67,6 +67,7 @@ import { discoverChromeHostUrl, tryChromeHostUrl } from "../../services/browser/
 import { searchWorkspaceFiles } from "../../services/search/file-search"
 import { fileExistsAtPath } from "../../utils/fs"
 import { playTts, setTtsEnabled, setTtsSpeed, stopTts } from "../../utils/tts"
+import { playLinuxSound } from "../../integrations/audio/playSound" // kilocode_change
 import { showSystemNotification } from "../../integrations/notifications" // kilocode_change
 import { singleCompletionHandler } from "../../utils/single-completion-handler" // kilocode_change
 import { searchCommits } from "../../utils/git"
@@ -142,6 +143,24 @@ export const webviewMessageHandler = async (
 		return resolved
 	}
 	/**
+	 * Cancellation is a UI recovery boundary. Always await it and publish a final
+	 * state, including when persistence/history rehydration fails, so the webview
+	 * cannot lose its cancel or composer controls after an unhandled rejection.
+	 */
+	const cancelTaskAndRestoreUi = async (reason: string): Promise<void> => {
+		try {
+			await provider.cancelTask()
+		} catch (error) {
+			provider.log(
+				`[cancelTaskAndRestoreUi] ${reason} failed: ${error instanceof Error ? error.message : String(error)}`,
+			)
+			await provider.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
+		} finally {
+			await provider.postStateToWebview()
+		}
+	}
+
+	/**
 	 * Shared utility to find message indices based on timestamp.
 	 * When multiple messages share the same timestamp (e.g., after condense),
 	 * this function prefers non-summary messages to ensure user operations
@@ -166,83 +185,6 @@ export const webviewMessageHandler = async (
 		const apiConversationHistoryIndex = preferred?.idx ?? -1
 
 		return { messageIndex, apiConversationHistoryIndex }
-	}
-
-	/**
-	 * Finds the structural API boundary for an edited user message.
-	 *
-	 * UI and API timestamps are intentionally asynchronous: a user_feedback row can
-	 * be rendered before the matching API user turn is persisted, and a condensed
-	 * summary can represent a later branch using an earlier timestamp. Therefore an
-	 * edited resend must never guess this boundary from timestamps. If the original
-	 * user payload cannot be identified uniquely in the stored API history, return
-	 * zero so the replacement Task starts from a known-clean history instead of
-	 * exposing an unprovable prefix to the model.
-	 */
-	const findStrictEditApiCutoffIndex = (currentCline: any, targetMessage: ClineMessage): number => {
-		const targetText = targetMessage.text
-		if (typeof targetText !== "string" || !targetText) {
-			return 0
-		}
-
-		const taskEnvelope = `<task>\n${targetText}\n</task>`
-		const feedbackEnvelope = `<user_message>\n${targetText}\n</user_message>`
-		const apiConversationHistory = Array.isArray(currentCline.apiConversationHistory)
-			? currentCline.apiConversationHistory
-			: []
-		const matchingIndices = apiConversationHistory
-			.map((message: ApiMessage, index: number) => ({ message, index }))
-			.filter(({ message }: { message: ApiMessage }) => {
-				if (message.role !== "user" || message.isSummary) {
-					return false
-				}
-
-				const textBlocks = Array.isArray(message.content)
-					? message.content.filter((block) => block.type === "text").map((block) => block.text)
-					: [message.content]
-
-				return textBlocks.some(
-					(text) =>
-						typeof text === "string" &&
-						(text === targetText || text === taskEnvelope || text.includes(feedbackEnvelope)),
-				)
-			})
-
-		if (matchingIndices.length !== 1) {
-			return 0
-		}
-
-		// A matched user message may already be hidden by a summary or truncation
-		// marker. The marker is stored before the hidden messages and can itself be
-		// hidden by a later marker, so walk the parent chain and move the boundary
-		// before every ancestor. Keeping the matched index alone would retain a
-		// summary that contains the very branch the user is replacing.
-		let cutoffIndex = matchingIndices[0].index
-		let currentMessage: ApiMessage | undefined = matchingIndices[0].message
-		const visitedParentIds = new Set<string>()
-
-		while (currentMessage) {
-			const parentId = currentMessage.condenseParent ?? currentMessage.truncationParent
-			if (!parentId || visitedParentIds.has(parentId)) {
-				break
-			}
-			visitedParentIds.add(parentId)
-
-			const parentIndex = apiConversationHistory.findIndex(
-				(message: ApiMessage) =>
-					(message.isSummary && message.condenseId === parentId) ||
-					(message.isTruncationMarker && message.truncationId === parentId),
-			)
-			if (parentIndex === -1) {
-				// An orphaned parent cannot prove which part of the history is safe.
-				return 0
-			}
-
-			cutoffIndex = Math.min(cutoffIndex, parentIndex)
-			currentMessage = apiConversationHistory[parentIndex]
-		}
-
-		return cutoffIndex
 	}
 
 	/**
@@ -434,10 +376,10 @@ export const webviewMessageHandler = async (
 			return
 		}
 
-		// Use the UI timestamp only to locate the rendered row. The API boundary is
-		// derived from the original user payload below because API timestamps can be
-		// reordered by streaming and condensation.
-		const { messageIndex } = findMessageIndices(messageTs, currentCline)
+		// Match the original Kilo flow: the UI row identifies the edit target, while
+		// the API index is only an optimization. RewindToTimestamp owns the durable
+		// boundary when persistence is delayed or condensed.
+		const { messageIndex, apiConversationHistoryIndex } = findMessageIndices(messageTs, currentCline)
 
 		if (messageIndex === -1) {
 			// kilocode_change start
@@ -459,7 +401,7 @@ export const webviewMessageHandler = async (
 					provider.setPendingCancelledTaskContinuation?.(editedContent, images, {
 						kind: "edited_resend",
 					})
-					await provider.cancelTask()
+					await cancelTaskAndRestoreUi("stale inline edit resend")
 				} else {
 					await currentCline.continueTaskFromUserMessage(editedContent, images, {
 						kind: "edited_resend",
@@ -482,7 +424,6 @@ export const webviewMessageHandler = async (
 			// kilocode_change end
 
 			const targetMessage = currentCline.clineMessages[messageIndex]
-			const strictApiCutoffIndex = findStrictEditApiCutoffIndex(currentCline, targetMessage)
 
 			// If checkpoint restoration is requested, find and restore to the last checkpoint before this message
 			if (restoreCheckpoint) {
@@ -504,7 +445,7 @@ export const webviewMessageHandler = async (
 						editData: {
 							editedContent,
 							images,
-							apiConversationHistoryIndex: strictApiCutoffIndex,
+							apiConversationHistoryIndex,
 						},
 					})
 					// The task will be cancelled and reinitialized by checkpointRestore
@@ -532,18 +473,12 @@ export const webviewMessageHandler = async (
 				}
 			}
 
-			// Delete the original (user) message and all subsequent messages using MessageManager.
-			// An edit replaces a branch, so unlike ordinary deletion it must not retain
-			// assistant messages that raced ahead of the user-message API timestamp.
+			// Delete the original user message and later messages using the same boundary
+			// as the original Kilo implementation. The manager handles delayed API rows.
 			const rewindTs = currentCline.clineMessages[deleteFromMessageIndex]?.ts
 			if (rewindTs) {
 				await currentCline.messageManager.rewindToTimestamp(rewindTs, {
 					includeTargetMessage: false,
-					strictCutoff: true,
-					// `0` deliberately clears the unprovable prefix. A timestamp fallback
-					// can retain a condensed summary or raced assistant output that already
-					// contains the discarded branch.
-					apiCutoffIndex: strictApiCutoffIndex,
 				})
 			}
 
@@ -574,7 +509,7 @@ export const webviewMessageHandler = async (
 			provider.setPendingCancelledTaskContinuation?.(editedContent, images, {
 				kind: "edited_resend",
 			})
-			await provider.cancelTask()
+			await cancelTaskAndRestoreUi("edited message resend")
 			return
 		} catch (error) {
 			console.error("Error in edit message:", error)
@@ -842,7 +777,26 @@ export const webviewMessageHandler = async (
 				// row without ending the task; later idle messages must continue as a fresh
 				// instruction. Mid-stream typed text must interrupt the live loop and be
 				// rehydrated as a continuation, otherwise it is only parked forever.
-				const lastMessage = task?.clineMessages?.at(-1)
+				const taskMessages = task?.clineMessages ?? []
+				const lastMessage = taskMessages.at(-1)
+				let lastStableCompletionIndex = -1
+				for (let index = taskMessages.length - 1; index >= 0; index--) {
+					const clineMessage = taskMessages[index]
+					if (
+						clineMessage.partial !== true &&
+						((clineMessage.type === "ask" && clineMessage.ask === "completion_result") ||
+							(clineMessage.type === "say" && clineMessage.say === "completion_result"))
+					) {
+						lastStableCompletionIndex = index
+						break
+					}
+				}
+				const messagesAfterCompletion = taskMessages.slice(lastStableCompletionIndex + 1)
+				const hasOnlyNonInteractiveCompletionTail =
+					lastStableCompletionIndex >= 0 &&
+					messagesAfterCompletion.every(
+						(clineMessage) => clineMessage.type === "say" && clineMessage.partial !== true,
+					)
 				const hasMessagePayload = !!(resolved.text?.trim() || resolved.images?.length)
 				const pendingAskTs = task?.getPendingWebviewAskTs?.()
 				const hasPendingAsk =
@@ -857,23 +811,34 @@ export const webviewMessageHandler = async (
 					hasPendingAsk &&
 					(pendingAskMessage?.ask === "completion_result" ||
 						pendingAskMessage?.ask === "resume_completed_task")
-				const hasCompletedTask =
-					task?.clineMessages?.some(
-						(clineMessage) =>
-							clineMessage.partial !== true &&
-							((clineMessage.type === "ask" && clineMessage.ask === "completion_result") ||
-								(clineMessage.type === "say" && clineMessage.say === "completion_result")),
-					) === true
+				const hasCompletedTask = hasOnlyNonInteractiveCompletionTail
 				const isCancellingOrAbandoned = task?.abortReason === "user_cancelled" || task?.abandoned === true
 				// Only model HTTP streaming is a hard interrupt. Tool/command execution keeps
 				// isTaskLoopActive true, but those waits must still answer pending asks /
 				// terminal feedback instead of cancelling the whole task into a parked queue.
-				// A green soft completion is visible slightly before the old stream/loop
-				// finishes unwinding. Its next user message is post-completion continuation,
-				// not a live-stream interruption; cancelling here can park it with no reply.
+				// A completion result is a human-conversation boundary even while the old
+				// request is unwinding. The completion row is durable evidence that the
+				// model has yielded control; routing the next human message through cancel
+				// rehydrates the task and lets stale finalization win over that message.
 				const isSoftCompletionBoundaryPending = task?.isSoftCompletionBoundaryPending?.() === true
+				const completionMessage =
+					lastStableCompletionIndex >= 0 ? taskMessages[lastStableCompletionIndex] : undefined
+				const hasStaleAskBeforeCompletion =
+					hasPendingAsk &&
+					pendingAskTs !== undefined &&
+					completionMessage?.ts !== undefined &&
+					pendingAskTs <= completionMessage.ts
+				const isCompletionBoundaryContinuation =
+					message.askResponse === "messageResponse" &&
+					hasCompletedTask &&
+					hasMessagePayload &&
+					!isCancellingOrAbandoned &&
+					(!hasPendingAsk || isCompletionResultPendingAsk || hasStaleAskBeforeCompletion)
 				const isActivelyStreaming =
-					task?.isStreaming === true && !isCancellingOrAbandoned && !isSoftCompletionBoundaryPending
+					task?.isStreaming === true &&
+					!isCancellingOrAbandoned &&
+					!isSoftCompletionBoundaryPending &&
+					!isCompletionBoundaryContinuation
 				const isContinueWithoutPendingAsk =
 					message.askResponse === "messageResponse" &&
 					!hasPendingAsk &&
@@ -882,13 +847,7 @@ export const webviewMessageHandler = async (
 				// Soft completion makes hasCompletedTask true for the rest of the session.
 				// Only treat typed text as a post-completion continuation when the task is
 				// not streaming and not blocked on a non-completion ask.
-				const isCompletionContinuation =
-					message.askResponse === "messageResponse" &&
-					hasCompletedTask &&
-					hasMessagePayload &&
-					!isActivelyStreaming &&
-					!isCancellingOrAbandoned &&
-					(!hasPendingAsk || isCompletionResultPendingAsk)
+				const isCompletionContinuation = isCompletionBoundaryContinuation
 				const isLiveStreamingUserInterrupt =
 					message.askResponse === "messageResponse" && hasMessagePayload && isActivelyStreaming
 				const isCancelledStreamingContinuation =
@@ -918,8 +877,7 @@ export const webviewMessageHandler = async (
 					task.clearStaleWebviewAskResponse()
 					task.messageQueueService.clear()
 					provider.setPendingCancelledTaskContinuation?.(resolved.text ?? "", resolved.images)
-					void provider.cancelTask()
-					await provider.postStateToWebview()
+					await cancelTaskAndRestoreUi("live streaming user interrupt")
 				} else if (task && isCancelledStreamingContinuation) {
 					// A cancelled/abandoned task can still have a stale pending ask while
 					// cancelTask() is rehydrating history. Treat typed text as the next task
@@ -929,21 +887,15 @@ export const webviewMessageHandler = async (
 					provider.setPendingCancelledTaskContinuation?.(resolved.text ?? "", resolved.images)
 					await provider.postStateToWebview()
 				} else if (task && isCompletionContinuation) {
-					// A completed task is a hard context boundary. Reusing its mutable loop,
-					// checklist, and completion gates lets old mechanics preempt the latest
-					// human instruction. createTask() replaces the old top-level task before
-					// delivering the full message to a fresh model turn.
+					// A completed Task still owns stale ask/parser/stream state. Reuse the same
+					// flicker-free rehydration path as edited resend so the first direct send is
+					// delivered on a clean Task instance while preserving completed history.
 					task.clearStaleWebviewAskResponse()
 					task.messageQueueService.clear()
-					try {
-						await provider.createTask(resolved.text ?? "", resolved.images)
-						await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
-					} catch (error) {
-						await provider.postStateToWebview()
-						vscode.window.showErrorMessage(
-							`Failed to create task: ${error instanceof Error ? error.message : String(error)}`,
-						)
-					}
+					provider.setPendingCancelledTaskContinuation?.(resolved.text ?? "", resolved.images, {
+						kind: "continuation",
+					})
+					await cancelTaskAndRestoreUi("completion continuation")
 				} else if (task && hasPendingAsk && isAskResponseForCurrentAsk) {
 					task.handleWebviewAskResponse(message.askResponse!, resolved.text, resolved.images)
 				} else if (
@@ -1879,7 +1831,7 @@ export const webviewMessageHandler = async (
 			const result = checkoutRestorePayloadSchema.safeParse(message.payload)
 
 			if (result.success) {
-				await provider.cancelTask()
+				await cancelTaskAndRestoreUi("checkpoint restore")
 
 				try {
 					await pWaitFor(() => provider.getCurrentTask()?.isInitialized === true, { timeout: 3_000 })
@@ -1897,7 +1849,7 @@ export const webviewMessageHandler = async (
 			break
 		}
 		case "cancelTask":
-			await provider.cancelTask()
+			await cancelTaskAndRestoreUi("explicit cancel request")
 			break
 		case "cancelAutoApproval":
 			// Cancel any pending auto-approval timeout for the current task
@@ -2160,6 +2112,17 @@ export const webviewMessageHandler = async (
 			await provider.postStateToWebview()
 			break
 		// kilocode_change begin
+		case "playSound":
+			if (process.platform === "linux" && message.audioType) {
+				try {
+					await playLinuxSound(provider.context.extensionPath, message.audioType, message.value)
+				} catch (error) {
+					provider.log(
+						`Failed to play Linux sound: ${error instanceof Error ? error.message : String(error)}`,
+					)
+				}
+			}
+			break
 		case "openGlobalKeybindings":
 			vscode.commands.executeCommand("workbench.action.openGlobalKeybindings", message.text ?? "kilo-code.")
 			break
@@ -2389,18 +2352,11 @@ export const webviewMessageHandler = async (
 			break
 		}
 		case "submitEditedMessage": {
-			if (
-				provider.getCurrentTask() &&
-				typeof message.value === "number" &&
-				message.value &&
-				message.editedMessageContent
-			) {
-				// kilocode_change start
-				// Inline resend/edit must immediately rewind and continue reasoning. Sending
-				// it through the confirmation-dialog path leaves the row in edit state longer
-				// and can strand subsequent messages behind stale UI state.
-				await handleEditMessageConfirm(message.value, message.editedMessageContent, false, message.images, true)
-				// kilocode_change end
+			if (typeof message.value === "number" && message.value && message.editedMessageContent) {
+				// A user-message edit replaces the original branch. Reuse the strict edit
+				// path so the original message and every later response are removed before
+				// the replacement request is started.
+				await handleEditMessageConfirm(message.value, message.editedMessageContent, false, message.images)
 			}
 			break
 		}
@@ -5252,7 +5208,6 @@ export const webviewMessageHandler = async (
 			// "indexCleared" |
 			// "marketplaceInstallResult" |
 			// "shareTaskSuccess" |
-			// "playSound" |
 			// "draggedImages" |
 			// "setApiConfigPassword" |
 			// "setopenAiCustomModelInfo" |

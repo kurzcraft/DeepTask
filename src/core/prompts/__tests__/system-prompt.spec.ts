@@ -948,30 +948,34 @@ describe("SYSTEM_PROMPT", () => {
 			undefined,
 			undefined,
 			{ taskProgressFileEnabled: true } as any,
+			"host-task-123",
 		)
 
 		expect(defaultPrompt).not.toContain("TASK PROGRESS FILE")
 		expect(enabledPrompt).toContain("TASK PROGRESS FILE")
+		expect(enabledPrompt).toContain("the host task ID is `host-task-123`")
+		expect(enabledPrompt).toContain("`<!-- deeptask-task-id:host-task-123 -->`")
 		expect(enabledPrompt).toContain("current workspace's EXTRA/task/ directory")
 		expect(enabledPrompt).toContain("create a concise task-specific Markdown progress file under EXTRA/task/")
 		expect(enabledPrompt).toContain(
 			"Name a genuinely new task file from a concise, filesystem-safe form of its task title",
 		)
-		expect(enabledPrompt).toContain(
-			"HTML marker deeptask-task-id followed by the task ID is the authoritative identity",
-		)
-		expect(enabledPrompt).toContain(
-			"never generate a second active Markdown file or a second checklist for the same ID",
-		)
-		expect(enabledPrompt).toContain("update the existing marked file in place")
-		expect(enabledPrompt).toContain("never a UUID or opaque generated identifier")
 		expect(enabledPrompt).toContain("Keep one task's evolving checklist in its same Markdown file")
+		expect(enabledPrompt).toContain("Canonical file format (mandatory; this is not YAML frontmatter)")
+		expect(enabledPrompt).toContain("<!-- deeptask-task-id:<instance-id> -->")
+		expect(enabledPrompt).toContain("example value is illustrative only and must never be copied")
+		expect(enabledPrompt).toContain("current host task ID or runtime instance ID")
+		expect(enabledPrompt).toContain("current host task ID is only a candidate-discovery key")
+		expect(enabledPrompt).toContain("host restores the native list from the authoritative file")
+		expect(enabledPrompt).toContain("do not rewrite the marker or repeat the same stale request")
+		expect(enabledPrompt).toContain("Never add a `deeptask-native-todo-list` section")
+		expect(enabledPrompt).toContain("exact top-to-bottom projection of every checklist item")
+		expect(enabledPrompt).toContain("preserve item order, text, status, and indentation-derived depth")
 		expect(enabledPrompt).toContain("use clearly visible hierarchical indentation")
 		expect(enabledPrompt).toContain("Before completion, check every checklist item in the task Markdown")
 		expect(enabledPrompt).toContain("creating the directory when needed")
 		expect(enabledPrompt).toContain("Do not create task progress files in the workspace root")
 		expect(enabledPrompt).toContain("An archived file records only that its own task is finished")
-		expect(enabledPrompt).toContain("create a new task-specific progress file and continue immediately")
 		expect(enabledPrompt).toContain(
 			"ordinary user feedback, and edited resends within an existing task are not new tasks",
 		)

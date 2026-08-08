@@ -455,6 +455,23 @@ describe("filterNativeToolsForMode", () => {
 		expect(toolNames).toContain("attempt_completion")
 	})
 
+	it("should exclude ask_followup_question when auto-approval Questions is disabled", () => {
+		const codeMode: ModeConfig = {
+			slug: "code",
+			name: "Code",
+			roleDefinition: "Test",
+			groups: ["read", "edit", "browser", "command", "mcp"] as const,
+		}
+
+		const filtered = filterNativeToolsForMode(mockNativeTools, "code", [codeMode], {}, undefined, {}, {
+			autoApprovalEnabled: true,
+			alwaysAllowFollowupQuestions: false,
+		} as any)
+		const toolNames = filtered.map((tool) => ("function" in tool ? tool.function.name : ""))
+		expect(toolNames).not.toContain("ask_followup_question")
+		expect(toolNames).toContain("attempt_completion")
+	})
+
 	it("should include ask_followup_question when yoloMode is disabled", () => {
 		const codeMode: ModeConfig = {
 			slug: "code",
@@ -942,6 +959,26 @@ describe("getToolDescriptionsForMode", () => {
 			undefined,
 			undefined,
 			{ yoloMode: true } as any, // clineProviderState with yoloMode enabled
+		)
+		expect(result).not.toContain("ask_followup_question")
+	})
+
+	it("should exclude ask_followup_question descriptions when auto-approval Questions is disabled", () => {
+		const result = getToolDescriptionsForMode(
+			"code",
+			"/test",
+			false,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			{ autoApprovalEnabled: true, alwaysAllowFollowupQuestions: false } as any,
 		)
 		expect(result).not.toContain("ask_followup_question")
 	})
