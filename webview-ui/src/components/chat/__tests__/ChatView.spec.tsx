@@ -451,9 +451,7 @@ describe("ChatView - GitHub Star entry", () => {
 		const { getByRole } = renderChatView()
 		mockPostMessage({ clineMessages: [], taskHistory: [] })
 
-		const starButton = await waitFor(() =>
-			getByRole("button", { name: "Star Deeptask on GitHub" }),
-		)
+		const starButton = await waitFor(() => getByRole("button", { name: "Star Deeptask on GitHub" }))
 		fireEvent.click(starButton)
 
 		expect(vscode.postMessage).toHaveBeenCalledWith({
@@ -1693,12 +1691,12 @@ describe("ChatView - Command Execution Status", () => {
 
 		await act(async () => {
 			window.dispatchEvent(
-			new MessageEvent("message", {
-				data: {
-					type: "commandExecutionStatus",
-					text: JSON.stringify({ executionId, status: "started", command: "python test.py" }),
-				},
-			}),
+				new MessageEvent("message", {
+					data: {
+						type: "commandExecutionStatus",
+						text: JSON.stringify({ executionId, status: "started", command: "python test.py" }),
+					},
+				}),
 			)
 			window.dispatchEvent(
 				new MessageEvent("message", {
@@ -1866,6 +1864,82 @@ describe("ChatView - Command Execution Status", () => {
 
 		// The new API turn must not stay stuck without a pause/cancel control.
 		expect(queryByText("chat:cancel.title")).toBeInTheDocument()
+	})
+
+	it("keeps recovery controls after a tool/model error instead of freezing the chat", async () => {
+		const { getByTestId, getByText } = renderChatView()
+
+		mockPostMessage({
+			clineMessages: [
+				{ type: "say", say: "task", ts: Date.now() - 2000, text: "Initial task" },
+				{ type: "say", say: "error", ts: Date.now() - 1000, text: "tool call failed", partial: false },
+			],
+		})
+
+		await waitFor(() => {
+			expect(getByTestId("chat-textarea")).toBeInTheDocument()
+			expect(getByText("chat:resumeTask.title")).toBeInTheDocument()
+			expect(getByText("chat:startNewTask.title")).toBeInTheDocument()
+		})
+
+		vi.mocked(vscode.postMessage).mockClear()
+		fireEvent.click(getByText("chat:resumeTask.title"))
+
+		expect(vscode.postMessage).toHaveBeenCalledWith({
+			type: "askResponse",
+			askResponse: "yesButtonClicked",
+		})
+	})
+
+	it("keeps the composer interactive after soft completion while typed feedback continues the task", async () => {
+		const { getByTestId, queryByText } = renderChatView()
+
+		mockPostMessage({
+			clineMessages: [
+				{
+					type: "say",
+					say: "task",
+					ts: Date.now() - 2000,
+					text: "Initial task",
+				},
+				{
+					type: "say",
+					say: "completion_result",
+					ts: Date.now() - 1000,
+					text: "Done with previous work",
+					partial: false,
+				},
+			],
+		})
+
+		await waitFor(() => {
+			expect(getByTestId("chat-textarea")).toBeInTheDocument()
+		})
+
+		expect(queryByText("chat:startNewTask.title")).not.toBeInTheDocument()
+		expect(queryByText("chat:proceedWhileRunning.title")).not.toBeInTheDocument()
+		expect(queryByText("chat:cancel.title")).not.toBeInTheDocument()
+
+		vi.mocked(vscode.postMessage).mockClear()
+
+		const chatTextArea = getByTestId("chat-textarea")
+		const input = chatTextArea.querySelector("input")! as HTMLInputElement
+
+		await act(async () => {
+			fireEvent.change(input, { target: { value: "add this as a new incomplete task" } })
+			fireEvent.keyDown(input, { key: "Enter", code: "Enter" })
+		})
+
+		await waitFor(() => {
+			expect(vscode.postMessage).toHaveBeenCalledWith({
+				type: "askResponse",
+				askResponse: "messageResponse",
+				text: "add this as a new incomplete task",
+				images: [],
+			})
+		})
+
+		expect(vscode.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "terminalOperation" }))
 	})
 
 	it("does not treat ordinary text rows as command_output waits after soft completion", async () => {

@@ -3390,8 +3390,10 @@ ${protocolHint}
 			})
 		}
 
-		// When the user resumes with a new instruction, strip completion-style tails
-		// (including DeepTask text-only summaries) so the model cannot restate them.
+		// When a completed task receives a new human instruction, preserve the valid
+		// pre-completion context but remove the completion control tail. The latest
+		// message is appended as a distinct user turn below, matching edited resend:
+		// history remains available while the new instruction owns the next turn.
 		if (responseText) {
 			modifiedApiConversationHistory = this.stripCompletedAttemptCompletionFromHistory(
 				modifiedApiConversationHistory,
@@ -4314,7 +4316,20 @@ ${protocolHint}
 								})
 
 								if (!toolUse) {
+									// Keep malformed native calls inside the normal tool-result path. Dropping
+									// the call here leaves userMessageContentReady false forever and makes the
+									// task appear frozen with no recovery controls.
 									console.error(`Failed to parse tool call for task ${this.taskId}:`, chunk)
+									const fallbackToolUse: ToolUse = {
+										type: "tool_use",
+										id: chunk.id,
+										name: chunk.name as ToolName,
+										params: {},
+										partial: false,
+									}
+									this.assistantMessageContent.push(fallbackToolUse)
+									this.userMessageContentReady = false
+									void presentAssistantMessage(this)
 									break
 								}
 
@@ -4330,7 +4345,7 @@ ${protocolHint}
 
 								// Present the tool call to user - presentAssistantMessage will execute
 								// tools sequentially and accumulate all results in userMessageContent
-								presentAssistantMessage(this)
+								void presentAssistantMessage(this)
 								break
 							}
 							case "text": {

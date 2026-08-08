@@ -3084,6 +3084,9 @@ describe("Queued message processing after condense", () => {
 		expect(askSpy).toHaveBeenCalledOnce()
 		expect(askSpy).toHaveBeenCalledWith("resume_completed_task")
 		expect(initiateSpy).toHaveBeenCalledOnce()
+		// The old final user turn is replaced by the latest instruction, so the
+		// completed task cannot regain control of the new model turn.
+		expect((task as any).apiConversationHistory).toEqual([])
 		expect(continuationContent).toContain(
 			"<latest_human_message>\ncontinue in the external workspace\n</latest_human_message>",
 		)

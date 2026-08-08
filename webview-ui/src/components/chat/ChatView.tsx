@@ -611,8 +611,23 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							}
 							// kilocode_change end
 							break
-						case "api_req_finished":
 						case "error":
+							// kilocode_change start
+							// A tool/model failure is a recovery boundary, not a terminal UI state.
+							// Reuse resume_task button semantics so an empty Resume click starts a
+							// fresh continuation, while Start New Task remains an explicit escape.
+							if (!lastMessage.partial) {
+								setSendingDisabled(false)
+								setClineAsk("resume_task")
+								currentAskTsRef.current = undefined
+								setEnableButtons(true)
+								setPrimaryButtonText(t("chat:resumeTask.title"))
+								setSecondaryButtonText(t("chat:startNewTask.title"))
+								setDidClickCancel(false)
+							}
+							// kilocode_change end
+							break
+						case "api_req_finished":
 						case "text":
 						case "browser_action":
 						case "browser_action_result":
