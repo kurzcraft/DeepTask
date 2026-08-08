@@ -67,11 +67,6 @@ import { useRouterModels } from "../../ui/hooks/useRouterModels"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { vscode } from "@/utils/vscode"
 
-const FALLBACK_MODELS = {
-	models: anthropicModels,
-	defaultModel: anthropicDefaultModelId,
-}
-
 export const getModelsByProvider = ({
 	provider,
 	routerModels,
@@ -397,19 +392,19 @@ export const useProviderModels = (apiConfiguration?: ProviderSettings) => {
 
 	const routerModels = useRouterModels(
 		{
-		openRouterBaseUrl: apiConfiguration?.openRouterBaseUrl,
-		openRouterApiKey: apiConfiguration?.apiKey,
-		kilocodeOrganizationId: apiConfiguration?.kilocodeOrganizationId ?? "personal",
-		chutesApiKey: apiConfiguration?.chutesApiKey,
-		geminiApiKey: apiConfiguration?.geminiApiKey,
-		googleGeminiBaseUrl: apiConfiguration?.googleGeminiBaseUrl,
-		//kilocode_change start
-		nanoGptApiKey: apiConfiguration?.nanoGptApiKey,
-		nanoGptModelList: apiConfiguration?.nanoGptModelList,
-		//kilocode_change end
-		syntheticApiKey: apiConfiguration?.syntheticApiKey, // kilocode_change
-		deepSeekApiKey: apiConfiguration?.deepSeekApiKey,
-		deepSeekBaseUrl: apiConfiguration?.deepSeekBaseUrl,
+			openRouterBaseUrl: apiConfiguration?.openRouterBaseUrl,
+			openRouterApiKey: apiConfiguration?.apiKey,
+			kilocodeOrganizationId: apiConfiguration?.kilocodeOrganizationId ?? "personal",
+			chutesApiKey: apiConfiguration?.chutesApiKey,
+			geminiApiKey: apiConfiguration?.geminiApiKey,
+			googleGeminiBaseUrl: apiConfiguration?.googleGeminiBaseUrl,
+			//kilocode_change start
+			nanoGptApiKey: apiConfiguration?.nanoGptApiKey,
+			nanoGptModelList: apiConfiguration?.nanoGptModelList,
+			//kilocode_change end
+			syntheticApiKey: apiConfiguration?.syntheticApiKey, // kilocode_change
+			deepSeekApiKey: apiConfiguration?.deepSeekApiKey,
+			deepSeekBaseUrl: apiConfiguration?.deepSeekBaseUrl,
 		},
 		{ provider: provider === "deepseek" ? "deepseek" : undefined },
 	)
