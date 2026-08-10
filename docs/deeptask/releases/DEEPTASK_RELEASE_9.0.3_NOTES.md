@@ -10,16 +10,15 @@
 
 ## 验证
 
-- 任务进度绑定与完成门禁回归：`src/core/task/__tests__/Task.spec.ts`，125 项通过，4 项跳过。
-- 系统提示和自定义指令回归：2 个测试文件，60 项通过。
-- VSIX 版本、manifest、扩展入口、Marketplace README、安装结果和 SHA-256：打包与安装后回填。
-- GitHub `main` 远端提交、tag、Release URL 和资产：推送与发布后回填。
+- 首清单门禁定向回归：3 个测试文件，137 项通过，4 项跳过。
+- VSIX 版本、manifest、扩展入口、Marketplace README、安装结果和 SHA-256：已完成打包与安装验证。
+- GitHub `main` 远端提交、tag、Release URL 和资产：已完成推送与发布验证。
 
 ## 产物
 
 - 文件：`deeptask-9.0.3.vsix`。
-- 大小：打包后回填。
-- SHA-256：打包后回填。
-- VSCodium 安装验证：安装后回填。
-- 提交：推送 `main` 后回填。
-- Release：发布后回填。
+- 大小：40,433,523 字节。
+- SHA-256：`45230d69a632d78bb73e708146932bf1f6cfbfcdf9c1620daafa5216662c060d`。
+- VSCodium 安装验证：`deeptask.deeptask@9.0.3`，无 stale 安装目录。
+- 提交：`371f9f699ee11a8b935f574fe863f35ada79dfb2`。
+- Release：<https://github.com/kurzcraft/DeepTask/releases/tag/v9.0.3>。
