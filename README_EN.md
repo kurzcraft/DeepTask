@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.0.0</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.0.1</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.0.0** evolves from the proven Kilo Code 5.5 architecture and focuses on the failures
+> **Deeptask 9.0.1** evolves from the proven Kilo Code 5.5 architecture and focuses on the failures
 > that most damage long-running Agent work: invisible execution, instructions that cannot change
 > mid-run, lost focus after context condensation, weak cross-session recovery, and completion claims
 > without real acceptance evidence.
@@ -83,6 +83,8 @@ Deeptask lets the Agent switch agent mode, provider profiles, and models mid-tas
 
 You can send new instructions while the task is active. Deeptask registers the feedback as an extension, revision, or replacement objective, preserves genuinely completed work, and anchors subsequent execution and context condensation on the newest requirement. Feedback sent after completion creates a new work turn instead of repeating the previous conclusion.
 
+When a tool throws unexpectedly, Deeptask returns an explicit failure to the model, releases the presenter lock, and keeps the next turn reachable. Even a failure while rendering the error cannot silently strand the task.
+
 This produces an engineering form of near-infinite continuity: a task can evolve through repeated condensation, restoration, and cross-session continuation. The claim is based on durable state and verifiable evidence, not on pretending that a single model request has unlimited tokens.
 
 [Learn how to correct and extend active work](./docs/deeptask/guides/USER_GUIDE_EN.md#correct-the-task-while-it-runs)
@@ -114,17 +116,17 @@ Deeptask treats work as a recoverable state machine rather than a one-shot answe
 
 ## Start in three minutes
 
-1. Download `deeptask-9.0.0.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.0.1.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.0.0.vsix --force
+    codium --install-extension ./deeptask-9.0.1.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.0.0.vsix --force
+    code --install-extension ./deeptask-9.0.1.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

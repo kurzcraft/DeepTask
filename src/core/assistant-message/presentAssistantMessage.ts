@@ -113,7 +113,9 @@ export async function presentAssistantMessage(cline: Task) {
 		return
 	}
 
-	switch (block.type) {
+	// kilocode_change start: an unexpected tool failure must never strand the presenter lock.
+	try {
+		switch (block.type) {
 		case "mcp_tool_use": {
 			// Handle native MCP tool calls (from mcp_serverName_toolName dynamic tools)
 			// These are converted to the same execution path as use_mcp_tool but preserve
@@ -1315,8 +1317,51 @@ export async function presentAssistantMessage(cline: Task) {
 			}
 
 			break
+			}
 		}
+	} catch (error) {
+		if (cline.abort || cline.abandoned) {
+			throw error
+		}
+
+		const failure = error instanceof Error ? error : new Error(String(error))
+		const toolName = block.type === "tool_use" ? block.name : "use_mcp_tool"
+		const toolCallId = block.id
+		const errorMessage = `Error executing ${toolName}: ${failure.message}`
+		console.error(`[Task#${cline.taskId}.${cline.instanceId}] ${errorMessage}`, failure)
+		cline.consecutiveMistakeCount++
+		cline.recordToolError(toolName as ToolName, failure.message)
+		cline.didToolFailInCurrentTurn = true
+
+		try {
+			await cline.say("error", errorMessage)
+		} catch (presentationError) {
+			console.error(
+				`[Task#${cline.taskId}.${cline.instanceId}] Failed to present tool error`,
+				presentationError,
+			)
+		}
+
+		const errorContent = formatResponse.toolError(failure.message, toolCallId ? TOOL_PROTOCOL.NATIVE : TOOL_PROTOCOL.XML)
+		if (toolCallId) {
+			const alreadyHasResult = cline.userMessageContent.some(
+				(content) => content.type === "tool_result" && content.tool_use_id === toolCallId,
+			)
+			if (!alreadyHasResult) {
+				cline.pushToolResultToUserContent({
+					type: "tool_result",
+					tool_use_id: toolCallId,
+					content: errorContent,
+					is_error: true,
+				})
+			}
+		} else {
+			cline.userMessageContent.push({ type: "text", text: errorContent })
+		}
+	} finally {
+		cline.presentAssistantMessageLocked = false
 	}
+	// kilocode_change end
 
 	// Seeing out of bounds is fine, it means that the next too call is being
 	// built up and ready to add to assistantMessageContent to present.
@@ -1324,10 +1369,7 @@ export async function presentAssistantMessage(cline: Task) {
 	// breaking without presenting any UI. For example the write_to_file tool
 	// was breaking when relpath was undefined, and for invalid relpath it never
 	// presented UI.
-	// This needs to be placed here, if not then calling
-	// cline.presentAssistantMessage below would fail (sometimes) since it's
-	// locked.
-	cline.presentAssistantMessageLocked = false
+	// The presenter lock is released by the failure-safe finally block above.
 
 	// NOTE: When tool is rejected, iterator stream is interrupted and it waits
 	// for `userMessageContentReady` to be true. Future calls to present will

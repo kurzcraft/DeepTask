@@ -1,5 +1,13 @@
 # Deeptask
 
+## 9.0.1
+
+### Patch Changes
+
+- Convert unexpected failures from any assistant tool into an explicit model-visible error result, release the presenter lock in all cases, and keep the next task turn reachable instead of silently hanging.
+- Preserve native tool-result pairing when recovery reporting itself fails, with regression coverage for task-progress synchronization errors and secondary UI failures.
+- Update the bilingual project and Marketplace introduction to 9.0.1 installation artifacts.
+
 ## 9.0.0
 
 ### Major Changes

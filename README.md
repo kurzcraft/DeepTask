@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.0.0</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.0.1</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.0.0** 基于 Kilo Code 5.5 成熟架构持续演进，专注解决长程 Agent
+> **Deeptask 9.0.1** 基于 Kilo Code 5.5 成熟架构持续演进，专注解决长程 Agent
 > 最影响使用感的难题：执行过程看不见、运行中不能改、上下文压缩后跑偏、跨会话无法接续，
 > 以及“模型说完成了，但任务并未真正验收”。
 
@@ -82,6 +82,8 @@ Deeptask 支持 Agent 在任务中直接切换 Agent 模式、提供商配置和
 
 任务运行时仍可发送新要求。Deeptask 会把反馈识别为扩展、修订或替换目标，保留已经真实完成的部分，并把最新指令锚定为后续工作和上下文压缩的焦点。完成后继续提出需求，也会建立新的工作轮次，而不是重复旧结论。
 
+工具调用出现意外异常时，Deeptask 会把失败明确回传给模型、释放呈现锁并继续后续轮次；错误展示本身异常时也不会让任务悄然卡死。
+
 这形成了工程意义上的“近无限上下文”工作流：任务可以经过多轮压缩、恢复和跨会话接续持续演进。它依赖持久状态和可验证证据，而不是宣称单次模型请求拥有无限 token。
 
 [查看执行中修正与任务扩展教程](./docs/deeptask/guides/USER_GUIDE.md#在执行中持续修正)
@@ -113,17 +115,17 @@ Deeptask 将任务视为可恢复状态机，而不是一次性回答。未完�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.0.0.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.0.1.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.0.0.vsix --force
+    codium --install-extension ./deeptask-9.0.1.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.0.0.vsix --force
+    code --install-extension ./deeptask-9.0.1.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

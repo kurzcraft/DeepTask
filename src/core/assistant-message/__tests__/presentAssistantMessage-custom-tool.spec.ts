@@ -2,6 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { presentAssistantMessage } from "../presentAssistantMessage"
+import { updateTodoListTool } from "../../tools/UpdateTodoListTool"
 
 // Mock dependencies
 vi.mock("../../task/Task")
@@ -58,6 +59,9 @@ describe("presentAssistantMessage - Custom Tool Recording", () => {
 			browserSession: {
 				closeBrowser: vi.fn().mockResolvedValue(undefined),
 			},
+			checkpointSave: vi.fn().mockResolvedValue(undefined),
+			shouldRejectToolUntilProgressListExpanded: vi.fn().mockReturnValue(false),
+			markActiveContinuationWorkToolUsed: vi.fn(),
 			recordToolUsage: vi.fn(),
 			recordToolError: vi.fn(),
 			toolRepetitionDetector: {
@@ -178,6 +182,71 @@ describe("presentAssistantMessage - Custom Tool Recording", () => {
 			// Should record error as "custom_tool", not "failing_custom_tool"
 			expect(mockTask.recordToolError).toHaveBeenCalledWith("custom_tool", "Custom tool execution failed")
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
+		})
+	})
+
+	describe("Global tool failure recovery", () => {
+		it("converts an unexpected native tool rejection into an error result and releases the presenter", async () => {
+			const toolCallId = "tool_call_todo_sync_failure_123"
+			mockTask.didCompleteReadingStream = true
+			mockTask.assistantMessageContent = [
+				{
+					type: "tool_use",
+					id: toolCallId,
+					name: "update_todo_list",
+					nativeArgs: { todos: "- [-] Reproduce failure" },
+					params: { todos: "- [-] Reproduce failure" },
+					partial: false,
+				},
+			]
+			const failure = new Error("No active task progress file for host task test-task-id")
+			vi.spyOn(updateTodoListTool, "handle").mockRejectedValueOnce(failure)
+
+			await expect(presentAssistantMessage(mockTask)).resolves.toBeUndefined()
+
+			expect(mockTask.say).toHaveBeenCalledWith(
+				"error",
+				expect.stringContaining("No active task progress file"),
+			)
+			expect(mockTask.pushToolResultToUserContent).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "tool_result",
+					tool_use_id: toolCallId,
+					is_error: true,
+				}),
+			)
+			expect(mockTask.presentAssistantMessageLocked).toBe(false)
+			expect(mockTask.userMessageContentReady).toBe(true)
+			expect(mockTask.currentStreamingContentIndex).toBe(1)
+		})
+
+		it("still releases the presenter when rendering the recovery error also fails", async () => {
+			const toolCallId = "tool_call_secondary_error_123"
+			mockTask.didCompleteReadingStream = true
+			mockTask.assistantMessageContent = [
+				{
+					type: "tool_use",
+					id: toolCallId,
+					name: "update_todo_list",
+					nativeArgs: { todos: "- [-] Reproduce failure" },
+					params: { todos: "- [-] Reproduce failure" },
+					partial: false,
+				},
+			]
+			vi.spyOn(updateTodoListTool, "handle").mockRejectedValueOnce(new Error("primary tool failure"))
+			mockTask.say.mockRejectedValueOnce(new Error("secondary presentation failure"))
+
+			await expect(presentAssistantMessage(mockTask)).resolves.toBeUndefined()
+
+			expect(mockTask.pushToolResultToUserContent).toHaveBeenCalledWith(
+				expect.objectContaining({
+					tool_use_id: toolCallId,
+					is_error: true,
+				}),
+			)
+			expect(mockTask.presentAssistantMessageLocked).toBe(false)
+			expect(mockTask.userMessageContentReady).toBe(true)
+			expect(mockTask.currentStreamingContentIndex).toBe(1)
 		})
 	})
 
