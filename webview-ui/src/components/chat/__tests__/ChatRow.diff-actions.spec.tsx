@@ -10,6 +10,7 @@ vi.mock("react-i18next", () => ({
 		t: (key: string) => {
 			const map: Record<string, string> = {
 				"chat:fileOperations.wantsToEdit": "Roo wants to edit this file",
+				"chat:fileOperations.wantsToReadMultiple": "Deeptask wants to read multiple files",
 			}
 			return map[key] || key
 		},
@@ -135,5 +136,22 @@ describe("ChatRow - inline diff stats and actions", () => {
 		// Trailing newline should not increase the added count
 		expect(screen.getByText("+3")).toBeInTheDocument()
 		expect(screen.getByText("-0")).toBeInTheDocument()
+	})
+
+	it("uses the Deeptask label for batched file reads", () => {
+		const message: any = {
+			type: "ask",
+			ask: "tool",
+			ts: Date.now(),
+			partial: false,
+			text: JSON.stringify({
+				tool: "readFile",
+				batchFiles: [{ path: "src/one.ts", approved: false }],
+			}),
+		}
+
+		renderChatRow(message)
+
+		expect(screen.getByText("Deeptask wants to read multiple files")).toBeInTheDocument()
 	})
 })

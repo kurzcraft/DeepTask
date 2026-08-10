@@ -432,12 +432,13 @@ describe("ClineProvider flicker-free cancel", () => {
 		expect((provider as any).pendingCancelledTaskContinuation).toBeUndefined()
 	})
 
-	it("does not create a new task when edited resend restoration fails", async () => {
+	it("delivers an edited resend through a fresh task when restoration fails", async () => {
 		;(provider as any).clineStack = [mockTask1]
 		;(provider as any).taskEventListeners = new WeakMap()
 		;(provider as any).taskEventListeners.set(mockTask1, [vi.fn()])
 		mockTask2.resumeTaskFromHistory.mockRejectedValueOnce(new Error("edited history unavailable"))
 		const createTask = vi.spyOn(provider, "createTask").mockResolvedValue(mockTask2 as any)
+		provider.postMessageToWebview = vi.fn().mockResolvedValue(undefined)
 		provider.setPendingCancelledTaskContinuation("small prompt correction", undefined, {
 			kind: "edited_resend",
 		})
@@ -461,8 +462,9 @@ describe("ClineProvider flicker-free cancel", () => {
 			options: { kind: "edited_resend" },
 			createdAt: expect.any(Number),
 		})
-		expect(createTask).not.toHaveBeenCalled()
-		expect((provider as any).clineStack).toContain(mockTask2)
+		expect(createTask).toHaveBeenCalledWith("small prompt correction", undefined)
+		expect((provider as any).clineStack).toEqual([])
+		expect(provider.postMessageToWebview).toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
 	})
 
 	it("delivers the latest human message through a fresh task when history restoration fails", async () => {

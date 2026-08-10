@@ -2451,14 +2451,14 @@ ${protocolHint}
 		text = (text ?? "").trim()
 		images = images ?? []
 		const isEditedResend = options.kind === "edited_resend"
-		const parkContinuationForRehydration = () => {
+		const parkContinuationForRehydration = async () => {
 			const provider = this.providerRef.deref()
 			if (options.kind) {
 				provider?.setPendingCancelledTaskContinuation?.(continuationText, images, options)
 			} else {
 				provider?.setPendingCancelledTaskContinuation?.(continuationText, images)
 			}
-			void provider?.cancelTask?.()
+			await provider?.cancelTask?.()
 		}
 
 		const hasUserPayload = text.length > 0 || images.length > 0
@@ -2483,7 +2483,7 @@ ${protocolHint}
 		// If a soft-completion loop never settled, do not start a second loop on
 		// top of shared mutable state. Park the message and rehydrate instead.
 		if (followedSoftCompletionBoundary && this.isTaskLoopActive) {
-			parkContinuationForRehydration()
+			await parkContinuationForRehydration()
 			return
 		}
 
@@ -2505,7 +2505,7 @@ ${protocolHint}
 		// consume their input before reaching this method; any remaining continuation
 		// while a loop is active must be parked and rehydrated on a fresh Task.
 		if (!followedSoftCompletionBoundary && this.isActivelyRunningTaskLoop()) {
-			parkContinuationForRehydration()
+			await parkContinuationForRehydration()
 			return
 		}
 
@@ -6385,54 +6385,18 @@ ${protocolHint}
 	}
 
 	/**
-	 * Reads the bound Markdown checklist and projects it into native state. The file
-	 * is authoritative: this method never creates, renames, deletes, or rewrites
-	 * task files. The host owns the synchronization boundary: it creates the first
-	 * checklist with the host task ID and updates only the checklist body of an
-	 * already-bound file, preserving its marker and title.
+	 * Projects a model-written Markdown checklist into native state. The file is
+	 * authoritative: this boundary never creates, renames, deletes, or rewrites a
+	 * task file. Requiring the file to exist prevents a native TODO call from
+	 * bypassing the model's write-and-verify-before-sync protocol.
 	 */
 	public async syncTaskProgressWithTodoList(todos: TodoItem[] = this.todoList ?? []): Promise<TodoItem[]> {
-		if (todos.length === 0) {
-			const existingPath = await this.findOwnedTaskProgressFilePath()
-			if (!existingPath) throw new Error(`Cannot synchronize an empty checklist without an active task file`)
-		}
-
-		let progressPath = await this.findOwnedTaskProgressFilePath()
+		const progressPath = await this.findOwnedTaskProgressFilePath()
 		if (!progressPath) {
-			const taskDirectory = path.join(this.cwd, "EXTRA", "task")
-			try {
-				const entries = await fsp.readdir(taskDirectory, { withFileTypes: true })
-				const candidates = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-				for (const entry of candidates) {
-					const candidatePath = path.join(taskDirectory, entry.name)
-					const candidateContent = await fsp.readFile(candidatePath, "utf8")
-					const identity = this.getTaskProgressIdentity(candidateContent)
-					if (identity === this.taskId || identity?.startsWith(`${this.taskId}:`)) {
-						progressPath = candidatePath
-						break
-					}
-				}
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-			}
-		}
-		if (!progressPath) {
-			const taskDirectory = path.join(this.cwd, "EXTRA", "task")
-			try {
-				const entries = await fsp.readdir(taskDirectory, { withFileTypes: true })
-				if (entries.length > 0) {
-					throw new Error(`No active task progress file for host task ${this.taskId}`)
-				}
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-			}
-			await fsp.mkdir(taskDirectory, { recursive: true })
-			const safeTaskId = this.taskId.replace(/[^a-zA-Z0-9._:-]+/g, "-")
-			progressPath = path.join(taskDirectory, `task-${safeTaskId}.md`)
-			const initialContent = `<!-- deeptask-task-id:${this.taskId} -->\n# Task Progress\n\n${this.serializeTaskProgressChecklist(todos)}\n`
-			await fsp.writeFile(progressPath, initialContent, "utf8")
-			await this.persistTaskProgressBinding(progressPath, this.taskId)
-			return parseMarkdownChecklist(initialContent)
+			throw new Error(
+				`No verified task progress file for host task ${this.taskId}. ` +
+					"Write the authoritative EXTRA/task Markdown checklist first, read it back to verify its marker and items, then retry update_todo_list.",
+			)
 		}
 
 		const content = await fsp.readFile(progressPath, "utf8")

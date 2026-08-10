@@ -938,7 +938,7 @@ export const webviewMessageHandler = async (
 					} else {
 						task.clearStaleWebviewAskResponse()
 						task.messageQueueService.clear()
-						void task.continueTaskFromUserMessage("")
+						await task.continueTaskFromUserMessage("")
 						await provider.postStateToWebview()
 					}
 				} else if (
@@ -968,7 +968,7 @@ export const webviewMessageHandler = async (
 					// minimal continuation instead.
 					task.clearStaleWebviewAskResponse()
 					task.messageQueueService.clear()
-					void task.continueTaskFromUserMessage("")
+					await task.continueTaskFromUserMessage("")
 					await provider.postStateToWebview()
 					// kilocode_change end
 				} else if (task && message.askResponse === "messageResponse" && hasMessagePayload) {
@@ -979,7 +979,7 @@ export const webviewMessageHandler = async (
 					// cannot gray out or stall behind a cleared queue.
 					task.clearStaleWebviewAskResponse()
 					task.messageQueueService.clear()
-					void task.continueTaskFromUserMessage(resolved.text ?? "", resolved.images)
+					await task.continueTaskFromUserMessage(resolved.text ?? "", resolved.images)
 					await provider.postStateToWebview()
 					// kilocode_change end
 				} else if (
@@ -992,7 +992,7 @@ export const webviewMessageHandler = async (
 					// resume the task loop. Otherwise the UI clears buttons and freezes.
 					task.clearStaleWebviewAskResponse()
 					task.messageQueueService.clear()
-					void task.continueTaskFromUserMessage("")
+					await task.continueTaskFromUserMessage("")
 					await provider.postStateToWebview()
 					// kilocode_change end
 				} else {
@@ -1130,11 +1130,11 @@ export const webviewMessageHandler = async (
 				const hasMessagePayload = !!(text?.trim() || images?.length)
 
 				if (task?.terminalProcess) {
-					void task.handleTerminalOperation(message.terminalOperation, text, images)
+					await task.handleTerminalOperation(message.terminalOperation, text, images)
 				} else if (task && message.terminalOperation === "continue") {
 					task.clearStaleWebviewAskResponse()
 					task.messageQueueService.clear()
-					void task.continueTaskFromUserMessage(text ?? "", images)
+					await task.continueTaskFromUserMessage(text ?? "", images)
 					await provider.postStateToWebview()
 				} else if (task) {
 					task.clearStaleWebviewAskResponse()
@@ -4789,7 +4789,7 @@ export const webviewMessageHandler = async (
 					// Treat non-empty input as a real continuation instead of a display-only
 					// feedback row, otherwise the UI appears to send while no task resumes.
 					task.clearStaleWebviewAskResponse()
-					void task.continueTaskFromUserMessage(resolved.text ?? "", resolved.images)
+					await task.continueTaskFromUserMessage(resolved.text ?? "", resolved.images)
 					await provider.postStateToWebview()
 				} else {
 					task.clearStaleWebviewAskResponse()

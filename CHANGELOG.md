@@ -1,5 +1,14 @@
 # Deeptask
 
+## 9.0.2
+
+### Patch Changes
+
+- Deliver continued and edited user messages through a recoverable task path after cancellation, including a fresh-task fallback when the cancelled task cannot be restored.
+- Await cancellation and continuation preparation at the Webview boundary so preparation failures remain visible to the task recovery path instead of becoming detached promises.
+- Use the Deeptask name consistently in all localized multiple-file read approval prompts, with a rendered ChatRow regression test.
+- Update the bilingual project and packaged Marketplace introduction to 9.0.2 installation artifacts.
+
 ## 9.0.1
 
 ### Patch Changes

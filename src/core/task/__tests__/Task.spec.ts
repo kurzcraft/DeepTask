@@ -3816,6 +3816,37 @@ describe("Queued message processing after condense", () => {
 		expect(provider.postStateToWebview).toHaveBeenCalled()
 	})
 
+	it("clears a rejected loop before accepting the next continuation", async () => {
+		const provider = createProvider()
+		const cancelTask = vi.fn().mockResolvedValue(undefined)
+		;(provider as any).cancelTask = cancelTask
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context, // kilocode_change
+		})
+
+		;(task as any).apiConversationHistory = [
+			{ role: "user", content: [{ type: "text", text: "original task" }], ts: 1 },
+		]
+		vi.spyOn(task as any, "getSavedApiConversationHistory").mockResolvedValue((task as any).apiConversationHistory)
+		vi.spyOn(task as any, "say").mockResolvedValue(undefined)
+		const requestSpy = vi
+			.spyOn(task, "recursivelyMakeClineRequests")
+			.mockRejectedValueOnce(new Error("tool execution failed"))
+			.mockResolvedValueOnce(true)
+
+		await expect((task as any).initiateTaskLoop([])).rejects.toThrow("tool execution failed")
+		expect(task.isActivelyRunningTaskLoop()).toBe(false)
+
+		await task.continueTaskFromUserMessage("continue after failure")
+		await vi.waitFor(() => expect(requestSpy).toHaveBeenCalledTimes(2))
+		await vi.waitFor(() => expect(task.isActivelyRunningTaskLoop()).toBe(false))
+		expect(cancelTask).not.toHaveBeenCalled()
+	})
+
 	it("parks a mid-stream user message and cancels instead of starting a second loop", async () => {
 		const provider = createProvider()
 		const setPending = vi.fn()
@@ -4251,6 +4282,7 @@ describe("completion result deduplication", () => {
 describe("task progress completion barrier", () => {
 	beforeEach(() => {
 		vi.mocked(fs.writeFile).mockClear()
+		vi.mocked(fs.mkdir).mockClear()
 		vi.mocked(fs.unlink).mockClear()
 	})
 
@@ -4358,22 +4390,17 @@ describe("task progress completion barrier", () => {
 		await expect(task.getIncompleteTaskProgressItems()).resolves.toEqual([])
 	})
 
-	it("creates the first checklist with the host task ID marker", async () => {
+	it("rejects native synchronization when the model has not written a task file", async () => {
 		vi.mocked(fs.readdir).mockResolvedValue([] as any)
 		const task = Object.create(Task.prototype) as Task
 		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
 		Object.defineProperty(task, "taskId", { value: "task-1" })
-		Object.defineProperty(task, "providerRef", { value: { deref: () => undefined } })
 
 		await expect(
 			task.syncTaskProgressWithTodoList([{ id: "1", content: "first milestone", status: "in_progress" }]),
-		).resolves.toMatchObject([{ content: "first milestone", status: "in_progress" }])
-		expect(fs.mkdir).toHaveBeenCalledWith(path.join("/workspace", "EXTRA", "task"), { recursive: true })
-		expect(fs.writeFile).toHaveBeenCalledWith(
-			path.join("/workspace", "EXTRA", "task", "task-task-1.md"),
-			expect.stringContaining("<!-- deeptask-task-id:task-1 -->"),
-			"utf8",
-		)
+		).rejects.toThrow("No verified task progress file for host task task-1")
+		expect(fs.mkdir).not.toHaveBeenCalled()
+		expect(fs.writeFile).not.toHaveBeenCalled()
 	})
 
 	it("reads the authoritative multilevel checklist without rewriting its file", async () => {
@@ -4475,40 +4502,21 @@ describe("task progress completion barrier", () => {
 
 		await expect(
 			task.syncTaskProgressWithTodoList([{ id: "1", content: "new work", status: "in_progress" }]),
-		).rejects.toThrow("No active task progress file")
+		).rejects.toThrow("No verified task progress file")
 		expect(fs.writeFile).not.toHaveBeenCalled()
 	})
 
-	it("creates the first checklist with the host task marker when the task directory is empty", async () => {
+	it("rejects synchronization when the task directory is missing instead of creating a file", async () => {
 		vi.mocked(fs.readdir).mockRejectedValue({ code: "ENOENT" })
-		const updateTaskHistory = vi.fn().mockResolvedValue([])
 		const task = Object.create(Task.prototype) as Task
 		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
 		Object.defineProperty(task, "taskId", { value: "host-task-123" })
-		Object.defineProperty(task, "providerRef", {
-			value: {
-				deref: () => ({
-					getTaskHistory: () => [{ id: "host-task-123" }],
-					updateTaskHistory,
-				}),
-			},
-		})
 
 		await expect(
 			task.syncTaskProgressWithTodoList([{ id: "1", content: "create first file", status: "in_progress" }]),
-		).resolves.toMatchObject([{ content: "create first file", status: "in_progress" }])
-		expect(fs.writeFile).toHaveBeenCalledWith(
-			"/workspace/EXTRA/task/task-host-task-123.md",
-			expect.stringContaining("<!-- deeptask-task-id:host-task-123 -->"),
-			"utf8",
-		)
-		expect(updateTaskHistory).toHaveBeenCalledWith(
-			expect.objectContaining({
-				id: "host-task-123",
-				taskProgressFilePath: "EXTRA/task/task-host-task-123.md",
-				taskProgressInstanceId: "host-task-123",
-			}),
-		)
+		).rejects.toThrow("No verified task progress file for host task host-task-123")
+		expect(fs.mkdir).not.toHaveBeenCalled()
+		expect(fs.writeFile).not.toHaveBeenCalled()
 	})
 
 	it("accepts a host-prefixed work instance ID for a later request in the same conversation", async () => {

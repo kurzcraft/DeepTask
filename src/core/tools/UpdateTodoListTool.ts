@@ -99,9 +99,20 @@ export class UpdateTodoListTool extends BaseTool<"update_todo_list"> {
 			}
 
 			// kilocode_change start
-			// The Markdown task file is authoritative. This call verifies the tool payload
-			// against that file, then projects the parsed file hierarchy into native state.
-			const synchronizedTodos = await setTodoListForTask(task, normalizedTodos)
+			// The model must write and verify the authoritative file before this native
+			// projection. A missing or invalid binding is a recoverable tool error, not a
+			// reason to leave the task waiting without model-visible feedback.
+			let synchronizedTodos: TodoItem[]
+			try {
+				synchronizedTodos = await setTodoListForTask(task, normalizedTodos)
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error)
+				task.consecutiveMistakeCount++
+				task.recordToolError("update_todo_list")
+				task.didToolFailInCurrentTurn = true
+				pushToolResult(formatResponse.toolError(`Task progress synchronization failed: ${message}`))
+				return
+			}
 			task.markProgressListExpandedForContinuation(synchronizedTodos)
 			// kilocode_change end
 
@@ -120,7 +131,12 @@ export class UpdateTodoListTool extends BaseTool<"update_todo_list"> {
 				pushToolResult(formatResponse.toolResult("Todo list updated successfully."))
 			}
 		} catch (error) {
-			await handleError("update todo list", error as Error)
+			const message = error instanceof Error ? error.message : String(error)
+			task.consecutiveMistakeCount++
+			task.recordToolError("update_todo_list")
+			task.didToolFailInCurrentTurn = true
+			pushToolResult(formatResponse.toolError(`update_todo_list failed: ${message}`))
+			await handleError("update todo list", error instanceof Error ? error : new Error(message))
 		}
 	}
 

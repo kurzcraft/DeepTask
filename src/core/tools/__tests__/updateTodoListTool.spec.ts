@@ -30,6 +30,39 @@ describe("updateTodoListTool", () => {
 		expect(pushToolResult).toHaveBeenCalledWith(expect.stringContaining("new user work turn"))
 	})
 
+	it("returns a model-visible synchronization error without updating native state", async () => {
+		const pushToolResult = vi.fn()
+		const handleError = vi.fn()
+		const task = {
+			consecutiveMistakeCount: 0,
+			recordToolError: vi.fn(),
+			didToolFailInCurrentTurn: false,
+			normalizeTodoListForActiveContinuation: vi.fn((todos: TodoItem[]) => todos),
+			syncTaskProgressWithTodoList: vi
+				.fn()
+				.mockRejectedValue(new Error("No verified task progress file for host task host-1")),
+			shouldRequireProgressListExpansion: vi.fn().mockReturnValue(false),
+			hasActionableProgressListForContinuation: vi.fn().mockReturnValue(true),
+			markProgressListExpandedForContinuation: vi.fn(),
+		} as unknown as Task
+
+		await updateTodoListTool.execute({ todos: "[-] 写入权威任务文件" }, task, {
+			askApproval: vi.fn().mockResolvedValue(true),
+			handleError,
+			pushToolResult,
+			removeClosingTag: vi.fn(),
+			toolProtocol: "xml",
+		})
+
+		expect(pushToolResult).toHaveBeenCalledWith(
+			expect.stringContaining("Task progress synchronization failed: No verified task progress file"),
+		)
+		expect(task.recordToolError).toHaveBeenCalledWith("update_todo_list")
+		expect(task.didToolFailInCurrentTurn).toBe(true)
+		expect(task.markProgressListExpandedForContinuation).not.toHaveBeenCalled()
+		expect(handleError).not.toHaveBeenCalled()
+	})
+
 	it("writes concrete milestones to the task file before synchronizing the native list", async () => {
 		const pushToolResult = vi.fn()
 		const postStateToWebview = vi.fn().mockResolvedValue(undefined)

@@ -168,14 +168,14 @@
 		"rateLimitWait": "Omezení rychlosti",
 		"errorTitle": "Chyba poskytovatele {{code}}",
 		"errorMessage": {
-			"docs": "Dokumentace",
-			"goToSettings": "Nastavení",
 			"400": "Poskytovatel nemohl zpracovat požadavek jak byl zadán. Zastav úkol a zkus jiný přístup.",
 			"401": "Nepodařilo se autentizovat u poskytovatele. Zkontroluj konfiguraci svého API klíče.",
 			"402": "Zdá se, že ti došly prostředky/kredity na účtu. Jdi ke svému poskytovateli a přidej více pro pokračování.",
 			"403": "Neautorizováno. Tvůj API klíč je platný, ale poskytovatel odmítl dokončit tento požadavek.",
 			"429": "Příliš mnoho požadavků. Poskytovatel tě omezuje rychlostí. Počkej chvíli před dalším API voláním.",
 			"500": "Chyba serveru poskytovatele. Něco je špatně na straně poskytovatele, s tvým požadavkem není nic v nepořádku.",
+			"docs": "Dokumentace",
+			"goToSettings": "Nastavení",
 			"connection": "Chyba připojení. Ujisti se, že máš funkční připojení k internetu.",
 			"claudeCodeNotAuthenticated": "Musíš se přihlásit, abys mohl používat Claude Code. Jdi do Nastavení a klikni na \"Přihlásit se ke Claude Code\" pro autentizaci.",
 			"unknown": "Neznámá API chyba, klikni na Detaily pro více informací."
@@ -221,8 +221,8 @@
 	},
 	"fileOperations": {
 		"wantsToRead": "Kilo Code chce přečíst tento soubor:",
-		"wantsToReadMultiple": "Kilo Code chce přečíst více souborů:",
-		"wantsToReadAndXMore": "Kilo Code chce přečíst tento soubor a {{count}} dalších:",
+		"wantsToReadMultiple": "Deeptask chce přečíst více souborů:",
+		"wantsToReadAndXMore": "Deeptask chce přečíst tento soubor a {{count}} dalších:",
 		"wantsToReadOutsideWorkspace": "Kilo Code chce přečíst tento soubor mimo pracovní prostor:",
 		"didRead": "Kilo Code přečetl tento soubor:",
 		"wantsToEdit": "Kilo Code chce upravit tento soubor:",

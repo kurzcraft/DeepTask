@@ -969,8 +969,14 @@ describe("SYSTEM_PROMPT", () => {
 		expect(enabledPrompt).toContain("host restores the native list from the authoritative file")
 		expect(enabledPrompt).toContain("do not rewrite the marker or repeat the same stale request")
 		expect(enabledPrompt).toContain("Never add a `deeptask-native-todo-list` section")
-		expect(enabledPrompt).toContain("exact top-to-bottom projection of every checklist item")
-		expect(enabledPrompt).toContain("preserve item order, text, status, and indentation-derived depth")
+		expect(enabledPrompt).toContain(
+			"write the complete file, read it back, and verify the marker and checklist projection",
+		)
+		expect(enabledPrompt).toContain(
+			"Only after all three file operations succeed may you call the native expandable todo list",
+		)
+		expect(enabledPrompt).toContain("exact top-to-bottom projection of the saved file")
+		expect(enabledPrompt).toContain("Preserve item order, text, status, and indentation-derived depth")
 		expect(enabledPrompt).toContain("use clearly visible hierarchical indentation")
 		expect(enabledPrompt).toContain("Before completion, check every checklist item in the task Markdown")
 		expect(enabledPrompt).toContain("creating the directory when needed")
