@@ -12,9 +12,14 @@
 
 - 首清单门禁定向回归：3 个测试文件，137 项通过，4 项跳过。
 - 完成态消息回归：3 个测试文件，195 项通过，4 项跳过；覆盖普通首消息、带附件消息、过期 ask 和连续恢复载荷。
-- VSIX、VSCodium 安装、远端 `main` 和 GitHub Release 会在最终提交后重新验证；此前 9.0.3 产物的校验值不适用于本轮代码。
+- 仓库 lint：18 个 workspace 全部通过。
+- VSIX manifest、扩展入口、任务进度协议标记和 Marketplace README 校验通过。
+- VSCodium 安装验证：`deeptask.deeptask@9.0.3`，无 stale 安装目录。
+- 代码提交：`2e50056a4bcd3a85e00198f75e54c408a1c6537a`。
 
-## 待发布产物
+## 产物
 
 - 文件：`deeptask-9.0.3.vsix`。
+- 大小：40,433,717 字节。
+- SHA-256：`e9d6cdcd501f2f1259ba419ca58a15b0663850b2e64ddbc2ef7a06217608d47d`。
 - Release：<https://github.com/kurzcraft/DeepTask/releases/tag/v9.0.3>。
