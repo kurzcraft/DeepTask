@@ -887,15 +887,15 @@ export const webviewMessageHandler = async (
 					provider.setPendingCancelledTaskContinuation?.(resolved.text ?? "", resolved.images)
 					await provider.postStateToWebview()
 				} else if (task && isCompletionContinuation) {
-					// A completed Task still owns stale ask/parser/stream state. Reuse the same
-					// flicker-free rehydration path as edited resend so the first direct send is
-					// delivered on a clean Task instance while preserving completed history.
+					// A completed Task still owns stale ask/parser/stream state. Route the first
+					// direct message through the provider's serialized rehydration boundary so
+					// consecutive sends cannot overwrite a single pending payload.
 					task.clearStaleWebviewAskResponse()
 					task.messageQueueService.clear()
-					provider.setPendingCancelledTaskContinuation?.(resolved.text ?? "", resolved.images, {
+					await provider.rehydrateTaskWithUserMessage?.(resolved.text ?? "", resolved.images, {
 						kind: "continuation",
 					})
-					await cancelTaskAndRestoreUi("completion continuation")
+					await provider.postStateToWebview()
 				} else if (task && hasPendingAsk && isAskResponseForCurrentAsk) {
 					task.handleWebviewAskResponse(message.askResponse!, resolved.text, resolved.images)
 				} else if (

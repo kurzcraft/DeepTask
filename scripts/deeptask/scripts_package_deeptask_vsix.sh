@@ -302,6 +302,7 @@ with ZipFile(vsix) as z:
     assert 'parallel_tool_calls' in extension_js, 'extension bundle missing DeepSeek tool compatibility path'
     assert 'reopenParentFromDelegation' in extension_js, 'extension bundle missing child-to-parent completion transaction'
     assert 'could not be rehydrated after cancellation' in extension_js, 'extension bundle missing cancel recovery'
+    assert 'rehydrateTaskWithUserMessage' in extension_js, 'extension bundle missing completed-task message recovery'
     assert 'taskkill' in extension_js, 'extension bundle missing bounded Windows tree termination'
     assert 'taskkill failed for PID' in extension_js, 'extension bundle missing Windows fail-soft diagnostic'
     # Force-complete prune path must not require prior hasCompletedCommand.

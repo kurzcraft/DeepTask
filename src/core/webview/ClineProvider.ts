@@ -224,6 +224,7 @@ export class ClineProvider
 	private recentTasksCache?: string[]
 	private pendingOperations: Map<string, PendingEditOperation> = new Map()
 	private pendingCancelledTaskContinuation?: PendingCancelledTaskContinuation // kilocode_change
+	private pendingCancelledTaskContinuationChain: Promise<void> = Promise.resolve() // kilocode_change
 	private static readonly PENDING_OPERATION_TIMEOUT_MS = 30000 // 30 seconds
 
 	private cloudOrganizationsCache: CloudOrganizationMembership[] | null = null
@@ -402,6 +403,26 @@ export class ClineProvider
 
 	// kilocode_change start
 	private defaultProviderProfileInitialization?: Promise<ProviderSettings | undefined>
+
+	/** Serialize cancellation rehydration so consecutive human messages cannot overwrite one payload. */
+	public async rehydrateTaskWithUserMessage(
+		text: string,
+		images?: string[],
+		options?: UserContinuationOptions,
+	): Promise<void> {
+		const run = this.pendingCancelledTaskContinuationChain
+			.catch(() => undefined)
+			.then(async () => {
+				this.setPendingCancelledTaskContinuation(text, images, options)
+				await this.cancelTask()
+			})
+		this.pendingCancelledTaskContinuationChain = run.catch((error) => {
+			this.log(
+				`[rehydrateTaskWithUserMessage] Failed to deliver user message: ${error instanceof Error ? error.message : String(error)}`,
+			)
+		})
+		await run
+	}
 
 	public setPendingCancelledTaskContinuation(
 		text: string,

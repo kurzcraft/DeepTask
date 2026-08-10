@@ -216,6 +216,46 @@ describe("ClineProvider flicker-free cancel", () => {
 		vi.mocked(Task).mockImplementation(() => mockTask2 as any)
 	})
 
+	it("serializes consecutive rehydration payloads without overwriting the first message", async () => {
+		const observedPayloads: any[] = []
+		let releaseFirstCancel!: () => void
+		const firstCancelReleased = new Promise<void>((resolve) => {
+			releaseFirstCancel = resolve
+		})
+		let cancelCalls = 0
+		vi.spyOn(provider, "cancelTask").mockImplementation(async () => {
+			cancelCalls += 1
+			observedPayloads.push((provider as any).pendingCancelledTaskContinuation)
+			if (cancelCalls === 1) {
+				await firstCancelReleased
+			}
+			;(provider as any).pendingCancelledTaskContinuation = undefined
+		})
+
+		const first = provider.rehydrateTaskWithUserMessage("first completed-task message", ["first-image"], {
+			kind: "continuation",
+		})
+		await Promise.resolve()
+		const second = provider.rehydrateTaskWithUserMessage("second completed-task message", ["second-image"], {
+			kind: "continuation",
+		})
+		releaseFirstCancel()
+		await Promise.all([first, second])
+
+		expect(observedPayloads).toEqual([
+			expect.objectContaining({
+				text: "first completed-task message",
+				images: ["first-image"],
+				options: { kind: "continuation" },
+			}),
+			expect.objectContaining({
+				text: "second completed-task message",
+				images: ["second-image"],
+				options: { kind: "continuation" },
+			}),
+		])
+	})
+
 	it("should not remove current task from stack when rehydrating same taskId", async () => {
 		// Setup: Add a task to the stack first
 		;(provider as any).clineStack = [mockTask1]

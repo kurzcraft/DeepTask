@@ -64,6 +64,7 @@ const mockClineProvider = {
 	getCurrentTask: vi.fn(),
 	getTaskWithId: vi.fn(),
 	createTaskWithHistoryItem: vi.fn(),
+	rehydrateTaskWithUserMessage: vi.fn().mockResolvedValue(undefined),
 	setPendingCancelledTaskContinuation: vi.fn(),
 	cancelTask: vi.fn().mockResolvedValue(undefined),
 } as unknown as ClineProvider
@@ -676,6 +677,7 @@ describe("webviewMessageHandler - image mentions", () => {
 			messageQueueService: { clear: mockClearQueue },
 			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
 		} as any)
+		;(mockClineProvider as any).rehydrateTaskWithUserMessage = vi.fn().mockResolvedValue(undefined)
 		;(mockClineProvider as any).setPendingCancelledTaskContinuation = mockSetPendingCancelledTaskContinuation
 		;(mockClineProvider as any).cancelTask = mockCancelTask
 		;(mockClineProvider as any).createTask = mockCreateTask
@@ -689,12 +691,13 @@ describe("webviewMessageHandler - image mentions", () => {
 
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
 		expect(mockCreateTask).not.toHaveBeenCalled()
-		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
+		expect(mockClineProvider.rehydrateTaskWithUserMessage).toHaveBeenCalledWith(
 			"reply immediately after completion",
 			["data:image/png;base64,from-mention"],
 			{ kind: "continuation" },
 		)
-		expect(mockCancelTask).toHaveBeenCalledTimes(1)
+		expect(mockSetPendingCancelledTaskContinuation).not.toHaveBeenCalled()
+		expect(mockCancelTask).not.toHaveBeenCalled()
 		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
 	})
 
@@ -716,6 +719,7 @@ describe("webviewMessageHandler - image mentions", () => {
 			messageQueueService: { clear: mockClearQueue },
 			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
 		} as any)
+		;(mockClineProvider as any).rehydrateTaskWithUserMessage = vi.fn().mockResolvedValue(undefined)
 		;(mockClineProvider as any).cancelTask = mockCancelTask
 
 		await webviewMessageHandler(mockClineProvider, {
@@ -726,7 +730,12 @@ describe("webviewMessageHandler - image mentions", () => {
 		})
 
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
-		expect(mockCancelTask).toHaveBeenCalledTimes(1)
+		expect(mockClineProvider.rehydrateTaskWithUserMessage).toHaveBeenCalledWith(
+			"extend the completed work",
+			["data:image/png;base64,from-mention"],
+			{ kind: "continuation" },
+		)
+		expect(mockCancelTask).not.toHaveBeenCalled()
 		expect(mockClearStaleWebviewAskResponse).toHaveBeenCalledTimes(1)
 		expect(mockClearQueue).toHaveBeenCalledTimes(1)
 	})
@@ -796,6 +805,7 @@ describe("webviewMessageHandler - image mentions", () => {
 			messageQueueService: { clear: mockClearQueue },
 			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
 		} as any)
+		;(mockClineProvider as any).rehydrateTaskWithUserMessage = vi.fn().mockResolvedValue(undefined)
 		;(mockClineProvider as any).setPendingCancelledTaskContinuation = mockSetPendingCancelledTaskContinuation
 		;(mockClineProvider as any).cancelTask = mockCancelTask
 
@@ -808,12 +818,13 @@ describe("webviewMessageHandler - image mentions", () => {
 		})
 
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
-		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
+		expect(mockClineProvider.rehydrateTaskWithUserMessage).toHaveBeenCalledWith(
 			"continue after the completed task",
 			["data:image/png;base64,from-mention"],
 			{ kind: "continuation" },
 		)
-		expect(mockCancelTask).toHaveBeenCalledTimes(1)
+		expect(mockSetPendingCancelledTaskContinuation).not.toHaveBeenCalled()
+		expect(mockCancelTask).not.toHaveBeenCalled()
 		expect(mockHandleWebviewAskResponse).not.toHaveBeenCalled()
 	})
 
@@ -977,6 +988,7 @@ describe("webviewMessageHandler - image mentions", () => {
 			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
 		} as any)
 		;(mockClineProvider as any).createTask = mockCreateTask
+		;(mockClineProvider as any).rehydrateTaskWithUserMessage = vi.fn().mockResolvedValue(undefined)
 		;(mockClineProvider as any).setPendingCancelledTaskContinuation = mockSetPendingCancelledTaskContinuation
 		;(mockClineProvider as any).cancelTask = mockCancelTask
 
@@ -991,12 +1003,13 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockClearStaleWebviewAskResponse).toHaveBeenCalledTimes(1)
 		expect(mockClearQueue).toHaveBeenCalledTimes(1)
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
-		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
+		expect(mockClineProvider.rehydrateTaskWithUserMessage).toHaveBeenCalledWith(
 			"continue from final feedback",
 			["data:image/png;base64,from-mention"],
 			{ kind: "continuation" },
 		)
-		expect(mockCancelTask).toHaveBeenCalledTimes(1)
+		expect(mockSetPendingCancelledTaskContinuation).not.toHaveBeenCalled()
+		expect(mockCancelTask).not.toHaveBeenCalled()
 		expect(mockCreateTask).not.toHaveBeenCalled()
 	})
 	it("rehydrates the task before consuming a stale pending completion ask", async () => {
@@ -1019,6 +1032,7 @@ describe("webviewMessageHandler - image mentions", () => {
 			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
 		} as any)
 		;(mockClineProvider as any).createTask = mockCreateTask
+		;(mockClineProvider as any).rehydrateTaskWithUserMessage = vi.fn().mockResolvedValue(undefined)
 		;(mockClineProvider as any).setPendingCancelledTaskContinuation = mockSetPendingCancelledTaskContinuation
 		;(mockClineProvider as any).cancelTask = mockCancelTask
 
@@ -1031,12 +1045,13 @@ describe("webviewMessageHandler - image mentions", () => {
 
 		expect(mockHandleWebviewAskResponse).not.toHaveBeenCalled()
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
-		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
+		expect(mockClineProvider.rehydrateTaskWithUserMessage).toHaveBeenCalledWith(
 			"continue even if completion looked pending",
 			["data:image/png;base64,from-mention"],
 			{ kind: "continuation" },
 		)
-		expect(mockCancelTask).toHaveBeenCalledTimes(1)
+		expect(mockSetPendingCancelledTaskContinuation).not.toHaveBeenCalled()
+		expect(mockCancelTask).not.toHaveBeenCalled()
 		expect(mockCreateTask).not.toHaveBeenCalled()
 		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
 	})
@@ -1064,6 +1079,7 @@ describe("webviewMessageHandler - image mentions", () => {
 			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
 		} as any)
 		;(mockClineProvider as any).createTask = mockCreateTask
+		;(mockClineProvider as any).rehydrateTaskWithUserMessage = vi.fn().mockResolvedValue(undefined)
 		;(mockClineProvider as any).setPendingCancelledTaskContinuation = mockSetPendingCancelledTaskContinuation
 		;(mockClineProvider as any).cancelTask = mockCancelTask
 
@@ -1078,12 +1094,13 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockClearStaleWebviewAskResponse).toHaveBeenCalledTimes(1)
 		expect(mockClearQueue).toHaveBeenCalledTimes(1)
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
-		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
+		expect(mockClineProvider.rehydrateTaskWithUserMessage).toHaveBeenCalledWith(
 			"do the next fix",
 			["data:image/png;base64,from-mention"],
 			{ kind: "continuation" },
 		)
-		expect(mockCancelTask).toHaveBeenCalledTimes(1)
+		expect(mockSetPendingCancelledTaskContinuation).not.toHaveBeenCalled()
+		expect(mockCancelTask).not.toHaveBeenCalled()
 		expect(mockCreateTask).not.toHaveBeenCalled()
 		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
 	})
@@ -1105,6 +1122,7 @@ describe("webviewMessageHandler - image mentions", () => {
 			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
 		} as any)
 		;(mockClineProvider as any).createTask = mockCreateTask
+		;(mockClineProvider as any).rehydrateTaskWithUserMessage = vi.fn().mockResolvedValue(undefined)
 		;(mockClineProvider as any).setPendingCancelledTaskContinuation = mockSetPendingCancelledTaskContinuation
 		;(mockClineProvider as any).cancelTask = mockCancelTask
 
@@ -1116,12 +1134,13 @@ describe("webviewMessageHandler - image mentions", () => {
 		})
 
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
-		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
+		expect(mockClineProvider.rehydrateTaskWithUserMessage).toHaveBeenCalledWith(
 			"continue from final feedback",
 			["data:image/png;base64,from-mention"],
 			{ kind: "continuation" },
 		)
-		expect(mockCancelTask).toHaveBeenCalledTimes(1)
+		expect(mockSetPendingCancelledTaskContinuation).not.toHaveBeenCalled()
+		expect(mockCancelTask).not.toHaveBeenCalled()
 		expect(mockCreateTask).not.toHaveBeenCalled()
 		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
 	})
