@@ -3240,6 +3240,23 @@ describe("Queued message processing after condense", () => {
 
 		expect(task.todoList).toEqual([{ id: "old", content: "old completed delivery", status: "completed" }])
 		expect(task.shouldRequireProgressListExpansion()).toBe(true)
+		expect(task.shouldRejectToolUntilProgressListExpanded("list_files", { path: "EXTRA/task", recursive: false })).toBe(
+			false,
+		)
+		expect(
+			task.shouldRejectToolUntilProgressListExpanded("write_to_file", {
+				path: "EXTRA/task/NEW_WORK_PROGRESS.md",
+			}),
+		).toBe(false)
+		expect(
+			task.shouldRejectToolUntilProgressListExpanded("read_file", {
+				files: [{ path: "EXTRA/task/NEW_WORK_PROGRESS.md" }],
+			}),
+		).toBe(false)
+		expect(
+			task.shouldRejectToolUntilProgressListExpanded("write_to_file", { path: "src/core/task/Task.ts" }),
+		).toBe(true)
+		expect(task.shouldRejectToolUntilProgressListExpanded("execute_command", { command: "pwd" })).toBe(true)
 		expect(task.shouldRejectToolUntilProgressListExpanded("read_file")).toBe(true)
 		expect(task.shouldRejectToolUntilProgressListExpanded("update_todo_list")).toBe(false)
 	})
@@ -4517,6 +4534,26 @@ describe("task progress completion barrier", () => {
 		).rejects.toThrow("No verified task progress file for host task host-task-123")
 		expect(fs.mkdir).not.toHaveBeenCalled()
 		expect(fs.writeFile).not.toHaveBeenCalled()
+	})
+
+	it("binds a single first checklist even when its host marker differs from the Task UUID", async () => {
+		const progressPath = path.resolve("/workspace/EXTRA/task/first-request.md")
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "first-request.md", isDirectory: () => false, isFile: () => true },
+		] as any)
+		vi.mocked(fs.readFile).mockResolvedValue("<!-- deeptask-task-id:019fe361-host -->\n- [-] first request\n")
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "internal-task-uuid" })
+		Object.defineProperty(task, "providerRef", {
+			value: { deref: () => ({ getTaskHistory: () => [] }) },
+		})
+
+		await expect(
+			task.syncTaskProgressWithTodoList([{ id: "1", content: "first request", status: "in_progress" }]),
+		).resolves.toMatchObject([{ content: "first request", status: "in_progress" }])
+		expect((task as any).taskProgressFilePath).toBe(path.relative("/workspace", progressPath))
+		expect((task as any).taskProgressInstanceId).toBe("019fe361-host")
 	})
 
 	it("accepts a host-prefixed work instance ID for a later request in the same conversation", async () => {

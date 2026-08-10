@@ -2362,22 +2362,49 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		return `[ERROR] You must expand the progress list before any other work.
 
 CRITICAL:
-1. Your FIRST and ONLY next action must be the update_todo_list tool.
-2. Do NOT restate, summarize, or list previously completed work.
-3. Discard finished old milestones, add concrete new milestones for the user's latest instruction, and mark the first new actionable item in_progress.
-4. Do NOT call attempt_completion, read_file, execute_command, or any other tool until update_todo_list succeeds.
+1. Before the first native TODO synchronization, write the authoritative EXTRA/task Markdown checklist and read it back to verify its marker and items.
+2. During that preparation, only write_to_file and read_file on that EXTRA/task checklist are allowed.
+3. Then call update_todo_list to project the verified checklist into native state.
+4. Do NOT restate, summarize, edit project files, execute commands, or call attempt_completion before update_todo_list succeeds.
 5. Do NOT reply with plain text only.
 
 ${protocolHint}
 (This is an automated message, so do not respond to it conversationally.)`
 	}
 
-	public shouldRejectToolUntilProgressListExpanded(toolName: string): boolean {
+	private isTaskProgressFileOperation(toolName: string, params?: Record<string, unknown>): boolean {
+		const isTaskProgressPath = (value: unknown): boolean =>
+			typeof value === "string" && /^EXTRA\/task\/(?!finished\/).+\.md$/.test(value)
+
+		if (toolName === "list_files") {
+			return params?.path === "EXTRA/task" && params?.recursive === false
+		}
+
+		if (toolName === "write_to_file") {
+			return isTaskProgressPath(params?.path)
+		}
+
+		if (toolName === "read_file") {
+			const files = params?.files
+			return (
+				Array.isArray(files) &&
+				files.length > 0 &&
+				files.every(
+					(file) =>
+						typeof file === "object" && file !== null && isTaskProgressPath((file as { path?: unknown }).path),
+				)
+			)
+		}
+
+		return false
+	}
+
+	public shouldRejectToolUntilProgressListExpanded(toolName: string, params?: Record<string, unknown>): boolean {
 		if (!this.shouldRequireProgressListExpansion()) {
 			return false
 		}
 
-		return toolName !== "update_todo_list"
+		return toolName !== "update_todo_list" && !this.isTaskProgressFileOperation(toolName, params)
 	}
 
 	public markProgressListExpandedForContinuation(todos?: TodoItem[]): void {
@@ -6495,6 +6522,7 @@ ${protocolHint}
 		}
 
 		const matches: Array<{ path: string; identity: string }> = []
+		const activeCandidates: Array<{ path: string; identity: string }> = []
 		try {
 			const entries = await fsp.readdir(taskDirectory, { withFileTypes: true })
 			for (const entry of entries) {
@@ -6502,8 +6530,11 @@ ${protocolHint}
 				const candidatePath = path.join(taskDirectory, entry.name)
 				const candidateContent = await fsp.readFile(candidatePath, "utf8")
 				const identity = this.getTaskProgressIdentity(candidateContent)
-				if (identity === this.taskId || identity?.startsWith(`${this.taskId}:`)) {
-					matches.push({ path: candidatePath, identity })
+				if (!identity) continue
+				const candidate = { path: candidatePath, identity }
+				activeCandidates.push(candidate)
+				if (identity === this.taskId || identity.startsWith(`${this.taskId}:`)) {
+					matches.push(candidate)
 				}
 			}
 		} catch (error) {
@@ -6516,7 +6547,11 @@ ${protocolHint}
 				.join(", ")
 			throw new Error(`Multiple active task progress files belong to host task ${this.taskId}: ${details}`)
 		}
-		const match = matches[0]
+		// The first checklist is authored by the outer host and may therefore use
+		// the host task ID rather than this extension Task's UUID. When no persisted
+		// binding exists, a single active candidate is unambiguous and can be bound
+		// once; subsequent lookups use the persisted path and identity strictly.
+		const match = matches[0] ?? (activeCandidates.length === 1 ? activeCandidates[0] : undefined)
 		if (match) await this.persistTaskProgressBinding(match.path, match.identity)
 		return match?.path
 	}

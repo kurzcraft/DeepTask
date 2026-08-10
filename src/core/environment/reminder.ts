@@ -14,7 +14,9 @@ export function formatReminderSection(
 			"REMINDERS",
 			"",
 			"CRITICAL: A new user instruction just arrived. Do NOT restate or summarize previously completed work.",
-			"Your FIRST tool call must be `update_todo_list` to expand/replace the progress list for the NEW instruction.",
+			"If no authoritative EXTRA/task Markdown checklist exists, first inspect EXTRA/task and write/read that checklist, then call `update_todo_list`.",
+			"During checklist preparation, do not edit project files, execute commands, browse, or call attempt_completion.",
+			"After the file is written and read back, call `update_todo_list` to project the verified checklist into native state before real work.",
 			"Discard finished old milestones, add concrete new milestones, mark the first new actionable item in_progress, then begin real tool work.",
 			"",
 		].join("\n")

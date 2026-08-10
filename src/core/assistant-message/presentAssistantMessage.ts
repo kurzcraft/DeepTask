@@ -940,10 +940,11 @@ export async function presentAssistantMessage(cline: Task) {
 
 			await checkpointSaveAndMark(cline) // kilocode_change: moved out of switch
 			// kilocode_change start
-			// After a new user instruction, refuse every tool except update_todo_list until
-			// the progress list is expanded/replaced. This stops reciting old completions
-			// and forces the model to start the new task by updating milestones.
-			if (cline.shouldRejectToolUntilProgressListExpanded(block.name)) {
+			// After a new user instruction, refuse project work until the progress list is
+			// expanded. The first checklist has a deliberate preparation phase: the model
+			// may inspect EXTRA/task and write/read the authoritative file before the native
+			// projection can succeed.
+			if (cline.shouldRejectToolUntilProgressListExpanded(block.name, block.params as Record<string, unknown>)) {
 				cline.consecutiveMistakeCount++
 				cline.recordToolError(block.name)
 				pushToolResult(

@@ -961,6 +961,9 @@ describe("SYSTEM_PROMPT", () => {
 			"Name a genuinely new task file from a concise, filesystem-safe form of its task title",
 		)
 		expect(enabledPrompt).toContain("Keep one task's evolving checklist in its same Markdown file")
+		expect(enabledPrompt).toContain("every later executable request in the same conversation")
+		expect(enabledPrompt).toContain("reuse the focused active file and its exact marker")
+		expect(enabledPrompt).not.toContain("unique host-prefixed instance ID in the form host-task-id:work-instance-id")
 		expect(enabledPrompt).toContain("Canonical file format (mandatory; this is not YAML frontmatter)")
 		expect(enabledPrompt).toContain("<!-- deeptask-task-id:<instance-id> -->")
 		expect(enabledPrompt).toContain("example value is illustrative only and must never be copied")
@@ -981,9 +984,9 @@ describe("SYSTEM_PROMPT", () => {
 		expect(enabledPrompt).toContain("Before completion, check every checklist item in the task Markdown")
 		expect(enabledPrompt).toContain("creating the directory when needed")
 		expect(enabledPrompt).toContain("Do not create task progress files in the workspace root")
-		expect(enabledPrompt).toContain("An archived file records only that its own task is finished")
+		expect(enabledPrompt).toContain("An archived file records only that its own work is finished")
 		expect(enabledPrompt).toContain(
-			"ordinary user feedback, and edited resends within an existing task are not new tasks",
+			"ordinary user feedback, and edited resends within an existing task are not new task starts",
 		)
 		expect(enabledPrompt).toContain(
 			"do not repeat task-start actions such as querying Obsidian or other long-term memory",

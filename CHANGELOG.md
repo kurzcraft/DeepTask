@@ -1,5 +1,14 @@
 # Deeptask
 
+## 9.0.3
+
+### Patch Changes
+
+- Bind the first model-authored task progress file through a verified single-candidate fallback when its marker uses the host task ID instead of the internal Task UUID.
+- Keep later executable requests in the same conversation on the existing authoritative checklist file and marker, while preserving nested checklist state.
+- Deliver the first user message after completion through the recoverable continuation path instead of treating it as stale completion feedback or dropping it before a new turn.
+- Update the bilingual project and packaged Marketplace introduction to 9.0.3 installation artifacts.
+
 ## 9.0.2
 
 ### Patch Changes

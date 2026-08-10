@@ -91,11 +91,16 @@ if ! grep -q "current_task_focus source=\"latest_user_continuation\"" src/dist/e
   exit 1
 fi
 if ! grep -q "syncTaskProgressWithTodoList" src/dist/extension.js; then
-  echo "src/dist/extension.js 缺少内置 todo 与焦点任务文件同步逻辑" | tee -a "$LOG"
+  echo "src/dist/extension.js 缺少原生 TODO 与权威任务文件同步逻辑" | tee -a "$LOG"
   exit 1
 fi
-if ! grep -q "deeptask-native-todo-list" src/dist/extension.js; then
-  echo "src/dist/extension.js 缺少顶层任务进度同步标记" | tee -a "$LOG"
+if ! grep -q "current host task ID is only a candidate-discovery key" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少宿主任务 ID 首写绑定规则" | tee -a "$LOG"
+  exit 1
+fi
+if ! grep -q "taskProgressInstanceId" src/dist/extension.js || \
+  ! grep -q "Multiple active task progress files" src/dist/extension.js; then
+  echo "src/dist/extension.js 缺少首个任务清单唯一候选绑定与歧义保护逻辑" | tee -a "$LOG"
   exit 1
 fi
 if ! grep -q "<latest_human_message>" src/dist/extension.js || \
@@ -107,7 +112,7 @@ if grep -q "The human message below has absolute priority over every archive, co
   echo "src/dist/extension.js 仍包含会抢占人类消息的旧机制提示" | tee -a "$LOG"
   exit 1
 fi
-if ! grep -q "An archived file records only its own completed task" src/dist/extension.js; then
+if ! grep -q "An archived file records only that its own work is finished" src/dist/extension.js; then
   echo "src/dist/extension.js 缺少归档文件不可阻止后续请求约束" | tee -a "$LOG"
   exit 1
 fi
