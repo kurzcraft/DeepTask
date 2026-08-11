@@ -637,6 +637,57 @@ describe("executeCommandTool", () => {
 			vi.useRealTimers()
 		})
 
+		it("does not hang after command completion when final output persistence never settles", async () => {
+			vi.useFakeTimers()
+			const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+			let capturedCallbacks: any
+			const processPromise: any = new Promise<void>(() => {})
+			processPromise.continue = vitest.fn()
+			mockTerminal.runCommand = vitest.fn((_command: string, callbacks: any) => {
+				capturedCallbacks = callbacks
+				return processPromise
+			})
+
+			const task = {
+				askId: "task-1",
+				cwd: "/test/workspace",
+				terminalProcess: undefined,
+				ask: vitest.fn(),
+				say: vitest.fn().mockImplementation(() => new Promise<undefined>(() => {})),
+				handleWebviewAskResponse: vitest.fn(),
+				hasPendingWebviewAskResponse: vitest.fn().mockReturnValue(false),
+				processQueuedMessages: vitest.fn(),
+				consumePendingCommandOutputFeedback: vitest.fn().mockReturnValue(undefined),
+				consumeCommandOutputFeedbackAlreadyShown: vitest.fn().mockReturnValue(false),
+				providerRef: { deref: () => ({ postMessageToWebview: vitest.fn() }) },
+			} as unknown as Task
+
+			try {
+				const resultPromise = executeCommandModule.executeCommandInTerminal(task, {
+					executionId: "exec-persistence-stall",
+					command: "pnpm exec vitest run cli-utils-tests",
+					terminalShellIntegrationDisabled: false,
+				})
+
+				await vi.waitFor(() => expect(capturedCallbacks).toBeDefined())
+				capturedCallbacks.onShellExecutionComplete({ exitCode: 0 })
+				capturedCallbacks.onCompleted("26 tests passed\n")
+				await vi.advanceTimersByTimeAsync(2_100)
+
+				const [rejected, toolResult] = await resultPromise
+				expect(rejected).toBe(false)
+				expect(String(toolResult)).toContain("Exit code: 0")
+				expect(String(toolResult)).toContain("26 tests passed")
+				expect(task.processQueuedMessages).toHaveBeenCalled()
+				expect(consoleError).toHaveBeenCalledWith(
+					"[ExecuteCommandTool] Final command output persistence did not settle within 2000ms; continuing with the captured tool result.",
+				)
+			} finally {
+				vi.useRealTimers()
+				consoleError.mockRestore()
+			}
+		})
+
 		it("ignores duplicate completion callbacks", async () => {
 			const say = vitest.fn().mockResolvedValue(undefined)
 			let capturedCallbacks: any

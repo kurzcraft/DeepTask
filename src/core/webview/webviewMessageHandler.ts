@@ -817,9 +817,8 @@ export const webviewMessageHandler = async (
 				// isTaskLoopActive true, but those waits must still answer pending asks /
 				// terminal feedback instead of cancelling the whole task into a parked queue.
 				// A completion result is a human-conversation boundary even while the old
-				// request is unwinding. The completion row is durable evidence that the
-				// model has yielded control; routing the next human message through cancel
-				// rehydrates the task and lets stale finalization win over that message.
+				// request is unwinding. The completion row is the durable rewind anchor for
+				// routing the next human message through the strict resend transaction.
 				const isSoftCompletionBoundaryPending = task?.isSoftCompletionBoundaryPending?.() === true
 				const completionMessage =
 					lastStableCompletionIndex >= 0 ? taskMessages[lastStableCompletionIndex] : undefined
@@ -845,8 +844,8 @@ export const webviewMessageHandler = async (
 					!hasMessagePayload &&
 					lastMessage?.partial !== true
 				// Soft completion makes hasCompletedTask true for the rest of the session.
-				// Only treat typed text as a post-completion continuation when the task is
-				// not streaming and not blocked on a non-completion ask.
+				// Only treat typed text as a post-completion resend when the task is not
+				// blocked on a newer non-completion ask.
 				const isCompletionContinuation = isCompletionBoundaryContinuation
 				const isLiveStreamingUserInterrupt =
 					message.askResponse === "messageResponse" && hasMessagePayload && isActivelyStreaming
@@ -886,16 +885,19 @@ export const webviewMessageHandler = async (
 					task.messageQueueService.clear()
 					provider.setPendingCancelledTaskContinuation?.(resolved.text ?? "", resolved.images)
 					await provider.postStateToWebview()
-				} else if (task && isCompletionContinuation) {
-					// A completed Task still owns stale ask/parser/stream state. Route the first
-					// direct message through the provider's serialized rehydration boundary so
-					// consecutive sends cannot overwrite a single pending payload.
-					task.clearStaleWebviewAskResponse()
-					task.messageQueueService.clear()
-					await provider.rehydrateTaskWithUserMessage?.(resolved.text ?? "", resolved.images, {
-						kind: "continuation",
-					})
-					await provider.postStateToWebview()
+				} else if (task && isCompletionContinuation && completionMessage?.ts !== undefined) {
+					// A post-completion message is a resend from the final stable boundary. Use
+					// the exact strict edit/resend transaction: rewind the completion tail,
+					// persist the prefix, park an edited_resend continuation, then replace the
+					// old Task. Keeping a separate completion rehydrate path allowed late
+					// finalization to consume the human message without starting a model turn.
+					await handleEditMessageConfirm(
+						completionMessage.ts,
+						resolved.text ?? "",
+						false,
+						resolved.images,
+						true,
+					)
 				} else if (task && hasPendingAsk && isAskResponseForCurrentAsk) {
 					task.handleWebviewAskResponse(message.askResponse!, resolved.text, resolved.images)
 				} else if (

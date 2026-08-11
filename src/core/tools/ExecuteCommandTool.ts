@@ -19,6 +19,8 @@ import { Package } from "../../shared/package"
 import { t } from "../../i18n"
 import { BaseTool, ToolCallbacks } from "./BaseTool"
 
+const COMMAND_OUTPUT_PERSISTENCE_TIMEOUT_MS = 2_000 // kilocode_change
+
 class ShellIntegrationError extends Error {}
 
 interface ExecuteCommandParams {
@@ -424,10 +426,11 @@ export async function executeCommandInTerminal(
 	// kilocode_change end
 
 	// kilocode_change start
-	// Preserve command-output ordering across the tool/model boundary. Without
-	// this barrier, a slow save/post can arrive after the next api_req_started and
-	// leave the UI parked on the stale recovery Continue state.
-	await finalCommandOutputPersisted
+	// Preserve command-output ordering when persistence is healthy, but do not let
+	// a stalled webview post or message-save chain hold a completed command forever.
+	// This budget starts only after the terminal has completed; command execution
+	// itself remains unbounded when the configured command timeout is disabled.
+	await settleCommandOutputPersistence(finalCommandOutputPersisted)
 	// kilocode_change end
 
 	if (shellIntegrationError) {
@@ -534,6 +537,33 @@ export async function executeCommandInTerminal(
 }
 
 // kilocode_change start
+async function settleCommandOutputPersistence(persistence: Promise<undefined> | undefined): Promise<void> {
+	if (!persistence) {
+		return
+	}
+
+	let timeoutId: NodeJS.Timeout | undefined
+	const observedPersistence = persistence.catch((error) => {
+		console.error("[ExecuteCommandTool] Failed to persist final command output:", error)
+	})
+	const timeout = new Promise<void>((resolve) => {
+		timeoutId = setTimeout(() => {
+			console.error(
+				`[ExecuteCommandTool] Final command output persistence did not settle within ${COMMAND_OUTPUT_PERSISTENCE_TIMEOUT_MS}ms; continuing with the captured tool result.`,
+			)
+			resolve()
+		}, COMMAND_OUTPUT_PERSISTENCE_TIMEOUT_MS)
+	})
+
+	try {
+		await Promise.race([observedPersistence, timeout])
+	} finally {
+		if (timeoutId) {
+			clearTimeout(timeoutId)
+		}
+	}
+}
+
 async function waitForCommandOutputResponse(
 	task: Task,
 ): Promise<{ response: "messageResponse" | "yesButtonClicked" | "noButtonClicked"; text?: string; images?: string[] }> {
