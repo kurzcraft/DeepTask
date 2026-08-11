@@ -3261,6 +3261,32 @@ describe("Queued message processing after condense", () => {
 		expect(task.shouldRejectToolUntilProgressListExpanded("update_todo_list")).toBe(false)
 	})
 
+	it("releases the progress gate after an actionable checklist sync without a completion continuation", () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context, // kilocode_change
+		})
+		;(task as any).requiresProgressListExpansion = true
+		;(task as any).shouldKeepNextCompletionActive = false
+
+		expect(task.shouldRejectToolUntilProgressListExpanded("read_file")).toBe(true)
+		task.markProgressListExpandedForContinuation([
+			{ id: "new-work", content: "repair the binding", status: "in_progress" },
+		])
+
+		expect(task.shouldRequireProgressListExpansion()).toBe(false)
+		expect(task.shouldRejectToolUntilProgressListExpanded("read_file")).toBe(false)
+		expect(
+			task.shouldRejectToolUntilProgressListExpanded("edit_file", {
+				file_path: "EXTRA/task/ACTIVE_PROGRESS.md",
+			}),
+		).toBe(false)
+	})
+
 	it("does not require a milestone for a pure status question", async () => {
 		const provider = createProvider()
 		const task = new Task({
@@ -4492,7 +4518,9 @@ describe("task progress completion barrier", () => {
 		vi.mocked(fs.readdir).mockResolvedValue([
 			{ name: "active.md", isDirectory: () => false, isFile: () => true },
 		] as any)
-		vi.mocked(fs.readFile).mockResolvedValue("# Active\n\n<!-- deeptask-task-id:task-active -->\n")
+		vi.mocked(fs.readFile).mockResolvedValue(
+			"# Active\n\n<!-- deeptask-task-id:unrelated-host-id -->\n- [-] active work\n",
+		)
 
 		await expect((task as any).hasActiveTaskProgressFile()).resolves.toBe(true)
 	})
@@ -4630,6 +4658,133 @@ describe("task progress completion barrier", () => {
 		).resolves.toMatchObject([{ content: "continue old work", status: "in_progress" }])
 		expect(fs.writeFile).not.toHaveBeenCalled()
 		expect(updateTaskHistory).not.toHaveBeenCalled()
+	})
+
+	it("rebinds after the model corrects a persisted marker in the same file", async () => {
+		const progressPath = path.resolve("/workspace/EXTRA/task/current.md")
+		const updateTaskHistory = vi.fn().mockResolvedValue([])
+		const historyItem = { id: "task-1", task: "continue" }
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "current.md", isDirectory: () => false, isFile: () => true },
+		] as any)
+		vi.mocked(fs.readFile).mockResolvedValue("<!-- deeptask-task-id:corrected-host -->\n- [-] continue work\n")
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "taskProgressFilePath", { value: "EXTRA/task/current.md", writable: true })
+		Object.defineProperty(task, "taskProgressInstanceId", { value: "incorrect-host", writable: true })
+		Object.defineProperty(task, "providerRef", {
+			value: {
+				deref: () => ({ getTaskHistory: () => [historyItem], updateTaskHistory }),
+			},
+		})
+
+		await expect(task.syncTaskProgressWithTodoList()).resolves.toMatchObject([
+			{ content: "continue work", status: "in_progress" },
+		])
+		expect((task as any).taskProgressFilePath).toBe("EXTRA/task/current.md")
+		expect((task as any).taskProgressInstanceId).toBe("corrected-host")
+		expect(updateTaskHistory).toHaveBeenNthCalledWith(1, {
+			...historyItem,
+			taskProgressFilePath: undefined,
+			taskProgressInstanceId: undefined,
+		})
+		expect(updateTaskHistory).toHaveBeenNthCalledWith(2, {
+			...historyItem,
+			taskProgressFilePath: "EXTRA/task/current.md",
+			taskProgressInstanceId: "corrected-host",
+		})
+	})
+
+	it("rebinds a single active checklist after its persisted binding was archived", async () => {
+		const archivedPath = path.resolve("/workspace/EXTRA/task/archived.md")
+		const activePath = path.resolve("/workspace/EXTRA/task/current.md")
+		const updateTaskHistory = vi.fn().mockResolvedValue([])
+		const historyItem = { id: "task-1", task: "continue" }
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "current.md", isDirectory: () => false, isFile: () => true },
+		] as any)
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			if (path.resolve(String(filePath)) === archivedPath) {
+				throw Object.assign(new Error("missing archived binding"), { code: "ENOENT" })
+			}
+			if (path.resolve(String(filePath)) === activePath) {
+				return "<!-- deeptask-task-id:host-task-id -->\n- [-] resume current work\n"
+			}
+			return "[]"
+		})
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "taskProgressFilePath", {
+			value: "EXTRA/task/archived.md",
+			writable: true,
+		})
+		Object.defineProperty(task, "taskProgressInstanceId", { value: "old-host-id", writable: true })
+		Object.defineProperty(task, "providerRef", {
+			value: {
+				deref: () => ({ getTaskHistory: () => [historyItem], updateTaskHistory }),
+			},
+		})
+
+		await expect(
+			task.syncTaskProgressWithTodoList([{ id: "1", content: "stale", status: "pending" }]),
+		).resolves.toMatchObject([{ content: "resume current work", status: "in_progress" }])
+		expect((task as any).taskProgressFilePath).toBe("EXTRA/task/current.md")
+		expect((task as any).taskProgressInstanceId).toBe("host-task-id")
+		expect(updateTaskHistory).toHaveBeenNthCalledWith(1, {
+			...historyItem,
+			taskProgressFilePath: undefined,
+			taskProgressInstanceId: undefined,
+		})
+		expect(updateTaskHistory).toHaveBeenNthCalledWith(2, {
+			...historyItem,
+			taskProgressFilePath: "EXTRA/task/current.md",
+			taskProgressInstanceId: "host-task-id",
+		})
+	})
+
+	it("clears a binding that explicitly points into the finished archive before rediscovery", async () => {
+		const archivedPath = path.resolve("/workspace/EXTRA/task/finished/archived.md")
+		const activePath = path.resolve("/workspace/EXTRA/task/current.md")
+		const updateTaskHistory = vi.fn().mockResolvedValue([])
+		const historyItem = { id: "task-1", task: "continue" }
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "current.md", isDirectory: () => false, isFile: () => true },
+		] as any)
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			if (path.resolve(String(filePath)) === activePath) {
+				return "<!-- deeptask-task-id:next-work -->\n- [-] continue after archive\n"
+			}
+			if (path.resolve(String(filePath)) === archivedPath) {
+				return "<!-- deeptask-task-id:old-work -->\n- [x] archived work\n"
+			}
+			return "[]"
+		})
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "taskProgressFilePath", {
+			value: "EXTRA/task/finished/archived.md",
+			writable: true,
+		})
+		Object.defineProperty(task, "taskProgressInstanceId", { value: "old-work", writable: true })
+		Object.defineProperty(task, "providerRef", {
+			value: {
+				deref: () => ({ getTaskHistory: () => [historyItem], updateTaskHistory }),
+			},
+		})
+
+		await expect(task.syncTaskProgressWithTodoList()).resolves.toMatchObject([
+			{ content: "continue after archive", status: "in_progress" },
+		])
+		expect((task as any).taskProgressFilePath).toBe("EXTRA/task/current.md")
+		expect((task as any).taskProgressInstanceId).toBe("next-work")
+		expect(updateTaskHistory).toHaveBeenNthCalledWith(1, {
+			...historyItem,
+			taskProgressFilePath: undefined,
+			taskProgressInstanceId: undefined,
+		})
 	})
 
 	it("rejects multiple active checklist instances for the same host without deleting either file", async () => {

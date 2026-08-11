@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.0.3</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.0.5</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,9 +35,9 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.0.3** fixes first-write task-progress binding and keeps later requests in the same
-> conversation on the same authoritative checklist. The first message after completion now enters a
-> recoverable work turn instead of being swallowed by stale completion state or a second marker edit.
+> **Deeptask 9.0.5** fixes the follow-up tool hang after the first task checklist synchronization: a
+> successful sync now immediately releases the progress-list gate. It also clears stale bindings to
+> archived checklists and re-discovers the single active checklist during the same sync attempt.
 
 ## What you can do with Deeptask
 
@@ -115,17 +115,17 @@ Deeptask treats work as a recoverable state machine rather than a one-shot answe
 
 ## Start in three minutes
 
-1. Download `deeptask-9.0.3.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.0.5.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.0.3.vsix --force
+    codium --install-extension ./deeptask-9.0.5.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.0.3.vsix --force
+    code --install-extension ./deeptask-9.0.5.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

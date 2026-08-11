@@ -2408,7 +2408,7 @@ ${protocolHint}
 	}
 
 	public markProgressListExpandedForContinuation(todos?: TodoItem[]): void {
-		if (!this.shouldKeepNextCompletionActive) {
+		if (!this.requiresProgressListExpansion) {
 			return
 		}
 
@@ -6499,29 +6499,57 @@ ${protocolHint}
 		}
 	}
 
+	private async clearTaskProgressBinding(): Promise<void> {
+		this.taskProgressFilePath = undefined
+		this.taskProgressInstanceId = undefined
+		const provider = this.providerRef?.deref()
+		const historyItem = provider?.getTaskHistory?.().find((item) => item.id === this.taskId)
+		if (historyItem) {
+			await provider?.updateTaskHistory({
+				...historyItem,
+				taskProgressFilePath: undefined,
+				taskProgressInstanceId: undefined,
+			})
+		}
+	}
+
 	private async findOwnedTaskProgressFilePath(): Promise<string | undefined> {
 		const taskDirectory = path.join(this.cwd, "EXTRA", "task")
+		const finishedTaskDirectory = path.join(taskDirectory, "finished")
 		if (this.taskProgressFilePath || this.taskProgressInstanceId) {
 			if (!this.taskProgressFilePath || !this.taskProgressInstanceId) {
 				throw new Error(`Task ${this.taskId} has an incomplete task progress binding`)
 			}
 			const boundPath = path.resolve(this.cwd, this.taskProgressFilePath)
-			if (path.dirname(boundPath) !== taskDirectory || path.extname(boundPath) !== ".md") {
+			const isArchivedBinding =
+				boundPath.startsWith(`${finishedTaskDirectory}${path.sep}`) && path.extname(boundPath) === ".md"
+			if (isArchivedBinding) {
+				// Archived checklists are historical records, never active bindings. Clear
+				// the durable identity and continue discovering the current active file.
+				await this.clearTaskProgressBinding()
+			} else if (path.dirname(boundPath) !== taskDirectory || path.extname(boundPath) !== ".md") {
 				throw new Error(`Task ${this.taskId} has an invalid task progress file binding`)
 			}
-			try {
-				const content = await fsp.readFile(boundPath, "utf8")
-				if (this.getTaskProgressIdentity(content) !== this.taskProgressInstanceId) {
-					throw new Error(`The bound task progress file identity does not match its persisted binding`)
+			if (!isArchivedBinding) {
+				try {
+					const content = await fsp.readFile(boundPath, "utf8")
+					if (this.getTaskProgressIdentity(content) !== this.taskProgressInstanceId) {
+						// The model may have corrected the marker after a failed first sync.
+						// Treat that persisted identity drift like a stale binding and
+						// rediscover the authoritative active checklist below.
+						await this.clearTaskProgressBinding()
+					} else {
+						return boundPath
+					}
+				} catch (error) {
+					if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+					// A removed binding is no longer authoritative. Continue into
+					// active-candidate discovery during the same synchronization attempt.
+					await this.clearTaskProgressBinding()
 				}
-				return boundPath
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
-				throw error
 			}
 		}
 
-		const matches: Array<{ path: string; identity: string }> = []
 		const activeCandidates: Array<{ path: string; identity: string }> = []
 		try {
 			const entries = await fsp.readdir(taskDirectory, { withFileTypes: true })
@@ -6530,28 +6558,23 @@ ${protocolHint}
 				const candidatePath = path.join(taskDirectory, entry.name)
 				const candidateContent = await fsp.readFile(candidatePath, "utf8")
 				const identity = this.getTaskProgressIdentity(candidateContent)
-				if (!identity) continue
-				const candidate = { path: candidatePath, identity }
-				activeCandidates.push(candidate)
-				if (identity === this.taskId || identity.startsWith(`${this.taskId}:`)) {
-					matches.push(candidate)
-				}
+				if (!identity || parseMarkdownChecklist(candidateContent).length === 0) continue
+				activeCandidates.push({ path: candidatePath, identity })
 			}
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
 		}
-		if (matches.length > 1) {
-			const details = matches
+		if (activeCandidates.length > 1) {
+			const details = activeCandidates
 				.sort((left, right) => left.path.localeCompare(right.path))
-				.map((match) => `${match.identity} at ${match.path}`)
+				.map((candidate) => `${candidate.identity} at ${candidate.path}`)
 				.join(", ")
 			throw new Error(`Multiple active task progress files belong to host task ${this.taskId}: ${details}`)
 		}
-		// The first checklist is authored by the outer host and may therefore use
-		// the host task ID rather than this extension Task's UUID. When no persisted
-		// binding exists, a single active candidate is unambiguous and can be bound
-		// once; subsequent lookups use the persisted path and identity strictly.
-		const match = matches[0] ?? (activeCandidates.length === 1 ? activeCandidates[0] : undefined)
+		// First binding is intentionally independent of host/Task IDs. The file was
+		// authored and read back by the model; uniqueness is the only safe ownership
+		// signal before durable binding exists. Later lookups remain strict above.
+		const match = activeCandidates[0]
 		if (match) await this.persistTaskProgressBinding(match.path, match.identity)
 		return match?.path
 	}

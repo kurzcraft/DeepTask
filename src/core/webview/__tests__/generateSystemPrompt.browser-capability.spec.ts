@@ -47,6 +47,7 @@ function makeProviderStub() {
 			getCustomModes: async () => mockCustomModes,
 		},
 		getCurrentTask: () => ({
+			taskId: "host-task-id",
 			rooIgnoreController: { getInstructions: () => undefined },
 		}),
 		getMcpHub: () => undefined,
@@ -96,5 +97,6 @@ describe("generateSystemPrompt browser capability (supportsImages=true)", () => 
 		const systemPromptCall = vi.mocked(SYSTEM_PROMPT).mock.calls[0]
 		expect(systemPromptCall[16]).toMatchObject({ taskProgressFileEnabled: true })
 		expect(systemPromptCall[20]).toMatchObject({ taskProgressFileEnabled: true })
+		expect(systemPromptCall[21]).toBe("host-task-id")
 	})
 })

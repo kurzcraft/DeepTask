@@ -108,6 +108,7 @@ export const generateSystemPrompt = async (provider: ClineProvider, message: Web
 		undefined, // modelId
 		provider.getSkillsManager(),
 		{ ...state, taskProgressFileEnabled }, // kilocode_change
+		provider.getCurrentTask()?.taskId, // kilocode_change: keep prompt task identity aligned with the host task
 	)
 
 	return systemPrompt

@@ -1,5 +1,21 @@
 # Deeptask
 
+## 9.0.5
+
+### Patch Changes
+
+- Bind task-progress instructions generated for previews and new-task flows to the current host task ID, preventing first-checklist marker drift and the required second edit.
+- Preserve durable checklist identity during recovery while allowing a unique valid active checklist to bind without stale instance-ID filtering.
+- Update the bilingual README, packaged Marketplace introduction, installation commands, and release notes for 9.0.5.
+
+## 9.0.4
+
+### Patch Changes
+
+- Clear persisted task-progress bindings when their checklist has been archived or removed, then rebind the single active checklist during the same native TODO synchronization attempt.
+- Persist the recovered path and marker identity so later messages do not re-enter the stale-binding failure loop.
+- Add regression coverage for archived bindings, active rebinding, ambiguous candidates, and authoritative checklist projection.
+
 ## 9.0.3
 
 ### Patch Changes
