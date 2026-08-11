@@ -2425,49 +2425,14 @@ ${protocolHint}
 (This is an automated message, so do not respond to it conversationally.)`
 	}
 
-	private isTaskProgressFileOperation(toolName: string, params?: Record<string, unknown>): boolean {
-		const isTaskProgressPath = (value: unknown): boolean =>
-			typeof value === "string" && /^EXTRA\/task\/(?!finished\/).+\.md$/.test(value)
-
-		if (toolName === "list_files") {
-			return params?.path === "EXTRA/task" && params?.recursive === false
-		}
-
-		if (toolName === "write_to_file") {
-			return isTaskProgressPath(params?.path)
-		}
-
-		// Checklist recovery may require a surgical edit after native synchronization
-		// fails. Keep that edit strictly inside the active progress-file boundary.
-		if (toolName === "edit_file") {
-			return isTaskProgressPath(params?.file_path)
-		}
-
-		if (toolName === "apply_diff") {
-			return isTaskProgressPath(params?.path)
-		}
-
-		if (toolName === "read_file") {
-			const files = params?.files
-			return (
-				Array.isArray(files) &&
-				files.length > 0 &&
-				files.every(
-					(file) =>
-						typeof file === "object" && file !== null && isTaskProgressPath((file as { path?: unknown }).path),
-				)
-			)
-		}
-
+	public shouldRejectToolUntilProgressListExpanded(
+		_toolName: string,
+		_params?: Record<string, unknown>,
+	): boolean {
+		// Progress-list expansion remains an advisory environment reminder. It must not
+		// reject the user's first concrete tool call: rejecting that call interrupts the
+		// stream and can make the continuation appear permanently stuck behind TODO sync.
 		return false
-	}
-
-	public shouldRejectToolUntilProgressListExpanded(toolName: string, params?: Record<string, unknown>): boolean {
-		if (!this.shouldRequireProgressListExpansion()) {
-			return false
-		}
-
-		return toolName !== "update_todo_list" && !this.isTaskProgressFileOperation(toolName, params)
 	}
 
 	public markProgressListExpandedForContinuation(todos?: TodoItem[]): void {
@@ -3098,11 +3063,12 @@ ${protocolHint}
 		options?: UserContinuationOptions
 	}) {
 		// kilocode_change start
-		// An injected human payload starts a new restoration transaction on the
-		// replacement instance. Clear only cancellation inherited before this entry;
-		// any later cancel still wins while the asynchronous restoration proceeds.
+		// Restoring the active replacement instance starts a new transaction. Clear
+		// cancellation inherited before this entry even when the user answers the
+		// resume prompt instead of supplying an injected continuation; a later cancel
+		// still wins while asynchronous restoration proceeds.
 		const provider = this.providerRef.deref()
-		if (pendingContinuation && provider?.getCurrentTask?.() === this) {
+		if (provider?.getCurrentTask?.() === this) {
 			this.abort = false
 			this.abandoned = false
 			this.abortReason = undefined
@@ -3866,12 +3832,9 @@ ${protocolHint}
 				} else {
 					// Use the task's locked protocol, NOT the current settings (fallback to xml if not set)
 					// kilocode_change start
-					// After a new user instruction, pure-text replies are the main way the
-					// model "steals" progress by restating old completions. Force the
-					// expansion gate message instead of the generic no-tools prompt.
-					const noToolsText = this.shouldRequireProgressListExpansion()
-						? this.getProgressListExpansionRequiredMessage(this._taskToolProtocol ?? "xml")
-						: formatResponse.noToolsUsed(this._taskToolProtocol ?? "xml")
+					// A progress-list reminder is advisory. Do not turn a no-tool response into
+					// a hard TODO precondition that can starve the latest user instruction.
+					const noToolsText = formatResponse.noToolsUsed(this._taskToolProtocol ?? "xml")
 					// kilocode_change end
 					nextUserContent = [{ type: "text", text: noToolsText }]
 				}
@@ -5107,12 +5070,10 @@ ${protocolHint}
 								this.consecutiveMistakeCount++
 							}
 
-							// Use the task's locked protocol for consistent behavior
-							// kilocode_change start
-							const noToolsText = this.shouldRequireProgressListExpansion()
-								? this.getProgressListExpansionRequiredMessage(this._taskToolProtocol ?? "xml")
-								: formatResponse.noToolsUsed(this._taskToolProtocol ?? "xml")
-							// kilocode_change end
+							// Use the task's locked protocol for consistent behavior. Progress-list
+							// expansion remains visible as an environment reminder, not a hard retry
+							// barrier after a real human instruction.
+							const noToolsText = formatResponse.noToolsUsed(this._taskToolProtocol ?? "xml")
 							this.userMessageContent.push({
 								type: "text",
 								text: noToolsText,

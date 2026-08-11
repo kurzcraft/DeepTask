@@ -2786,6 +2786,39 @@ describe("Queued message processing after condense", () => {
 		expect(JSON.stringify(initiateSpy.mock.calls[0]?.[0])).toContain("latest user message")
 	})
 
+	it("clears inherited cancellation before an ordinary resume response", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context,
+		})
+		;(provider as any).clineStack = [task]
+		;(task as any).abort = true
+		;(task as any).abandoned = true
+		;(task as any).abortReason = "user_cancelled"
+		;(task as any).didFinishAbortingStream = true
+		vi.spyOn(task as any, "getSavedClineMessages").mockResolvedValue([])
+		vi.spyOn(task as any, "getSavedApiConversationHistory").mockResolvedValue([])
+		vi.spyOn(task as any, "ask").mockResolvedValue({
+			response: "messageResponse",
+			text: "continue after ordinary resume",
+			images: [],
+		})
+		vi.spyOn(task as any, "say").mockResolvedValue(undefined)
+		const initiateSpy = vi.spyOn(task as any, "initiateTaskLoop").mockResolvedValue(undefined)
+
+		await task.resumeTaskFromHistory()
+
+		expect(task.abort).toBe(false)
+		expect(task.abandoned).toBe(false)
+		expect(task.abortReason).toBeUndefined()
+		expect(task.didFinishAbortingStream).toBe(false)
+		expect(initiateSpy).toHaveBeenCalledOnce()
+	})
+
 	it("rebuilds an edited resend from the persisted prefix without discarded branch context", async () => {
 		const provider = createProvider()
 		const task = new Task({
@@ -3297,17 +3330,17 @@ describe("Queued message processing after condense", () => {
 			task.shouldRejectToolUntilProgressListExpanded("edit_file", {
 				file_path: "EXTRA/task/finished/ARCHIVED_PROGRESS.md",
 			}),
-		).toBe(true)
+		).toBe(false)
 		expect(
 			task.shouldRejectToolUntilProgressListExpanded("apply_diff", {
 				path: "src/core/task/Task.ts",
 			}),
-		).toBe(true)
+		).toBe(false)
 		expect(
 			task.shouldRejectToolUntilProgressListExpanded("write_to_file", { path: "src/core/task/Task.ts" }),
-		).toBe(true)
-		expect(task.shouldRejectToolUntilProgressListExpanded("execute_command", { command: "pwd" })).toBe(true)
-		expect(task.shouldRejectToolUntilProgressListExpanded("read_file")).toBe(true)
+		).toBe(false)
+		expect(task.shouldRejectToolUntilProgressListExpanded("execute_command", { command: "pwd" })).toBe(false)
+		expect(task.shouldRejectToolUntilProgressListExpanded("read_file")).toBe(false)
 		expect(task.shouldRejectToolUntilProgressListExpanded("update_todo_list")).toBe(false)
 	})
 
@@ -3323,7 +3356,7 @@ describe("Queued message processing after condense", () => {
 		;(task as any).requiresProgressListExpansion = true
 		;(task as any).shouldKeepNextCompletionActive = false
 
-		expect(task.shouldRejectToolUntilProgressListExpanded("read_file")).toBe(true)
+		expect(task.shouldRejectToolUntilProgressListExpanded("read_file")).toBe(false)
 		task.markProgressListExpandedForContinuation([
 			{ id: "new-work", content: "repair the binding", status: "in_progress" },
 		])

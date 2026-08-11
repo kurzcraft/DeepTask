@@ -197,11 +197,14 @@ export async function presentAssistantMessage(cline: Task) {
 				}
 
 				if (toolCallId) {
-					cline.pushToolResultToUserContent({
+					const didPushResult = cline.pushToolResultToUserContent({
 						type: "tool_result",
 						tool_use_id: toolCallId,
 						content: resultContent,
 					})
+					if (!didPushResult) {
+						return
+					}
 
 					if (imageBlocks.length > 0) {
 						cline.userMessageContent.push(...imageBlocks)
@@ -389,8 +392,14 @@ export async function presentAssistantMessage(cline: Task) {
 			break
 		}
 		case "tool_use": {
-			// Fetch state early so it's available for toolDescription and validation
-			const state = await cline.providerRef.deref()?.getState()
+			// Fetch state early so it's available for toolDescription and validation. Keep
+			// this read inside the same bounded tool budget as execution; a stalled
+			// provider state request otherwise leaves the presenter locked forever.
+			const state = await withToolExecutionTimeout(
+				async () => cline.providerRef.deref()?.getState(),
+				getToolExecutionTimeoutMs(block.name),
+				cline,
+			)
 			const { mode, customModes, experiments: stateExperiments } = state ?? {}
 
 			// kilocode_change start
