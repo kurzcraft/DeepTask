@@ -556,9 +556,15 @@ describe("attemptCompletionTool", () => {
 			const mockSay = vi.fn().mockResolvedValue(undefined)
 			const mockEmit = vi.fn()
 			const mockAsk = vi.fn(() => new Promise(() => {}))
+			let taskCompleted = false
+			const mockMarkTaskCompleted = vi.fn(() => {
+				taskCompleted = true
+			})
 			mockTask.say = mockSay
 			;(mockTask as any).ask = mockAsk
 			mockTask.emit = mockEmit as any
+			;(mockTask as any).hasTaskCompletedInCurrentLoop = vi.fn(() => taskCompleted)
+			;(mockTask as any).markTaskCompletedInCurrentLoop = mockMarkTaskCompleted
 			;(mockTask as any).emitFinalTokenUsageUpdate = vi.fn()
 			;(mockTask as any).getTokenUsage = vi.fn().mockReturnValue(undefined)
 			;(mockTask as any).toolUsage = undefined
@@ -579,6 +585,7 @@ describe("attemptCompletionTool", () => {
 				attemptCompletionTool.handle(mockTask as Task, block, callbacks),
 				new Promise((_, reject) => setTimeout(() => reject(new Error("completion tool did not return")), 50)),
 			])
+			await attemptCompletionTool.handle(mockTask as Task, block, callbacks)
 
 			expect(mockSay).toHaveBeenCalledWith(
 				"completion_result",
@@ -590,7 +597,9 @@ describe("attemptCompletionTool", () => {
 				{},
 			)
 			expect((mockTask as any).emitFinalTokenUsageUpdate).toHaveBeenCalledTimes(1)
+			expect(mockEmit).toHaveBeenCalledTimes(1)
 			expect(mockEmit).toHaveBeenCalledWith("taskCompleted", undefined, undefined, undefined)
+			expect(mockMarkTaskCompleted).toHaveBeenCalledTimes(1)
 			expect(mockAsk).not.toHaveBeenCalled()
 		})
 	})

@@ -566,6 +566,10 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	// message can arrive between break and finally while isTaskLoopActive is still
 	// true, and must still be treated as post-completion continuation.
 	private softCompletionBoundaryPending = false
+	// A hard completion ends the current API loop after its terminal UI event is
+	// persisted. Without this separate flag, the tool result can be sent back to
+	// the model and produce repeated summaries/completion events.
+	private taskCompletedInCurrentLoop = false
 	// Generation counter so an older loop's finally cannot clear isTaskLoopActive
 	// after a newer continuation has already started.
 	private taskLoopGeneration = 0
@@ -2243,6 +2247,14 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// kilocode_change: continuation quality gates apply to root sessions, not to
 		// delegated child completion, whose result must always be returned to its parent.
 		return !this.parentTaskId && this.shouldKeepNextCompletionActive && !this.activeContinuationWorkToolUsed
+	}
+
+	public markTaskCompletedInCurrentLoop(): void {
+		this.taskCompletedInCurrentLoop = true
+	}
+
+	public hasTaskCompletedInCurrentLoop(): boolean {
+		return this.taskCompletedInCurrentLoop
 	}
 
 	public markActiveContinuationWorkToolUsed(toolName: string): void {
@@ -4121,6 +4133,7 @@ ${protocolHint}
 				}
 
 				// Reset streaming state for each new API request
+				this.taskCompletedInCurrentLoop = false
 				this.currentStreamingContentIndex = 0
 				this.currentStreamingDidCheckpoint = false
 				this.assistantMessageContent = []
@@ -5095,6 +5108,13 @@ ${protocolHint}
 					} else {
 						// Reset counter when tools are used successfully
 						this.consecutiveNoToolUseCount = 0
+					}
+
+					if (this.taskCompletedInCurrentLoop) {
+						// Hard completion is terminal for this request loop. Do not replay the
+						// tool result into the model, which can trigger duplicate summaries.
+						this.userMessageContent = []
+						return true
 					}
 
 					// kilocode_change start

@@ -64,6 +64,9 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 
 	async execute(params: AttemptCompletionParams, task: Task, callbacks: AttemptCompletionCallbacks): Promise<void> {
 		const { result } = params
+		if ((task as Task & { hasTaskCompletedInCurrentLoop?: () => boolean }).hasTaskCompletedInCurrentLoop?.()) {
+			return
+		}
 		const { handleError, pushToolResult, askFinishSubTaskApproval } = callbacks
 
 		// Prevent attempt_completion if any tool failed in the current turn
@@ -180,6 +183,7 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 
 			TelemetryService.instance.captureTaskCompleted(task.taskId)
 			task.emit(RooCodeEventName.TaskCompleted, task.taskId, task.getTokenUsage(), task.toolUsage)
+			;(task as Task & { markTaskCompletedInCurrentLoop?: () => void }).markTaskCompletedInCurrentLoop?.()
 
 			// Check for subtask using parentTaskId (metadata-driven delegation)
 			if (task.parentTaskId) {
