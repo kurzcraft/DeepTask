@@ -10,6 +10,13 @@ import EventEmitter from "events"
 import { AskIgnoredError } from "./AskIgnoredError"
 
 import { Anthropic } from "@anthropic-ai/sdk"
+
+const DEFAULT_TOOL_RESULT_WAIT_TIMEOUT_MS = 120_000
+
+function getToolResultWaitTimeoutMs(): number {
+	const configured = Number(process.env.DEEPTASK_TOOL_RESULT_WAIT_TIMEOUT_MS)
+	return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_TOOL_RESULT_WAIT_TIMEOUT_MS
+}
 import OpenAI from "openai"
 import debounce from "lodash.debounce"
 import delay from "delay"
@@ -4958,7 +4965,43 @@ ${protocolHint}
 					// 	this.userMessageContentReady = true
 					// }
 
-					await pWaitFor(() => this.userMessageContentReady)
+					try {
+						await pWaitFor(() => this.userMessageContentReady, {
+							timeout: getToolResultWaitTimeoutMs(),
+							interval: 100,
+						})
+					} catch (error) {
+						const message =
+							error instanceof Error ? error.message : `Tool result wait failed: ${String(error)}`
+						console.error(`[Task#${this.taskId}] ${message}`)
+						this.didToolFailInCurrentTurn = true
+
+						const existingToolResultIds = new Set(
+							this.userMessageContent
+								.filter((content) => content.type === "tool_result")
+								.map((content) => content.tool_use_id),
+						)
+						for (const content of this.assistantMessageContent) {
+							if (
+								(content.type === "tool_use" || content.type === "mcp_tool_use") &&
+								content.id &&
+								!existingToolResultIds.has(content.id)
+							) {
+								this.pushToolResultToUserContent({
+									type: "tool_result",
+									tool_use_id: content.id,
+									content: `Tool execution did not finish in time: ${message}`,
+									is_error: true,
+								})
+							}
+						}
+
+						this.userMessageContentReady = true
+						this.userMessageContent.push({
+							type: "text",
+							text: `Tool execution did not finish in time. ${message}`,
+						})
+					}
 
 					// If the model did not tool use, then we need to tell it to
 					// either use a tool or attempt_completion.

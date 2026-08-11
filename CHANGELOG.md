@@ -1,5 +1,14 @@
 # Deeptask
 
+## 9.0.6
+
+### Patch Changes
+
+- Bound every assistant tool and dynamic MCP/custom-tool execution with an explicit timeout, visible error reporting, and continuation-safe lock cleanup instead of allowing a never-settling operation to hang the task.
+- Close native tool protocol turns with unique error `tool_result` blocks for timed-out or interrupted tool calls, preventing duplicate or missing results when late tool responses arrive.
+- Add regression coverage for never-settling custom tools, unknown-tool compatibility, task-result wait recovery, and the resulting bundle/type-check gates.
+- Update the bilingual README, packaged Marketplace introduction, installation commands, and release notes for 9.0.6.
+
 ## 9.0.5
 
 ### Patch Changes

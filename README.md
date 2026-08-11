@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.0.5</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.0.6</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,8 +35,8 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.0.5** 修复首次任务清单同步后的后续工具卡死：同步成功后立即解除进度清单 gate；同时清除
-> 已归档清单的旧绑定，并在同一次同步中重新发现和绑定唯一活动清单，不再反复报错或卡死。
+> **Deeptask 9.0.6** 为所有工具调用增加有界收口：永不返回的工具会在超时后生成明确错误、释放锁并继续任务；native
+> 工具协议会补齐唯一的错误结果，避免工具迟到时重复写入或缺失结果导致任务卡死。
 
 ## 你可以怎样使用 Deeptask
 
@@ -114,17 +114,17 @@ Deeptask 将任务视为可恢复状态机，而不是一次性回答。未完�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.0.5.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.0.6.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.0.5.vsix --force
+    codium --install-extension ./deeptask-9.0.6.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.0.5.vsix --force
+    code --install-extension ./deeptask-9.0.6.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

@@ -251,6 +251,48 @@ describe("presentAssistantMessage - Custom Tool Recording", () => {
 	})
 
 	describe("Regular tool recording", () => {
+		it("should continue after a custom tool never settles", async () => {
+			const toolCallId = "tool_call_custom_timeout_123"
+			const previousTimeout = process.env.DEEPTASK_TOOL_EXECUTION_TIMEOUT_MS
+			process.env.DEEPTASK_TOOL_EXECUTION_TIMEOUT_MS = "10"
+			mockTask.didCompleteReadingStream = true
+			mockTask.assistantMessageContent = [
+				{
+					type: "tool_use",
+					id: toolCallId,
+					name: "hanging_custom_tool",
+					params: {},
+					partial: false,
+				},
+			]
+
+			vi.mocked(customToolRegistry.has).mockReturnValue(true)
+			vi.mocked(customToolRegistry.get).mockReturnValue({
+				name: "hanging_custom_tool",
+				description: "A custom tool that never settles",
+				execute: vi.fn().mockImplementation(() => new Promise(() => {})),
+			})
+
+			try {
+				await expect(presentAssistantMessage(mockTask)).resolves.toBeUndefined()
+			} finally {
+				if (previousTimeout === undefined) {
+					delete process.env.DEEPTASK_TOOL_EXECUTION_TIMEOUT_MS
+				} else {
+					process.env.DEEPTASK_TOOL_EXECUTION_TIMEOUT_MS = previousTimeout
+				}
+			}
+
+			const toolResult = mockTask.userMessageContent.find(
+				(item: any) => item.type === "tool_result" && item.tool_use_id === toolCallId,
+			)
+			expect(toolResult).toBeDefined()
+			expect(toolResult.is_error).toBe(true)
+			expect(toolResult.content).toContain("timed out")
+			expect(mockTask.presentAssistantMessageLocked).toBe(false)
+			expect(mockTask.userMessageContentReady).toBe(true)
+		})
+
 		it("should record regular tool usage with actual tool name", async () => {
 			const toolCallId = "tool_call_read_file_123"
 			mockTask.assistantMessageContent = [

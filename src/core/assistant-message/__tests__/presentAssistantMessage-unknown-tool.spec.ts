@@ -43,6 +43,8 @@ describe("presentAssistantMessage - Unknown Tool Handling", () => {
 			browserSession: {
 				closeBrowser: vi.fn().mockResolvedValue(undefined),
 			},
+			shouldRejectToolUntilProgressListExpanded: vi.fn().mockReturnValue(false),
+			markActiveContinuationWorkToolUsed: vi.fn(),
 			recordToolUsage: vi.fn(),
 			recordToolError: vi.fn(),
 			toolRepetitionDetector: {

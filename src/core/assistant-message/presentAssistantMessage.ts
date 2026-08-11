@@ -305,13 +305,17 @@ export async function presentAssistantMessage(cline: Task) {
 				},
 			}
 
-			await useMcpToolTool.handle(cline, syntheticToolUse, {
-				askApproval,
-				handleError,
-				pushToolResult,
-				removeClosingTag: (tag, text) => text || "",
-				toolProtocol,
-			})
+			await withToolExecutionTimeout(
+				() =>
+					useMcpToolTool.handle(cline, syntheticToolUse, {
+						askApproval,
+						handleError,
+						pushToolResult,
+						removeClosingTag: (tag, text) => text || "",
+						toolProtocol,
+					}),
+				getToolExecutionTimeoutMs(),
+			)
 			break
 		}
 		case "text": {
@@ -820,12 +824,12 @@ export async function presentAssistantMessage(cline: Task) {
 				const sessionActive = hasStarted && !isClosed
 				// Only auto-close when no active browser session is present, and this isn't a browser_action
 				if (!sessionActive && block.name !== "browser_action") {
-					await cline.browserSession.closeBrowser()
+					await withToolExecutionTimeout(() => cline.browserSession.closeBrowser(), 10_000)
 				}
 			} catch {
 				// On any unexpected error, fall back to conservative behavior
 				if (block.name !== "browser_action") {
-					await cline.browserSession.closeBrowser()
+					await withToolExecutionTimeout(() => cline.browserSession.closeBrowser(), 10_000).catch(() => undefined)
 				}
 			}
 
@@ -962,7 +966,9 @@ export async function presentAssistantMessage(cline: Task) {
 			// actual action, not after a todo/status update or completion statement.
 			cline.markActiveContinuationWorkToolUsed(block.name)
 			// kilocode_change end
-			switch (block.name) {
+			await withToolExecutionTimeout(
+				async () => {
+					switch (block.name) {
 				case "write_to_file":
 					// await checkpointSaveAndMark(cline) // kilocode_change
 					await writeToFileTool.handle(cline, block as ToolUse<"write_to_file">, {
@@ -1315,7 +1321,10 @@ export async function presentAssistantMessage(cline: Task) {
 					}
 					break
 				}
-			}
+					}
+				},
+				getToolExecutionTimeoutMs(),
+			)
 
 			break
 			}
@@ -1335,7 +1344,7 @@ export async function presentAssistantMessage(cline: Task) {
 		cline.didToolFailInCurrentTurn = true
 
 		try {
-			await cline.say("error", errorMessage)
+			await withToolExecutionTimeout(() => cline.say("error", errorMessage), 10_000)
 		} catch (presentationError) {
 			console.error(
 				`[Task#${cline.taskId}.${cline.instanceId}] Failed to present tool error`,
@@ -1419,6 +1428,31 @@ export async function presentAssistantMessage(cline: Task) {
 		await yieldPromise()
 		await presentAssistantMessage(cline)
 		// kilocode_change end
+	}
+}
+
+const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 120_000
+
+function getToolExecutionTimeoutMs(): number {
+	const configured = Number(process.env.DEEPTASK_TOOL_EXECUTION_TIMEOUT_MS)
+	return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_TOOL_EXECUTION_TIMEOUT_MS
+}
+
+async function withToolExecutionTimeout<T>(operation: () => Promise<T>, timeoutMs: number): Promise<T> {
+	let timeoutId: NodeJS.Timeout | undefined
+	const timeout = new Promise<never>((_, reject) => {
+		timeoutId = setTimeout(
+			() => reject(new Error(`Tool execution timed out after ${timeoutMs}ms`)),
+			timeoutMs,
+		)
+	})
+
+	try {
+		return await Promise.race([operation(), timeout])
+	} finally {
+		if (timeoutId) {
+			clearTimeout(timeoutId)
+		}
 	}
 }
 
