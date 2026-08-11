@@ -10,6 +10,14 @@ vi.mock("../../prompts/responses", () => ({
 	},
 }))
 
+vi.mock("@roo-code/telemetry", () => ({
+	TelemetryService: {
+		instance: {
+			captureTaskCompleted: vi.fn(),
+		},
+	},
+}))
+
 // Mock vscode module
 vi.mock("vscode", () => ({
 	workspace: {
@@ -534,6 +542,56 @@ describe("attemptCompletionTool", () => {
 				expect(mockTask.consecutiveMistakeCount).toBe(0)
 				expect(mockTask.recordToolError).not.toHaveBeenCalled()
 			})
+		})
+	})
+
+	describe("terminal completion", () => {
+		it("returns after recording completion without waiting for completion feedback", async () => {
+			const block: AttemptCompletionToolUse = {
+				type: "tool_use",
+				name: "attempt_completion",
+				params: { result: "Task completed successfully" },
+				partial: false,
+			}
+			const mockSay = vi.fn().mockResolvedValue(undefined)
+			const mockEmit = vi.fn()
+			const mockAsk = vi.fn(() => new Promise(() => {}))
+			mockTask.say = mockSay
+			;(mockTask as any).ask = mockAsk
+			mockTask.emit = mockEmit as any
+			;(mockTask as any).emitFinalTokenUsageUpdate = vi.fn()
+			;(mockTask as any).getTokenUsage = vi.fn().mockReturnValue(undefined)
+			;(mockTask as any).toolUsage = undefined
+			;(mockTask as any).shouldRejectPrematureActiveContinuationCompletion = vi.fn().mockReturnValue(false)
+			;(mockTask as any).shouldDowngradeCompletionToActiveResponse = vi.fn().mockResolvedValue(false)
+
+			const callbacks: AttemptCompletionCallbacks = {
+				askApproval: mockAskApproval,
+				handleError: mockHandleError,
+				pushToolResult: mockPushToolResult,
+				removeClosingTag: mockRemoveClosingTag,
+				askFinishSubTaskApproval: mockAskFinishSubTaskApproval,
+				toolDescription: mockToolDescription,
+				toolProtocol: "xml",
+			}
+
+			await Promise.race([
+				attemptCompletionTool.handle(mockTask as Task, block, callbacks),
+				new Promise((_, reject) => setTimeout(() => reject(new Error("completion tool did not return")), 50)),
+			])
+
+			expect(mockSay).toHaveBeenCalledWith(
+				"completion_result",
+				"Task completed successfully",
+				undefined,
+				false,
+				undefined,
+				undefined,
+				{},
+			)
+			expect((mockTask as any).emitFinalTokenUsageUpdate).toHaveBeenCalledTimes(1)
+			expect(mockEmit).toHaveBeenCalledWith("taskCompleted", undefined, undefined, undefined)
+			expect(mockAsk).not.toHaveBeenCalled()
 		})
 	})
 

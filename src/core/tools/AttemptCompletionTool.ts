@@ -227,17 +227,12 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 				}
 			}
 
-			const { response, text, images } = await task.ask("completion_result", "", false)
-
-			if (response === "yesButtonClicked") {
-				return
-			}
-
-			// User provided feedback - push tool result to continue the conversation
-			await task.say("user_feedback", text ?? "", images)
-
-			const feedbackText = `The user has provided feedback on the results. Consider their input to continue the task, and then attempt completion again.\n<feedback>\n${text}\n</feedback>`
-			pushToolResult(formatResponse.toolResult(feedbackText, images))
+			// A completion_result is a terminal UI event. Waiting for its button or text
+			// response keeps this tool invocation open indefinitely, allowing the host tool
+			// watchdog to time out before the user can begin a separate continuation.
+			// The webview continuation route rehydrates completed tasks from the persisted
+			// completion_result row, so release the tool call as soon as completion is recorded.
+			return
 		} catch (error) {
 			await handleError("inspecting site", error as Error)
 		}
