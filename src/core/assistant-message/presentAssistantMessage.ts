@@ -963,6 +963,10 @@ export async function presentAssistantMessage(cline: Task) {
 						toolProtocol,
 					),
 				)
+				// This precondition failure is already a complete tool result. Interrupt any
+				// remaining stream content so the common rejection path advances the index
+				// and releases userMessageContentReady in the same presenter call.
+				cline.didRejectTool = true
 				break
 			}
 

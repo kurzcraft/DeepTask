@@ -10,13 +10,6 @@ import EventEmitter from "events"
 import { AskIgnoredError } from "./AskIgnoredError"
 
 import { Anthropic } from "@anthropic-ai/sdk"
-
-const DEFAULT_TOOL_RESULT_WAIT_TIMEOUT_MS = 30_000
-
-function getToolResultWaitTimeoutMs(): number {
-	const configured = Number(process.env.DEEPTASK_TOOL_RESULT_WAIT_TIMEOUT_MS)
-	return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_TOOL_RESULT_WAIT_TIMEOUT_MS
-}
 import OpenAI from "openai"
 import debounce from "lodash.debounce"
 import delay from "delay"
@@ -161,6 +154,38 @@ import { addOrMergeUserContent } from "./kilocode"
 import { AutoApprovalHandler, checkAutoApproval } from "../auto-approval"
 import { MessageManager } from "../message-manager"
 import { validateAndFixToolResultIds } from "./validateToolResultIds"
+
+const DEFAULT_TOOL_RESULT_WAIT_TIMEOUT_MS = 30_000
+
+function getToolResultWaitTimeoutMs(): number {
+	const configured = Number(process.env.DEEPTASK_TOOL_RESULT_WAIT_TIMEOUT_MS)
+	return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_TOOL_RESULT_WAIT_TIMEOUT_MS
+}
+
+export async function waitForToolResultReady(
+	task: Pick<Task, "userMessageContentReady" | "isWaitingForUserApproval">,
+	timeoutMs?: number,
+): Promise<void> {
+	if (timeoutMs === undefined) {
+		await pWaitFor(() => task.userMessageContentReady, { interval: 100 })
+		return
+	}
+
+	let remainingMs = timeoutMs
+	let lastTickAt = Date.now()
+	while (!task.userMessageContentReady) {
+		await new Promise((resolve) => setTimeout(resolve, Math.min(10, Math.max(1, remainingMs))))
+		const now = Date.now()
+		if (!task.isWaitingForUserApproval) {
+			remainingMs -= now - lastTickAt
+		}
+		lastTickAt = now
+
+		if (remainingMs <= 0 && !task.userMessageContentReady) {
+			throw new Error(`Tool result wait timed out after ${timeoutMs}ms`)
+		}
+	}
+}
 
 const MAX_EXPONENTIAL_BACKOFF_SECONDS = 600 // 10 minutes
 const DEFAULT_USAGE_COLLECTION_TIMEOUT_MS = 5000 // 5 seconds
@@ -2397,6 +2422,16 @@ ${protocolHint}
 		}
 
 		if (toolName === "write_to_file") {
+			return isTaskProgressPath(params?.path)
+		}
+
+		// Checklist recovery may require a surgical edit after native synchronization
+		// fails. Keep that edit strictly inside the active progress-file boundary.
+		if (toolName === "edit_file") {
+			return isTaskProgressPath(params?.file_path)
+		}
+
+		if (toolName === "apply_diff") {
 			return isTaskProgressPath(params?.path)
 		}
 
@@ -4979,11 +5014,11 @@ ${protocolHint}
 					)
 
 					try {
-						await pWaitFor(
-							() => this.userMessageContentReady,
-							hasIntegratedTerminalCommand
-								? { interval: 100 }
-								: { timeout: getToolResultWaitTimeoutMs(), interval: 100 },
+						// Commands and user-controlled approvals are intentionally unbounded. For
+						// other tool states, keep a watchdog that only consumes active execution time.
+						await waitForToolResultReady(
+							this,
+							hasIntegratedTerminalCommand ? undefined : getToolResultWaitTimeoutMs(),
 						)
 					} catch (error) {
 						const message =

@@ -2,20 +2,24 @@
 
 本补丁修复工具调用永不返回、异常路径或工具迟到时导致任务状态机卡死的问题：
 
-- 为普通工具、动态 MCP 工具和自定义工具执行增加显式有界超时；超时会生成模型可见的错误并释放 presenter 锁，后续任务轮次仍可继续。
+- 为普通工具、动态 MCP 工具和自定义工具执行保留有界故障兜底；超时会生成模型可见的错误并释放 presenter 锁，后续任务轮次仍可继续。
+- 人工工具审批不再消耗结果等待预算，可以持续等待用户批准或拒绝；审批结束后才恢复普通工具的有界故障计时。
+- 集成终端命令在真正完成前不设 Task 层固定时限，模型不会提前续接；运行中终端不计入保留上限，命令完成后才进入已完成终端裁剪链。
 - 在工具执行被拒绝、抛出异常、清理浏览器失败或等待结果超时时，保留错误上下文并执行有限恢复，不再把未结算的异步操作留给任务循环。
 - 对当前轮次所有带 ID 的 `tool_use`/`mcp_tool_use` 补发唯一错误 `tool_result`，保证 native 工具协议闭合；迟到结果会被去重，避免重复 ID 或缺失结果再次阻塞模型。
-- 为永不结算的自定义工具和旧 unknown-tool fixture 增加回归覆盖，并通过扩展 bundle 与全仓类型检查。
+- 进度门禁拒绝会立即写入 native 结构化错误结果、推进流式索引并触发下一轮，不再空等 30 秒。
+- 修复权威任务清单同步失败后的恢复死锁：仅允许在 `EXTRA/task/*.md` 的活动清单上使用 `edit_file` 或 `apply_diff` 修复绑定或内容，归档清单和项目代码仍受门禁保护；错误结果会保持模型可见，后续工具调用可继续。
 - 更新中英文 README、扩展包内 Marketplace 介绍页、安装命令和版本信息至 9.0.6。
 
 ## 验证
 
-- `presentAssistantMessage-unknown-tool.spec.ts`、`presentAssistantMessage-custom-tool.spec.ts`、`Task.spec.ts`：147 项通过，4 项跳过。
-- 扩展 bundle 构建成功；全仓 `check-types`：22 个任务成功。
-- `git diff --check` 通过。
-- 发布阶段将复验 VSIX manifest、扩展入口、工具防卡死标记、包内 README、VSCodium 安装版本和 GitHub Release 资产。
+- 目标回归共 5 个测试文件：228 项通过，4 项跳过。
+- `Task.spec.ts` 与 `TerminalRegistry.spec.ts`：155 项通过，4 项跳过，覆盖终端无界等待和完成态保留上限。
+- 扩展 bundle 构建成功；全仓 `check-types`：22 个任务成功；`git diff --check` 通过。
+- VSIX manifest、扩展入口、反卡死标记、包内 README 和 VSCodium 安装版本均通过复验。
 
-## 待发布产物
+## 发布产物
 
-- 文件：`deeptask-9.0.6.vsix`。
+- 文件：`deeptask-9.0.6.vsix`（40,436,036 字节）。
+- SHA-256：`e755a2b55569893f64d33d3cf6071213af36086982034bc5c02b65959b4488a1`。
 - Release：<https://github.com/kurzcraft/DeepTask/releases/tag/v9.0.6>。

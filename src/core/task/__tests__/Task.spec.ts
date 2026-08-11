@@ -9,7 +9,7 @@ import { Anthropic } from "@anthropic-ai/sdk"
 import type { GlobalState, ProviderSettings, ModelInfo } from "@roo-code/types"
 import { TelemetryService } from "@roo-code/telemetry"
 
-import { Task } from "../Task"
+import { Task, waitForToolResultReady } from "../Task"
 import { ClineProvider } from "../../webview/ClineProvider"
 import { ApiStreamChunk } from "../../../api/transform/stream"
 import { ContextProxy } from "../../config/ContextProxy"
@@ -3254,6 +3254,26 @@ describe("Queued message processing after condense", () => {
 			}),
 		).toBe(false)
 		expect(
+			task.shouldRejectToolUntilProgressListExpanded("edit_file", {
+				file_path: "EXTRA/task/NEW_WORK_PROGRESS.md",
+			}),
+		).toBe(false)
+		expect(
+			task.shouldRejectToolUntilProgressListExpanded("apply_diff", {
+				path: "EXTRA/task/NEW_WORK_PROGRESS.md",
+			}),
+		).toBe(false)
+		expect(
+			task.shouldRejectToolUntilProgressListExpanded("edit_file", {
+				file_path: "EXTRA/task/finished/ARCHIVED_PROGRESS.md",
+			}),
+		).toBe(true)
+		expect(
+			task.shouldRejectToolUntilProgressListExpanded("apply_diff", {
+				path: "src/core/task/Task.ts",
+			}),
+		).toBe(true)
+		expect(
 			task.shouldRejectToolUntilProgressListExpanded("write_to_file", { path: "src/core/task/Task.ts" }),
 		).toBe(true)
 		expect(task.shouldRejectToolUntilProgressListExpanded("execute_command", { command: "pwd" })).toBe(true)
@@ -3649,6 +3669,43 @@ describe("Queued message processing after condense", () => {
 		expect((task as any).continuationStatusOverride).toBe("active")
 		expect((task as any).endCurrentLoopAfterActiveCompletion).toBe(true)
 		expect(provider.updateTaskHistory).toHaveBeenCalledWith(expect.objectContaining({ status: "active" }))
+	})
+
+	describe("tool-result readiness", () => {
+		it("waits without a deadline for an integrated terminal command to really finish", async () => {
+			const state = { userMessageContentReady: false, isWaitingForUserApproval: false }
+			const waitPromise = waitForToolResultReady(state)
+			let settled = false
+			void waitPromise.finally(() => {
+				settled = true
+			})
+
+			await new Promise((resolve) => setTimeout(resolve, 30))
+			expect(settled).toBe(false)
+
+			state.userMessageContentReady = true
+			await expect(waitPromise).resolves.toBeUndefined()
+		})
+
+		it("does not consume the tool result budget while a user approval is pending", async () => {
+			const state = { userMessageContentReady: false, isWaitingForUserApproval: true }
+			const waitPromise = waitForToolResultReady(state, 10)
+
+			await new Promise((resolve) => setTimeout(resolve, 30))
+			state.userMessageContentReady = true
+
+			await expect(waitPromise).resolves.toBeUndefined()
+		})
+
+		it("times out after approval ends when no tool result is produced", async () => {
+			const state = { userMessageContentReady: false, isWaitingForUserApproval: true }
+			const waitPromise = waitForToolResultReady(state, 10)
+
+			await new Promise((resolve) => setTimeout(resolve, 30))
+			state.isWaitingForUserApproval = false
+
+			await expect(waitPromise).rejects.toThrow("Tool result wait timed out after 10ms")
+		})
 	})
 
 	it("does not send downgraded completion tool result back for another empty tool call", async () => {

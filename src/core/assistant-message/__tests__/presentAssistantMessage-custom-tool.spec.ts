@@ -251,6 +251,43 @@ describe("presentAssistantMessage - Custom Tool Recording", () => {
 		})
 	})
 
+	it("settles a progress-gate rejection immediately without invoking the tool", async () => {
+		const toolCallId = "tool_call_progress_gate_rejection_123"
+		mockTask.didCompleteReadingStream = true
+		mockTask.shouldRejectToolUntilProgressListExpanded.mockReturnValue(true)
+		mockTask.assistantMessageContent = [
+			{
+				type: "tool_use",
+				id: toolCallId,
+				name: "update_todo_list",
+				nativeArgs: { todos: "- [-] Reproduce failure" },
+				params: { todos: "- [-] Reproduce failure" },
+				partial: false,
+			},
+		]
+
+		await expect(presentAssistantMessage(mockTask)).resolves.toBeUndefined()
+
+		expect(mockTask.pushToolResultToUserContent).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "tool_result",
+				tool_use_id: toolCallId,
+			}),
+		)
+		const toolResult = mockTask.userMessageContent.find(
+			(item: any) => item.type === "tool_result" && item.tool_use_id === toolCallId,
+		)
+		expect(JSON.parse(toolResult.content)).toEqual(
+			expect.objectContaining({
+				status: "error",
+				error: expect.stringContaining("Do not use update_todo_list yet"),
+			}),
+		)
+		expect(mockTask.userMessageContentReady).toBe(true)
+		expect(mockTask.currentStreamingContentIndex).toBe(1)
+		expect(updateTodoListTool.handle).not.toHaveBeenCalled()
+	})
+
 	describe("Regular tool recording", () => {
 		it("should continue after a custom tool never settles", async () => {
 			const toolCallId = "tool_call_custom_timeout_123"
