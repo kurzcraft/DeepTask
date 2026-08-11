@@ -572,7 +572,32 @@ describe("ClineProvider flicker-free cancel", () => {
 		expect((provider as any).pendingOperations.size).toBe(0)
 	})
 
+	it("does not abort an already-cancelled instance twice during rehydration", async () => {
+		mockTask1.abort = true
+		;(provider as any).clineStack = [mockTask1]
+		;(provider as any).taskEventListeners = new WeakMap()
+		;(provider as any).taskEventListeners.set(mockTask1, [vi.fn()])
+
+		const historyItem: HistoryItem = {
+			id: "task-1",
+			number: 1,
+			task: "test task",
+			ts: Date.now(),
+			tokensIn: 100,
+			tokensOut: 200,
+			totalCost: 0.001,
+			workspace: "/test/workspace",
+		}
+
+		await provider.createTaskWithHistoryItem(historyItem)
+
+		expect(mockTask1.cancelCurrentRequest).toHaveBeenCalledTimes(1)
+		expect(mockTask1.abortTask).not.toHaveBeenCalled()
+		expect((provider as any).clineStack[0]).toBe(mockTask2)
+	})
+
 	it("should detach old abort listeners before aborting a streaming task during rehydration", async () => {
+		mockTask1.abort = false
 		;(provider as any).clineStack = [mockTask1]
 		;(provider as any).taskEventListeners = new WeakMap()
 		const mockCleanupFunctions = [vi.fn(), vi.fn()]

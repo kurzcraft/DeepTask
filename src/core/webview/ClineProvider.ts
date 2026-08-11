@@ -1227,12 +1227,14 @@ export class ClineProvider
 
 			oldTaskForRehydration.abortReason = "user_cancelled"
 			oldTaskForRehydration.cancelCurrentRequest()
-			try {
-				await oldTaskForRehydration.abortTask(true)
-			} catch (e) {
-				this.log(
-					`[createTaskWithHistoryItem] abortTask() failed for old task ${oldTaskForRehydration.taskId}.${oldTaskForRehydration.instanceId}: ${e.message}`,
-				)
+			if (!oldTaskForRehydration.abort) {
+				try {
+					await oldTaskForRehydration.abortTask(true)
+				} catch (e) {
+					this.log(
+						`[createTaskWithHistoryItem] abortTask() failed for old task ${oldTaskForRehydration.taskId}.${oldTaskForRehydration.instanceId}: ${e.message}`,
+					)
+				}
 			}
 			// kilocode_change end
 		} else {
@@ -3730,7 +3732,7 @@ export class ClineProvider
 		task.abandoned = true
 		const originalInstanceId = task.instanceId
 		task.cancelCurrentRequest()
-		task.abortTask()
+		await task.abortTask()
 		// kilocode_change end
 
 		// kilocode_change start

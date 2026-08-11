@@ -2756,6 +2756,36 @@ describe("Queued message processing after condense", () => {
 		})
 	})
 
+	it("reactivates the replacement instance before delivering an injected user message", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context,
+		})
+		;(provider as any).clineStack = [task]
+		;(task as any).abort = true
+		;(task as any).abandoned = true
+		;(task as any).abortReason = "user_cancelled"
+		;(task as any).didFinishAbortingStream = true
+		vi.spyOn(task as any, "getSavedClineMessages").mockResolvedValue([])
+		vi.spyOn(task as any, "getSavedApiConversationHistory").mockResolvedValue([
+			{ role: "user", content: [{ type: "text", text: "preserved context" }], ts: 1 },
+		])
+		const initiateSpy = vi.spyOn(task as any, "initiateTaskLoop").mockResolvedValue(undefined)
+
+		await task.resumeTaskFromHistory({ text: "latest user message", images: [] })
+
+		expect(task.abort).toBe(false)
+		expect(task.abandoned).toBe(false)
+		expect(task.abortReason).toBeUndefined()
+		expect(task.didFinishAbortingStream).toBe(false)
+		expect(initiateSpy).toHaveBeenCalledTimes(1)
+		expect(JSON.stringify(initiateSpy.mock.calls[0]?.[0])).toContain("latest user message")
+	})
+
 	it("rebuilds an edited resend from the persisted prefix without discarded branch context", async () => {
 		const provider = createProvider()
 		const task = new Task({

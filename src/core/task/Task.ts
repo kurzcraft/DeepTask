@@ -3097,6 +3097,19 @@ ${protocolHint}
 		images?: string[]
 		options?: UserContinuationOptions
 	}) {
+		// kilocode_change start
+		// An injected human payload starts a new restoration transaction on the
+		// replacement instance. Clear only cancellation inherited before this entry;
+		// any later cancel still wins while the asynchronous restoration proceeds.
+		const provider = this.providerRef.deref()
+		if (pendingContinuation && provider?.getCurrentTask?.() === this) {
+			this.abort = false
+			this.abandoned = false
+			this.abortReason = undefined
+			this.didFinishAbortingStream = false
+		}
+		// kilocode_change end
+
 		if (this.enableBridge) {
 			try {
 				await BridgeOrchestrator.subscribeToTask(this)
