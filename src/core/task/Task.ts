@@ -11,7 +11,7 @@ import { AskIgnoredError } from "./AskIgnoredError"
 
 import { Anthropic } from "@anthropic-ai/sdk"
 
-const DEFAULT_TOOL_RESULT_WAIT_TIMEOUT_MS = 120_000
+const DEFAULT_TOOL_RESULT_WAIT_TIMEOUT_MS = 30_000
 
 function getToolResultWaitTimeoutMs(): number {
 	const configured = Number(process.env.DEEPTASK_TOOL_RESULT_WAIT_TIMEOUT_MS)
@@ -418,6 +418,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 	// Ask
 	private askResponse?: ClineAskResponse
+	// A user-controlled approval is intentionally unbounded. Tool watchdogs use
+	// this flag to pause their execution budget while the task is awaiting input.
+	public isWaitingForUserApproval = false
 	private askResponseText?: string
 	private askResponseImages?: string[]
 	public lastMessageTs?: number
@@ -1880,26 +1883,32 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			// kilocode_change end
 		}
 
-		// Wait for askResponse to be set
-		await pWaitFor(
-			() => {
-				if (this.askResponse !== undefined || this.lastMessageTs !== askTs) {
-					return true
-				}
+		// Wait for askResponse to be set. This is user-controlled and intentionally
+		// unbounded; external tool watchdogs pause while this flag is true.
+		this.isWaitingForUserApproval = true
+		try {
+			await pWaitFor(
+				() => {
+					if (this.askResponse !== undefined || this.lastMessageTs !== askTs) {
+						return true
+					}
 
-				// kilocode_change start
-				// Do not auto-consume queued messages while blocked on an ask. The queued
-				// text may belong to an older UI state and can steal the response slot from
-				// the real prompt. Clear it so direct message paths can proceed.
-				if (!this.messageQueueService.isEmpty()) {
-					this.messageQueueService.clear()
-				}
-				// kilocode_change end
+					// kilocode_change start
+					// Do not auto-consume queued messages while blocked on an ask. The queued
+					// text may belong to an older UI state and can steal the response slot from
+					// the real prompt. Clear it so direct message paths can proceed.
+					if (!this.messageQueueService.isEmpty()) {
+						this.messageQueueService.clear()
+					}
+					// kilocode_change end
 
-				return false
-			},
-			{ interval: 100 },
-		)
+					return false
+				},
+				{ interval: 100 },
+			)
+		} finally {
+			this.isWaitingForUserApproval = false
+		}
 
 		if (this.lastMessageTs !== askTs) {
 			// Could happen if we send multiple asks in a row i.e. with
@@ -4965,11 +4974,17 @@ ${protocolHint}
 					// 	this.userMessageContentReady = true
 					// }
 
+					const hasIntegratedTerminalCommand = this.assistantMessageContent.some(
+						(content) => content.type === "tool_use" && content.name === "execute_command",
+					)
+
 					try {
-						await pWaitFor(() => this.userMessageContentReady, {
-							timeout: getToolResultWaitTimeoutMs(),
-							interval: 100,
-						})
+						await pWaitFor(
+							() => this.userMessageContentReady,
+							hasIntegratedTerminalCommand
+								? { interval: 100 }
+								: { timeout: getToolResultWaitTimeoutMs(), interval: 100 },
+						)
 					} catch (error) {
 						const message =
 							error instanceof Error ? error.message : `Tool result wait failed: ${String(error)}`

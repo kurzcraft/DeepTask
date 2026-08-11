@@ -80,6 +80,7 @@ describe("presentAssistantMessage - Custom Tool Recording", () => {
 			},
 			say: vi.fn().mockResolvedValue(undefined),
 			ask: vi.fn().mockResolvedValue({ response: "yesButtonClicked" }),
+			isWaitingForUserApproval: false,
 		}
 
 		// Add pushToolResultToUserContent method after mockTask is created so it can reference mockTask
@@ -291,6 +292,90 @@ describe("presentAssistantMessage - Custom Tool Recording", () => {
 			expect(toolResult.content).toContain("timed out")
 			expect(mockTask.presentAssistantMessageLocked).toBe(false)
 			expect(mockTask.userMessageContentReady).toBe(true)
+		})
+
+		it("ignores a late native tool result after its watchdog error closes the call", async () => {
+			const toolCallId = "tool_call_late_result_123"
+			const previousTimeout = process.env.DEEPTASK_TOOL_EXECUTION_TIMEOUT_MS
+			process.env.DEEPTASK_TOOL_EXECUTION_TIMEOUT_MS = "10"
+			mockTask.didCompleteReadingStream = true
+			mockTask.assistantMessageContent = [
+				{
+					type: "tool_use",
+					id: toolCallId,
+					name: "late_custom_tool",
+					params: {},
+					partial: false,
+				},
+			]
+			vi.mocked(customToolRegistry.has).mockReturnValue(true)
+			vi.mocked(customToolRegistry.get).mockReturnValue({
+				name: "late_custom_tool",
+				description: "Returns after the watchdog has failed",
+				execute: vi.fn().mockImplementation(
+					() => new Promise((resolve) => setTimeout(() => resolve("late success"), 40)),
+				),
+			})
+
+			try {
+				await expect(presentAssistantMessage(mockTask)).resolves.toBeUndefined()
+				await new Promise((resolve) => setTimeout(resolve, 50))
+			} finally {
+				if (previousTimeout === undefined) {
+					delete process.env.DEEPTASK_TOOL_EXECUTION_TIMEOUT_MS
+				} else {
+					process.env.DEEPTASK_TOOL_EXECUTION_TIMEOUT_MS = previousTimeout
+				}
+			}
+
+			const results = mockTask.userMessageContent.filter(
+				(item: any) => item.type === "tool_result" && item.tool_use_id === toolCallId,
+			)
+			expect(results).toHaveLength(1)
+			expect(results[0]).toEqual(expect.objectContaining({ is_error: true }))
+			expect(results[0].content).toContain("timed out")
+		})
+
+		it("does not time out while a user-controlled approval is pending", async () => {
+			const toolCallId = "tool_call_approval_wait_123"
+			const previousTimeout = process.env.DEEPTASK_TOOL_EXECUTION_TIMEOUT_MS
+			process.env.DEEPTASK_TOOL_EXECUTION_TIMEOUT_MS = "10"
+			mockTask.didCompleteReadingStream = true
+			mockTask.isWaitingForUserApproval = true
+			mockTask.assistantMessageContent = [
+				{
+					type: "tool_use",
+					id: toolCallId,
+					name: "waiting_custom_tool",
+					params: {},
+					partial: false,
+				},
+			]
+			vi.mocked(customToolRegistry.has).mockReturnValue(true)
+			vi.mocked(customToolRegistry.get).mockReturnValue({
+				name: "waiting_custom_tool",
+				description: "Completes after a user approval wait",
+				execute: vi.fn().mockImplementation(
+					() => new Promise((resolve) => setTimeout(() => resolve("approved result"), 30)),
+				),
+			})
+
+			try {
+				await expect(presentAssistantMessage(mockTask)).resolves.toBeUndefined()
+			} finally {
+				if (previousTimeout === undefined) {
+					delete process.env.DEEPTASK_TOOL_EXECUTION_TIMEOUT_MS
+				} else {
+					process.env.DEEPTASK_TOOL_EXECUTION_TIMEOUT_MS = previousTimeout
+				}
+			}
+
+			const toolResult = mockTask.userMessageContent.find(
+				(item: any) => item.type === "tool_result" && item.tool_use_id === toolCallId,
+			)
+			expect(toolResult).toEqual(expect.objectContaining({ content: "approved result" }))
+			expect(toolResult).not.toHaveProperty("is_error")
+			expect(mockTask.presentAssistantMessageLocked).toBe(false)
 		})
 
 		it("should record regular tool usage with actual tool name", async () => {

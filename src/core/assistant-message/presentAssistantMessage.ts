@@ -315,6 +315,7 @@ export async function presentAssistantMessage(cline: Task) {
 						toolProtocol,
 					}),
 				getToolExecutionTimeoutMs(),
+				cline,
 			)
 			break
 		}
@@ -620,14 +621,19 @@ export async function presentAssistantMessage(cline: Task) {
 						}
 					}
 
-					// Add tool_result with text content only
-					cline.pushToolResultToUserContent({
+					// A watchdog error may have closed this native call while its original
+					// promise was still unwinding. Do not let a late result append images or
+					// mutate the next turn after that error has been delivered.
+					const didPushResult = cline.pushToolResultToUserContent({
 						type: "tool_result",
 						tool_use_id: toolCallId,
 						content: resultContent,
 					})
+					if (!didPushResult) {
+						return
+					}
 
-					// Add image blocks separately after tool_result
+					// Add image blocks separately after the accepted tool_result.
 					if (imageBlocks.length > 0) {
 						cline.userMessageContent.push(...imageBlocks)
 					}
@@ -1323,7 +1329,8 @@ export async function presentAssistantMessage(cline: Task) {
 				}
 					}
 				},
-				getToolExecutionTimeoutMs(),
+				getToolExecutionTimeoutMs(block.name),
+				cline,
 			)
 
 			break
@@ -1431,28 +1438,64 @@ export async function presentAssistantMessage(cline: Task) {
 	}
 }
 
-const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 120_000
+const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 30_000
 
-function getToolExecutionTimeoutMs(): number {
+function getToolExecutionTimeoutMs(toolName?: string): number | undefined {
+	// The integrated terminal owns command lifetime. Its configured timeout, shell
+	// integration, output-stream, and terminal-close paths decide when a command is
+	// complete or failed; a presenter timeout would report a running command as failed.
+	if (toolName === "execute_command") {
+		return undefined
+	}
+
 	const configured = Number(process.env.DEEPTASK_TOOL_EXECUTION_TIMEOUT_MS)
 	return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_TOOL_EXECUTION_TIMEOUT_MS
 }
 
-async function withToolExecutionTimeout<T>(operation: () => Promise<T>, timeoutMs: number): Promise<T> {
-	let timeoutId: NodeJS.Timeout | undefined
-	const timeout = new Promise<never>((_, reject) => {
-		timeoutId = setTimeout(
-			() => reject(new Error(`Tool execution timed out after ${timeoutMs}ms`)),
-			timeoutMs,
-		)
-	})
+async function withToolExecutionTimeout<T>(
+	operation: () => Promise<T>,
+	timeoutMs?: number,
+	task?: Task,
+): Promise<T> {
+	if (timeoutMs === undefined) {
+		return operation()
+	}
 
-	try {
-		return await Promise.race([operation(), timeout])
-	} finally {
-		if (timeoutId) {
-			clearTimeout(timeoutId)
+	const operationPromise = operation()
+	const startedAt = Date.now()
+	let pausedDurationMs = 0
+	let approvalStartedAt: number | undefined
+
+	while (true) {
+		if (task?.isWaitingForUserApproval) {
+			approvalStartedAt ??= Date.now()
+		} else if (approvalStartedAt !== undefined) {
+			pausedDurationMs += Date.now() - approvalStartedAt
+			approvalStartedAt = undefined
 		}
+
+		const activeApprovalPauseMs = approvalStartedAt === undefined ? 0 : Date.now() - approvalStartedAt
+		const elapsedMs = Date.now() - startedAt - pausedDurationMs - activeApprovalPauseMs
+		const remainingMs = timeoutMs - elapsedMs
+		if (remainingMs <= 0) {
+			throw new Error(`Tool execution timed out after ${timeoutMs}ms`)
+		}
+
+		const outcome = await Promise.race([
+			operationPromise.then(
+				(value) => ({ type: "result" as const, value }),
+				(error) => ({ type: "error" as const, error }),
+			),
+			new Promise<{ type: "tick" }>((resolve) => setTimeout(() => resolve({ type: "tick" }), Math.min(100, remainingMs))),
+		])
+
+		if (outcome.type === "result") {
+			return outcome.value
+		}
+		if (outcome.type === "error") {
+			throw outcome.error
+		}
+
 	}
 }
 
