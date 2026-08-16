@@ -208,6 +208,7 @@ const baseProviderSettingsSchema = z.object({
 	modelTemperature: z.number().nullish(),
 	rateLimitSeconds: z.number().optional(),
 	rateLimitAfter: z.boolean().optional(), // kilocode_change
+	disableApiRequestTimeout: z.boolean().optional(), // kilocode_change
 	consecutiveMistakeLimit: z.number().min(0).optional(),
 
 	// Model reasoning.

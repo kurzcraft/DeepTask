@@ -1108,7 +1108,11 @@ const ApiOptions = ({
 						}
 						<RateLimitSecondsControl
 							value={apiConfiguration.rateLimitSeconds || 0}
+							disableTimeout={apiConfiguration.disableApiRequestTimeout}
 							onChange={(value) => setApiConfigurationField("rateLimitSeconds", value)}
+							onDisableTimeoutChange={(value) =>
+								setApiConfigurationField("disableApiRequestTimeout", value)
+							}
 						/>
 						<ConsecutiveMistakeLimitControl
 							value={

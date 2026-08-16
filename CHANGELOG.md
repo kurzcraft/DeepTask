@@ -1,5 +1,13 @@
 # Deeptask
 
+## 9.0.7
+
+### Patch Changes
+
+- Add a default-checked “No timeout limit” option in provider advanced rate-limit settings so the same API request waits indefinitely when there is no response.
+- Add a seconds input and save button next to the minimum-interval slider, keep the two controls in sync, and disable both when unlimited waiting is enabled.
+- Update the bilingual README, packaged Marketplace introduction, installation commands, and release notes for 9.0.7.
+
 ## 9.0.6
 
 ### Patch Changes

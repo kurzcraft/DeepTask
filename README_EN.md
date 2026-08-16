@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.0.6</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.0.7</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,9 +35,9 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.0.6** gives every tool call a bounded completion path: a never-settling tool now times out with an
-> explicit error, releases its lock, and keeps the task reachable. Native tool turns also receive unique error
-> results, preventing late tool responses from causing duplicate or missing results and hanging the task.
+> **Deeptask 9.0.7** adds a default-checked “No timeout limit” option to provider advanced rate-limit settings so the
+> same API request waits indefinitely even when there is no response. The minimum-interval slider now has a seconds
+> input and save button that stay in sync, and both interval controls are ignored while unlimited waiting is enabled.
 
 ## What you can do with Deeptask
 
@@ -115,17 +115,17 @@ Deeptask treats work as a recoverable state machine rather than a one-shot answe
 
 ## Start in three minutes
 
-1. Download `deeptask-9.0.6.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.0.7.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.0.6.vsix --force
+    codium --install-extension ./deeptask-9.0.7.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.0.6.vsix --force
+    code --install-extension ./deeptask-9.0.7.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

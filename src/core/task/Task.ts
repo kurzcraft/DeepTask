@@ -3489,11 +3489,21 @@ ${protocolHint}
 	}
 
 	// kilocode_change start
-	private getApiStreamIdleTimeoutMs(): number {
+	private isApiRequestTimeoutDisabled(): boolean {
+		// Default to unlimited waiting when the setting is unset so new profiles
+		// match the checked "no timeout" checkbox.
+		return this.apiConfiguration?.disableApiRequestTimeout !== false
+	}
+
+	private getApiStreamIdleTimeoutMs(): number | undefined {
 		const timeoutOverride = Number(process.env.KILOCODE_API_STREAM_IDLE_TIMEOUT_MS)
 
 		if (Number.isFinite(timeoutOverride) && timeoutOverride > 0) {
 			return timeoutOverride
+		}
+
+		if (this.isApiRequestTimeoutDisabled()) {
+			return undefined
 		}
 
 		return Task.DEFAULT_API_STREAM_IDLE_TIMEOUT_MS
@@ -3502,6 +3512,13 @@ ${protocolHint}
 	private createApiStreamTimeoutPromise(phase: string): { promise: Promise<never>; cleanup: () => void } {
 		let timeoutId: NodeJS.Timeout | undefined
 		const timeoutMs = this.getApiStreamIdleTimeoutMs()
+		if (timeoutMs === undefined) {
+			return {
+				promise: new Promise<never>(() => {}),
+				cleanup: () => {},
+			}
+		}
+
 		const promise = new Promise<never>((_, reject) => {
 			timeoutId = setTimeout(() => {
 				const error = new Error(
@@ -5617,8 +5634,12 @@ ${protocolHint}
 	 */
 	private async maybeWaitForProviderRateLimit(retryAttempt: number): Promise<void> {
 		const state = await this.providerRef.deref()?.getState()
-		const rateLimitSeconds =
-			state?.apiConfiguration?.rateLimitSeconds ?? this.apiConfiguration?.rateLimitSeconds ?? 0
+		const apiConfiguration = state?.apiConfiguration ?? this.apiConfiguration
+		if (apiConfiguration?.disableApiRequestTimeout !== false) {
+			return
+		}
+
+		const rateLimitSeconds = apiConfiguration?.rateLimitSeconds ?? 0
 
 		if (rateLimitSeconds <= 0 || !Task.lastGlobalApiRequestTime) {
 			return
@@ -6200,9 +6221,11 @@ ${protocolHint}
 				MAX_EXPONENTIAL_BACKOFF_SECONDS,
 			)
 
-			// Respect provider rate limit window
+			// Respect provider rate limit window unless unlimited waiting is enabled.
 			let rateLimitDelay = 0
-			const rateLimit = (state?.apiConfiguration ?? this.apiConfiguration)?.rateLimitSeconds || 0
+			const apiConfiguration = state?.apiConfiguration ?? this.apiConfiguration
+			const rateLimit =
+				apiConfiguration?.disableApiRequestTimeout === false ? (apiConfiguration?.rateLimitSeconds || 0) : 0
 			if (Task.lastGlobalApiRequestTime && rateLimit > 0) {
 				const elapsed = performance.now() - Task.lastGlobalApiRequestTime
 				rateLimitDelay = Math.ceil(Math.min(rateLimit, Math.max(0, rateLimit * 1000 - elapsed) / 1000))

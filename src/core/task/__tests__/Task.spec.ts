@@ -1051,6 +1051,7 @@ describe("Cline", () => {
 					apiProvider: "anthropic",
 					apiKey: "test-key",
 					rateLimitSeconds: 5,
+					disableApiRequestTimeout: false,
 				}
 
 				mockProvider = {
@@ -1368,6 +1369,106 @@ describe("Cline", () => {
 				await childIterator.next()
 
 				// Verify no delay was applied
+				expect(mockDelay).not.toHaveBeenCalled()
+			})
+
+			it("does not apply the minimum interval when unlimited waiting is enabled", async () => {
+				mockApiConfig.disableApiRequestTimeout = true
+				mockProvider.getState.mockResolvedValue({
+					apiConfiguration: mockApiConfig,
+				})
+
+				const parent = new Task({
+					provider: mockProvider,
+					apiConfiguration: mockApiConfig,
+					task: "parent task",
+					startTask: false,
+					context: mockExtensionContext,
+				})
+
+				const mockStream = {
+					async *[Symbol.asyncIterator]() {
+						yield { type: "text", text: "response" }
+					},
+					async next() {
+						return { done: true, value: { type: "text", text: "response" } }
+					},
+					async return() {
+						return { done: true, value: undefined }
+					},
+					async throw(e: any) {
+						throw e
+					},
+					[Symbol.asyncDispose]: async () => {},
+				} as AsyncGenerator<ApiStreamChunk>
+
+				vi.spyOn(parent.api, "createMessage").mockReturnValue(mockStream)
+				const parentIterator = parent.attemptApiRequest(0)
+				await parentIterator.next()
+
+				const child = new Task({
+					provider: mockProvider,
+					apiConfiguration: mockApiConfig,
+					task: "child task",
+					parentTask: parent,
+					rootTask: parent,
+					startTask: false,
+					context: mockExtensionContext,
+				})
+				vi.spyOn(child.api, "createMessage").mockReturnValue(mockStream)
+				const childIterator = child.attemptApiRequest(0)
+				await childIterator.next()
+
+				expect(mockDelay).not.toHaveBeenCalled()
+			})
+
+			it("does not apply the minimum interval when the no-timeout setting is unset", async () => {
+				delete mockApiConfig.disableApiRequestTimeout
+				mockProvider.getState.mockResolvedValue({
+					apiConfiguration: mockApiConfig,
+				})
+
+				const parent = new Task({
+					provider: mockProvider,
+					apiConfiguration: mockApiConfig,
+					task: "parent task",
+					startTask: false,
+					context: mockExtensionContext,
+				})
+
+				const mockStream = {
+					async *[Symbol.asyncIterator]() {
+						yield { type: "text", text: "response" }
+					},
+					async next() {
+						return { done: true, value: { type: "text", text: "response" } }
+					},
+					async return() {
+						return { done: true, value: undefined }
+					},
+					async throw(e: any) {
+						throw e
+					},
+					[Symbol.asyncDispose]: async () => {},
+				} as AsyncGenerator<ApiStreamChunk>
+
+				vi.spyOn(parent.api, "createMessage").mockReturnValue(mockStream)
+				const parentIterator = parent.attemptApiRequest(0)
+				await parentIterator.next()
+
+				const child = new Task({
+					provider: mockProvider,
+					apiConfiguration: mockApiConfig,
+					task: "child task",
+					parentTask: parent,
+					rootTask: parent,
+					startTask: false,
+					context: mockExtensionContext,
+				})
+				vi.spyOn(child.api, "createMessage").mockReturnValue(mockStream)
+				const childIterator = child.attemptApiRequest(0)
+				await childIterator.next()
+
 				expect(mockDelay).not.toHaveBeenCalled()
 			})
 
@@ -1952,6 +2053,41 @@ describe("Cline", () => {
 				await vi.advanceTimersByTimeAsync(10)
 				await timeoutPromise
 				expect(abortSpy).toHaveBeenCalled()
+
+				timeout.cleanup()
+				if (originalTimeout === undefined) {
+					delete process.env.KILOCODE_API_STREAM_IDLE_TIMEOUT_MS
+				} else {
+					process.env.KILOCODE_API_STREAM_IDLE_TIMEOUT_MS = originalTimeout
+				}
+				vi.useRealTimers()
+			})
+
+			it("does not time out the same request when unlimited waiting is enabled", async () => {
+				vi.useFakeTimers()
+				const originalTimeout = process.env.KILOCODE_API_STREAM_IDLE_TIMEOUT_MS
+				delete process.env.KILOCODE_API_STREAM_IDLE_TIMEOUT_MS
+
+				const task = new Task({
+					provider: mockProvider,
+					apiConfiguration: { ...mockApiConfig, disableApiRequestTimeout: true },
+					task: "test task",
+					startTask: false,
+					context: mockExtensionContext, // kilocode_change
+				})
+				const abortController = new AbortController()
+				const abortSpy = vi.spyOn(abortController, "abort")
+				task.currentRequestAbortController = abortController
+
+				const timeout = (task as any).createApiStreamTimeoutPromise("test chunk")
+				const timeoutState = { rejected: false }
+				void timeout.promise.catch(() => {
+					timeoutState.rejected = true
+				})
+
+				await vi.advanceTimersByTimeAsync(120_000)
+				expect(timeoutState.rejected).toBe(false)
+				expect(abortSpy).not.toHaveBeenCalled()
 
 				timeout.cleanup()
 				if (originalTimeout === undefined) {

@@ -630,7 +630,14 @@
 		},
 		"rateLimitSeconds": {
 			"label": "Rate limit",
-			"description": "Minimum time between API requests."
+			"description": "Minimum time between API requests: {{value}} seconds.",
+			"unit": "s",
+			"save": "Save",
+			"disabledDescription": "Unlimited waiting is enabled, so the minimum interval does not apply.",
+			"disableTimeout": {
+				"label": "No timeout limit",
+				"description": "When checked, the same request waits indefinitely even if there is no response. The minimum-interval slider and seconds input do not apply."
+			}
 		},
 		"consecutiveMistakeLimit": {
 			"label": "Error & Repetition Limit",
