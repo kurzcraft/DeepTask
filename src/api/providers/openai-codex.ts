@@ -28,6 +28,7 @@ import { openAiCodexOAuthManager } from "../../integrations/openai-codex/oauth"
 import { t } from "../../i18n"
 
 import { DEFAULT_HEADERS } from "./constants" // kilocode-change
+import { getApiRequestTimeout } from "./utils/timeout-config" // kilocode_change
 
 // Get extension version for User-Agent header
 const extensionVersion: string = require("../../package.json").version ?? "unknown"
@@ -372,6 +373,7 @@ export class OpenAiCodexHandler extends BaseProvider /* kilocode_change: impleme
 						apiKey: accessToken,
 						baseURL: CODEX_API_BASE_URL,
 						defaultHeaders: codexHeaders,
+						timeout: getApiRequestTimeout(this.options), // kilocode_change
 					})
 
 				const stream = (await (client as any).responses.create(requestBody, {

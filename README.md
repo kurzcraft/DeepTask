@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.0.7</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.0.8</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.0.7** 在提供商高级设置的 API 请求频率限制中增加默认勾选的「不设超时限制」：同一请求即使没有回应也会无限等待；最小间隔滑块旁新增秒数输入和保存按钮，两者保持协同，勾选无限等待后这些间隔控件不会生效。
+> **Deeptask 9.0.8** 修复「不设超时限制」在 OpenAI 兼容客户端层被 SDK 默认 600 秒截断的问题：勾选后同一请求会继续无限等待，不再在约 10 分钟后被客户端超时中止。
 
 ## 你可以怎样使用 Deeptask
 
@@ -113,17 +113,17 @@ Deeptask 将任务视为可恢复状态机，而不是一次性回答。未完�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.0.7.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.0.8.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.0.7.vsix --force
+    codium --install-extension ./deeptask-9.0.8.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.0.7.vsix --force
+    code --install-extension ./deeptask-9.0.8.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

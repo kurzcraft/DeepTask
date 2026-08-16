@@ -1,5 +1,13 @@
 # Deeptask
 
+## 9.0.8
+
+### Patch Changes
+
+- Honor the default-checked “No timeout limit” option at the OpenAI-compatible SDK client layer, so LM Studio and other OpenAI clients no longer abort a live stream after the SDK’s 600-second default.
+- Stop mapping a configured `0` timeout to `undefined` or `0`, which previously either restored the 600-second SDK default or aborted immediately; unlimited waiting now uses the 32-bit `setTimeout` ceiling.
+- Update the bilingual README, packaged Marketplace introduction, installation commands, and release notes for 9.0.8.
+
 ## 9.0.7
 
 ### Patch Changes

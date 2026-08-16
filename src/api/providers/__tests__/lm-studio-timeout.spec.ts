@@ -29,7 +29,7 @@ vitest.mock("openai", () => {
 })
 
 // kilocode_change: own timeout
-describe.skip("LmStudioHandler timeout configuration", () => {
+describe("LmStudioHandler timeout configuration", () => {
 	beforeEach(() => {
 		vitest.clearAllMocks()
 	})
@@ -41,11 +41,12 @@ describe.skip("LmStudioHandler timeout configuration", () => {
 			apiModelId: "llama2",
 			lmStudioModelId: "llama2",
 			lmStudioBaseUrl: "http://localhost:1234",
+			disableApiRequestTimeout: false,
 		}
 
 		new LmStudioHandler(options)
 
-		expect(getApiRequestTimeout).toHaveBeenCalled()
+		expect(getApiRequestTimeout).toHaveBeenCalledWith(options)
 		expect(mockOpenAIConstructor).toHaveBeenCalledWith(
 			expect.objectContaining({
 				baseURL: "http://localhost:1234/v1",
@@ -62,10 +63,12 @@ describe.skip("LmStudioHandler timeout configuration", () => {
 			apiModelId: "llama2",
 			lmStudioModelId: "llama2",
 			lmStudioBaseUrl: "http://localhost:1234",
+			disableApiRequestTimeout: false,
 		}
 
 		new LmStudioHandler(options)
 
+		expect(getApiRequestTimeout).toHaveBeenCalledWith(options)
 		expect(mockOpenAIConstructor).toHaveBeenCalledWith(
 			expect.objectContaining({
 				timeout: 1200000, // 1200 seconds in milliseconds
@@ -73,8 +76,8 @@ describe.skip("LmStudioHandler timeout configuration", () => {
 		)
 	})
 
-	it("should handle zero timeout (no timeout)", () => {
-		;(getApiRequestTimeout as any).mockReturnValue(0)
+	it("should pass the unlimited timeout ceiling when no-timeout is enabled", () => {
+		;(getApiRequestTimeout as any).mockReturnValue(2_147_483_647)
 
 		const options: ApiHandlerOptions = {
 			apiModelId: "llama2",
@@ -83,9 +86,10 @@ describe.skip("LmStudioHandler timeout configuration", () => {
 
 		new LmStudioHandler(options)
 
+		expect(getApiRequestTimeout).toHaveBeenCalledWith(options)
 		expect(mockOpenAIConstructor).toHaveBeenCalledWith(
 			expect.objectContaining({
-				timeout: 0, // No timeout
+				timeout: 2_147_483_647,
 			}),
 		)
 	})

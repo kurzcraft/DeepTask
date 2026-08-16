@@ -15,6 +15,7 @@ import { BaseProvider } from "./base-provider"
 import type { SingleCompletionHandler } from "../index"
 import { handleOpenAIError } from "./utils/openai-error-handler"
 import { XmlMatcher } from "../../utils/xml-matcher"
+import { getApiRequestTimeout } from "./utils/timeout-config"
 
 export class NanoGptHandler extends BaseProvider implements SingleCompletionHandler {
 	protected options: ApiHandlerOptions
@@ -32,7 +33,12 @@ export class NanoGptHandler extends BaseProvider implements SingleCompletionHand
 		const baseURL = "https://nano-gpt.com/api/v1"
 		const apiKey = this.options.nanoGptApiKey ?? "not-provided"
 
-		this.client = new OpenAI({ baseURL, apiKey, defaultHeaders: DEFAULT_HEADERS })
+		this.client = new OpenAI({
+			baseURL,
+			apiKey,
+			defaultHeaders: DEFAULT_HEADERS,
+			timeout: getApiRequestTimeout(this.options),
+		})
 	}
 
 	async *createMessage(

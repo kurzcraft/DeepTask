@@ -93,14 +93,15 @@ describe("BaseOpenAiCompatibleProvider Timeout Configuration", () => {
 		)
 	})
 
-	it("should handle zero timeout (no timeout)", () => {
-		;(getApiRequestTimeout as any).mockReturnValue(0)
+	it("should handle unlimited timeout without falling back to the SDK default", () => {
+		;(getApiRequestTimeout as any).mockReturnValue(2_147_483_647)
 
 		new TestOpenAiCompatibleProvider("test-api-key")
 
+		expect(getApiRequestTimeout).toHaveBeenCalled()
 		expect(mockOpenAIConstructor).toHaveBeenCalledWith(
 			expect.objectContaining({
-				timeout: 0,
+				timeout: 2_147_483_647,
 			}),
 		)
 	})

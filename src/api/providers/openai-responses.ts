@@ -42,7 +42,7 @@ export class OpenAiCompatibleResponsesHandler extends BaseProvider implements Si
 
 		const baseURL = this.options.openAiBaseUrl ?? "https://api.openai.com/v1"
 		const apiKey = this.options.openAiApiKey ?? "not-provided"
-		const timeout = getApiRequestTimeout()
+		const timeout = getApiRequestTimeout(this.options) // kilocode_change
 		const isAzureAiInference = this._isAzureAiInference(this.options.openAiBaseUrl)
 		const urlHost = this._getUrlHost(this.options.openAiBaseUrl)
 		const isAzureOpenAi = urlHost === "azure.com" || urlHost.endsWith(".azure.com") || options.openAiUseAzure

@@ -49,7 +49,7 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 			...(this.options.openAiHeaders || {}),
 		}
 
-		const timeout = getApiRequestTimeout()
+		const timeout = getApiRequestTimeout(this.options) // kilocode_change
 
 		if (isAzureAiInference) {
 			// Azure AI Inference Service (e.g., for DeepSeek) uses a different path structure

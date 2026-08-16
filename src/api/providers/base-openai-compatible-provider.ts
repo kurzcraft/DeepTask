@@ -64,7 +64,7 @@ export abstract class BaseOpenAiCompatibleProvider<ModelName extends string>
 			baseURL,
 			apiKey: this.options.apiKey,
 			defaultHeaders: DEFAULT_HEADERS,
-			timeout: getApiRequestTimeout(),
+			timeout: getApiRequestTimeout(this.options), // kilocode_change
 		})
 	}
 

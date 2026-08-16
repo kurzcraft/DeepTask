@@ -8,6 +8,7 @@ import { BaseProvider } from "./base-provider"
 import { getModels, getModelsFromCache } from "./fetchers/modelCache"
 
 import { DEFAULT_HEADERS } from "./constants"
+import { getApiRequestTimeout } from "./utils/timeout-config" // kilocode_change
 
 const TEMPERATURE_UNSUPPORTED_PREFIXES = ["openai/o3", "openai/gpt5", "gpt-5"] // kilocode_change
 
@@ -54,6 +55,7 @@ export abstract class RouterProvider extends BaseProvider {
 				...DEFAULT_HEADERS,
 				...(options.openAiHeaders || {}),
 			},
+			timeout: getApiRequestTimeout(options), // kilocode_change
 		})
 	}
 

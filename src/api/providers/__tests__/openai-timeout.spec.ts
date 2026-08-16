@@ -56,7 +56,7 @@ describe("OpenAiHandler timeout configuration", () => {
 
 		new OpenAiHandler(options)
 
-		expect(getApiRequestTimeout).toHaveBeenCalled()
+		expect(getApiRequestTimeout).toHaveBeenCalledWith(options)
 		expect(mockOpenAIConstructor).toHaveBeenCalledWith(
 			expect.objectContaining({
 				baseURL: "https://api.openai.com/v1",
@@ -125,8 +125,8 @@ describe("OpenAiHandler timeout configuration", () => {
 		)
 	})
 
-	it("should handle zero timeout (no timeout)", () => {
-		;(getApiRequestTimeout as any).mockReturnValue(0)
+	it("should handle unlimited timeout without falling back to the SDK default", () => {
+		;(getApiRequestTimeout as any).mockReturnValue(2_147_483_647)
 
 		const options: ApiHandlerOptions = {
 			apiModelId: "gpt-4",
@@ -135,9 +135,10 @@ describe("OpenAiHandler timeout configuration", () => {
 
 		new OpenAiHandler(options)
 
+		expect(getApiRequestTimeout).toHaveBeenCalledWith(options)
 		expect(mockOpenAIConstructor).toHaveBeenCalledWith(
 			expect.objectContaining({
-				timeout: 0, // No timeout
+				timeout: 2_147_483_647,
 			}),
 		)
 	})
