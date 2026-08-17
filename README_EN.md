@@ -35,8 +35,8 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.0.8** honors the default-checked “No timeout limit” option at the OpenAI-compatible SDK client layer, so
-> the same API request keeps waiting instead of being aborted after the SDK’s 600-second default.
+> **Deeptask 9.0.8** honors the default-checked “No timeout limit” option at the OpenAI-compatible SDK client layer, and
+> forwards LM Studio `reasoning_content` so thinking models such as Qwen3.8 no longer look hung when `content` stays empty.
 
 ## What you can do with Deeptask
 

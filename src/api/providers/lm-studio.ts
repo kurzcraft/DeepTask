@@ -18,6 +18,35 @@ import { getModelsFromCache } from "./fetchers/modelCache"
 import { getApiRequestTimeout } from "./utils/timeout-config"
 import { handleOpenAIError } from "./utils/openai-error-handler"
 
+// kilocode_change start
+function getOpenAiReasoningText(part: unknown): string | undefined {
+	if (!part || typeof part !== "object") {
+		return undefined
+	}
+
+	const candidate = part as { reasoning_content?: unknown; reasoning?: unknown }
+	if (typeof candidate.reasoning_content === "string" && candidate.reasoning_content.length > 0) {
+		return candidate.reasoning_content
+	}
+	if (typeof candidate.reasoning === "string" && candidate.reasoning.length > 0) {
+		return candidate.reasoning
+	}
+	return undefined
+}
+
+function wrapLmStudioError(error: unknown): Error {
+	const detail = error instanceof Error ? error.message : String(error)
+	if (detail.includes("Please check the LM Studio developer logs")) {
+		return error instanceof Error ? error : new Error(detail)
+	}
+
+	return new Error(
+		"Please check the LM Studio developer logs to debug what went wrong. You may need to load the model with a larger context length to work with Kilo Code's prompts. Original error: " +
+			detail,
+	)
+}
+// kilocode_change end
+
 export class LmStudioHandler extends BaseProvider implements SingleCompletionHandler {
 	protected options: ApiHandlerOptions
 	private client: OpenAI
@@ -120,6 +149,19 @@ export class LmStudioHandler extends BaseProvider implements SingleCompletionHan
 				const delta = chunk.choices[0]?.delta
 				const finishReason = chunk.choices[0]?.finish_reason
 
+				// kilocode_change start: Qwen3.8 / thinking models may emit only
+				// reasoning_content while content stays empty. Yield it so Task
+				// receives a first chunk instead of waiting forever.
+				const reasoningText = getOpenAiReasoningText(delta)
+				if (reasoningText) {
+					assistantText += reasoningText
+					yield {
+						type: "reasoning",
+						text: reasoningText,
+					}
+				}
+				// kilocode_change end
+
 				if (delta?.content) {
 					assistantText += delta.content
 					for (const processedChunk of matcher.update(delta.content)) {
@@ -167,9 +209,7 @@ export class LmStudioHandler extends BaseProvider implements SingleCompletionHan
 				outputTokens,
 			} as const
 		} catch (error) {
-			throw new Error(
-				"Please check the LM Studio developer logs to debug what went wrong. You may need to load the model with a larger context length to work with Kilo Code's prompts.",
-			)
+			throw wrapLmStudioError(error)
 		}
 	}
 
@@ -209,11 +249,16 @@ export class LmStudioHandler extends BaseProvider implements SingleCompletionHan
 			} catch (error) {
 				throw handleOpenAIError(error, this.providerName)
 			}
-			return response.choices[0]?.message.content || ""
+			// kilocode_change start: thinking models may return only reasoning_content
+			const message = response.choices[0]?.message
+			const content = typeof message?.content === "string" ? message.content : ""
+			if (content) {
+				return content
+			}
+			return getOpenAiReasoningText(message) || ""
+			// kilocode_change end
 		} catch (error) {
-			throw new Error(
-				"Please check the LM Studio developer logs to debug what went wrong. You may need to load the model with a larger context length to work with Kilo Code's prompts.",
-			)
+			throw wrapLmStudioError(error)
 		}
 	}
 }

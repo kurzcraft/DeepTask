@@ -125,6 +125,53 @@ describe("LmStudioHandler", () => {
 				}
 			}).rejects.toThrow("Please check the LM Studio developer logs to debug what went wrong")
 		})
+
+		it("should yield reasoning when LM Studio streams only reasoning_content", async () => {
+			mockCreate.mockImplementationOnce(async () => ({
+				[Symbol.asyncIterator]: async function* () {
+					yield {
+						choices: [
+							{
+								delta: { reasoning_content: "Thinking about the answer" },
+								index: 0,
+							},
+						],
+					}
+					yield {
+						choices: [
+							{
+								delta: { content: "OK" },
+								index: 0,
+								finish_reason: "stop",
+							},
+						],
+					}
+				},
+			}))
+
+			const stream = handler.createMessage(systemPrompt, messages)
+			const chunks: any[] = []
+			for await (const chunk of stream) {
+				chunks.push(chunk)
+			}
+
+			expect(chunks.filter((chunk) => chunk.type === "reasoning")).toEqual([
+				{ type: "reasoning", text: "Thinking about the answer" },
+			])
+			expect(chunks.filter((chunk) => chunk.type === "text")).toEqual([{ type: "text", text: "OK" }])
+		})
+
+		it("should preserve the original error detail from LM Studio", async () => {
+			mockCreate.mockRejectedValueOnce(new Error("Model unloaded."))
+
+			const stream = handler.createMessage(systemPrompt, messages)
+
+			await expect(async () => {
+				for await (const _chunk of stream) {
+					// Should not reach here
+				}
+			}).rejects.toThrow(/Original error:.*Model unloaded\./)
+		})
 	})
 
 	describe("completePrompt", () => {
@@ -153,6 +200,14 @@ describe("LmStudioHandler", () => {
 			const result = await handler.completePrompt("Test prompt")
 			expect(result).toBe("")
 		})
+
+		it("should fall back to reasoning_content when content is empty", async () => {
+			mockCreate.mockResolvedValueOnce({
+				choices: [{ message: { content: "", reasoning_content: "OK" } }],
+			})
+			const result = await handler.completePrompt("Test prompt")
+			expect(result).toBe("OK")
+		})
 	})
 
 	describe("getModel", () => {
@@ -161,7 +216,7 @@ describe("LmStudioHandler", () => {
 			expect(modelInfo.id).toBe(mockOptions.lmStudioModelId)
 			expect(modelInfo.info).toBeDefined()
 			expect(modelInfo.info.maxTokens).toBe(-1)
-			expect(modelInfo.info.contextWindow).toBe(128_000)
+			expect(modelInfo.info.contextWindow).toBe(256_000)
 		})
 	})
 })

@@ -6,6 +6,8 @@
 
 - Honor the default-checked “No timeout limit” option at the OpenAI-compatible SDK client layer, so LM Studio and other OpenAI clients no longer abort a live stream after the SDK’s 600-second default.
 - Stop mapping a configured `0` timeout to `undefined` or `0`, which previously either restored the 600-second SDK default or aborted immediately; unlimited waiting now uses the 32-bit `setTimeout` ceiling.
+- Forward LM Studio `reasoning_content` as a first-class stream so thinking models such as Qwen3.8 no longer look hung when `content` stays empty.
+- Keep the original LM Studio error detail instead of replacing it with a generic developer-log message.
 - Update the bilingual README, packaged Marketplace introduction, installation commands, and release notes for 9.0.8.
 
 ## 9.0.7
