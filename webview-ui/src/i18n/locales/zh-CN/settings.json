@@ -634,7 +634,8 @@
 			"high": "高",
 			"xhigh": "极高",
 			"medium": "中",
-			"low": "低"
+			"low": "低",
+			"off": "关闭"
 		},
 		"verbosity": {
 			"label": "输出详细程度",

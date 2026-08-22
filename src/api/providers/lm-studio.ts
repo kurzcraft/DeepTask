@@ -45,6 +45,20 @@ function wrapLmStudioError(error: unknown): Error {
 			detail,
 	)
 }
+
+// kilocode_change start: translate reasoning effort settings into LM Studio's
+// chat_template_kwargs so thinking models can be toggled from the chat bar.
+function getThinkingTemplateKwargs(options: ApiHandlerOptions): Record<string, unknown> | undefined {
+	const effort = options.reasoningEffort
+	if (options.enableReasoningEffort === false || effort === "disable" || effort === "none") {
+		return { enable_thinking: false }
+	}
+	if (effort) {
+		return { enable_thinking: true }
+	}
+	return undefined
+}
+// kilocode_change end
 // kilocode_change end
 
 export class LmStudioHandler extends BaseProvider implements SingleCompletionHandler {
@@ -115,7 +129,10 @@ export class LmStudioHandler extends BaseProvider implements SingleCompletionHan
 		let assistantText = ""
 
 		try {
-			const params: OpenAI.Chat.ChatCompletionCreateParamsStreaming & { draft_model?: string } = {
+			const params: OpenAI.Chat.ChatCompletionCreateParamsStreaming & {
+				draft_model?: string
+				chat_template_kwargs?: Record<string, unknown> // kilocode_change
+			} = {
 				model: this.getModel().id,
 				messages: openAiMessages,
 				temperature: this.options.modelTemperature ?? LMSTUDIO_DEFAULT_TEMPERATURE,
@@ -124,6 +141,13 @@ export class LmStudioHandler extends BaseProvider implements SingleCompletionHan
 				...(useNativeTools && metadata.tool_choice && { tool_choice: metadata.tool_choice }),
 				...(useNativeTools && { parallel_tool_calls: metadata?.parallelToolCalls ?? false }),
 			}
+
+			// kilocode_change start: honor reasoning effort settings
+			const thinkingKwargs = getThinkingTemplateKwargs(this.options)
+			if (thinkingKwargs) {
+				params.chat_template_kwargs = thinkingKwargs
+			}
+			// kilocode_change end
 
 			if (this.options.lmStudioSpeculativeDecodingEnabled && this.options.lmStudioDraftModelId) {
 				params.draft_model = this.options.lmStudioDraftModelId
@@ -242,6 +266,13 @@ export class LmStudioHandler extends BaseProvider implements SingleCompletionHan
 			if (this.options.lmStudioSpeculativeDecodingEnabled && this.options.lmStudioDraftModelId) {
 				params.draft_model = this.options.lmStudioDraftModelId
 			}
+
+			// kilocode_change start: honor reasoning effort settings
+			const thinkingKwargs = getThinkingTemplateKwargs(this.options)
+			if (thinkingKwargs) {
+				params.chat_template_kwargs = thinkingKwargs
+			}
+			// kilocode_change end
 
 			let response
 			try {

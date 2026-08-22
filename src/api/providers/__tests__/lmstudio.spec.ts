@@ -172,6 +172,41 @@ describe("LmStudioHandler", () => {
 				}
 			}).rejects.toThrow(/Original error:.*Model unloaded\./)
 		})
+
+		describe("reasoning effort settings", () => {
+			const consume = async (handler: LmStudioHandler) => {
+				const stream = handler.createMessage(systemPrompt, messages)
+				for await (const _chunk of stream) {
+					// drain the stream
+				}
+				return mockCreate.mock.calls[0][0]
+			}
+
+			it("should not send chat_template_kwargs when no reasoning effort is configured", async () => {
+				const requestParams = await consume(handler)
+				expect(requestParams.chat_template_kwargs).toBeUndefined()
+			})
+
+			it("should enable thinking when an effort level is selected", async () => {
+				const effortHandler = new LmStudioHandler({
+					...mockOptions,
+					enableReasoningEffort: true,
+					reasoningEffort: "high",
+				})
+				const requestParams = await consume(effortHandler)
+				expect(requestParams.chat_template_kwargs).toEqual({ enable_thinking: true })
+			})
+
+			it("should disable thinking when reasoning is off", async () => {
+				const effortHandler = new LmStudioHandler({
+					...mockOptions,
+					enableReasoningEffort: false,
+					reasoningEffort: "disable",
+				})
+				const requestParams = await consume(effortHandler)
+				expect(requestParams.chat_template_kwargs).toEqual({ enable_thinking: false })
+			})
+		})
 	})
 
 	describe("completePrompt", () => {
@@ -207,6 +242,30 @@ describe("LmStudioHandler", () => {
 			})
 			const result = await handler.completePrompt("Test prompt")
 			expect(result).toBe("OK")
+		})
+
+		it("should disable thinking via chat_template_kwargs when reasoning is off", async () => {
+			const effortHandler = new LmStudioHandler({
+				...mockOptions,
+				enableReasoningEffort: false,
+				reasoningEffort: "disable",
+			})
+			await effortHandler.completePrompt("Test prompt")
+			expect(mockCreate).toHaveBeenCalledWith(
+				expect.objectContaining({ chat_template_kwargs: { enable_thinking: false } }),
+			)
+		})
+
+		it("should enable thinking via chat_template_kwargs when an effort level is selected", async () => {
+			const effortHandler = new LmStudioHandler({
+				...mockOptions,
+				enableReasoningEffort: true,
+				reasoningEffort: "medium",
+			})
+			await effortHandler.completePrompt("Test prompt")
+			expect(mockCreate).toHaveBeenCalledWith(
+				expect.objectContaining({ chat_template_kwargs: { enable_thinking: true } }),
+			)
 		})
 	})
 

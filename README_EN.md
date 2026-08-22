@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.0.8</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.0.9</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,8 +35,9 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.0.8** honors the default-checked “No timeout limit” option at the OpenAI-compatible SDK client layer, and
-> forwards LM Studio `reasoning_content` so thinking models such as Qwen3.8 no longer look hung when `content` stays empty.
+> **Deeptask 9.0.9** adds a reasoning-effort dropdown next to the model selector at the bottom of the chat (Off / Low /
+> Medium / High / Extra High); switching persists to the active profile and applies immediately, and LM Studio translates it
+> into `chat_template_kwargs.enable_thinking` to toggle thinking.
 
 ## What you can do with Deeptask
 
@@ -114,17 +115,17 @@ Deeptask treats work as a recoverable state machine rather than a one-shot answe
 
 ## Start in three minutes
 
-1. Download `deeptask-9.0.8.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.0.9.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.0.8.vsix --force
+    codium --install-extension ./deeptask-9.0.9.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.0.8.vsix --force
+    code --install-extension ./deeptask-9.0.9.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

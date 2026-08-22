@@ -1,5 +1,14 @@
 # Deeptask
 
+## 9.0.9
+
+### Patch Changes
+
+- Add a reasoning-effort dropdown to the right of the model selector at the bottom of the chat, offering Off / Low / Medium / High / Extra High (plus capability-limited values reported by the model); switching it persists to the active provider profile and applies on the next request without restarting.
+- Translate the reasoning-effort setting into LM Studio `chat_template_kwargs.enable_thinking` for both streaming and single completions, so Off disables thinking and any level enables it.
+- Hide the quick selector for autocomplete profiles and the virtual quota fallback, and add coverage for the selector and the LM Studio reasoning kwargs.
+- Update the bilingual README, packaged Marketplace introduction, installation commands, and release notes for 9.0.9.
+
 ## 9.0.8
 
 ### Patch Changes
