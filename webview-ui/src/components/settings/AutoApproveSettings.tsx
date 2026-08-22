@@ -60,6 +60,8 @@ type AutoApproveSettingsProps = HTMLAttributes<HTMLDivElement> & {
 		| "showAutoApproveMenu" // kilocode_change
 		| "yoloMode" // kilocode_change
 		| "yoloGatekeeperApiConfigId" // kilocode_change: AI gatekeeper for YOLO mode
+		| "agentSubagentDispatchEnabled" // kilocode_change: parallel subagents
+		| "agentWorkspaceManagementEnabled" // kilocode_change: parallel workspaces
 		| "deniedCommands"
 	>
 }

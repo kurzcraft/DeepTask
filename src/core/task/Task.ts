@@ -221,7 +221,42 @@ export interface TaskOptions extends CreateTaskOptions {
 	workspacePath?: string
 	/** Initial status for the task's history item (e.g., "active" for child tasks) */
 	initialStatus?: "active" | "delegated" | "completed"
+	// kilocode_change start: parallel subagent routing
+	/** When set, this task runs as a parallel subagent: its webview messages are
+	 * routed to the parallel session sink instead of the main chat stream, and
+	 * its approval asks are auto-resolved. */
+	subagent?: { sessionId: string; depth: number; manager: SubagentMessageSink }
+	// kilocode_change end
 }
+
+// kilocode_change start: parallel subagent routing
+export interface SubagentMessageSink {
+	recordMessageCreated(sessionId: string, message: ClineMessage): void
+	recordMessageUpdated(sessionId: string, message: ClineMessage): void
+}
+
+/** Subagent tasks run sandboxed; their asks are auto-resolved with this state override. */
+function subagentAutoApprovalState<T extends object | undefined>(state: T): T {
+	return {
+		...(state ?? {}),
+		autoApprovalEnabled: true,
+		yoloMode: true,
+		alwaysAllowReadOnly: true,
+		alwaysAllowReadOnlyOutsideWorkspace: true,
+		alwaysAllowWrite: true,
+		alwaysAllowWriteOutsideWorkspace: true,
+		alwaysAllowWriteProtected: true,
+		alwaysAllowDelete: true,
+		alwaysAllowBrowser: true,
+		alwaysAllowMcp: true,
+		alwaysAllowModeSwitch: true,
+		alwaysAllowProviderProfileSwitch: true,
+		alwaysAllowSubtasks: true,
+		alwaysAllowExecute: true,
+		alwaysAllowFollowupQuestions: true,
+	} as T
+}
+// kilocode_change end
 
 type UserContent = Array<Anthropic.ContentBlockParam> // kilocode_change
 
@@ -237,13 +272,16 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 	readonly instanceId: string
 	readonly metadata: TaskMetadata
+	// kilocode_change start: parallel subagent routing
+	readonly subagent?: { sessionId: string; depth: number; manager: SubagentMessageSink }
+	// kilocode_change end
 
 	todoList?: TodoItem[]
 
 	readonly rootTask: Task | undefined
 	readonly parentTask: Task | undefined
 	readonly taskNumber: number
-	readonly workspacePath: string
+	workspacePath: string // kilocode_change: mutable for manual workspace switching
 
 	/**
 	 * The mode associated with this task. Persisted across sessions
@@ -618,6 +656,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		initialTodos,
 		workspacePath,
 		initialStatus,
+		subagent, // kilocode_change: parallel subagent routing
 	}: TaskOptions) {
 		super()
 		this.context = context // kilocode_change
@@ -657,6 +696,10 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			task: historyItem ? historyItem.task : task,
 			images: historyItem ? [] : images,
 		}
+
+		// kilocode_change start: parallel subagent routing
+		this.subagent = subagent
+		// kilocode_change end
 
 		// Normal use-case is usually retry similar history task with new workspace.
 		this.workspacePath = parentTask
@@ -1533,8 +1576,14 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		}
 
 		this.clineMessages.push(message)
-		const provider = this.providerRef.deref()
-		await provider?.postStateToWebview()
+		// kilocode_change start: parallel subagents route messages to their session sink
+		if (this.subagent) {
+			this.subagent.manager.recordMessageCreated(this.subagent.sessionId, message)
+		} else {
+			const provider = this.providerRef.deref()
+			await provider?.postStateToWebview()
+		}
+		// kilocode_change end
 		this.emit(RooCodeEventName.Message, { action: "created", message })
 		await this.saveClineMessages()
 
@@ -1574,8 +1623,14 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			return
 		}
 
-		const provider = this.providerRef.deref()
-		await provider?.postMessageToWebview({ type: "messageUpdated", clineMessage: message })
+		// kilocode_change start: parallel subagents route message updates to their session sink
+		if (this.subagent) {
+			this.subagent.manager.recordMessageUpdated(this.subagent.sessionId, message)
+		} else {
+			const provider = this.providerRef.deref()
+			await provider?.postMessageToWebview({ type: "messageUpdated", clineMessage: message })
+		}
+		// kilocode_change end
 		this.emit(RooCodeEventName.Message, { action: "updated", message })
 
 		// Check if we should sync to cloud and haven't already synced this message
@@ -1839,7 +1894,20 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// Automatically approve if the ask according to the user's settings.
 		const provider = this.providerRef.deref()
 		const state = provider ? await provider.getState() : undefined
-		const approval = await checkAutoApproval({ state, ask: type, text, isProtected })
+		// kilocode_change start: parallel subagents never reach the main approval UI;
+		// they run sandboxed in their own workspace (or read-only) so every ask is
+		// resolved automatically using an all-approvals state override.
+		const effectiveState = this.subagent ? subagentAutoApprovalState(state) : state
+		const approval = await checkAutoApproval({ state: effectiveState, ask: type, text, isProtected })
+		if (this.subagent && approval.decision === "ask") {
+			if (type === "followup") {
+				// No user will answer a subagent's follow-up; proceed autonomously.
+				this.handleWebviewAskResponse("messageResponse", "Proceed with your best judgment.", undefined)
+			} else {
+				this.approveAsk()
+			}
+		}
+		// kilocode_change end
 
 		if (approval.decision === "approve") {
 			this.approveAsk()
@@ -2425,10 +2493,7 @@ ${protocolHint}
 (This is an automated message, so do not respond to it conversationally.)`
 	}
 
-	public shouldRejectToolUntilProgressListExpanded(
-		_toolName: string,
-		_params?: Record<string, unknown>,
-	): boolean {
+	public shouldRejectToolUntilProgressListExpanded(_toolName: string, _params?: Record<string, unknown>): boolean {
 		// Progress-list expansion remains an advisory environment reminder. It must not
 		// reject the user's first concrete tool call: rejecting that call interrupts the
 		// stream and can make the continuation appear permanently stuck behind TODO sync.
@@ -6225,7 +6290,7 @@ ${protocolHint}
 			let rateLimitDelay = 0
 			const apiConfiguration = state?.apiConfiguration ?? this.apiConfiguration
 			const rateLimit =
-				apiConfiguration?.disableApiRequestTimeout === false ? (apiConfiguration?.rateLimitSeconds || 0) : 0
+				apiConfiguration?.disableApiRequestTimeout === false ? apiConfiguration?.rateLimitSeconds || 0 : 0
 			if (Task.lastGlobalApiRequestTime && rateLimit > 0) {
 				const elapsed = performance.now() - Task.lastGlobalApiRequestTime
 				rateLimitDelay = Math.ceil(Math.min(rateLimit, Math.max(0, rateLimit * 1000 - elapsed) / 1000))
@@ -6737,6 +6802,30 @@ ${protocolHint}
 	public get cwd() {
 		return this.workspacePath
 	}
+
+	// kilocode_change start: manual workspace switching from the chat header
+	/**
+	 * Switches this task's working directory (e.g. into a parallel worktree
+	 * workspace) and re-initializes the path-scoped controllers. Subsequent
+	 * file tools, terminals, and environment details use the new cwd.
+	 */
+	public async switchWorkspace(nextWorkspacePath: string): Promise<void> {
+		if (!nextWorkspacePath || nextWorkspacePath === this.workspacePath) {
+			return
+		}
+		this.workspacePath = nextWorkspacePath
+		this.rooIgnoreController?.dispose?.()
+		this.rooIgnoreController = new RooIgnoreController(this.cwd)
+		this.rooIgnoreController.initialize().catch((error) => {
+			console.error("Failed to initialize RooIgnoreController:", error)
+		})
+		this.rooProtectedController = new RooProtectedController(this.cwd)
+		this.providerRef
+			.deref()
+			?.postStateToWebview()
+			.catch(() => undefined)
+	}
+	// kilocode_change end
 
 	/**
 	 * Get the tool protocol locked to this task.

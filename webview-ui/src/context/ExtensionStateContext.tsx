@@ -15,6 +15,13 @@ import {
 	type CloudOrganizationMembership,
 	type ExtensionMessage,
 	type ExtensionState,
+	// kilocode_change start: parallel subagents & workspaces
+	type ParallelConversation,
+	type ParallelFolder,
+	type ParallelSession,
+	type ParallelWorkspace,
+	type ClineMessage,
+	// kilocode_change end
 	type MarketplaceInstalledMetadata,
 	type Command,
 	type McpServer,
@@ -36,6 +43,15 @@ import { convertTextMateToHljs } from "@src/utils/textMateToHljs"
 import { ClineRulesToggles } from "@roo/cline-rules" // kilocode_change
 
 export interface ExtensionStateContextType extends ExtensionState {
+	// kilocode_change start: parallel subagents & workspaces (webview-maintained)
+	parallelSessions?: Record<string, ParallelSession>
+	parallelSessionMessages?: Record<string, ClineMessage[]>
+	parallelWorkspaces?: ParallelWorkspace[]
+	parallelFolders?: ParallelFolder[]
+	parallelConversations?: ParallelConversation[]
+	parallelActiveConversationId?: string
+	parallelActiveWorkspace?: string
+	// kilocode_change end
 	historyPreviewCollapsed?: boolean
 	showTaskTimeline?: boolean // kilocode_change
 	sendMessageOnEnter?: boolean // kilocode_change New state property for Enter key behavior
@@ -233,6 +249,18 @@ export interface ExtensionStateContextType extends ExtensionState {
 	setIncludeCurrentCost: (value: boolean) => void
 }
 
+// kilocode_change start: parallel subagents & workspaces (webview-maintained slices)
+export type WebviewState = ExtensionState & {
+	parallelSessions?: Record<string, ParallelSession>
+	parallelSessionMessages?: Record<string, ClineMessage[]>
+	parallelWorkspaces?: ParallelWorkspace[]
+	parallelFolders?: ParallelFolder[]
+	parallelConversations?: ParallelConversation[]
+	parallelActiveConversationId?: string
+	parallelActiveWorkspace?: string
+}
+// kilocode_change end
+
 export const ExtensionStateContext = createContext<ExtensionStateContextType | undefined>(undefined)
 
 export const mergeExtensionState = (prevState: ExtensionState, newState: ExtensionState) => {
@@ -256,7 +284,8 @@ export const mergeExtensionState = (prevState: ExtensionState, newState: Extensi
 }
 
 export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-	const [state, setState] = useState<ExtensionState>({
+	const [state, setState] = useState<WebviewState>({
+		// kilocode_change: parallel slices
 		apiConfiguration: {},
 		version: "",
 		clineMessages: [],
@@ -304,6 +333,17 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		condensingApiConfigId: "", // Default empty string for condensing API config ID
 		customCondensingPrompt: "", // Default empty string for custom condensing prompt
 		taskProgressFileEnabled: true, // kilocode_change
+		// kilocode_change start: parallel subagents & workspaces
+		agentSubagentDispatchEnabled: true,
+		agentWorkspaceManagementEnabled: true,
+		parallelSessions: {},
+		parallelSessionMessages: {},
+		parallelWorkspaces: [],
+		parallelFolders: [],
+		parallelConversations: [],
+		parallelActiveConversationId: undefined,
+		parallelActiveWorkspace: undefined,
+		// kilocode_change end
 		yoloGatekeeperApiConfigId: "", // kilocode_change: Default empty string for gatekeeper API config ID
 		hasOpenedModeSelector: false, // Default to false (not opened yet)
 		hasCompletedOnboarding: undefined, // kilocode_change: Leave unset until extension sends value
@@ -427,7 +467,8 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 			switch (message.type) {
 				case "state": {
 					const newState = message.state!
-					setState((prevState) => mergeExtensionState(prevState, newState))
+					// kilocode_change: preserve parallel slices through merges
+					setState((prevState) => mergeExtensionState(prevState, newState) as WebviewState)
 					setShowWelcome(!checkExistKey(newState.apiConfiguration))
 					setDidHydrateState(true)
 					// Update alwaysAllowFollowupQuestions if present in state message
@@ -459,6 +500,60 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 					}
 					break
 				}
+				// kilocode_change start: parallel subagents & workspaces
+				case "parallelSessionsUpdated": {
+					const sessions = message.parallelSessions ?? []
+					const workspaces = message.parallelWorkspaces ?? []
+					const folders = message.parallelFolders ?? []
+					const conversations = message.parallelConversations ?? []
+					setState((prevState) => ({
+						...prevState,
+						parallelSessions: Object.fromEntries(sessions.map((session) => [session.sessionId, session])),
+						parallelWorkspaces: workspaces,
+						parallelFolders: folders,
+						parallelConversations: conversations,
+						parallelActiveConversationId: message.parallelActiveConversationId,
+						// Keep messages only for sessions that still exist.
+						parallelSessionMessages: Object.fromEntries(
+							Object.entries(prevState.parallelSessionMessages ?? {}).filter(([id]) =>
+								sessions.some((session) => session.sessionId === id),
+							),
+						),
+					}))
+					break
+				}
+				case "parallelSessionMessage":
+				case "parallelSessionMessageUpdated": {
+					const sessionId = message.parallelSessionId!
+					const clineMessage = message.clineMessage!
+					const isUpdate = message.type === "parallelSessionMessageUpdated"
+					setState((prevState) => {
+						const list = [...(prevState.parallelSessionMessages?.[sessionId] ?? [])]
+						if (isUpdate) {
+							const index = list.findIndex((m) => m.ts === clineMessage.ts)
+							if (index === -1) {
+								list.push(clineMessage)
+							} else {
+								list[index] = clineMessage
+							}
+						} else {
+							list.push(clineMessage)
+						}
+						return {
+							...prevState,
+							parallelSessionMessages: {
+								...(prevState.parallelSessionMessages ?? {}),
+								[sessionId]: list,
+							},
+						}
+					})
+					break
+				}
+				case "parallelWorkspaceChanged": {
+					setState((prevState) => ({ ...prevState, parallelActiveWorkspace: message.text }))
+					break
+				}
+				// kilocode_change end
 				case "action": {
 					if (message.action === "toggleAutoApprove") {
 						// Toggle the auto-approval state
@@ -560,10 +655,7 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 					const models = Object.fromEntries(
 						(message.vsCodeLmModels ?? []).map((model) => {
 							const modelId = model.id ?? `${model.vendor ?? ""}/${model.family ?? ""}`
-							return [
-								modelId,
-								{ displayName: modelId, contextWindow: 0, supportsPromptCache: false },
-							]
+							return [modelId, { displayName: modelId, contextWindow: 0, supportsPromptCache: false }]
 						}),
 					)
 					setDynamicProviderModels((previous) => ({ ...previous, "vscode-lm": models }))

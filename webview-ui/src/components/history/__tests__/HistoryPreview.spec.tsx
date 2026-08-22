@@ -6,6 +6,53 @@ import HistoryPreview from "../HistoryPreview"
 
 vi.mock("@/kilocode/hooks/useTaskHistory")
 
+vi.mock("@/i18n/TranslationContext", () => ({
+	useAppTranslation: () => ({
+		t: (key: string) => key,
+	}),
+}))
+
+vi.mock("@/context/ExtensionStateContext", () => ({
+	useExtensionState: () => ({
+		cwd: "/home/user/my-project",
+		parallelFolders: [{ name: "my-project", path: "/home/user/my-project", kind: "main", createdAt: 1 }],
+		parallelWorkspaces: [
+			{
+				name: "feature-x",
+				path: "/home/user/my-project/.kilocode/worktrees/feature-x",
+				branch: "deeptask/feature-x",
+				baseBranch: "main",
+				status: "available",
+				folderPath: "/home/user/my-project",
+				createdAt: 1,
+				updatedAt: 1,
+			},
+		],
+		parallelConversations: [
+			{
+				id: "cv-1",
+				folderPath: "/home/user/my-project",
+				workspacePath: "/home/user/my-project",
+				sessionId: "task-1",
+				title: "First task",
+				createdAt: 1,
+				lastActiveAt: 1,
+			},
+			{
+				id: "cv-2",
+				folderPath: "/home/user/my-project",
+				workspacePath: "/home/user/my-project/.kilocode/worktrees/feature-x",
+				sessionId: "task-2",
+				title: "Second task",
+				createdAt: 1,
+				lastActiveAt: 1,
+			},
+		],
+		parallelActiveConversationId: "cv-1",
+		parallelActiveWorkspace: "/home/user/my-project",
+	}),
+}))
+
 vi.mock("../TaskItem", () => {
 	return {
 		default: vi.fn(({ item, variant }) => (
@@ -118,7 +165,7 @@ describe("HistoryPreview", () => {
 		expect(screen.queryByTestId(/task-item-/)).not.toBeInTheDocument()
 	})
 
-	it("renders up to 3 tasks when tasks are available", () => {
+	it("renders the current folder's recent tasks grouped by workspace", () => {
 		kiloCodeSetUpUseTaskHistoryMock({
 			tasks: mockTasks,
 			searchQuery: "",
@@ -133,13 +180,10 @@ describe("HistoryPreview", () => {
 
 		render(<HistoryPreview taskHistoryVersion={mockKiloCodeTaskHistoryVersion} />)
 
-		// Should render only the first 3 tasks
 		expect(screen.getByTestId("task-item-task-1")).toBeInTheDocument()
 		expect(screen.getByTestId("task-item-task-2")).toBeInTheDocument()
-		expect(screen.getByTestId("task-item-task-3")).toBeInTheDocument()
-		expect(screen.getByTestId("task-item-task-4")).toBeInTheDocument()
-		expect(screen.queryByTestId("task-item-task-5")).not.toBeInTheDocument()
-		expect(screen.queryByTestId("task-item-task-6")).not.toBeInTheDocument()
+		expect(screen.queryByTestId("task-item-task-3")).not.toBeInTheDocument()
+		expect(screen.queryByTestId("task-item-task-4")).not.toBeInTheDocument()
 	})
 
 	it("renders all tasks when there are 3 or fewer", () => {
@@ -160,7 +204,7 @@ describe("HistoryPreview", () => {
 
 		expect(screen.getByTestId("task-item-task-1")).toBeInTheDocument()
 		expect(screen.getByTestId("task-item-task-2")).toBeInTheDocument()
-		expect(screen.getByTestId("task-item-task-3")).toBeInTheDocument()
+		expect(screen.queryByTestId("task-item-task-3")).not.toBeInTheDocument()
 		expect(screen.queryByTestId("task-item-task-4")).not.toBeInTheDocument()
 		expect(screen.queryByTestId("task-item-task-5")).not.toBeInTheDocument()
 		expect(screen.queryByTestId("task-item-task-6")).not.toBeInTheDocument()
@@ -201,7 +245,6 @@ describe("HistoryPreview", () => {
 
 		render(<HistoryPreview taskHistoryVersion={mockKiloCodeTaskHistoryVersion} />)
 
-		// Verify TaskItem was called with correct props for first 3 tasks
 		expect(mockTaskItem).toHaveBeenCalledWith(
 			expect.objectContaining({
 				item: mockTasks[0],
@@ -212,13 +255,6 @@ describe("HistoryPreview", () => {
 		expect(mockTaskItem).toHaveBeenCalledWith(
 			expect.objectContaining({
 				item: mockTasks[1],
-				variant: "compact",
-			}),
-			expect.anything(),
-		)
-		expect(mockTaskItem).toHaveBeenCalledWith(
-			expect.objectContaining({
-				item: mockTasks[2],
 				variant: "compact",
 			}),
 			expect.anything(),
@@ -241,5 +277,26 @@ describe("HistoryPreview", () => {
 		const { container } = render(<HistoryPreview taskHistoryVersion={mockKiloCodeTaskHistoryVersion} />)
 
 		expect(container.firstChild).toHaveClass("flex", "flex-col", "gap-1")
+	})
+
+	it("groups recent tasks by workspace for the current folder only", () => {
+		kiloCodeSetUpUseTaskHistoryMock({
+			tasks: mockTasks,
+			searchQuery: "",
+			setSearchQuery: vi.fn(),
+			sortOption: "newest",
+			setSortOption: vi.fn(),
+			lastNonRelevantSort: null,
+			setLastNonRelevantSort: vi.fn(),
+			showAllWorkspaces: false,
+			setShowAllWorkspaces: vi.fn(),
+		})
+
+		render(<HistoryPreview taskHistoryVersion={mockKiloCodeTaskHistoryVersion} />)
+		expect(screen.getByTestId("history-workspace-group-main")).toBeInTheDocument()
+		expect(screen.getByTestId("history-workspace-group-feature-x")).toBeInTheDocument()
+		expect(screen.getByTestId("task-item-task-1")).toBeInTheDocument()
+		expect(screen.getByTestId("task-item-task-2")).toBeInTheDocument()
+		expect(screen.queryByTestId("task-item-task-3")).not.toBeInTheDocument()
 	})
 })

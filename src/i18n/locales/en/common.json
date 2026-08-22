@@ -25,7 +25,8 @@
 	"confirmation": {
 		"reset_state": "Are you sure you want to reset all state and secret storage in the extension? This cannot be undone.",
 		"delete_config_profile": "Are you sure you want to delete this configuration profile?",
-		"delete_custom_mode_with_rules": "Are you sure you want to delete this {scope} mode?\n\nThis will also delete the associated rules folder at:\n{rulesFolderPath}"
+		"delete_custom_mode_with_rules": "Are you sure you want to delete this {scope} mode?\n\nThis will also delete the associated rules folder at:\n{rulesFolderPath}",
+		"delete_workspace": "Delete workspace \"{{name}}\"? This force-deletes the git worktree. Choose Yes to keep conversations under main, or Delete All to also delete every conversation in this workspace."
 	},
 	"errors": {
 		"invalid_data_uri": "Invalid data URI format",
@@ -188,7 +189,8 @@
 		"yes": "Yes",
 		"no": "No",
 		"remove": "Remove",
-		"keep": "Keep"
+		"keep": "Keep",
+		"delete_directly": "Delete All"
 	},
 	"buttons": {
 		"save": "Save",

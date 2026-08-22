@@ -87,6 +87,10 @@ export const globalSettingsSchema = z.object({
 	alwaysAllowSubtasks: z.boolean().optional(),
 	alwaysAllowExecute: z.boolean().optional(),
 	alwaysAllowFollowupQuestions: z.boolean().optional(),
+	// kilocode_change start: parallel subagents & workspaces permissions (default on)
+	agentSubagentDispatchEnabled: z.boolean().optional(),
+	agentWorkspaceManagementEnabled: z.boolean().optional(),
+	// kilocode_change end
 	followupAutoApproveTimeoutMs: z.number().optional(),
 	allowedCommands: z.array(z.string()).optional(),
 	deniedCommands: z.array(z.string()).optional(),

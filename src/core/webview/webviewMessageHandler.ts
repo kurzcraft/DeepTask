@@ -744,10 +744,42 @@ export const webviewMessageHandler = async (
 			// task. This essentially creates a fresh slate for the new task.
 			try {
 				const resolved = await resolveIncomingImages({ text: message.text, images: message.images })
-				await provider.createTask(resolved.text, resolved.images)
+				// kilocode_change start: a pending parallel conversation starts alongside
+				// the still-running task instead of replacing it
+				const pendingConversation = provider.pendingNewConversation
+				if (pendingConversation) {
+					provider.pendingNewConversation = undefined
+					const requestedWorkspace = pendingConversation.workspacePath ?? pendingConversation.folderPath
+					const relocated = await provider.ensureUnoccupiedWorkspace({
+						workspacePath: requestedWorkspace,
+						folderPath: pendingConversation.folderPath,
+						conversationId: pendingConversation.id,
+						name: resolved.text.slice(0, 40),
+						description: resolved.text.slice(0, 80),
+					})
+					const task = await provider.createTask(resolved.text, resolved.images, undefined, {
+						keepRunningTask: true,
+						workspacePath: relocated.path,
+					})
+					if (relocated.created) {
+						await provider
+							.getWorkspaceService(pendingConversation.folderPath)
+							.claim(relocated.created.name, `task:${task.taskId}`)
+					}
+					await provider.parallelManager.bindConversation(
+						pendingConversation.id,
+						task.taskId,
+						resolved.text.slice(0, 60),
+					)
+					await provider.parallelManager.broadcast()
+				} else {
+					await provider.createTask(resolved.text, resolved.images)
+				}
+				// kilocode_change end
 				// Task created successfully - notify the UI to reset
 				await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
 			} catch (error) {
+				provider.pendingNewConversation = undefined // kilocode_change
 				// For all errors, reset the UI and show error
 				await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
 				// Show error to user
@@ -765,6 +797,352 @@ export const webviewMessageHandler = async (
 			await provider.updateCustomInstructions(message.text)
 			break
 
+		// kilocode_change start: sidebar folder picker & manual workspace switch
+		case "parallel.openFolder": {
+			const picked = await vscode.window.showOpenDialog({
+				canSelectFiles: false,
+				canSelectFolders: true,
+				canSelectMany: false,
+			})
+			const folder = picked?.[0]?.fsPath
+			if (folder) {
+				await provider.parallelManager.registerMainFolder(folder)
+				const conversation = await provider.parallelManager.createConversation(folder, {
+					workspacePath: folder,
+				})
+				provider.pendingNewConversation = {
+					id: conversation.id,
+					folderPath: folder,
+					workspacePath: folder,
+				}
+				await provider.postStateToWebview()
+				await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
+				await provider.postMessageToWebview({ type: "parallelWorkspaceChanged", text: folder })
+				await provider.parallelManager.broadcast()
+			}
+			break
+		}
+		case "parallel.switchWorkspace": {
+			const nextPath = message.text
+			if (!nextPath) {
+				break
+			}
+			const manager = provider.parallelManager
+			const folderPath = manager.folderPathForPath(nextPath)
+			const currentTask = provider.getCurrentTask()
+			if (currentTask) {
+				await currentTask.switchWorkspace(nextPath)
+			}
+			if (provider.pendingNewConversation) {
+				await manager.updateConversationWorkspace(provider.pendingNewConversation.id, folderPath, nextPath)
+				provider.pendingNewConversation = {
+					...provider.pendingNewConversation,
+					folderPath,
+					workspacePath: nextPath,
+				}
+			}
+			await provider.postMessageToWebview({ type: "parallelWorkspaceChanged", text: nextPath })
+			break
+		}
+		// kilocode_change end
+		// kilocode_change start: parallel conversations & manual workspace creation
+		case "parallel.newConversation": {
+			const manager = provider.parallelManager
+			await manager.getFolders()
+			const requestedFolder =
+				typeof message.values?.folderPath === "string" ? message.values.folderPath : undefined
+			const requestedWorkspace =
+				typeof message.values?.workspacePath === "string" ? message.values.workspacePath : undefined
+			const currentTask = provider.getCurrentTask()
+			const currentBound = currentTask ? manager.conversationForSession(currentTask.taskId) : undefined
+			const folderPath =
+				requestedFolder ??
+				provider.pendingNewConversation?.folderPath ??
+				currentBound?.folderPath ??
+				manager.folderPathForPath(currentTask?.cwd ?? provider.cwd)
+			const workspacePath =
+				requestedWorkspace ??
+				(requestedFolder ? folderPath : undefined) ??
+				provider.pendingNewConversation?.workspacePath ??
+				currentBound?.workspacePath ??
+				folderPath
+			if (provider.pendingNewConversation && !requestedFolder && !requestedWorkspace) {
+				await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
+				break
+			}
+			if (
+				provider.pendingNewConversation &&
+				provider.pendingNewConversation.folderPath === folderPath &&
+				(provider.pendingNewConversation.workspacePath ?? folderPath) === workspacePath
+			) {
+				await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
+				break
+			}
+			if (
+				currentTask &&
+				currentTask.clineMessages.length > 0 &&
+				!manager.conversationForSession(currentTask.taskId)
+			) {
+				const firstUserText = currentTask.clineMessages.find(
+					(m) => m.type === "say" && m.say === "user_feedback" && m.text,
+				)?.text
+				let title = firstUserText?.slice(0, 60)
+				if (!title) {
+					try {
+						const { historyItem } = await provider.getTaskWithId(currentTask.taskId)
+						title = historyItem.task?.slice(0, 60)
+					} catch {
+						// Title stays generic when history cannot be read.
+					}
+				}
+				await manager.createConversation(manager.folderPathForPath(currentTask.cwd), {
+					sessionId: currentTask.taskId,
+					title,
+					workspacePath: currentTask.cwd,
+				})
+			}
+			const conversation = await manager.createConversation(folderPath, { workspacePath })
+			provider.pendingNewConversation = {
+				id: conversation.id,
+				folderPath,
+				workspacePath,
+			}
+			await provider.postStateToWebview()
+			await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
+			await provider.postMessageToWebview({ type: "parallelWorkspaceChanged", text: workspacePath })
+			await manager.broadcast()
+			break
+		}
+		case "parallel.selectConversation": {
+			const manager = provider.parallelManager
+			const conversationId = message.text ?? ""
+			if (!conversationId) {
+				break
+			}
+			if (provider.pendingNewConversation?.id === conversationId) {
+				await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
+				break
+			}
+			const conversation = await manager.getConversation(conversationId)
+			provider.pendingNewConversation = undefined
+			await manager.setActiveConversation(conversationId)
+			const workspacePath = conversation?.workspacePath ?? conversation?.folderPath
+			if (conversation?.sessionId) {
+				await provider.focusTask(conversation.sessionId)
+				const focused = provider.getCurrentTask()
+				if (focused) {
+					await provider.postMessageToWebview({ type: "parallelWorkspaceChanged", text: focused.cwd })
+				} else if (workspacePath) {
+					await provider.postMessageToWebview({ type: "parallelWorkspaceChanged", text: workspacePath })
+				}
+			} else if (conversation) {
+				provider.pendingNewConversation = {
+					id: conversation.id,
+					folderPath: conversation.folderPath,
+					workspacePath,
+				}
+				await provider.postStateToWebview()
+				await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
+				if (workspacePath) {
+					await provider.postMessageToWebview({ type: "parallelWorkspaceChanged", text: workspacePath })
+				}
+			}
+			await manager.broadcast()
+			break
+		}
+		case "parallel.createWorkspace": {
+			const name = (message.text ?? "").trim()
+			if (!name) {
+				break
+			}
+			const manager = provider.parallelManager
+			await manager.getFolders()
+			const folderPath =
+				(typeof message.values?.folderPath === "string" && message.values.folderPath) ||
+				manager.folderPathForPath(provider.getCurrentTask()?.cwd ?? provider.cwd)
+			try {
+				const workspace = await provider.getWorkspaceService(folderPath).create({ name, folderPath })
+				const conversation = await manager.createConversation(folderPath, {
+					workspacePath: workspace.path,
+				})
+				provider.pendingNewConversation = {
+					id: conversation.id,
+					folderPath,
+					workspacePath: workspace.path,
+				}
+				await provider.postStateToWebview()
+				await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
+				await provider.postMessageToWebview({ type: "parallelWorkspaceChanged", text: workspace.path })
+				await manager.broadcast()
+			} catch (error) {
+				const detail = error instanceof Error ? error.message : String(error)
+				vscode.window.showErrorMessage(
+					`Failed to create git-worktree workspace "${name}" from ${folderPath}: ${detail}`,
+				)
+			}
+			break
+		}
+		case "parallel.forkWorkspace": {
+			const manager = provider.parallelManager
+			await manager.getFolders()
+			const folderPath =
+				(typeof message.values?.folderPath === "string" && message.values.folderPath) ||
+				manager.folderPathForPath(provider.getCurrentTask()?.cwd ?? provider.cwd)
+			const sourceName = (message.text ?? "").trim()
+			try {
+				const service = provider.getWorkspaceService(folderPath)
+				const workspace =
+					!sourceName || sourceName === "main"
+						? await service.create({ name: "fork", folderPath })
+						: await service.fork(sourceName)
+				const conversation = await manager.createConversation(folderPath, {
+					workspacePath: workspace.path,
+				})
+				provider.pendingNewConversation = {
+					id: conversation.id,
+					folderPath,
+					workspacePath: workspace.path,
+				}
+				await provider.postStateToWebview()
+				await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
+				await provider.postMessageToWebview({ type: "parallelWorkspaceChanged", text: workspace.path })
+				await manager.broadcast()
+			} catch (error) {
+				const detail = error instanceof Error ? error.message : String(error)
+				vscode.window.showErrorMessage(`Failed to fork workspace: ${detail}`)
+			}
+			break
+		}
+		case "parallel.deleteWorkspace": {
+			const name = (message.text ?? "").trim()
+			if (!name || name === "main") {
+				break
+			}
+			const manager = provider.parallelManager
+			await manager.getFolders()
+			const entry = await provider.workspaceRegistry.get(name)
+			if (!entry) {
+				vscode.window.showErrorMessage(`Unknown workspace "${name}".`)
+				break
+			}
+			const yes = t("common:answers.yes")
+			const deleteDirectly = t("common:answers.delete_directly")
+			const confirmed = await vscode.window.showWarningMessage(
+				t("common:confirmation.delete_workspace", { name }),
+				{ modal: true },
+				yes,
+				deleteDirectly,
+			)
+			if (confirmed !== yes && confirmed !== deleteDirectly) {
+				break
+			}
+			const deleteAllConversations = confirmed === deleteDirectly
+			const folderPath = manager.folderPathForWorkspace(entry) ?? manager.folderPathForPath(entry.path)
+			try {
+				await provider.getWorkspaceService(folderPath).deleteWorkspace(name)
+				if (deleteAllConversations) {
+					const removed = await manager.deleteConversationsInWorkspace(entry.path)
+					for (const conversation of removed) {
+						if (!conversation.sessionId) {
+							continue
+						}
+						try {
+							await provider.abortAndRemoveTask(conversation.sessionId)
+							await provider.deleteTaskWithId(conversation.sessionId)
+						} catch (error) {
+							console.error(
+								`[parallel.deleteWorkspace] failed to delete conversation ${conversation.id}:`,
+								error,
+							)
+						}
+					}
+					if (provider.pendingNewConversation?.workspacePath === entry.path) {
+						provider.pendingNewConversation = undefined
+					}
+				} else {
+					await manager.moveConversationsToWorkspace(entry.path, folderPath)
+					if (provider.pendingNewConversation?.workspacePath === entry.path) {
+						provider.pendingNewConversation = {
+							...provider.pendingNewConversation,
+							folderPath,
+							workspacePath: folderPath,
+						}
+					}
+					const currentTask = provider.getCurrentTask()
+					if (currentTask?.cwd === entry.path) {
+						await currentTask.switchWorkspace(folderPath)
+					}
+				}
+				await provider.postMessageToWebview({ type: "parallelWorkspaceChanged", text: folderPath })
+				await manager.broadcast()
+			} catch (error) {
+				const detail = error instanceof Error ? error.message : String(error)
+				vscode.window.showErrorMessage(`Failed to delete workspace "${name}": ${detail}`)
+			}
+			break
+		}
+		case "parallel.archiveFolder": {
+			if (!message.text) {
+				break
+			}
+			await provider.parallelManager.setFolderArchived(message.text, message.archived !== false)
+			await provider.parallelManager.broadcast()
+			break
+		}
+		case "parallel.archiveConversation": {
+			if (!message.text) {
+				break
+			}
+			await provider.parallelManager.setConversationArchived(message.text, message.archived !== false)
+			await provider.parallelManager.broadcast()
+			break
+		}
+		case "parallel.renameConversation": {
+			if (!message.text || !message.editedMessageContent?.trim()) {
+				break
+			}
+			await provider.parallelManager.renameConversation(message.text, message.editedMessageContent.trim())
+			await provider.parallelManager.broadcast()
+			break
+		}
+		case "parallel.forkConversation": {
+			const sourceId = message.text ?? ""
+			const source = await provider.parallelManager.getConversation(sourceId)
+			if (!source?.sessionId) {
+				vscode.window.showErrorMessage("Only a started conversation can be forked.")
+				break
+			}
+			try {
+				const newItem = await provider.forkTaskIntoNewSession(source.sessionId)
+				const forked = await provider.parallelManager.createConversation(source.folderPath, {
+					sessionId: newItem.id,
+					title: `${source.title ?? newItem.task ?? ""} · fork`.slice(0, 60),
+					workspacePath: source.workspacePath ?? source.folderPath,
+				})
+				await provider.focusTask(newItem.id)
+				const focused = provider.getCurrentTask()
+				if (focused) {
+					await provider.postMessageToWebview({ type: "parallelWorkspaceChanged", text: focused.cwd })
+				}
+				await provider.parallelManager.setActiveConversation(forked.id)
+				await provider.parallelManager.broadcast()
+			} catch (error) {
+				vscode.window.showErrorMessage(
+					`Failed to fork conversation: ${error instanceof Error ? error.message : String(error)}`,
+				)
+			}
+			break
+		}
+		// kilocode_change end
+		// kilocode_change start: stop a running parallel subagent from its detail panel
+		case "parallelSession.stop": {
+			const stopped = provider.parallelManager?.cancel(message.text ?? "")
+			if (!stopped) {
+				await provider.parallelManager?.broadcast()
+			}
+			break
+		}
+		// kilocode_change end
 		case "askResponse":
 			{
 				const resolved = await resolveIncomingImages({ text: message.text, images: message.images })
@@ -914,7 +1292,7 @@ export const webviewMessageHandler = async (
 					//
 					// Do NOT drop resume_task / api_req_failed / mistake_limit_reached the same
 					// way: after an API-key edit the user often returns and clicks Continue on a
-					// row that was briefly marked answered during a failed race. Dropping those
+					// row that was brieflyked answered during a failed race. Dropping those
 					// clicks clears the webview buttons and freezes the chat with no recovery.
 					const answeredAsk =
 						task.findMessageByTimestamp?.(message.askTs) ??
@@ -4230,7 +4608,7 @@ export const webviewMessageHandler = async (
 		case "filterMarketplaceItems": {
 			if (marketplaceManager && message.filters) {
 				try {
-					await marketplaceManager.updateWithFilteredItems({
+					awaitketplaceManager.updateWithFilteredItems({
 						type: message.filters.type as MarketplaceItemType | undefined,
 						search: message.filters.search,
 						tags: message.filters.tags,
@@ -4238,14 +4616,14 @@ export const webviewMessageHandler = async (
 					await provider.postStateToWebview()
 				} catch (error) {
 					console.error("Marketplace: Error filtering items:", error)
-					vscode.window.showErrorMessage("Failed to filter marketplace items")
+					vscode.window.showErrorMessage("Failed to filterketplace items")
 				}
 			}
 			break
 		}
 
 		case "fetchMarketplaceData": {
-			// Fetch marketplace data on demand
+			// Fetchketplace data on demand
 			await provider.fetchMarketplaceData()
 			break
 		}
@@ -4253,7 +4631,7 @@ export const webviewMessageHandler = async (
 		case "installMarketplaceItem": {
 			if (marketplaceManager && message.mpItem && message.mpInstallOptions) {
 				try {
-					const configFilePath = await marketplaceManager.installMarketplaceItem(
+					const configFilePath = awaitketplaceManager.installMarketplaceItem(
 						message.mpItem,
 						message.mpInstallOptions,
 					)
@@ -4267,7 +4645,7 @@ export const webviewMessageHandler = async (
 						slug: message.mpItem.id,
 					})
 				} catch (error) {
-					console.error(`Error installing marketplace item: ${error}`)
+					console.error(`Error installingketplace item: ${error}`)
 					// Send error message to webview
 					provider.postMessageToWebview({
 						type: "marketplaceInstallResult",
@@ -4283,7 +4661,7 @@ export const webviewMessageHandler = async (
 		case "removeInstalledMarketplaceItem": {
 			if (marketplaceManager && message.mpItem && message.mpInstallOptions) {
 				try {
-					await marketplaceManager.removeInstalledMarketplaceItem(message.mpItem, message.mpInstallOptions)
+					awaitketplaceManager.removeInstalledMarketplaceItem(message.mpItem, message.mpInstallOptions)
 
 					// kilocode_change start: Force skills refresh after skill deletion
 					// If the removed item is a skill, force a refresh of the SkillsManager
@@ -4306,11 +4684,11 @@ export const webviewMessageHandler = async (
 						slug: message.mpItem.id,
 					})
 				} catch (error) {
-					console.error(`Error removing marketplace item: ${error}`)
+					console.error(`Error removingketplace item: ${error}`)
 
 					// Show error message to user
 					vscode.window.showErrorMessage(
-						`Failed to remove marketplace item: ${error instanceof Error ? error.message : String(error)}`,
+						`Failed to removeketplace item: ${error instanceof Error ? error.message : String(error)}`,
 					)
 
 					// Send error message to webview
@@ -4325,7 +4703,7 @@ export const webviewMessageHandler = async (
 				// MarketplaceManager not available or missing required parameters
 				const errorMessage = !marketplaceManager
 					? "Marketplace manager is not available"
-					: "Missing required parameters for marketplace item removal"
+					: "Missing required parameters forketplace item removal"
 				console.error(errorMessage)
 
 				vscode.window.showErrorMessage(errorMessage)
@@ -4345,15 +4723,15 @@ export const webviewMessageHandler = async (
 		case "installMarketplaceItemWithParameters": {
 			if (marketplaceManager && message.payload && "item" in message.payload && "parameters" in message.payload) {
 				try {
-					const configFilePath = await marketplaceManager.installMarketplaceItem(message.payload.item, {
+					const configFilePath = awaitketplaceManager.installMarketplaceItem(message.payload.item, {
 						parameters: message.payload.parameters,
 					})
 					await provider.postStateToWebview()
 					console.log(`Marketplace item with parameters installed and config file opened: ${configFilePath}`)
 				} catch (error) {
-					console.error(`Error installing marketplace item with parameters: ${error}`)
+					console.error(`Error installingketplace item with parameters: ${error}`)
 					vscode.window.showErrorMessage(
-						`Failed to install marketplace item: ${error instanceof Error ? error.message : String(error)}`,
+						`Failed to installketplace item: ${error instanceof Error ? error.message : String(error)}`,
 					)
 				}
 			}
@@ -5032,8 +5410,8 @@ export const webviewMessageHandler = async (
 					await vscode.commands.executeCommand("markdown.showPreview", doc.uri)
 				} catch (error) {
 					const errorMessage = error instanceof Error ? error.message : String(error)
-					provider.log(`Error opening markdown preview: ${errorMessage}`)
-					vscode.window.showErrorMessage(`Failed to open markdown preview: ${errorMessage}`)
+					provider.log(`Error openingkdown preview: ${errorMessage}`)
+					vscode.window.showErrorMessage(`Failed to openkdown preview: ${errorMessage}`)
 				}
 			}
 			break

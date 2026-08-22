@@ -16,6 +16,10 @@ type AutoApproveToggles = Pick<
 	| "alwaysAllowSubtasks"
 	| "alwaysAllowExecute"
 	| "alwaysAllowFollowupQuestions"
+	// kilocode_change start: parallel subagents & workspaces
+	| "agentSubagentDispatchEnabled"
+	| "agentWorkspaceManagementEnabled"
+	// kilocode_change end
 >
 
 export type AutoApproveSetting = keyof AutoApproveToggles
@@ -103,6 +107,22 @@ export const autoApproveSettingsConfig: Record<AutoApproveSetting, AutoApproveCo
 		icon: "question",
 		testId: "always-allow-followup-questions-toggle",
 	},
+	// kilocode_change start: parallel subagents & workspaces permission bar toggles
+	agentSubagentDispatchEnabled: {
+		key: "agentSubagentDispatchEnabled",
+		labelKey: "settings:autoApprove.parallel.subagents.toggle",
+		descriptionKey: "settings:autoApprove.parallel.subagents.description",
+		icon: "hub",
+		testId: "agent-subagent-dispatch-toggle",
+	},
+	agentWorkspaceManagementEnabled: {
+		key: "agentWorkspaceManagementEnabled",
+		labelKey: "settings:autoApprove.parallel.workspaces.toggle",
+		descriptionKey: "settings:autoApprove.parallel.workspaces.description",
+		icon: "repo",
+		testId: "agent-workspace-management-toggle",
+	},
+	// kilocode_change end
 }
 
 type AutoApproveToggleProps = AutoApproveToggles & {

@@ -289,7 +289,20 @@
 		},
 		"toggleAriaLabel": "Toggle auto-approval",
 		"disabledAriaLabel": "Auto-approval disabled - select options first",
-		"selectOptionsFirst": "Select at least one option below to enable auto-approval"
+		"selectOptionsFirst": "Select at least one option below to enable auto-approval",
+		"parallel": {
+			"label": "Parallel Agents & Workspaces",
+			"subagents": {
+				"label": "Allow the model to dispatch parallel subagents",
+				"description": "When enabled (default), the model can run several self-contained subtasks in parallel as isolated subagents, and continues only after all of them finish.",
+				"toggle": "Subagents"
+			},
+			"workspaces": {
+				"label": "Allow agents to create & merge parallel workspaces",
+				"description": "When enabled (default), the model and its subagents can create isolated git worktree workspaces, work in them, and merge finished branches back into the main branch.",
+				"toggle": "Workspaces"
+			}
+		}
 	},
 	"providers": {
 		"providerDocumentation": "{{provider}} documentation",

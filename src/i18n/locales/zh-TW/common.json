@@ -25,7 +25,8 @@
 	"confirmation": {
 		"reset_state": "您確定要重設延伸模組中的所有狀態和金鑰儲存嗎？此操作無法復原。",
 		"delete_config_profile": "您確定要刪除此設定檔案嗎？",
-		"delete_custom_mode_with_rules": "您確定要刪除此 {scope} 模式嗎？\n\n這也將刪除位於以下位置的關聯規則資料夾：\n{rulesFolderPath}"
+		"delete_custom_mode_with_rules": "您確定要刪除此 {scope} 模式嗎？\n\n這也將刪除位於以下位置的關聯規則資料夾：\n{rulesFolderPath}",
+		"delete_workspace": "刪除工作區「{{name}}」？將強制刪除該 git worktree。選擇「是」會把對話移回 main；選擇「直接刪除」會同時刪除該工作區的所有對話。"
 	},
 	"errors": {
 		"invalid_data_uri": "資料 URI 格式無效",
@@ -188,7 +189,8 @@
 		"yes": "是",
 		"no": "否",
 		"remove": "刪除",
-		"keep": "保留"
+		"keep": "保留",
+		"delete_directly": "直接刪除"
 	},
 	"buttons": {
 		"save": "儲存",

@@ -11,6 +11,12 @@ import fetchInstructions from "./fetch_instructions"
 import generateImage from "./generate_image"
 import listFiles from "./list_files"
 import newTask from "./new_task"
+// kilocode_change start: parallel subagents & workspaces
+import dispatchSubagents from "./dispatch-subagents"
+import workspaceStatus from "./workspace-status"
+import workspaceCreate from "./workspace-create"
+import workspaceMerge from "./workspace-merge"
+// kilocode_change end
 import { createReadFileTool, type ReadFileToolOptions } from "./read_file"
 import runSlashCommand from "./run_slash_command"
 import searchAndReplace from "./search_and_replace"
@@ -87,6 +93,12 @@ export function getNativeTools(options: NativeToolsOptions = {}): OpenAI.Chat.Ch
 		generateImage,
 		listFiles,
 		newTask,
+		// kilocode_change start: parallel subagents & workspaces
+		dispatchSubagents,
+		workspaceStatus,
+		workspaceCreate,
+		workspaceMerge,
+		// kilocode_change end
 		createReadFileTool(readFileOptions),
 		runSlashCommand,
 		searchAndReplace,

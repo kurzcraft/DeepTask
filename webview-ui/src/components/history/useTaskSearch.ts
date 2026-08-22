@@ -8,26 +8,54 @@ import {
 // import { highlightFzfMatch } from "@/utils/highlight" // kilocode_change
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { useTaskHistory } from "@/kilocode/hooks/useTaskHistory"
+import { folderConversationsFor, resolveActiveFolderPath, workspacePathsForFolder } from "./folderHistory"
 
 type SortOption = "newest" | "oldest" | "mostExpensive" | "mostTokens" | "mostRelevant"
 
 export const useTaskSearch = () => {
-	const { taskHistoryFullLength, taskHistoryVersion } = useExtensionState() // kilocode_change
+	const {
+		taskHistoryFullLength,
+		taskHistoryVersion,
+		cwd,
+		parallelFolders,
+		parallelWorkspaces,
+		parallelConversations,
+		parallelActiveConversationId,
+		parallelActiveWorkspace,
+	} = useExtensionState() // kilocode_change
 	const [searchQuery, setSearchQuery] = useState("")
 	const [sortOption, setSortOption] = useState<SortOption>("newest")
 	const [lastNonRelevantSort, setLastNonRelevantSort] = useState<SortOption | null>("newest")
 	const [showAllWorkspaces, setShowAllWorkspaces] = useState(false)
+
+	const folderPath = resolveActiveFolderPath({
+		cwd,
+		parallelFolders,
+		parallelWorkspaces,
+		parallelConversations,
+		parallelActiveConversationId,
+		parallelActiveWorkspace,
+	})
+	const folderConversations = folderConversationsFor(parallelConversations, folderPath)
+	const workspacePaths = [...workspacePathsForFolder(folderPath, folderConversations, parallelWorkspaces)].filter(
+		Boolean,
+	)
+	const sessionIds = folderConversations
+		.map((conversation) => conversation.sessionId)
+		.filter((id): id is string => Boolean(id))
 
 	// kilocode_change start
 	const [requestedPageIndex, setRequestedPageIndex] = useState(0)
 	const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
 	const { data } = useTaskHistory(
 		{
-			workspace: showAllWorkspaces ? "all" : "current",
+			workspace: "all",
 			sort: sortOption,
 			favoritesOnly: showFavoritesOnly,
 			pageIndex: requestedPageIndex,
 			search: searchQuery,
+			workspacePaths: showAllWorkspaces ? undefined : workspacePaths,
+			sessionIds: showAllWorkspaces ? undefined : sessionIds,
 		},
 		taskHistoryVersion,
 	)

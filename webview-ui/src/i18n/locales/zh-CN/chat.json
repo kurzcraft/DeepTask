@@ -511,5 +511,50 @@
 		"updated": "已更新待办事项列表",
 		"completed": "已完成",
 		"started": "已开始"
+	},
+	"parallel": {
+		"status": {
+			"running": "运行中",
+			"completed": "已完成",
+			"error": "出错",
+			"cancelled": "已取消"
+		},
+		"workspace": "工作区",
+		"workspaceStatus": {
+			"available": "空闲可用",
+			"busy": "使用中",
+			"merged": "已合并到主分支",
+			"conflicted": "合并冲突,需在工作区解决",
+			"error": "错误"
+		},
+		"stop": "停止子代理",
+		"close": "折叠面板",
+		"branch": "分支",
+		"baseBranch": "基准分支",
+		"workspaceStatusLabel": "状态",
+		"workspaceHint": "可通过 dispatch_subagents 指定该工作区派发子代理;完成后用 workspace_merge 合并回主分支。",
+		"notFound": "该并行任务已不存在。",
+		"folders": "文件夹",
+		"appTitle": "文件夹",
+		"newConversation": "新对话",
+		"openFolder": "打开文件夹",
+		"mainWorkspace": "主工作区",
+		"switchWorkspace": "切换工作区(更改当前任务的工作文件夹)",
+		"newChat": "新对话",
+		"createWorkspace": "创建工作区…",
+		"workspaceNamePlaceholder": "工作区名称",
+		"createWorkspaceConfirm": "创建",
+		"cancel": "取消",
+		"archive": "归档(隐藏,可再恢复)",
+		"unarchive": "取消归档",
+		"rename": "重命名",
+		"fork": "分叉对话(复制上下文)",
+		"resizeRail": "调节文件夹列表宽度",
+		"toggleFolder": "展开或折叠文件夹",
+		"toggleWorkspace": "展开或折叠工作区",
+		"forkWorkspace": "分叉工作区",
+		"deleteWorkspace": "删除工作区",
+		"deleteWorkspaceConfirm": "删除工作区 {{name}}？其中的对话会移回 main。",
+		"archived": "已归档"
 	}
 }

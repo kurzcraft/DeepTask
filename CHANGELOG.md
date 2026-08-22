@@ -1,5 +1,18 @@
 # Deeptask
 
+## 9.1.0
+
+### Minor Changes
+
+- Add parallel subagents: the model can dispatch up to 5 self-contained subtasks at once with `dispatch_subagents`; each subagent is a real agent with the full chat experience and integrated terminals, and the main task continues only after every subagent finishes.
+- Add isolated parallel workspaces: write-heavy subagents automatically get their own git worktree branch (`needs_workspace`), a persisted busy/available registry prevents two agents writing the same workspace, and `workspace_merge` merges finished branches back into the main branch with clean conflict handling (auto-commit pending changes, temporary-worktree merging that never dirties the user's checkout, abort-and-report on conflicts).
+- Add `workspace_status` / `workspace_create` so the model can inspect busy state and create workspaces on demand; subagents auto-decide whether they need a workspace based on whether they write files.
+- Add a fixed left sidebar (ZCode/DeepSeek-harness style) with a global folder → workspace → conversation tree shared across all editor windows: existing Deeptask workspaces reload as soon as a window opens, conversations nest under their workspace, and occupied workspaces automatically fork a sibling git worktree and move the later conversation there.
+- Add a thin user-message quick-jump rail at the left of the task view (and inside the subagent panel): one tick per user message, hovering shows the full message, clicking scrolls to it.
+- Add two permission toggles in the auto-approve bar above the chat input (both default on) for subagent dispatch and workspace management; history shows only the current folder's conversations grouped by workspace; non-git folders initialize automatically so worktrees can be created.
+- Deleting a workspace force-removes the git worktree after a native confirm: Yes keeps conversations under main, Delete All also deletes every conversation in that workspace.
+- Update the bilingual README, packaged Marketplace introduction, installation commands, and release notes for 9.1.0.
+
 ## 9.0.9
 
 ### Patch Changes

@@ -27,6 +27,8 @@ describe("AutoApproveToggle", () => {
 		alwaysAllowSubtasks: false,
 		alwaysAllowExecute: true,
 		alwaysAllowFollowupQuestions: false,
+		agentSubagentDispatchEnabled: true, // kilocode_change: parallel subagents
+		agentWorkspaceManagementEnabled: true, // kilocode_change: parallel workspaces
 		onToggle: mockOnToggle,
 	}
 

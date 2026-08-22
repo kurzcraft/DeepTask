@@ -11,6 +11,14 @@ export function getTaskHistory(
 ): TaskHistoryResponsePayload {
 	let tasks = taskHistory.filter((item) => item.ts && item.task)
 
+	if (request.sessionIds?.length || request.workspacePaths?.length) {
+		const sessionIds = new Set(request.sessionIds ?? [])
+		const workspacePaths = new Set(request.workspacePaths ?? [])
+		tasks = tasks.filter(
+			(item) => sessionIds.has(item.id) || Boolean(item.workspace && workspacePaths.has(item.workspace)),
+		)
+	}
+
 	if (request.workspace === "current") {
 		tasks = tasks.filter((item) => item.workspace === cwd)
 	}

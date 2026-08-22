@@ -62,7 +62,7 @@ export interface McpMarketplaceCatalog {
 }
 
 export interface McpDownloadResponse {
-	// kilocode_change: This payload is used both for the marketplace download details
+	// kilocode_change: This payload is used both for theketplace download details
 	// modal and for older install flows. Keep it permissive for backwards compatibility.
 	mcpId: string
 	// Marketplace download details (preferred)
@@ -144,6 +144,10 @@ export interface ExtensionMessage {
 		| "workspaceUpdated"
 		| "invoke"
 		| "messageUpdated"
+		| "parallelSessionsUpdated" // kilocode_change: parallel subagents & workspaces
+		| "parallelSessionMessage" // kilocode_change
+		| "parallelSessionMessageUpdated" // kilocode_change
+		| "parallelWorkspaceChanged" // kilocode_change: active workspace switched
 		| "mcpServers"
 		| "enhancedPrompt"
 		| "commitSearchResults"
@@ -301,6 +305,14 @@ export interface ExtensionMessage {
 		path?: string
 	}>
 	clineMessage?: ClineMessage
+	// kilocode_change start: parallel subagents & workspaces
+	parallelSessions?: import("./parallel.js").ParallelSession[]
+	parallelWorkspaces?: import("./parallel.js").ParallelWorkspace[]
+	parallelFolders?: import("./parallel.js").ParallelFolder[]
+	parallelConversations?: import("./parallel.js").ParallelConversation[]
+	parallelActiveConversationId?: string
+	parallelSessionId?: string
+	// kilocode_change end
 	routerModels?: RouterModels
 	openAiModels?: string[]
 	openAiModelInfos?: ModelRecord // kilocode_change
@@ -497,6 +509,8 @@ export type ExtensionState = Pick<
 	| "alwaysAllowSubtasks"
 	| "alwaysAllowFollowupQuestions"
 	| "alwaysAllowExecute"
+	| "agentSubagentDispatchEnabled" // kilocode_change: parallel subagents permission
+	| "agentWorkspaceManagementEnabled" // kilocode_change: parallel workspaces permission
 	| "followupAutoApproveTimeoutMs"
 	| "allowedCommands"
 	| "deniedCommands"
@@ -823,6 +837,18 @@ export interface WebviewMessage {
 		| "insertTextToChatArea" // kilocode_change
 		| "humanRelayResponse" // kilocode_change
 		| "humanRelayCancel" // kilocode_change
+		| "parallelSession.stop" // kilocode_change: stop a parallel subagent
+		| "parallel.openFolder" // kilocode_change: add a folder to the global sidebar list
+		| "parallel.switchWorkspace" // kilocode_change: switch the current task workspace
+		| "parallel.newConversation" // kilocode_change: start another conversation in a folder
+		| "parallel.selectConversation" // kilocode_change: focus a registered conversation
+		| "parallel.createWorkspace" // kilocode_change: manually create a git-worktree workspace
+		| "parallel.archiveFolder" // kilocode_change: archive/unarchive a sidebar folder
+		| "parallel.archiveConversation" // kilocode_change: archive/unarchive a conversation
+		| "parallel.renameConversation" // kilocode_change: rename a conversation
+		| "parallel.forkConversation" // kilocode_change: fork a conversation with full context
+		| "parallel.forkWorkspace" // kilocode_change: fork a folder workspace into a new git worktree
+		| "parallel.deleteWorkspace" // kilocode_change: delete a git-worktree workspace
 		| "codebaseIndexEnabled"
 		| "telemetrySetting"
 		| "testBrowserConnection"
@@ -971,6 +997,7 @@ export interface WebviewMessage {
 		| "refreshSkills"
 		| "reviewScopeSelected" // kilocode_change: Review mode scope selection
 	text?: string
+	archived?: boolean // kilocode_change: archive/unarchive target for parallel sidebar items
 	suggestionLength?: number // kilocode_change: Length of accepted suggestion for telemetry
 	completionRequestId?: string // kilocode_change
 	shareId?: string // kilocode_change - for sessionFork
@@ -1153,6 +1180,10 @@ export interface TaskHistoryRequestPayload {
 	favoritesOnly: boolean
 	pageIndex: number
 	search?: string
+	/** Limit history to these workspace paths (current rail folder + its worktrees). */
+	workspacePaths?: string[]
+	/** Include history items bound to these conversation session IDs. */
+	sessionIds?: string[]
 }
 
 export interface TasksByIdResponsePayload {
@@ -1273,6 +1304,10 @@ export interface ClineSayTool {
 		| "switchProviderProfile" // kilocode_change
 		| "newTask"
 		| "finishTask"
+		| "dispatchSubagents" // kilocode_change: parallel subagents
+		| "workspaceStatus" // kilocode_change: parallel workspaces
+		| "workspaceCreate" // kilocode_change
+		| "workspaceMerge" // kilocode_change
 		| "generateImage"
 		| "imageGenerated"
 		| "runSlashCommand"
@@ -1320,6 +1355,12 @@ export interface ClineSayTool {
 		}>
 	}>
 	question?: string
+	// kilocode_change start: parallel subagents & workspaces payload fields
+	count?: number
+	workspace?: string
+	baseBranch?: string
+	branch?: string
+	// kilocode_change end
 	// kilocode_change start
 	fastApplyResult?: {
 		description?: string

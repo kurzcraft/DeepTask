@@ -32,6 +32,7 @@ import {
 	type CloudUserInfo,
 	type CloudOrganizationMembership,
 	type CreateTaskOptions,
+	type ParallelWorkspace,
 	type TokenUsage,
 	type ToolUsage,
 	type ExtensionMessage,
@@ -78,6 +79,9 @@ import { McpHub } from "../../services/mcp/McpHub"
 import { McpServerManager } from "../../services/mcp/McpServerManager"
 import { MarketplaceManager } from "../../services/marketplace"
 import { ShadowCheckpointService } from "../../services/checkpoints/ShadowCheckpointService"
+import { ParallelManager } from "../kilocode/parallel/ParallelManager"
+import { WorkspaceRegistry } from "../kilocode/parallel/WorkspaceRegistry"
+import { WorkspaceService } from "../kilocode/parallel/WorkspaceService"
 import { CodeIndexManager } from "../../services/code-index/manager"
 import type { IndexProgressUpdate } from "../../services/code-index/interfaces/manager"
 import { MdmService } from "../../services/mdm/MdmService"
@@ -403,6 +407,46 @@ export class ClineProvider
 
 	// kilocode_change start
 	private defaultProviderProfileInitialization?: Promise<ProviderSettings | undefined>
+	private _workspaceRegistry?: WorkspaceRegistry
+	private _workspaceServices?: Map<string, WorkspaceService>
+	private _parallelManager?: ParallelManager
+	private _parallelInit?: Promise<void>
+	private conversationRestoreDone = false
+	public pendingNewConversation: { id: string; folderPath: string; workspacePath?: string } | undefined
+
+	get workspaceRegistry(): WorkspaceRegistry {
+		if (!this._workspaceRegistry) {
+			this._workspaceRegistry = new WorkspaceRegistry(this.context.globalState)
+		}
+		return this._workspaceRegistry
+	}
+
+	get workspaceService(): WorkspaceService {
+		return this.getWorkspaceService()
+	}
+
+	getWorkspaceService(projectRoot?: string): WorkspaceService {
+		const root = projectRoot ?? this.cwd
+		if (!this._workspaceServices) {
+			this._workspaceServices = new Map()
+		}
+		let service = this._workspaceServices.get(root)
+		if (!service) {
+			service = new WorkspaceService(root, this.workspaceRegistry)
+			this._workspaceServices.set(root, service)
+		}
+		return service
+	}
+
+	get parallelManager(): ParallelManager {
+		if (!this._parallelManager) {
+			this._parallelManager = new ParallelManager(this, this.workspaceRegistry)
+			this._parallelInit = (
+				this.cwd ? this._parallelManager.registerMainFolder(this.cwd) : Promise.resolve(false)
+			).then(() => this._parallelManager!.hydrateRegisteredWorkspaces())
+		}
+		return this._parallelManager
+	}
 
 	/** Serialize cancellation rehydration so consecutive human messages cannot overwrite one payload. */
 	public async rehydrateTaskWithUserMessage(
@@ -733,7 +777,7 @@ export class ClineProvider
 		}
 	}
 
-	// Adds a new Task instance to clineStack, marking the start of a new task.
+	// Adds a new Task instance to clineStack,king the start of a new task.
 	// The instance is pushed to the top of the stack (LIFO order).
 	// When the task is completed, the top instance is removed, reactivating the
 	// previous task.
@@ -809,6 +853,31 @@ export class ClineProvider
 		}
 	}
 
+	// kilocode_change start: abort a parallel conversation that is not the top of the stack
+	public async abortAndRemoveTask(taskId: string): Promise<void> {
+		const index = this.clineStack.findIndex((task) => task.taskId === taskId)
+		if (index === -1) {
+			return
+		}
+		const [task] = this.clineStack.splice(index, 1)
+		task.emit(RooCodeEventName.TaskUnfocused)
+		try {
+			await task.abortTask(true)
+		} catch (error) {
+			this.log(
+				`[ClineProvider#abortAndRemoveTask] abortTask() failed ${task.taskId}.${task.instanceId}: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			)
+		}
+		const cleanupFunctions = this.taskEventListeners.get(task)
+		if (cleanupFunctions) {
+			cleanupFunctions.forEach((cleanup) => cleanup())
+			this.taskEventListeners.delete(task)
+		}
+	}
+	// kilocode_change end
+
 	getTaskStackSize(): number {
 		return this.clineStack.length
 	}
@@ -816,6 +885,81 @@ export class ClineProvider
 	public getCurrentTaskStack(): string[] {
 		return this.clineStack.map((cline) => cline.taskId)
 	}
+
+	// kilocode_change start: occupancy across parallel conversations and subagents
+	public getLiveTasks(): Array<{ taskId: string; cwd: string; abort: boolean; abandoned: boolean }> {
+		return this.clineStack.map((task) => ({
+			taskId: task.taskId,
+			cwd: task.cwd,
+			abort: task.abort,
+			abandoned: task.abandoned,
+		}))
+	}
+
+	/**
+	 * If another live task already occupies `workspacePath`, create a sibling
+	 * git worktree under the same folder and move this conversation there.
+	 * Completed integrated terminals stay in the process-wide prune pool.
+	 */
+	public async ensureUnoccupiedWorkspace(params: {
+		workspacePath: string
+		folderPath?: string
+		task?: Task
+		conversationId?: string
+		name?: string
+		description?: string
+	}): Promise<{
+		path: string
+		created?: ParallelWorkspace
+		occupants: Array<{ kind: string; id: string; label?: string }>
+	}> {
+		const manager = this.parallelManager
+		await manager.getFolders()
+		const folderPath = params.folderPath ?? manager.folderPathForPath(params.workspacePath)
+		const occupants = await manager.occupantsOf(params.workspacePath, {
+			taskId: params.task?.taskId,
+			conversationId: params.conversationId,
+		})
+		if (occupants.length === 0) {
+			return { path: params.workspacePath, occupants }
+		}
+		const state = await this.getState()
+		if (state?.agentWorkspaceManagementEnabled === false) {
+			return { path: params.workspacePath, occupants }
+		}
+		try {
+			const created = await this.getWorkspaceService(folderPath).create({
+				name: params.name,
+				description: params.description,
+				folderPath,
+			})
+			if (params.task) {
+				await this.getWorkspaceService(folderPath).claim(created.name, `task:${params.task.taskId}`)
+				await params.task.switchWorkspace(created.path)
+			}
+			if (params.conversationId) {
+				await manager.updateConversationWorkspace(params.conversationId, folderPath, created.path)
+				if (this.pendingNewConversation?.id === params.conversationId) {
+					this.pendingNewConversation = {
+						...this.pendingNewConversation,
+						folderPath,
+						workspacePath: created.path,
+					}
+				}
+			}
+			await this.postMessageToWebview({ type: "parallelWorkspaceChanged", text: created.path })
+			await manager.broadcast()
+			return { path: created.path, created, occupants }
+		} catch (error) {
+			const detail = error instanceof Error ? error.message : String(error)
+			console.error("[ClineProvider] failed to relocate occupied workspace:", error)
+			vscode.window.showWarningMessage(
+				`Workspace is already in use; could not create an isolated git worktree: ${detail}`,
+			)
+			return { path: params.workspacePath, occupants }
+		}
+	}
+	// kilocode_change end
 
 	// Pending Edit Operations Management
 
@@ -1203,7 +1347,7 @@ export class ClineProvider
 
 	public async createTaskWithHistoryItem(
 		historyItem: HistoryItem & { rootTask?: Task; parentTask?: Task },
-		options?: { startTask?: boolean },
+		options?: { startTask?: boolean; keepRunningTask?: boolean }, // kilocode_change
 	) {
 		// Check if we're rehydrating the current task to avoid flicker
 		const currentTask = this.getCurrentTask()
@@ -1237,7 +1381,8 @@ export class ClineProvider
 				}
 			}
 			// kilocode_change end
-		} else {
+		} else if (!options?.keepRunningTask) {
+			// kilocode_change: parallel conversations keep the running task alive
 			await this.removeClineFromStack()
 		}
 
@@ -2430,6 +2575,19 @@ export class ClineProvider
 		const state = await this.getStateToPostToWebview()
 		this.postMessageToWebview({ type: "state", state })
 
+		// kilocode_change start: construct manager on startup and restore folders/conversations
+		try {
+			const manager = this.parallelManager
+			void (this._parallelInit ?? Promise.resolve())
+				.then(() => manager.broadcast())
+				.catch((error) => {
+					console.error("[ClineProvider] parallel broadcast failed:", error)
+				})
+		} catch (error) {
+			console.error("[ClineProvider] parallel broadcast failed:", error)
+		}
+		// kilocode_change end
+
 		// Check MDM compliance and send user to account tab if not compliant
 		// Only redirect if there's an actual MDM policy requiring authentication
 		if (this.mdmService?.requiresCloudAuth() && !this.checkMdmCompliance()) {
@@ -2767,11 +2925,13 @@ export class ClineProvider
 			kilocodeDefaultModel: (
 				await getKilocodeDefaultModel(apiConfiguration.kilocodeToken, apiConfiguration.kilocodeOrganizationId)
 			).defaultModel,
-			currentTaskItem: this.getCurrentTask()?.taskId
-				? (taskHistory || []).find((item: HistoryItem) => item.id === this.getCurrentTask()?.taskId)
-				: undefined,
-			clineMessages: this.getCurrentTask()?.clineMessages || [],
-			currentTaskTodos: this.getCurrentTask()?.todoList || [],
+			currentTaskItem: this.pendingNewConversation
+				? undefined
+				: this.getCurrentTask()?.taskId
+					? (taskHistory || []).find((item: HistoryItem) => item.id === this.getCurrentTask()?.taskId)
+					: undefined,
+			clineMessages: this.pendingNewConversation ? [] : this.getCurrentTask()?.clineMessages || [],
+			currentTaskTodos: this.pendingNewConversation ? [] : this.getCurrentTask()?.todoList || [],
 			// kilocode_change start
 			// Visible message queues are disabled. Do not expose stale queue state to
 			// ChatView; user input is routed through direct askResponse/terminal paths.
@@ -3514,6 +3674,54 @@ export class ClineProvider
 		return this.clineStack[this.clineStack.length - 1]
 	}
 
+	// kilocode_change start: parallel conversations
+	public async focusTask(taskId: string): Promise<void> {
+		const index = this.clineStack.findIndex((task) => task.taskId === taskId)
+		if (index === -1) {
+			const { historyItem } = await this.getTaskWithId(taskId)
+			await this.createTaskWithHistoryItem(historyItem, { keepRunningTask: true })
+			return
+		}
+		if (index !== this.clineStack.length - 1) {
+			const [task] = this.clineStack.splice(index, 1)
+			this.clineStack.push(task)
+		}
+		await this.postStateToWebview()
+		await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
+	}
+
+	public async forkTaskIntoNewSession(sourceTaskId: string): Promise<HistoryItem> {
+		const { historyItem, apiConversationHistoryFilePath, uiMessagesFilePath } =
+			await this.getTaskWithId(sourceTaskId)
+		const { randomUUID } = await import("crypto")
+		const newTaskId = randomUUID()
+		const { getTaskDirectoryPath } = await import("../../utils/storage")
+		const globalStoragePath = this.contextProxy.globalStorageUri.fsPath
+		const taskDirPath = await getTaskDirectoryPath(globalStoragePath, newTaskId)
+		await fs.mkdir(taskDirPath, { recursive: true })
+		const copyOrEmpty = async (source: string, destination: string): Promise<void> => {
+			try {
+				await fs.copyFile(source, destination)
+			} catch {
+				await fs.writeFile(destination, "[]")
+			}
+		}
+		await copyOrEmpty(
+			apiConversationHistoryFilePath,
+			path.join(taskDirPath, GlobalFileNames.apiConversationHistory),
+		)
+		await copyOrEmpty(uiMessagesFilePath, path.join(taskDirPath, GlobalFileNames.uiMessages))
+		const newItem: HistoryItem = {
+			...historyItem,
+			id: newTaskId,
+			ts: Date.now(),
+			task: `${historyItem.task ?? ""} (fork)`.trim(),
+		}
+		await this.updateTaskHistory(newItem)
+		return newItem
+	}
+	// kilocode_change end
+
 	public getRecentTasks(): string[] {
 		if (this.recentTasksCache) {
 			return this.recentTasksCache
@@ -3631,7 +3839,8 @@ export class ClineProvider
 		// kilocode_change end
 
 		// Single-open-task invariant: always enforce for user-initiated top-level tasks
-		if (!parentTask) {
+		if (!parentTask && !options.keepRunningTask) {
+			// kilocode_change: parallel conversations keep the previous task running
 			try {
 				await this.removeClineFromStack()
 			} catch {

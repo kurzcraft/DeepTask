@@ -140,6 +140,14 @@ class WorkspaceTracker {
 			return filePath
 		}
 
+		// kilocode_change start: parallel agent worktrees live under
+		// .kilocode/worktrees/ inside the workspace; their churn must not spam
+		// workspace file listings used for context.
+		if (filePath.includes(`${path.sep}.kilocode${path.sep}worktrees${path.sep}`)) {
+			return filePath
+		}
+		// kilocode_change end
+
 		const normalizedPath = this.normalizeFilePath(filePath)
 		try {
 			const stat = await vscode.workspace.fs.stat(vscode.Uri.file(normalizedPath))

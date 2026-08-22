@@ -289,7 +289,20 @@
 		},
 		"toggleAriaLabel": "切換自動核准狀態",
 		"disabledAriaLabel": "自動核准已停用 - 請先選取下方選項",
-		"selectOptionsFirst": "請先選取下方至少一個選項以啟用自動核准"
+		"selectOptionsFirst": "請先選取下方至少一個選項以啟用自動核准",
+		"parallel": {
+			"label": "並行子代理與工作區",
+			"subagents": {
+				"label": "允許模型並行派出子代理",
+				"description": "預設開啟。開啟後模型可以把多個獨立子任務作為隔離的子代理並行執行,全部完成後主任務才繼續。",
+				"toggle": "子代理"
+			},
+			"workspaces": {
+				"label": "允許代理建立並合併並行工作區",
+				"description": "預設開啟。開啟後模型及其子代理可以建立相互隔離的 git 工作樹工作區、在其中工作,並把完成的分支合併回主分支。",
+				"toggle": "工作區"
+			}
+		}
 	},
 	"providers": {
 		"providerDocumentation": "{{provider}} 說明文件",

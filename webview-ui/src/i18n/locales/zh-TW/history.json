@@ -1,5 +1,7 @@
 {
 	"recentTasks": "最近工作",
+	"workspaceGroupMain": "main",
+	"noRecentTasksInFolder": "此資料夾尚無最近任務",
 	"history": "歷史紀錄",
 	"exitSelectionMode": "離開選擇模式",
 	"enterSelectionMode": "進入選擇模式",

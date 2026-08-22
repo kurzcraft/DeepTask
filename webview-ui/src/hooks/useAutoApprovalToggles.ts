@@ -17,6 +17,8 @@ export function useAutoApprovalToggles() {
 		alwaysAllowProviderProfileSwitch, // kilocode_change
 		alwaysAllowSubtasks,
 		alwaysAllowFollowupQuestions,
+		agentSubagentDispatchEnabled, // kilocode_change: parallel subagents
+		agentWorkspaceManagementEnabled, // kilocode_change: parallel workspaces
 	} = useExtensionState()
 
 	const toggles = useMemo(
@@ -31,6 +33,8 @@ export function useAutoApprovalToggles() {
 			alwaysAllowProviderProfileSwitch, // kilocode_change
 			alwaysAllowSubtasks,
 			alwaysAllowFollowupQuestions,
+			agentSubagentDispatchEnabled, // kilocode_change: parallel subagents
+			agentWorkspaceManagementEnabled, // kilocode_change: parallel workspaces
 		}),
 		[
 			alwaysAllowReadOnly,
@@ -43,6 +47,8 @@ export function useAutoApprovalToggles() {
 			alwaysAllowProviderProfileSwitch, // kilocode_change
 			alwaysAllowSubtasks,
 			alwaysAllowFollowupQuestions,
+			agentSubagentDispatchEnabled, // kilocode_change: parallel subagents
+			agentWorkspaceManagementEnabled, // kilocode_change: parallel workspaces
 		],
 	)
 

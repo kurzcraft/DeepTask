@@ -28,6 +28,14 @@ import { getUpdateTodoListDescription } from "./update-todo-list"
 import { getRunSlashCommandDescription } from "./run-slash-command"
 import { getGenerateImageDescription } from "./generate-image"
 import { getDeleteFileDescription } from "./delete-file" // kilocode_change
+// kilocode_change start: parallel subagents & workspaces
+import {
+	getDispatchSubagentsDescription,
+	getWorkspaceStatusDescription,
+	getWorkspaceCreateDescription,
+	getWorkspaceMergeDescription,
+} from "./parallel"
+// kilocode_change end
 
 // kilocode_change start: Morph fast apply
 import { isFastApplyAvailable } from "../../tools/kilocode/editFileTool"
@@ -53,6 +61,12 @@ const toolDescriptionMap: Record<string, (args: ToolArgs) => string | undefined>
 	switch_mode: () => getSwitchModeDescription(),
 	switch_provider_profile: (args) => getSwitchProviderProfileDescription(args.providerProfiles), // kilocode_change
 	new_task: (args) => getNewTaskDescription(args),
+	// kilocode_change start: parallel subagents & workspaces
+	dispatch_subagents: (args) => getDispatchSubagentsDescription(args.settings?.agentSubagentDispatchEnabled),
+	workspace_status: (args) => getWorkspaceStatusDescription(args.settings?.agentWorkspaceManagementEnabled),
+	workspace_create: (args) => getWorkspaceCreateDescription(args.settings?.agentWorkspaceManagementEnabled),
+	workspace_merge: (args) => getWorkspaceMergeDescription(args.settings?.agentWorkspaceManagementEnabled),
+	// kilocode_change end
 	// kilocode_change start: Fast Apply
 	fast_edit_file: () => getEditFileDescription(),
 	// kilocode_change end

@@ -185,6 +185,10 @@ export class TerminalRegistry {
 		// Every command gets an isolated terminal. Retention is evaluated only
 		// when commands complete (and when surviving terminals are restored at
 		// extension startup), so running integrated terminals are never counted.
+		// The completed-terminal cap is process-wide: parent tasks, parallel
+		// conversations, and subagents share one prune pool. After a workspace
+		// migrate, new commands allocate in the new cwd; old completed terminals
+		// remain eligible for the same global limit.
 		const terminal = this.createTerminal(cwd, provider)
 
 		// kilocode_change start
@@ -312,10 +316,7 @@ export class TerminalRegistry {
 		const existingTerminals = vscode.window.terminals ?? []
 
 		for (const vsceTerminal of existingTerminals) {
-			if (
-				vsceTerminal.name !== DEEPTASK_TERMINAL_NAME &&
-				vsceTerminal.name !== LEGACY_KILOCODE_TERMINAL_NAME
-			) {
+			if (vsceTerminal.name !== DEEPTASK_TERMINAL_NAME && vsceTerminal.name !== LEGACY_KILOCODE_TERMINAL_NAME) {
 				continue
 			}
 
@@ -389,7 +390,10 @@ export class TerminalRegistry {
 		}
 	}
 
-	public static notifyTerminalProcessCompleted(terminal: RooTerminal, completedProcess?: RooTerminal["process"]): void {
+	public static notifyTerminalProcessCompleted(
+		terminal: RooTerminal,
+		completedProcess?: RooTerminal["process"],
+	): void {
 		// An old process can settle after the same terminal has already started a
 		// replacement command (for example after force-continue). Its late callback
 		// must not mark the replacement terminal as completed or trigger pruning.

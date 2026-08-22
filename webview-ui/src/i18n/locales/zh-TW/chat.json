@@ -511,5 +511,50 @@
 		"updated": "已更新待辦事項清單",
 		"completed": "已完成",
 		"started": "已開始"
+	},
+	"parallel": {
+		"status": {
+			"running": "執行中",
+			"completed": "已完成",
+			"error": "發生錯誤",
+			"cancelled": "已取消"
+		},
+		"workspace": "工作區",
+		"workspaceStatus": {
+			"available": "空閒可用",
+			"busy": "使用中",
+			"merged": "已合併到主分支",
+			"conflicted": "合併衝突,需在工作區解決",
+			"error": "錯誤"
+		},
+		"stop": "停止子代理",
+		"close": "折疊面板",
+		"branch": "分支",
+		"baseBranch": "基準分支",
+		"workspaceStatusLabel": "狀態",
+		"workspaceHint": "可透過 dispatch_subagents 指定該工作區派發子代理;完成後用 workspace_merge 合併回主分支。",
+		"notFound": "該並行任務已不存在。",
+		"folders": "資料夾",
+		"appTitle": "資料夾",
+		"newConversation": "新對話",
+		"openFolder": "開啟資料夾",
+		"mainWorkspace": "主工作區",
+		"switchWorkspace": "切換工作區(變更目前任務的工作資料夾)",
+		"newChat": "新對話",
+		"createWorkspace": "建立工作區…",
+		"workspaceNamePlaceholder": "工作區名稱",
+		"createWorkspaceConfirm": "建立",
+		"cancel": "取消",
+		"archive": "歸檔(隱藏,可再恢復)",
+		"unarchive": "取消歸檔",
+		"rename": "重新命名",
+		"fork": "分岔對話(複製上下文)",
+		"resizeRail": "調整資料夾列表寬度",
+		"toggleFolder": "展開或摺疊資料夾",
+		"toggleWorkspace": "展開或摺疊工作區",
+		"forkWorkspace": "分岔工作區",
+		"deleteWorkspace": "刪除工作區",
+		"deleteWorkspaceConfirm": "刪除工作區 {{name}}？其中的對話會移回 main。",
+		"archived": "已歸檔"
 	}
 }

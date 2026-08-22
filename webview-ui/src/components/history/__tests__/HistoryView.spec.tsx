@@ -37,19 +37,66 @@ const mockTaskHistory = [
 	},
 ]
 
+vi.mock("../TaskItem", () => ({
+	default: ({ item }: { item: { id: string; task: string } }) => (
+		<div data-testid={`task-item-${item.id}`}>{item.task}</div>
+	),
+}))
+
 describe("HistoryView", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		;(useExtensionState as ReturnType<typeof vi.fn>).mockReturnValue({
 			taskHistory: mockTaskHistory,
-			cwd: "/test/workspace",
+			cwd: "/home/user/my-project",
+			parallelFolders: [{ name: "my-project", path: "/home/user/my-project", kind: "main", createdAt: 1 }],
+			parallelWorkspaces: [
+				{
+					name: "feature-x",
+					path: "/home/user/my-project/.kilocode/worktrees/feature-x",
+					branch: "deeptask/feature-x",
+					baseBranch: "main",
+					status: "available",
+					folderPath: "/home/user/my-project",
+					createdAt: 1,
+					updatedAt: 1,
+				},
+			],
+			parallelConversations: [
+				{
+					id: "cv-1",
+					folderPath: "/home/user/my-project",
+					workspacePath: "/home/user/my-project",
+					sessionId: "1",
+					title: "Test task 1",
+					createdAt: 1,
+					lastActiveAt: 1,
+				},
+				{
+					id: "cv-2",
+					folderPath: "/home/user/my-project",
+					workspacePath: "/home/user/my-project/.kilocode/worktrees/feature-x",
+					sessionId: "2",
+					title: "Test task 2",
+					createdAt: 1,
+					lastActiveAt: 1,
+				},
+			],
+			parallelActiveConversationId: "cv-1",
+			parallelActiveWorkspace: "/home/user/my-project",
 		})
 
 		// kilocode_code start
 		;(useTaskHistory as ReturnType<typeof vi.fn>).mockReturnValue({
 			data: {
 				requestId: "",
-				historyItems: mockTaskHistory,
+				historyItems: [
+					{ ...mockTaskHistory[0], workspace: "/home/user/my-project" },
+					{
+						...mockTaskHistory[1],
+						workspace: "/home/user/my-project/.kilocode/worktrees/feature-x",
+					},
+				],
 				pageIndex: 0,
 				pageCount: 1,
 			},
@@ -75,5 +122,14 @@ describe("HistoryView", () => {
 		fireEvent.click(doneButton)
 
 		expect(onDone).toHaveBeenCalled()
+	})
+
+	it("groups the current folder's history by workspace", () => {
+		const onDone = vi.fn()
+		render(<HistoryView onDone={onDone} />)
+		expect(screen.getByTestId("history-workspace-group-main")).toBeInTheDocument()
+		expect(screen.getByTestId("history-workspace-group-feature-x")).toBeInTheDocument()
+		expect(screen.getByTestId("task-item-1")).toBeInTheDocument()
+		expect(screen.getByTestId("task-item-2")).toBeInTheDocument()
 	})
 })

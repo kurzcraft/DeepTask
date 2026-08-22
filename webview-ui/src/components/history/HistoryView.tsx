@@ -1,26 +1,19 @@
-import React, { memo, useState, useEffect } from "react"
+import React, { memo, useMemo, useState, useEffect } from "react"
 import BottomControls from "../kilocode/BottomControls" // kilocode_change
 import { ArrowLeft, Filter, ListChecks, Check, X, Trash2 } from "lucide-react"
 import { DeleteTaskDialog } from "./DeleteTaskDialog"
 import { BatchDeleteTaskDialog } from "./BatchDeleteTaskDialog"
-import { Virtuoso } from "react-virtuoso"
 
 import { VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
 
-import {
-	Button,
-	Checkbox,
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui"
+import { Button, Checkbox, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui"
 import { useAppTranslation } from "@/i18n/TranslationContext"
 
 import { Tab, TabContent, TabHeader } from "../common/Tab"
 import { useTaskSearch } from "./useTaskSearch"
 import TaskItem from "./TaskItem"
+import { useExtensionState } from "@/context/ExtensionStateContext"
+import { folderConversationsFor, groupHistoryByWorkspace, resolveActiveFolderPath } from "./folderHistory"
 
 type HistoryViewProps = {
 	onDone: () => void
@@ -44,13 +37,44 @@ const HistoryView = ({ onDone }: HistoryViewProps) => {
 		setRequestedPageIndex,
 		// kilocode_change end
 	} = useTaskSearch()
+	const {
+		cwd,
+		parallelFolders,
+		parallelWorkspaces,
+		parallelConversations,
+		parallelActiveConversationId,
+		parallelActiveWorkspace,
+	} = useExtensionState()
 	// kilocode_change start
-	const tasks = data?.historyItems ?? []
+	const rawTasks = useMemo(() => data?.historyItems ?? [], [data?.historyItems])
 	const pageIndex = data?.pageIndex ?? 0
 	const pageCount = data?.pageCount ?? 1
 	const totalItems = data?.totalItems ?? 0
 	// kilocode_change end
 	const { t } = useAppTranslation()
+	const folderPath = resolveActiveFolderPath({
+		cwd,
+		parallelFolders,
+		parallelWorkspaces,
+		parallelConversations,
+		parallelActiveConversationId,
+		parallelActiveWorkspace,
+	})
+	const folderConversations = folderConversationsFor(parallelConversations, folderPath)
+	const workspaceGroups = useMemo(
+		() =>
+			showAllWorkspaces
+				? [{ key: "all", label: t("history:workspace.all"), path: "", items: rawTasks }]
+				: groupHistoryByWorkspace({
+						folderPath,
+						folderTasks: rawTasks,
+						folderConversations,
+						workspaces: parallelWorkspaces,
+						mainLabel: t("history:workspaceGroupMain"),
+					}),
+		[showAllWorkspaces, rawTasks, folderPath, folderConversations, parallelWorkspaces, t],
+	)
+	const tasks = rawTasks
 
 	const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
 	const [isSelectionMode, setIsSelectionMode] = useState(false)
@@ -158,7 +182,9 @@ const HistoryView = ({ onDone }: HistoryViewProps) => {
 							className="shrink-0">
 							<Filter className="w-4 h-4 mr-1" />
 							{t("history:filters")}
-							<span className={`ml-1 text-xs transition-transform ${showFilters ? "rotate-180" : ""}`}>▼</span>
+							<span className={`ml-1 text-xs transition-transform ${showFilters ? "rotate-180" : ""}`}>
+								▼
+							</span>
 						</Button>
 					)}
 
@@ -265,7 +291,9 @@ const HistoryView = ({ onDone }: HistoryViewProps) => {
 										: "bg-vscode-editor-background text-vscode-foreground hover:bg-vscode-list-hoverBackground border border-vscode-panel-border"
 								}`}
 								data-testid="favorites-toggle">
-								<span className={`codicon ${showFavoritesOnly ? "codicon-star-full" : "codicon-star"}`} />
+								<span
+									className={`codicon ${showFavoritesOnly ? "codicon-star-full" : "codicon-star"}`}
+								/>
 								{t("history:favoritesOnly")}
 							</button>
 						</div>
@@ -278,12 +306,16 @@ const HistoryView = ({ onDone }: HistoryViewProps) => {
 						<div className="flex items-center gap-3">
 							<Checkbox
 								checked={isAllSelected}
-								data-state={isPartiallySelected ? "indeterminate" : isAllSelected ? "checked" : "unchecked"}
+								data-state={
+									isPartiallySelected ? "indeterminate" : isAllSelected ? "checked" : "unchecked"
+								}
 								onCheckedChange={(checked) => toggleSelectAll(checked === true)}
 								variant="description"
 								id="select-all-checkbox"
 							/>
-							<label htmlFor="select-all-checkbox" className="text-vscode-foreground cursor-pointer font-medium">
+							<label
+								htmlFor="select-all-checkbox"
+								className="text-vscode-foreground cursor-pointer font-medium">
 								{isAllSelected ? t("history:deselectAll") : t("history:selectAll")}
 							</label>
 						</div>
@@ -301,30 +333,37 @@ const HistoryView = ({ onDone }: HistoryViewProps) => {
 			</TabHeader>
 
 			<TabContent className="px-2 py-0">
-				<Virtuoso
-					className="flex-1 overflow-y-scroll"
-					data={tasks}
-					data-testid="virtuoso-container"
-					initialTopMostItemIndex={0}
-					components={{
-						List: React.forwardRef((props, ref) => (
-							<div {...props} ref={ref} data-testid="virtuoso-item-list" />
-						)),
-					}}
-					itemContent={(_index, item) => (
-						<TaskItem
-							key={item.id}
-							item={item}
-							variant="full"
-							showWorkspace={showAllWorkspaces}
-							isSelectionMode={isSelectionMode}
-							isSelected={selectedTaskIds.includes(item.id)}
-							onToggleSelection={toggleTaskSelection}
-							onDelete={setDeleteTaskId}
-							className="m-2"
-						/>
-					)}
-				/>
+				{workspaceGroups.length === 0 ? (
+					<p className="text-xs text-vscode-descriptionForeground m-2">
+						{t("history:noRecentTasksInFolder")}
+					</p>
+				) : (
+					<div className="flex flex-col gap-2 py-2" data-testid="history-workspace-groups">
+						{workspaceGroups.map((group) => (
+							<div
+								key={group.key}
+								data-testid={`history-workspace-group-${group.key}`}
+								className="flex flex-col">
+								<div className="text-[11px] uppercase tracking-wide text-vscode-descriptionForeground px-3 py-1">
+									{group.label}
+								</div>
+								{group.items.map((item) => (
+									<TaskItem
+										key={item.id}
+										item={item}
+										variant="full"
+										showWorkspace={showAllWorkspaces}
+										isSelectionMode={isSelectionMode}
+										isSelected={selectedTaskIds.includes(item.id)}
+										onToggleSelection={toggleTaskSelection}
+										onDelete={setDeleteTaskId}
+										className="m-2"
+									/>
+								))}
+							</div>
+						))}
+					</div>
+				)}
 			</TabContent>
 
 			{/* kilocode_change: more nesting so we can add more rows, removed fixed class */}

@@ -1,5 +1,7 @@
 {
 	"recentTasks": "Recent Tasks",
+	"workspaceGroupMain": "main",
+	"noRecentTasksInFolder": "No recent tasks in this folder",
 	"history": "History",
 	"exitSelectionMode": "Exit Selection Mode",
 	"enterSelectionMode": "Enter Selection Mode",

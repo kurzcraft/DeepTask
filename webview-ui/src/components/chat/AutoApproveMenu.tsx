@@ -81,6 +81,12 @@ const AutoApproveMenu = ({ style }: AutoApproveMenuProps) => {
 				case "alwaysAllowFollowupQuestions":
 					setAlwaysAllowFollowupQuestions(value)
 					break
+				// kilocode_change start: parallel toggles update via the settings
+				// round-trip (postStateToWebview) without dedicated local setters.
+				case "agentSubagentDispatchEnabled":
+				case "agentWorkspaceManagementEnabled":
+					break
+				// kilocode_change end
 			}
 
 			// Check if we need to update the master auto-approval state

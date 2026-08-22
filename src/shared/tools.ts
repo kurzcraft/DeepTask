@@ -91,6 +91,12 @@ export const toolParamNames = [
 	"old_string", // search_replace and edit_file parameter
 	"new_string", // search_replace and edit_file parameter
 	"expected_replacements", // edit_file parameter for multiple occurrences
+	// kilocode_change start: parallel subagents & workspaces
+	"tasks", // dispatch_subagents parameter (JSON array of subagent specs)
+	"name", // workspace_create / workspace_merge parameter
+	"task_description", // workspace_create parameter
+	"delete_after", // workspace_merge parameter
+	// kilocode_change end
 ] as const
 
 export type ToolParamName = (typeof toolParamNames)[number]
@@ -129,6 +135,20 @@ export type NativeToolArgs = {
 	update_todo_list: { todos: string }
 	use_mcp_tool: { server_name: string; tool_name: string; arguments?: Record<string, unknown> }
 	write_to_file: { path: string; content: string }
+	// kilocode_change start: parallel subagents & workspaces
+	dispatch_subagents: {
+		tasks: Array<{
+			task: string
+			label?: string
+			mode?: string
+			needs_workspace?: boolean
+			workspace?: string
+		}>
+	}
+	workspace_status: Record<string, never>
+	workspace_create: { name?: string; task_description?: string }
+	workspace_merge: { name: string; delete_after?: boolean }
+	// kilocode_change end
 	// Add more tools as they are migrated to native protocol
 }
 
@@ -312,6 +332,12 @@ export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
 	switch_mode: "switch modes",
 	switch_provider_profile: "switch provider profiles",
 	new_task: "create new task",
+	// kilocode_change start: parallel subagents & workspaces
+	dispatch_subagents: "dispatch parallel subagents",
+	workspace_status: "check parallel workspaces",
+	workspace_create: "create parallel workspace",
+	workspace_merge: "merge parallel workspace",
+	// kilocode_change end
 	new_rule: "create new rule",
 	codebase_search: "codebase search",
 	update_todo_list: "update todo list",
@@ -349,7 +375,17 @@ export const TOOL_GROUPS: Record<ToolGroup, ToolGroupConfig> = {
 		tools: ["use_mcp_tool", "access_mcp_resource"],
 	},
 	modes: {
-		tools: ["switch_mode", "switch_provider_profile", "new_task"],
+		tools: [
+			"switch_mode",
+			"switch_provider_profile",
+			"new_task",
+			// kilocode_change start: parallel subagents & workspaces
+			"dispatch_subagents",
+			"workspace_status",
+			"workspace_create",
+			"workspace_merge",
+			// kilocode_change end
+		],
 		alwaysAvailable: true,
 	},
 }
@@ -365,6 +401,12 @@ export const ALWAYS_AVAILABLE_TOOLS: ToolName[] = [
 	"condense", // kilocode_Change
 	"update_todo_list",
 	"run_slash_command",
+	// kilocode_change start: parallel subagents & workspaces
+	"dispatch_subagents",
+	"workspace_status",
+	"workspace_create",
+	"workspace_merge",
+	// kilocode_change end
 ] as const
 
 /**

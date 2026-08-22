@@ -502,5 +502,50 @@
 		"updated": "Updated the to-do list",
 		"completed": "Completed",
 		"started": "Started"
+	},
+	"parallel": {
+		"status": {
+			"running": "Running",
+			"completed": "Completed",
+			"error": "Error",
+			"cancelled": "Cancelled"
+		},
+		"workspace": "Workspace",
+		"workspaceStatus": {
+			"available": "Available",
+			"busy": "Busy (in use)",
+			"merged": "Merged to base branch",
+			"conflicted": "Merge conflict - resolve in the workspace",
+			"error": "Error"
+		},
+		"stop": "Stop subagent",
+		"close": "Collapse panel",
+		"branch": "Branch",
+		"baseBranch": "Base branch",
+		"workspaceStatusLabel": "Status",
+		"workspaceHint": "Dispatch subagents into this workspace with dispatch_subagents (workspace name). Merge finished work back with workspace_merge.",
+		"notFound": "This parallel item is no longer active.",
+		"folders": "Folders",
+		"appTitle": "Folders",
+		"newConversation": "New conversation",
+		"openFolder": "Open folder",
+		"mainWorkspace": "main workspace",
+		"switchWorkspace": "Switch workspace (changes the current task's working folder)",
+		"newChat": "New chat",
+		"createWorkspace": "Create workspace…",
+		"workspaceNamePlaceholder": "Workspace name",
+		"createWorkspaceConfirm": "Create",
+		"cancel": "Cancel",
+		"archive": "Archive (hide until unarchived)",
+		"unarchive": "Unarchive",
+		"rename": "Rename",
+		"fork": "Fork conversation (copies the context)",
+		"resizeRail": "Resize folder list",
+		"toggleFolder": "Expand or collapse folder",
+		"toggleWorkspace": "Expand or collapse workspace",
+		"forkWorkspace": "Fork workspace",
+		"deleteWorkspace": "Delete workspace",
+		"deleteWorkspaceConfirm": "Delete workspace {{name}}? Conversations move back to main.",
+		"archived": "Archived"
 	}
 }

@@ -1,6 +1,6 @@
 {
 	"extension.displayName": "Deeptask: AI Coding Agent, Copilot, and Autocomplete",
-	"extension.description": "真正完成长时间软件任务：集成终端进度可见且可手动终止，执行中持续接收修正，支持全托管与逐步审批、EXTRA 跨会话恢复、上下文接续及广泛 OpenAI-compatible API。",
+	"extension.description": "真正完成长时间软件任务：并行子代理与 git 工作树工作区、集成终端进度可见且可手动终止，执行中持续接收修正，支持全托管与逐步审批、EXTRA 跨会话恢复、上下文接续及广泛 OpenAI-compatible API。",
 	"command.newTask.title": "新建任务",
 	"command.explainCode.title": "解释代码",
 	"command.fixCode.title": "修复代码",

@@ -97,6 +97,12 @@ export interface CreateTaskOptions {
 	initialTodos?: TodoItem[]
 	/** Initial status for the task's history item (e.g., "active" for child tasks) */
 	initialStatus?: "active" | "delegated" | "completed"
+	// kilocode_change start: parallel conversations
+	/** Keep any already-running top-level task alive instead of enforcing the single-open-task invariant. */
+	keepRunningTask?: boolean
+	/** Workspace path the new task should operate in (parallel folder/worktree). */
+	workspacePath?: string
+	// kilocode_change end
 }
 
 export enum TaskStatus {

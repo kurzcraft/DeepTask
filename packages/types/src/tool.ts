@@ -46,6 +46,12 @@ export const toolNames = [
 	"run_slash_command",
 	"generate_image",
 	"custom_tool",
+	// kilocode_change start: parallel subagents & workspaces
+	"dispatch_subagents",
+	"workspace_status",
+	"workspace_create",
+	"workspace_merge",
+	// kilocode_change end
 ] as const
 
 export const toolNamesSchema = z.enum(toolNames)

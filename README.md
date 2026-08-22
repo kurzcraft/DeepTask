@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.0.9</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.1.0</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.0.9** 在聊天底部模型选择器右侧新增「推理强度」快捷下拉（关闭 / 低 / 中 / 高 / 极高），切换即写入当前配置并立即生效；LM Studio 会把该设置转换为 `chat_template_kwargs.enable_thinking` 来开关思考。
+> **Deeptask 9.1.0** 带来并行子代理与多工作区：模型可同时派出最多 5 个子代理（各自完整聊天界面与集成终端），全部完成后主任务才继续；写文件的子代理自动获得独立 git 工作树。左侧固定栏按「文件夹 → 工作区 → 对话」组织，所有窗口共享同一份列表，打开窗口即加载已创建的工作区；同一工作区被占用时会自动新建工作树并把后开对话迁过去。删除工作区可选择把对话移回 main，或「直接删除」连同对话一起删除。两个权限开关默认开启。
 
 ## 你可以怎样使用 Deeptask
 
@@ -113,17 +113,17 @@ Deeptask 将任务视为可恢复状态机，而不是一次性回答。未完�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.0.9.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.1.0.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.0.9.vsix --force
+    codium --install-extension ./deeptask-9.1.0.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.0.9.vsix --force
+    code --install-extension ./deeptask-9.1.0.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

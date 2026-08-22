@@ -3,7 +3,7 @@
 	"displayName": "%extension.displayName%",
 	"description": "%extension.description%",
 	"publisher": "deeptask",
-	"version": "9.0.9",
+	"version": "9.1.0",
 	"icon": "assets/icons/logo-outline-black.png",
 	"galleryBanner": {
 		"color": "#FFFFFF",
@@ -360,28 +360,8 @@
 			],
 			"view/title": [
 				{
-					"command": "deeptask.plusButtonClicked",
-					"group": "navigation@0",
-					"when": "view == deeptask.SidebarProvider"
-				},
-				{
-					"command": "deeptask.agentManagerOpen",
-					"group": "navigation@1",
-					"when": "view == deeptask.SidebarProvider"
-				},
-				{
-					"command": "deeptask.marketplaceButtonClicked",
-					"group": "navigation@3",
-					"when": "view == deeptask.SidebarProvider"
-				},
-				{
 					"command": "deeptask.historyButtonClicked",
 					"group": "navigation@4",
-					"when": "view == deeptask.SidebarProvider"
-				},
-				{
-					"command": "deeptask.profileButtonClicked",
-					"group": "navigation@5",
 					"when": "view == deeptask.SidebarProvider"
 				},
 				{
@@ -401,11 +381,6 @@
 				}
 			],
 			"editor/title": [
-				{
-					"command": "deeptask.plusButtonClicked",
-					"group": "navigation@1",
-					"when": "activeWebviewPanelId == deeptask.TabPanelProvider"
-				},
 				{
 					"command": "deeptask.historyButtonClicked",
 					"group": "navigation@3",

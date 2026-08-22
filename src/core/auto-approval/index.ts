@@ -53,7 +53,15 @@ export async function checkAutoApproval({
 	text,
 	isProtected,
 }: {
-	state?: Pick<ExtensionState, AutoApprovalState | AutoApprovalStateOptions>
+	state?: Pick<
+		ExtensionState,
+		| AutoApprovalState
+		| AutoApprovalStateOptions
+		| "autoApprovalEnabled"
+		| "yoloMode"
+		| "agentSubagentDispatchEnabled"
+		| "agentWorkspaceManagementEnabled"
+	>
 	ask: ClineAsk
 	text?: string
 	isProtected?: boolean
@@ -180,6 +188,30 @@ export async function checkAutoApproval({
 		if (["newTask", "finishTask"].includes(tool?.tool)) {
 			return state.alwaysAllowSubtasks === true ? { decision: "approve" } : { decision: "ask" }
 		}
+
+		// kilocode_change start: parallel subagents & workspaces.
+		// dispatch follows the subtask permission; workspace status is read-only;
+		// workspace create/merge follow the workspace management permission.
+		if (tool?.tool === "dispatchSubagents") {
+			return state.agentSubagentDispatchEnabled === false
+				? { decision: "deny" }
+				: state.alwaysAllowSubtasks === true || state.agentSubagentDispatchEnabled === true
+					? { decision: "approve" }
+					: { decision: "ask" }
+		}
+
+		if (tool?.tool === "workspaceStatus") {
+			return { decision: "approve" }
+		}
+
+		if (tool?.tool === "workspaceCreate" || tool?.tool === "workspaceMerge") {
+			return state.agentWorkspaceManagementEnabled === false
+				? { decision: "deny" }
+				: state.agentWorkspaceManagementEnabled === true
+					? { decision: "approve" }
+					: { decision: "ask" }
+		}
+		// kilocode_change end
 
 		const isOutsideWorkspace = !!tool.isOutsideWorkspace
 
