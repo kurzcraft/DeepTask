@@ -17,6 +17,6 @@
 
 ## 发布产物
 
-- 文件：`deeptask-9.1.0.vsix`（40,501,696 字节）。
-- SHA-256：`4d385c0b9622636cb40f32dc5be463bd0b66e8b9c4180e3eac9f8a3c364f1a11`。
+- 文件：`deeptask-9.1.0.vsix`（40,501,754 字节）。
+- SHA-256：`98cec410ce62db258d72d6b275e801d711c6b5ec1e6e9393be19fbf68b97ac67`。
 - Release：<https://github.com/kurzcraft/DeepTask/releases/tag/v9.1.0>。
