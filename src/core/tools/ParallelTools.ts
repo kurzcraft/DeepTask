@@ -175,6 +175,45 @@ export class DispatchSubagentsTool extends BaseTool<"dispatch_subagents"> {
 			}
 			await allSettled
 
+			const mergeNotes: string[] = []
+			if (workspaceService) {
+				for (const preparedSpec of prepared) {
+					const workspaceName = preparedSpec.workspaceName
+					if (!workspaceName) {
+						continue
+					}
+					const session = manager.getSession(
+						spawned.find((s) => manager.getSession(s.sessionId)?.info.workspaceName === workspaceName)
+							?.sessionId ?? "",
+					)
+					if (session && session.info.status !== "completed") {
+						continue
+					}
+					try {
+						const summaries = await workspaceService.summaries()
+						const summary = summaries.find((item) => item.name === workspaceName)
+						const hasWrites = (summary?.dirtyFiles ?? 0) > 0 || (summary?.aheadOfBase ?? 0) > 0
+						if (!hasWrites) {
+							continue
+						}
+						const merged = await workspaceService.merge({
+							name: workspaceName,
+							removeAfter: false,
+							allowOwner: task.taskId,
+						})
+						mergeNotes.push(
+							merged.ok
+								? `Auto-merged "${workspaceName}" into the parent workspace: ${merged.reason ?? "ok"}`
+								: `Auto-merge of "${workspaceName}" failed: ${merged.reason ?? "unknown"}`,
+						)
+					} catch (error) {
+						mergeNotes.push(
+							`Auto-merge of "${workspaceName}" failed: ${error instanceof Error ? error.message : String(error)}`,
+						)
+					}
+				}
+			}
+
 			const lines: string[] = []
 			if (failures.length > 0) {
 				lines.push(`Failed to dispatch:\n${failures.join("\n")}`)
@@ -196,8 +235,11 @@ export class DispatchSubagentsTool extends BaseTool<"dispatch_subagents"> {
 				const result = info.result ? `\nResult:\n${truncate(info.result, 4000)}` : "\nResult: (none)"
 				lines.push(`## ${info.label} — ${outcome}${ws}${result}`)
 			}
+			if (mergeNotes.length > 0) {
+				lines.push(`Parent workspace merge:\n${mergeNotes.join("\n")}`)
+			}
 			lines.push(
-				"Next steps: review the results above. Merge finished workspace branches into the main branch with workspace_merge; resolve any reported conflicts in the workspace worktree first.",
+				"Next steps: review the results above. Write-bearing workspaces were auto-merged into the parent workspace when possible; use workspace_merge only for leftover conflicts or leftover worktrees.",
 			)
 
 			await manager.broadcast()
@@ -363,7 +405,7 @@ export class WorkspaceCreateTool extends BaseTool<"workspace_create"> {
 		task: Task,
 		callbacks: ToolCallbacks,
 	): Promise<void> {
-		const { askApproval, handleError, pushToolResult } = callbacks
+		const { handleError, pushToolResult } = callbacks
 		try {
 			const provider = task.providerRef.deref()
 			if (!provider?.workspaceService) {
@@ -377,12 +419,6 @@ export class WorkspaceCreateTool extends BaseTool<"workspace_create"> {
 						"Workspace management is disabled in settings (ask the user to enable it).",
 					),
 				)
-				return
-			}
-
-			const label = params.name || params.task_description || "workspace"
-			const didApprove = await askApproval("tool", JSON.stringify({ tool: "workspaceCreate", content: label }))
-			if (!didApprove) {
 				return
 			}
 
@@ -410,12 +446,8 @@ export class WorkspaceCreateTool extends BaseTool<"workspace_create"> {
 		}
 	}
 
-	override async handlePartial(task: Task, block: ToolUse<"workspace_create">): Promise<void> {
-		const partialMessage = JSON.stringify({
-			tool: "workspaceCreate",
-			content: this.removeClosingTag("name", block.params.name, block.partial),
-		})
-		await task.ask("tool", partialMessage, block.partial).catch(() => {})
+	override async handlePartial(_task: Task, _block: ToolUse<"workspace_create">): Promise<void> {
+		// Workspace tools auto-approve; do not open the approval bar while streaming.
 	}
 }
 
@@ -424,19 +456,24 @@ export class WorkspaceCreateTool extends BaseTool<"workspace_create"> {
 export class WorkspaceMergeTool extends BaseTool<"workspace_merge"> {
 	readonly name = "workspace_merge" as const
 
-	parseLegacy(params: Partial<Record<string, string>>): { name: string; delete_after?: boolean } {
+	parseLegacy(params: Partial<Record<string, string>>): {
+		name: string
+		delete_after?: boolean
+		switch_to?: string
+	} {
 		return {
 			name: params.name || "",
 			delete_after: params.delete_after === "true",
+			switch_to: params.switch_to,
 		}
 	}
 
 	async execute(
-		params: { name: string; delete_after?: boolean },
+		params: { name: string; delete_after?: boolean; switch_to?: string },
 		task: Task,
 		callbacks: ToolCallbacks,
 	): Promise<void> {
-		const { askApproval, handleError, pushToolResult } = callbacks
+		const { handleError, pushToolResult } = callbacks
 		try {
 			if (!params.name) {
 				pushToolResult(await task.sayAndCreateMissingParamError("workspace_merge", "name"))
@@ -457,40 +494,56 @@ export class WorkspaceMergeTool extends BaseTool<"workspace_merge"> {
 				return
 			}
 
-			const didApprove = await askApproval(
-				"tool",
-				JSON.stringify({ tool: "workspaceMerge", workspace: params.name }),
-			)
-			if (!didApprove) {
+			const manager = provider.parallelManager
+			const folderPath = manager?.folderPathForPath(task.cwd) ?? task.cwd
+			const service = provider.getWorkspaceService(folderPath)
+			const source =
+				(await service.findByNameOrPath(params.name)) ??
+				(await service.findByNameOrPath(task.cwd))
+			if (!source) {
+				pushToolResult(formatResponse.toolError(`Unknown workspace "${params.name}".`))
 				return
 			}
 
-			const result = await provider.getWorkspaceService(task.cwd).merge({
-				// kilocode_change
-				name: params.name,
-				removeAfter: params.delete_after === true,
-			})
-			await provider.parallelManager?.broadcast()
+			const switchTarget = (params.switch_to ?? "").trim()
+			const wantsSwitch = switchTarget.length > 0
+			const nextPath = wantsSwitch
+				? switchTarget === "main" || switchTarget === folderPath
+					? folderPath
+					: ((await service.findByNameOrPath(switchTarget))?.path ?? switchTarget)
+				: undefined
 
+			if (nextPath && nextPath !== task.cwd) {
+				await task.switchWorkspace(nextPath)
+				const bound = manager?.conversationForSession(task.taskId)
+				if (bound && manager) {
+					await manager.updateConversationWorkspace(bound.id, folderPath, nextPath)
+				}
+				await provider.postMessageToWebview({ type: "parallelWorkspaceChanged", text: nextPath })
+			}
+
+			const result = await service.merge({
+				name: source.name,
+				removeAfter: params.delete_after === true,
+				allowOwner: task.taskId,
+			})
+			if (result.ok && params.delete_after === true && manager) {
+				await manager.moveConversationsToWorkspace(source.path, folderPath)
+			}
+			await manager?.broadcast()
+
+			const switched = nextPath ? `\nThis conversation is now in ${nextPath}.` : ""
 			if (result.ok) {
-				pushToolResult(`Merge succeeded for workspace "${params.name}": ${result.reason ?? ""}`)
+				pushToolResult(`Merge succeeded for workspace "${source.name}": ${result.reason ?? ""}${switched}`)
 			} else {
 				const conflicts = result.conflicts?.length
 					? `\nConflicted files:\n${result.conflicts.map((f) => `- ${f}`).join("\n")}`
 					: ""
-				pushToolResult(formatResponse.toolError(`${result.reason ?? "Merge failed."}${conflicts}`))
+				pushToolResult(formatResponse.toolError(`${result.reason ?? "Merge failed."}${conflicts}${switched}`))
 			}
 		} catch (error) {
 			await handleError("merging parallel workspace", error)
 		}
-	}
-
-	override async handlePartial(task: Task, block: ToolUse<"workspace_merge">): Promise<void> {
-		const partialMessage = JSON.stringify({
-			tool: "workspaceMerge",
-			workspace: this.removeClosingTag("name", block.params.name, block.partial),
-		})
-		await task.ask("tool", partialMessage, block.partial).catch(() => {})
 	}
 }
 

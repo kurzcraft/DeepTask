@@ -207,9 +207,7 @@ export async function checkAutoApproval({
 		if (tool?.tool === "workspaceCreate" || tool?.tool === "workspaceMerge") {
 			return state.agentWorkspaceManagementEnabled === false
 				? { decision: "deny" }
-				: state.agentWorkspaceManagementEnabled === true
-					? { decision: "approve" }
-					: { decision: "ask" }
+				: { decision: "approve" }
 		}
 		// kilocode_change end
 

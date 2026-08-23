@@ -30,7 +30,7 @@ describe("collectWorkspaceOccupants", () => {
 		const occupants = collectWorkspaceOccupants({
 			workspacePath: "/repo",
 			conversations: [conversation()],
-			runningTasks: [{ taskId: "task-1", cwd: "/repo" }],
+			runningTasks: [{ taskId: "task-1", cwd: "/repo", isStreaming: true }],
 			runningSubagents: [],
 			workspaces: [],
 			except: { conversationId: "cv-new" },
@@ -43,7 +43,7 @@ describe("collectWorkspaceOccupants", () => {
 		const occupants = collectWorkspaceOccupants({
 			workspacePath: "/repo",
 			conversations: [conversation()],
-			runningTasks: [{ taskId: "task-1", cwd: "/repo" }],
+			runningTasks: [{ taskId: "task-1", cwd: "/repo", isStreaming: true }],
 			runningSubagents: [],
 			workspaces: [],
 			except: { taskId: "task-1", conversationId: "cv-1" },
@@ -56,6 +56,18 @@ describe("collectWorkspaceOccupants", () => {
 			workspacePath: "/repo",
 			conversations: [conversation()],
 			runningTasks: [],
+			runningSubagents: [],
+			workspaces: [],
+			except: { conversationId: "cv-new" },
+		})
+		expect(occupants).toEqual([])
+	})
+
+	test("idle stacked tasks that are not streaming do not occupy the workspace", () => {
+		const occupants = collectWorkspaceOccupants({
+			workspacePath: "/repo",
+			conversations: [conversation()],
+			runningTasks: [{ taskId: "task-1", cwd: "/repo", isStreaming: false }],
 			runningSubagents: [],
 			workspaces: [],
 			except: { conversationId: "cv-new" },
@@ -81,11 +93,29 @@ describe("collectWorkspaceOccupants", () => {
 		expect(occupants.some((occupant) => occupant.kind === "subagent" && occupant.id === "sa-1")).toBe(true)
 	})
 
-	test("a busy registry claim occupies the worktree even without a live task", () => {
+	test("a leftover busy registry claim does not occupy without a live streaming task", () => {
 		const occupants = collectWorkspaceOccupants({
 			workspacePath: "/repo/.kilocode/worktrees/feature-x",
 			conversations: [],
 			runningTasks: [],
+			runningSubagents: [],
+			workspaces: [workspace()],
+			except: { taskId: "task-1" },
+		})
+		expect(occupants).toEqual([])
+	})
+
+	test("a busy registry claim occupies only while its owner is still streaming", () => {
+		const occupants = collectWorkspaceOccupants({
+			workspacePath: "/repo/.kilocode/worktrees/feature-x",
+			conversations: [],
+			runningTasks: [
+				{
+					taskId: "task-2",
+					cwd: "/repo/.kilocode/worktrees/feature-x",
+					isStreaming: true,
+				},
+			],
 			runningSubagents: [],
 			workspaces: [workspace()],
 			except: { taskId: "task-1" },

@@ -1,6 +1,7 @@
 // kilocode_change - new file: tests for the parallel conversation registry
 import type { ExtensionMessage } from "@roo-code/types"
 
+import { Task } from "../../../task/Task"
 import { ParallelManager } from "../ParallelManager"
 import { WorkspaceRegistry } from "../WorkspaceRegistry"
 
@@ -77,6 +78,24 @@ describe("ParallelManager conversations", () => {
 		const created = await manager.createConversation("/repo")
 		expect(created.folderPath).toBe("/repo")
 		expect(created.workspacePath).toBe("/repo")
+	})
+
+	test("createConversation binds a subagent task under its worktree node", async () => {
+		const { manager } = setup()
+		await manager.registerMainFolder("/repo")
+		const created = await manager.createConversation("/repo", {
+			sessionId: "child-task-id",
+			title: "term-a",
+			workspacePath: "/repo/.kilocode/worktrees/subagent-term-a",
+			activate: false,
+		})
+		expect(created.folderPath).toBe("/repo")
+		expect(created.workspacePath).toBe("/repo/.kilocode/worktrees/subagent-term-a")
+		expect(created.sessionId).toBe("child-task-id")
+		expect(manager.getActiveConversationId()).not.toBe(created.id)
+		expect(manager.conversationForSession("child-task-id")?.workspacePath).toBe(
+			"/repo/.kilocode/worktrees/subagent-term-a",
+		)
 	})
 
 	test("updateConversationWorkspace keeps the parent folder and moves the conversation into a worktree", async () => {
@@ -188,7 +207,7 @@ describe("ParallelManager conversations", () => {
 
 	test("occupantsOf reports a live sibling conversation in the same workspace", async () => {
 		const store = new Map<string, unknown>()
-		const liveTasks = [{ taskId: "task-1", cwd: "/repo", abort: false, abandoned: false }]
+		const liveTasks = [{ taskId: "task-1", cwd: "/repo", abort: false, abandoned: false, isStreaming: true }]
 		const provider = {
 			context: { globalState: makeStorage(store) },
 			postMessageToWebview: async () => {},
@@ -202,6 +221,22 @@ describe("ParallelManager conversations", () => {
 		expect(await manager.isWorkspaceOccupied("/repo", { conversationId: second.id })).toBe(true)
 		const occupants = await manager.occupantsOf("/repo", { conversationId: second.id })
 		expect(occupants.some((occupant) => occupant.id === first.id)).toBe(true)
+	})
+
+	test("occupantsOf ignores idle sibling conversations that are not streaming", async () => {
+		const store = new Map<string, unknown>()
+		const liveTasks = [{ taskId: "task-1", cwd: "/repo", abort: false, abandoned: false, isStreaming: false }]
+		const provider = {
+			context: { globalState: makeStorage(store) },
+			postMessageToWebview: async () => {},
+			getLiveTasks: () => liveTasks,
+		} as unknown as ConstructorParameters<typeof ParallelManager>[0]
+		const manager = new ParallelManager(provider, new WorkspaceRegistry(makeStorage(store) as never))
+		await manager.registerMainFolder("/repo")
+		await manager.createConversation("/repo", { sessionId: "task-1", title: "idle" })
+		const second = await manager.createConversation("/repo")
+
+		expect(await manager.isWorkspaceOccupied("/repo", { conversationId: second.id })).toBe(false)
 	})
 
 	test("broadcast hydrates persisted workspaces on window open", async () => {
@@ -254,5 +289,60 @@ describe("ParallelManager conversations", () => {
 		)
 		expect((await manager.listConversations()).map((conversation) => conversation.id)).toEqual([keep.id])
 		expect(manager.getActiveConversationId()).toBe(keep.id)
+	})
+
+	test("broadcast reloads conversations written by another window", async () => {
+		const { manager, store, posted } = setup()
+		await manager.registerMainFolder("/repo")
+		await manager.createConversation("/repo", { title: "local" })
+
+		store.set("parallelConversations", [
+			{
+				id: "cv-remote",
+				folderPath: "/repo",
+				workspacePath: "/repo",
+				title: "from other window",
+				createdAt: Date.now(),
+				lastActiveAt: Date.now(),
+			},
+		])
+
+		await manager.broadcast()
+		const list = await manager.listConversations()
+		expect(list.map((conversation) => conversation.id)).toEqual(["cv-remote"])
+		const last = posted.at(-1)
+		expect(last?.type).toBe("parallelSessionsUpdated")
+		expect(last?.parallelConversations?.map((conversation) => conversation.id)).toEqual(["cv-remote"])
+	})
+
+	test("spawn inherits parent checkpoint and diff settings", () => {
+		const { manager } = setup()
+		const created: Array<Record<string, unknown>> = []
+		const createSpy = vi.spyOn(Task, "create").mockImplementation((options) => {
+			created.push(options as unknown as Record<string, unknown>)
+			const child = {
+				taskId: "child-task",
+				enableCheckpoints: options.enableCheckpoints,
+				diffEnabled: options.enableDiff,
+				checkpointTimeout: options.checkpointTimeout,
+			} as Task
+			return [child, Promise.resolve()]
+		})
+		const parent = {
+			taskId: "parent-task",
+			cwd: "/repo",
+			apiConfiguration: { apiProvider: "openai" },
+			enableCheckpoints: false,
+			diffEnabled: false,
+			checkpointTimeout: 42,
+			subagent: undefined,
+		} as unknown as Task
+
+		manager.spawn(parent, { label: "probe", task: "do not enable checkpoints" })
+
+		expect(created[0]?.enableCheckpoints).toBe(false)
+		expect(created[0]?.enableDiff).toBe(false)
+		expect(created[0]?.checkpointTimeout).toBe(42)
+		createSpy.mockRestore()
 	})
 })

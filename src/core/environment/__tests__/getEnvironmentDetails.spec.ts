@@ -506,4 +506,33 @@ describe("getEnvironmentDetails", () => {
 		expect(result).toContain("Active - A browser session is currently open and ready for browser_action commands")
 		expect(result).toContain("Current viewport size: 1280x720 pixels.")
 	})
+
+	it("should tell the model to workspace_create when the cwd is occupied", async () => {
+		mockProvider.parallelManager = {
+			occupantsOf: vi.fn().mockResolvedValue([{ kind: "conversation", id: "cv-1", label: "first" }]),
+		}
+		mockProvider.getLiveTasks = vi.fn().mockReturnValue([])
+
+		const result = await getEnvironmentDetails(mockCline as Task)
+		expect(result).toContain("# Workspace Occupancy")
+		expect(result).toContain("OCCUPIED")
+		expect(result).toContain("workspace_create")
+		expect(mockProvider.parallelManager.occupantsOf).toHaveBeenCalledWith(mockCwd, { taskId: mockTaskId })
+	})
+
+	it("should mention sibling live tasks when the cwd is free", async () => {
+		mockProvider.parallelManager = {
+			occupantsOf: vi.fn().mockResolvedValue([]),
+		}
+		mockProvider.getLiveTasks = vi.fn().mockReturnValue([
+			{ taskId: mockTaskId, cwd: mockCwd, abort: false, abandoned: false, isStreaming: true },
+			{ taskId: "other-task", cwd: "/other", abort: false, abandoned: false, isStreaming: true },
+		])
+
+		const result = await getEnvironmentDetails(mockCline as Task)
+		expect(result).toContain("# Parallel Live Tasks")
+		expect(result).toContain("other-task @ /other")
+		expect(result).toContain("workspace_create")
+		expect(result).not.toContain("# Workspace Occupancy")
+	})
 })

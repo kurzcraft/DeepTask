@@ -88,12 +88,19 @@ describe("ParallelRail", () => {
 						workspacePath: "/home/user/my-project/.kilocode/worktrees/refactor-auth",
 						title: "Auth work",
 					}),
+					makeConversation({
+						id: "cv-sa",
+						sessionId: "sa-1",
+						workspacePath: "/home/user/my-project/.kilocode/worktrees/refactor-auth",
+						title: "impl-x",
+					}),
 				]}
 				onSelect={onSelect}
 			/>,
 		)
 
-		expect(screen.getAllByTestId("parallel-rail-session")).toHaveLength(1)
+		expect(screen.queryByTestId("parallel-rail-session")).not.toBeInTheDocument()
+		expect(screen.getByText("impl-x")).toBeInTheDocument()
 		expect(screen.getAllByTestId("parallel-rail-folder")).toHaveLength(1)
 		expect(screen.queryByTestId("parallel-rail-folder")?.getAttribute("data-kind")).toBe("main")
 		const workspaces = screen.getAllByTestId("parallel-rail-workspace")
@@ -148,6 +155,31 @@ describe("ParallelRail", () => {
 				workspacePath: "/home/user/my-project/.kilocode/worktrees/refactor-auth",
 			},
 		})
+	})
+
+	test("clicking a workspace with an existing conversation opens that conversation", () => {
+		render(
+			<ParallelRail
+				sessions={[]}
+				workspaces={[makeWorkspace()]}
+				folders={[makeFolder()]}
+				conversations={[
+					{
+						...makeConversation(),
+						id: "cv-sub",
+						sessionId: "task-sub",
+						workspacePath: "/home/user/my-project/.kilocode/worktrees/refactor-auth",
+						title: "term-probe-a",
+					},
+				]}
+				onSelect={onSelect}
+			/>,
+		)
+		fireEvent.click(screen.getAllByTestId("parallel-rail-workspace")[1])
+		expect(onSelect).toHaveBeenCalledWith("cv:cv-sub")
+		expect(vscode.postMessage).not.toHaveBeenCalledWith(
+			expect.objectContaining({ type: "parallel.newConversation" }),
+		)
 	})
 
 	test("create-workspace icon lives on the folder row before archive", () => {

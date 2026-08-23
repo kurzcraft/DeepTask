@@ -132,6 +132,51 @@ describe("DispatchSubagentsTool", () => {
 			expect.objectContaining({ workspaceName: created.name, workspacePath: created.path }),
 		)
 	})
+
+	test("completed write-bearing workspaces auto-merge into the parent workspace", async () => {
+		const callbacks = makeCallbacks()
+		const created = {
+			name: "writer",
+			path: "/repo/.kilocode/worktrees/writer",
+			branch: "deeptask/writer",
+		}
+		const provider = makeProvider({
+			agentSubagentDispatchEnabled: true,
+			agentWorkspaceManagementEnabled: true,
+		})
+		provider.workspaceService = {
+			claim: vi.fn(async () => created),
+			create: vi.fn(async () => created),
+			summaries: vi.fn(async () => [{ name: created.name, dirtyFiles: 1, aheadOfBase: 1 }]),
+			merge: vi.fn(async () => ({ ok: true, reason: "merged 1 commit" })),
+		}
+		provider.parallelManager = {
+			folderPathForPath: (cwd: string) => cwd,
+			spawn: vi.fn(() => ({ sessionId: "sa-write", done: Promise.resolve() })),
+			getSession: () => ({
+				info: {
+					label: "writer",
+					status: "completed",
+					workspaceName: created.name,
+					branch: created.branch,
+					result: "wrote file",
+				},
+			}),
+			cancelChildrenOf: vi.fn(),
+			broadcast: vi.fn(async () => undefined),
+		}
+		await dispatchSubagentsTool.execute(
+			{ tasks: [{ task: "write a file", label: "writer", needs_workspace: true }] },
+			makeTask(provider),
+			callbacks,
+		)
+		expect(provider.workspaceService.merge).toHaveBeenCalledWith({
+			name: created.name,
+			removeAfter: false,
+			allowOwner: "task-1",
+		})
+		expect(JSON.stringify(callbacks.pushToolResult.mock.calls[0][0])).toContain("Auto-merged")
+	})
 })
 
 describe("Workspace tools execute guards", () => {
@@ -217,6 +262,39 @@ describe("Workspace tools execute guards", () => {
 		await workspaceMergeTool.execute({ name: "" }, task, callbacks)
 		expect(missingParam).toHaveBeenCalledWith("workspace_merge", "name")
 	})
+
+	test("workspace_merge switches the caller then merges and can delete the old worktree", async () => {
+		const callbacks = makeCallbacks()
+		const provider = makeProvider({ agentWorkspaceManagementEnabled: true })
+		const source = { name: "workspace-old", path: "/repo/.kilocode/worktrees/workspace-old" }
+		provider.workspaceService = {
+			findByNameOrPath: vi.fn(async (value: string) => (value === source.name || value === source.path ? source : undefined)),
+			merge: vi.fn(async () => ({ ok: true, reason: "merged" })),
+		}
+		provider.parallelManager = {
+			folderPathForPath: () => "/repo",
+			conversationForSession: () => ({ id: "cv-1" }),
+			updateConversationWorkspace: vi.fn(async () => undefined),
+			moveConversationsToWorkspace: vi.fn(async () => undefined),
+			broadcast: vi.fn(async () => undefined),
+		}
+		const task = makeTask(provider)
+		task.cwd = source.path
+		task.switchWorkspace = vi.fn(async () => undefined)
+		await workspaceMergeTool.execute(
+			{ name: source.name, switch_to: "main", delete_after: true },
+			task,
+			callbacks,
+		)
+		expect(task.switchWorkspace).toHaveBeenCalledWith("/repo")
+		expect(provider.workspaceService.merge).toHaveBeenCalledWith({
+			name: source.name,
+			removeAfter: true,
+			allowOwner: "task-1",
+		})
+		expect(provider.parallelManager.moveConversationsToWorkspace).toHaveBeenCalledWith(source.path, "/repo")
+		expect(JSON.stringify(callbacks.pushToolResult.mock.calls[0][0])).toContain("This conversation is now in /repo")
+	})
 })
 
 describe("parallel tool auto-approval", () => {
@@ -247,7 +325,7 @@ describe("parallel tool auto-approval", () => {
 		expect(decision.decision).toBe("approve")
 	})
 
-	test("workspace create/merge follow the workspace permission", async () => {
+	test("workspace create/merge auto-approve unless workspace management is disabled", async () => {
 		const denied = await checkAutoApproval({
 			state: { autoApprovalEnabled: true, agentWorkspaceManagementEnabled: false } as any,
 			ask: "tool",
@@ -256,9 +334,9 @@ describe("parallel tool auto-approval", () => {
 		expect(denied.decision).toBe("deny")
 
 		const approved = await checkAutoApproval({
-			state: { autoApprovalEnabled: true, agentWorkspaceManagementEnabled: true } as any,
+			state: { autoApprovalEnabled: true } as any,
 			ask: "tool",
-			text: JSON.stringify({ tool: "workspaceCreate", content: "x" }),
+			text: JSON.stringify({ tool: "workspaceMerge", workspace: "x" }),
 		})
 		expect(approved.decision).toBe("approve")
 	})

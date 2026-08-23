@@ -26,7 +26,13 @@ export interface WorkspaceOccupant {
 export interface OccupancyInputs {
 	workspacePath: string
 	conversations: ParallelConversation[]
-	runningTasks: Array<{ taskId: string; cwd: string; abort?: boolean; abandoned?: boolean }>
+	runningTasks: Array<{
+		taskId: string
+		cwd: string
+		abort?: boolean
+		abandoned?: boolean
+		isStreaming?: boolean
+	}>
 	runningSubagents: Array<{
 		sessionId: string
 		workspacePath?: string
@@ -52,7 +58,9 @@ export function collectWorkspaceOccupants(params: OccupancyInputs): WorkspaceOcc
 		occupants.push(occupant)
 	}
 
-	const liveTasks = params.runningTasks.filter((task) => !task.abort && !task.abandoned)
+	const liveTasks = params.runningTasks.filter(
+		(task) => !task.abort && !task.abandoned && task.isStreaming === true,
+	)
 	const liveById = new Map(liveTasks.map((task) => [task.taskId, task]))
 
 	for (const conversation of params.conversations) {
@@ -108,6 +116,14 @@ export function collectWorkspaceOccupants(params: OccupancyInputs): WorkspaceOcc
 			continue
 		}
 		if (params.except?.conversationId && workspace.owner?.includes(params.except.conversationId)) {
+			continue
+		}
+		// A leftover busy mark must not occupy an idle workspace. Only count
+		// the registry claim when a live streaming task still matches it.
+		const ownerLive = workspace.owner
+			? liveTasks.some((task) => workspace.owner?.includes(task.taskId))
+			: liveTasks.some((task) => workspacePathsEqual(task.cwd, workspace.path))
+		if (!ownerLive) {
 			continue
 		}
 		add({

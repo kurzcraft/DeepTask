@@ -376,13 +376,50 @@ export async function getEnvironmentDetails(cline: Task, includeFileDetails: boo
 		}
 	}
 
+	// kilocode_change start: occupancy awareness during inference
+	const occupancyProvider = cline.providerRef.deref()
+	if (occupancyProvider?.parallelManager && state?.agentWorkspaceManagementEnabled !== false) {
+		try {
+			const occupants = await occupancyProvider.parallelManager.occupantsOf(cline.cwd, {
+				taskId: cline.taskId,
+			})
+			if (occupants.length > 0) {
+				details += `\n\n# Workspace Occupancy`
+				details += `\nCurrent cwd \`${cline.cwd.toPosix()}\` is OCCUPIED by: ${occupants
+					.map((occupant) => `${occupant.kind}:${occupant.label ?? occupant.id}`)
+					.join(", ")}.`
+				details += `\nDo not keep writing here. Call workspace_create (or workspace_merge switch_to=a-free-workspace) so this conversation leaves the occupied tree, then continue there.`
+			} else {
+				const liveTasks =
+					typeof occupancyProvider.getLiveTasks === "function" ? occupancyProvider.getLiveTasks() : []
+				const siblings = liveTasks.filter(
+					(task) =>
+						task.taskId !== cline.taskId &&
+						!task.abort &&
+						!task.abandoned &&
+						task.isStreaming === true,
+				)
+				if (siblings.length > 0) {
+					details += `\n\n# Parallel Live Tasks`
+					details += `\nOther live conversations/windows: ${siblings
+						.map((task) => `${task.taskId} @ ${task.cwd}`)
+						.join("; ")}.`
+					details += `\nIf you need exclusive writes, call workspace_status then workspace_create before mutating shared files.`
+				}
+			}
+		} catch (error) {
+			console.error("[getEnvironmentDetails] occupancy probe failed:", error)
+		}
+	}
+	// kilocode_change end
+
 	const todoListEnabled =
 		state && typeof state.apiConfiguration?.todoListEnabled === "boolean"
 			? state.apiConfiguration.todoListEnabled
 			: true
 	const reminderSection = todoListEnabled
 		? formatReminderSection(cline.todoList, {
-				requireProgressListExpansion: cline.shouldRequireProgressListExpansion() === true,
+				requireProgressListExpansion: cline.shouldRequireProgressListExpansion?.() === true,
 			})
 		: ""
 	return `<environment_details>\n${details.trim()}\n${reminderSection}\n</environment_details>`

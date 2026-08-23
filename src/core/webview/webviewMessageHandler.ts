@@ -745,10 +745,11 @@ export const webviewMessageHandler = async (
 			try {
 				const resolved = await resolveIncomingImages({ text: message.text, images: message.images })
 				// kilocode_change start: a pending parallel conversation starts alongside
-				// the still-running task instead of replacing it
+				// the still-running task instead of replacing it. Keep pendingNewConversation
+				// until the new task is stacked so background state/messageUpdated cannot
+				// flash the previous chat onto the empty start screen.
 				const pendingConversation = provider.pendingNewConversation
 				if (pendingConversation) {
-					provider.pendingNewConversation = undefined
 					const requestedWorkspace = pendingConversation.workspacePath ?? pendingConversation.folderPath
 					const relocated = await provider.ensureUnoccupiedWorkspace({
 						workspacePath: requestedWorkspace,
@@ -771,6 +772,7 @@ export const webviewMessageHandler = async (
 						task.taskId,
 						resolved.text.slice(0, 60),
 					)
+					provider.pendingNewConversation = undefined
 					await provider.parallelManager.broadcast()
 				} else {
 					await provider.createTask(resolved.text, resolved.images)

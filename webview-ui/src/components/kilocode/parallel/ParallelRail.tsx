@@ -48,6 +48,31 @@ const itemClass = (active: boolean) =>
 const conversationWorkspacePath = (conversation: ParallelConversation) =>
 	conversation.workspacePath ?? conversation.folderPath
 
+const sessionWorkspacePath = (session: ParallelSession, folders: ParallelFolder[]) => {
+	if (session.workspacePath) {
+		return session.workspacePath
+	}
+	if (session.workspaceName) {
+		return folders.find((folder) => folder.path.endsWith(`/${session.workspaceName}`))?.path
+	}
+	return undefined
+}
+
+const parentFolderForSession = (session: ParallelSession, folders: ParallelFolder[]) => {
+	const workspacePath = sessionWorkspacePath(session, folders)
+	if (!workspacePath) {
+		return undefined
+	}
+	const posix = workspacePath.replace(/\\/g, "/")
+	const marker = "/.kilocode/worktrees"
+	const idx = posix.indexOf(marker)
+	if (idx > 0) {
+		const parent = posix.slice(0, idx)
+		return workspacePath.includes("\\") ? parent.replace(/\//g, "\\") : parent
+	}
+	return folders.find((folder) => folder.path === workspacePath)?.path
+}
+
 const parentFolderForWorkspace = (workspace: ParallelWorkspace, folders: ParallelFolder[]) => {
 	if (workspace.folderPath) {
 		return workspace.folderPath
@@ -98,7 +123,7 @@ const RowAction = ({
  * chevron expands or collapses the nested list.
  */
 export const ParallelRail = ({
-	sessions,
+	sessions: _sessions,
 	workspaces,
 	folders,
 	conversations,
@@ -214,6 +239,19 @@ export const ParallelRail = ({
 			type: "parallel.newConversation",
 			values: { folderPath, workspacePath },
 		})
+	}
+
+	const openWorkspaceOrExisting = (
+		folderPath: string,
+		workspacePath: string,
+		nested: ParallelConversation[],
+	) => {
+		const existing = nested.find((conversation) => conversation.sessionId) ?? nested[0]
+		if (existing) {
+			onSelect(`cv:${existing.id}`)
+			return
+		}
+		openNewConversation(folderPath, workspacePath)
 	}
 
 	const renderConversationRow = (conversation: ParallelConversation, nestedClass: string) => {
@@ -337,7 +375,7 @@ export const ParallelRail = ({
 						}>
 						<button
 							aria-label={isMain ? t("chat:parallel.mainWorkspace") : workspaceName}
-							onClick={() => openNewConversation(folder.path, workspacePath)}
+							onClick={() => openWorkspaceOrExisting(folder.path, workspacePath, nestedConversations)}
 							data-testid="parallel-rail-workspace"
 							data-workspace={workspaceName}
 							className={cn(itemClass(workspaceActive), "pl-1 pr-14 flex-1")}>
@@ -414,44 +452,6 @@ export const ParallelRail = ({
 						onClick={() => vscode.postMessage({ type: "parallel.openFolder" })}
 					/>
 				</StandardTooltip>
-			</div>
-
-			<div className="px-1 pt-1 flex flex-col gap-0.5">
-				{sessions.map((session) => {
-					const id = session.sessionId
-					const active = selectedId === id
-					return (
-						<StandardTooltip
-							key={id}
-							content={
-								<div className="max-w-[300px] text-xs">
-									<div className="font-medium">{session.label}</div>
-									<div className="opacity-70">{t(`chat:parallel.status.${session.status}`)}</div>
-									{session.workspaceName && (
-										<div className="opacity-70 mt-0.5">
-											{t("chat:parallel.workspace")}: {session.workspaceName}
-										</div>
-									)}
-								</div>
-							}>
-							<button
-								aria-label={session.label}
-								onClick={() => onSelect(id)}
-								data-testid="parallel-rail-session"
-								data-status={session.status}
-								className={itemClass(active)}>
-								<span className="codicon codicon-hub shrink-0" />
-								<span className="truncate flex-1">{session.label}</span>
-								<span
-									className={cn(
-										"w-1.5 h-1.5 rounded-full shrink-0",
-										sessionStatusColor[session.status] ?? "bg-vscode-descriptionForeground/50",
-									)}
-								/>
-							</button>
-						</StandardTooltip>
-					)
-				})}
 			</div>
 
 			<div className="px-1 pt-1 flex flex-col gap-0.5 pb-2">

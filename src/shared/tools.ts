@@ -96,6 +96,7 @@ export const toolParamNames = [
 	"name", // workspace_create / workspace_merge parameter
 	"task_description", // workspace_create parameter
 	"delete_after", // workspace_merge parameter
+	"switch_to", // workspace_merge: switch this conversation before/while merging
 	// kilocode_change end
 ] as const
 
@@ -147,7 +148,7 @@ export type NativeToolArgs = {
 	}
 	workspace_status: Record<string, never>
 	workspace_create: { name?: string; task_description?: string }
-	workspace_merge: { name: string; delete_after?: boolean }
+	workspace_merge: { name: string; delete_after?: boolean; switch_to?: string }
 	// kilocode_change end
 	// Add more tools as they are migrated to native protocol
 }

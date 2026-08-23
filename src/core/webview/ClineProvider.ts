@@ -80,6 +80,7 @@ import { McpServerManager } from "../../services/mcp/McpServerManager"
 import { MarketplaceManager } from "../../services/marketplace"
 import { ShadowCheckpointService } from "../../services/checkpoints/ShadowCheckpointService"
 import { ParallelManager } from "../kilocode/parallel/ParallelManager"
+import { LiveTaskCoordinator } from "../kilocode/parallel/LiveTaskCoordinator"
 import { WorkspaceRegistry } from "../kilocode/parallel/WorkspaceRegistry"
 import { WorkspaceService } from "../kilocode/parallel/WorkspaceService"
 import { CodeIndexManager } from "../../services/code-index/manager"
@@ -413,6 +414,7 @@ export class ClineProvider
 	private _parallelInit?: Promise<void>
 	private conversationRestoreDone = false
 	public pendingNewConversation: { id: string; folderPath: string; workspacePath?: string } | undefined
+	private _liveTaskCoordinator?: LiveTaskCoordinator
 
 	get workspaceRegistry(): WorkspaceRegistry {
 		if (!this._workspaceRegistry) {
@@ -446,6 +448,21 @@ export class ClineProvider
 			).then(() => this._parallelManager!.hydrateRegisteredWorkspaces())
 		}
 		return this._parallelManager
+	}
+
+	get liveTaskCoordinator(): LiveTaskCoordinator {
+		if (!this._liveTaskCoordinator) {
+			this._liveTaskCoordinator = new LiveTaskCoordinator({
+				storageDir: this.contextProxy.globalStorageUri.fsPath,
+			})
+			this._liveTaskCoordinator.onChange(() => {
+				void this.parallelManager.broadcast().catch((error) => {
+					console.error("[ClineProvider] remote live-task broadcast failed:", error)
+				})
+			})
+			this._liveTaskCoordinator.start()
+		}
+		return this._liveTaskCoordinator
 	}
 
 	/** Serialize cancellation rehydration so consecutive human messages cannot overwrite one payload. */
@@ -798,6 +815,16 @@ export class ClineProvider
 		}
 	}
 
+	/** Inserts a live subagent without making it the focused current task. */
+	async addBackgroundClineToStack(task: Task) {
+		this.clineStack.unshift(task)
+		await this.performPreparationTasks(task)
+		const state = await this.getState()
+		if (!state || typeof state.mode !== "string") {
+			throw new Error(t("common:errors.retrieve_current_mode"))
+		}
+	}
+
 	async performPreparationTasks(cline: Task) {
 		// LMStudio: We need to force model loading in order to read its context
 		// size; we do it now since we're starting a task with that model selected.
@@ -830,9 +857,11 @@ export class ClineProvider
 			task.emit(RooCodeEventName.TaskUnfocused)
 
 			try {
-				// Abort the running task and set isAbandoned to true so
-				// all running promises will exit as well.
-				await task.abortTask(true)
+				// Mirror windows must not abort a task that is still inferring
+				// in another VSCodium window. Only the owner host may abandon it.
+				if (!this.liveTaskCoordinator.isLiveElsewhere(task.taskId)) {
+					await task.abortTask(true)
+				}
 			} catch (e) {
 				this.log(
 					`[ClineProvider#removeClineFromStack] abortTask() failed ${task.taskId}.${task.instanceId}: ${e.message}`,
@@ -862,7 +891,9 @@ export class ClineProvider
 		const [task] = this.clineStack.splice(index, 1)
 		task.emit(RooCodeEventName.TaskUnfocused)
 		try {
-			await task.abortTask(true)
+			if (!this.liveTaskCoordinator.isLiveElsewhere(task.taskId)) {
+				await task.abortTask(true)
+			}
 		} catch (error) {
 			this.log(
 				`[ClineProvider#abortAndRemoveTask] abortTask() failed ${task.taskId}.${task.instanceId}: ${
@@ -887,13 +918,65 @@ export class ClineProvider
 	}
 
 	// kilocode_change start: occupancy across parallel conversations and subagents
-	public getLiveTasks(): Array<{ taskId: string; cwd: string; abort: boolean; abandoned: boolean }> {
-		return this.clineStack.map((task) => ({
-			taskId: task.taskId,
-			cwd: task.cwd,
-			abort: task.abort,
-			abandoned: task.abandoned,
-		}))
+	public getLiveTasks(): Array<{
+		taskId: string
+		cwd: string
+		abort: boolean
+		abandoned: boolean
+		isStreaming: boolean
+	}> {
+		const local = this.clineStack
+			.filter((task) => task.isStreaming && !task.abort && !task.abandoned)
+			.map((task) => ({
+				taskId: task.taskId,
+				cwd: task.cwd,
+				abort: task.abort,
+				abandoned: task.abandoned,
+				isStreaming: task.isStreaming,
+			}))
+		const remote = this._liveTaskCoordinator
+			? this._liveTaskCoordinator.listRemoteTasks().map((task) => ({
+					taskId: task.taskId,
+					cwd: task.cwd,
+					abort: task.abort,
+					abandoned: task.abandoned,
+					isStreaming: true,
+				}))
+			: []
+		const byId = new Map(local.map((task) => [task.taskId, task]))
+		for (const task of remote) {
+			if (!byId.has(task.taskId)) {
+				byId.set(task.taskId, task)
+			}
+		}
+		return [...byId.values()]
+	}
+
+	public shouldBroadcastTaskToChat(task: Task): boolean {
+		if (this.pendingNewConversation) {
+			return false
+		}
+		const current = this.getCurrentTask()
+		if (task.subagent && current?.taskId !== task.taskId) {
+			return false
+		}
+		return !current || current.taskId === task.taskId
+	}
+
+	public syncLiveTask(task: Task): void {
+		void this.liveTaskCoordinator
+			.upsertTask({
+				taskId: task.taskId,
+				cwd: task.cwd,
+				abort: task.abort,
+				abandoned: task.abandoned,
+			})
+			.catch((error) => {
+				console.error("[ClineProvider] live-task upsert failed:", error)
+			})
+		void this.parallelManager.broadcast().catch((error) => {
+			console.error("[ClineProvider] live-task broadcast failed:", error)
+		})
 	}
 
 	/**
@@ -1083,6 +1166,10 @@ export class ClineProvider
 		this.skillsManager = undefined
 		this.marketplaceManager?.cleanup()
 		this.customModesManager?.dispose()
+		if (this._liveTaskCoordinator) {
+			await this._liveTaskCoordinator.dispose().catch(() => undefined)
+			this._liveTaskCoordinator = undefined
+		}
 
 		// kilocode_change start - Stop auto-purge scheduler and device auth service
 		if (this.autoPurgeScheduler) {
@@ -1558,7 +1645,11 @@ export class ClineProvider
 		// Start exactly one restoration flow after stack replacement and listener
 		// setup. Consume both payload holders so a stale cancellation continuation
 		// cannot survive a checkpoint-edit replacement; the explicit edit wins.
-		if (shouldStartTask) {
+		const liveElsewhere = this.liveTaskCoordinator.isLiveElsewhere(task.taskId)
+		if (liveElsewhere) {
+			await task.hydratePersistedMessages()
+			await this.postStateToWebview()
+		} else if (shouldStartTask) {
 			const pendingCancelledContinuation = this.consumePendingCancelledTaskContinuation()
 			const pendingContinuation = pendingEdit
 				? {
@@ -3676,7 +3767,9 @@ export class ClineProvider
 
 	// kilocode_change start: parallel conversations
 	public async focusTask(taskId: string): Promise<void> {
-		const index = this.clineStack.findIndex((task) => task.taskId === taskId)
+		const index = this.clineStack.findIndex(
+			(task) => task.taskId === taskId || task.subagent?.sessionId === taskId,
+		)
 		if (index === -1) {
 			const { historyItem } = await this.getTaskWithId(taskId)
 			await this.createTaskWithHistoryItem(historyItem, { keepRunningTask: true })

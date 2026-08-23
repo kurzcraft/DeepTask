@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.1.0** adds parallel subagents and multi-worktree support: the model can dispatch up to 5 subagents at once (each with the full chat UI and integrated terminals) and continues only after all of them finish; write-heavy subagents get isolated git worktrees. The left rail is folder → workspace → conversation, shared across every window, and existing workspaces reload as soon as a window opens. If a workspace is already occupied, Deeptask forks a sibling worktree and moves the later conversation there. Deleting a workspace can keep conversations under main or Delete All to remove them with the worktree. Both permission toggles default to enabled.
+> **Deeptask 9.1.0** adds parallel subagents and multi-worktree support: the model can dispatch up to 5 subagents at once (each with the full chat UI and integrated terminals) and continues only after all of them finish; write-heavy subagents get isolated git worktrees. The left rail is folder → workspace → conversation, shared across every window, and existing workspaces reload as soon as a window opens. Occupancy counts only conversations that are actively inferring. Mid-task, the model can detect occupancy and use `workspace_merge` to move the current conversation onto a free workspace or a new worktree without a manual move. Deleting a workspace can keep conversations under main or Delete All to remove them with the worktree. Both permission toggles default to enabled.
 
 ## What you can do with Deeptask
 

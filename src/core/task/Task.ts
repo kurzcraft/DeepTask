@@ -428,6 +428,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	// Tracks whether initiateTaskLoop is currently running so mid-task user
 	// messages can interrupt the live loop even between stream chunks / tools.
 	private isTaskLoopActive = false
+	// True after startTask/resumeTaskFromHistory. A restored mirror in another
+	// window stays false until that window takes over inference.
+	public hasStartedInference = false
 	// kilocode_change end
 	isInitialized = false
 	isPaused: boolean = false
@@ -701,10 +704,12 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		this.subagent = subagent
 		// kilocode_change end
 
-		// Normal use-case is usually retry similar history task with new workspace.
-		this.workspacePath = parentTask
-			? parentTask.workspacePath
-			: (workspacePath ?? getWorkspacePath(path.join(os.homedir(), "Documents"))) // kilocode_change: use Documents instead of Desktop as default
+		// Prefer an explicit workspacePath so parallel subagents can run in
+		// isolated worktrees even when they keep a parentTask for lineage.
+		this.workspacePath =
+			workspacePath ??
+			parentTask?.workspacePath ??
+			getWorkspacePath(path.join(os.homedir(), "Documents")) // kilocode_change: use Documents instead of Desktop as default
 
 		this.instanceId = crypto.randomUUID().slice(0, 8)
 		this.taskNumber = -1
@@ -1570,6 +1575,12 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		return readTaskMessages({ taskId: this.taskId, globalStoragePath: this.globalStoragePath })
 	}
 
+	/** Load persisted chat without starting inference. Used by extra windows that only mirror a live task. */
+	public async hydratePersistedMessages(): Promise<void> {
+		this.clineMessages = await this.getSavedClineMessages()
+		this.apiConversationHistory = await this.getSavedApiConversationHistory()
+	}
+
 	private async addToClineMessages(message: ClineMessage) {
 		if (this.historyPersistenceFrozen) {
 			return
@@ -1581,7 +1592,10 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			this.subagent.manager.recordMessageCreated(this.subagent.sessionId, message)
 		} else {
 			const provider = this.providerRef.deref()
-			await provider?.postStateToWebview()
+			provider?.syncLiveTask?.(this)
+			if (provider?.shouldBroadcastTaskToChat?.(this) !== false) {
+				await provider?.postStateToWebview()
+			}
 		}
 		// kilocode_change end
 		this.emit(RooCodeEventName.Message, { action: "created", message })
@@ -1628,7 +1642,10 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			this.subagent.manager.recordMessageUpdated(this.subagent.sessionId, message)
 		} else {
 			const provider = this.providerRef.deref()
-			await provider?.postMessageToWebview({ type: "messageUpdated", clineMessage: message })
+			provider?.syncLiveTask?.(this)
+			if (provider?.shouldBroadcastTaskToChat?.(this) !== false) {
+				await provider?.postMessageToWebview({ type: "messageUpdated", clineMessage: message })
+			}
 		}
 		// kilocode_change end
 		this.emit(RooCodeEventName.Message, { action: "updated", message })
@@ -3064,6 +3081,7 @@ ${protocolHint}
 	// Start / Resume / Abort / Dispose
 
 	private async startTask(task?: string, images?: string[]): Promise<void> {
+		this.hasStartedInference = true
 		if (this.enableBridge) {
 			try {
 				await BridgeOrchestrator.subscribeToTask(this)
@@ -3127,6 +3145,7 @@ ${protocolHint}
 		images?: string[]
 		options?: UserContinuationOptions
 	}) {
+		this.hasStartedInference = true
 		// kilocode_change start
 		// Restoring the active replacement instance starts a new transaction. Clear
 		// cancellation inherited before this entry even when the user answers the
@@ -5080,16 +5099,19 @@ ${protocolHint}
 					// 	this.userMessageContentReady = true
 					// }
 
-					const hasIntegratedTerminalCommand = this.assistantMessageContent.some(
-						(content) => content.type === "tool_use" && content.name === "execute_command",
+					const hasUnboundedToolWait = this.assistantMessageContent.some(
+						(content) =>
+							content.type === "tool_use" &&
+							(content.name === "execute_command" || content.name === "dispatch_subagents"),
 					)
 
 					try {
-						// Commands and user-controlled approvals are intentionally unbounded. For
-						// other tool states, keep a watchdog that only consumes active execution time.
+						// Commands, parallel subagents, and user-controlled approvals are
+						// intentionally unbounded. For other tool states, keep a watchdog that
+						// only consumes active execution time.
 						await waitForToolResultReady(
 							this,
-							hasIntegratedTerminalCommand ? undefined : getToolResultWaitTimeoutMs(),
+							hasUnboundedToolWait ? undefined : getToolResultWaitTimeoutMs(),
 						)
 					} catch (error) {
 						const message =
@@ -6820,10 +6842,11 @@ ${protocolHint}
 			console.error("Failed to initialize RooIgnoreController:", error)
 		})
 		this.rooProtectedController = new RooProtectedController(this.cwd)
-		this.providerRef
-			.deref()
-			?.postStateToWebview()
-			.catch(() => undefined)
+		const provider = this.providerRef.deref()
+		provider?.syncLiveTask?.(this)
+		if (provider?.shouldBroadcastTaskToChat?.(this) !== false) {
+			provider?.postStateToWebview().catch(() => undefined)
+		}
 	}
 	// kilocode_change end
 

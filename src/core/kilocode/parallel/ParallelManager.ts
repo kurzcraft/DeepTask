@@ -81,6 +81,7 @@ export class ParallelManager {
 	/** Spawns a subagent Task; resolves when the subagent fully settles. */
 	spawn(parentTask: Task, spec: SubagentSpec): { sessionId: string; done: Promise<void> } {
 		const sessionId = `sa-${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`
+		const workspacePath = spec.workspacePath ?? parentTask.cwd
 		const info: ParallelSession = {
 			sessionId,
 			taskId: sessionId,
@@ -89,7 +90,7 @@ export class ParallelManager {
 			task: spec.task,
 			status: "running",
 			workspaceName: spec.workspaceName,
-			workspacePath: spec.workspacePath,
+			workspacePath,
 			branch: spec.branch,
 			startedAt: Date.now(),
 		}
@@ -103,11 +104,19 @@ export class ParallelManager {
 			provider,
 			apiConfiguration: parentTask.apiConfiguration,
 			task: spec.task,
-			workspacePath: spec.workspacePath ?? parentTask.cwd,
+			workspacePath,
+			enableDiff: parentTask.diffEnabled,
+			enableCheckpoints: parentTask.enableCheckpoints,
+			checkpointTimeout: parentTask.checkpointTimeout,
 			subagent: { sessionId, depth: (parentTask.subagent?.depth ?? 0) + 1, manager: this },
 			startTask: true,
 		})
 		state.task = child
+		state.info.taskId = child.taskId
+		if (typeof this.provider.addBackgroundClineToStack === "function") {
+			void this.provider.addBackgroundClineToStack(child)
+		}
+		void this.registerSubagentConversation(parentTask, spec, child.taskId, workspacePath)
 
 		const done = runPromise
 			.then(() => {
@@ -363,8 +372,8 @@ export class ParallelManager {
 		return { ...conversation, workspacePath: conversation.folderPath }
 	}
 
-	private async loadConversations(): Promise<ParallelConversation[]> {
-		if (this.conversations === undefined) {
+	private async loadConversations(force = false): Promise<ParallelConversation[]> {
+		if (this.conversations === undefined || force) {
 			try {
 				this.conversations = await this.provider.context.globalState.get<ParallelConversation[]>(
 					CONVERSATIONS_STORAGE_KEY,
@@ -381,6 +390,11 @@ export class ParallelManager {
 		return this.conversations
 	}
 
+	/** Re-read persisted conversations so extra windows pick up new tasks. */
+	async reloadConversationsFromStorage(): Promise<ParallelConversation[]> {
+		return this.loadConversations(true)
+	}
+
 	private async persistConversations(): Promise<void> {
 		try {
 			await this.provider.context.globalState.update(CONVERSATIONS_STORAGE_KEY, this.conversations ?? [])
@@ -392,7 +406,7 @@ export class ParallelManager {
 	/** Registers a new conversation under a folder workspace and makes it the active one. */
 	async createConversation(
 		folderPath: string,
-		init?: { sessionId?: string; title?: string; workspacePath?: string },
+		init?: { sessionId?: string; title?: string; workspacePath?: string; activate?: boolean },
 	): Promise<ParallelConversation> {
 		await this.getFolders()
 		await this.loadConversations()
@@ -409,9 +423,33 @@ export class ParallelManager {
 			lastActiveAt: now,
 		}
 		this.conversations = [conversation, ...(this.conversations ?? [])]
-		await this.setActiveConversation(conversation.id)
+		if (init?.activate !== false) {
+			await this.setActiveConversation(conversation.id)
+		}
 		await this.persistConversations()
 		return conversation
+	}
+
+	/** Registers a subagent as a normal archivable conversation under the current folder workspace. */
+	private async registerSubagentConversation(
+		parentTask: Task,
+		spec: SubagentSpec,
+		sessionId: string,
+		workspacePath: string,
+	): Promise<void> {
+		try {
+			const parentConversation = this.conversationForSession(parentTask.taskId)
+			const folderPath = parentConversation?.folderPath ?? this.folderPathForPath(workspacePath)
+			await this.createConversation(folderPath, {
+				sessionId,
+				title: spec.label ?? spec.task.slice(0, 48),
+				workspacePath,
+				activate: false,
+			})
+			await this.provider.postStateToWebview()
+		} catch (error) {
+			console.error("[ParallelManager] failed to register subagent conversation:", error)
+		}
 	}
 
 	getActiveConversationId(): string | undefined {
@@ -555,6 +593,7 @@ export class ParallelManager {
 
 	async broadcast(): Promise<void> {
 		await this.hydrateRegisteredWorkspaces()
+		await this.reloadConversationsFromStorage()
 		const sessions = [...this.sessions.values()].map((s) => ({ ...s.info }))
 		const folders = await this.getFolders()
 		const workspaces: ParallelWorkspace[] = this.annotatedWorkspaces()

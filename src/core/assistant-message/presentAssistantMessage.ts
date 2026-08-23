@@ -1573,11 +1573,16 @@ export async function presentAssistantMessage(cline: Task) {
 
 const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 30_000
 
-function getToolExecutionTimeoutMs(toolName?: string): number | undefined {
+export function getToolExecutionTimeoutMs(toolName?: string): number | undefined {
 	// The integrated terminal owns command lifetime. Its configured timeout, shell
 	// integration, output-stream, and terminal-close paths decide when a command is
 	// complete or failed; a presenter timeout would report a running command as failed.
 	if (toolName === "execute_command") {
+		return undefined
+	}
+	// Parent waits for every parallel subagent to settle; a 30s presenter timeout
+	// would abort the parent while children are still running.
+	if (toolName === "dispatch_subagents") {
 		return undefined
 	}
 

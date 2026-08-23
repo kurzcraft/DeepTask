@@ -52,7 +52,7 @@ import AutoApproveMenu from "./AutoApproveMenu"
 import BottomControls from "../kilocode/BottomControls" // kilocode_change
 // kilocode_change start: parallel subagents & workspaces
 import { ParallelRail } from "../kilocode/parallel/ParallelRail"
-import { ParallelSessionPanel } from "../kilocode/parallel/ParallelSessionPanel"
+import { resolveParallelSelectTarget } from "../kilocode/parallel/resolveParallelSelect"
 import { UserMessageRail } from "../kilocode/parallel/UserMessageRail"
 import { WorkspaceBar } from "../kilocode/parallel/WorkspaceBar"
 // kilocode_change end
@@ -1857,7 +1857,6 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		parallelConversations,
 		parallelActiveConversationId,
 	} = useExtensionState()
-	const [parallelSelectedId, setParallelSelectedId] = useState<string | null>(null)
 	const parallelSessionList = useMemo(
 		() => Object.values(parallelSessions ?? {}).sort((a, b) => b.startedAt - a.startedAt),
 		[parallelSessions],
@@ -1866,13 +1865,11 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const parallelFolderList = useMemo(() => parallelFolders ?? [], [parallelFolders])
 	const parallelConversationList = useMemo(() => parallelConversations ?? [], [parallelConversations])
 	const handleParallelSelect = useCallback((id: string) => {
-		if (id.startsWith("cv:")) {
-			vscode.postMessage({ type: "parallel.selectConversation", text: id.slice(3) })
-			setParallelSelectedId(null)
-			return
+		const resolved = resolveParallelSelectTarget(id, parallelConversationList, parallelSessionList)
+		if (resolved.kind === "conversation") {
+			vscode.postMessage({ type: "parallel.selectConversation", text: resolved.targetId })
 		}
-		setParallelSelectedId((prev) => (prev === id ? null : id))
-	}, [])
+	}, [parallelConversationList, parallelSessionList])
 	// kilocode_change end
 
 	const handleMessageClick = useCallback((index: number) => {
@@ -2234,7 +2231,6 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				folders={parallelFolderList}
 				conversations={parallelConversationList}
 				activeConversationId={parallelActiveConversationId}
-				selectedId={parallelSelectedId}
 				onSelect={handleParallelSelect}
 			/>
 			<div className="flex flex-col flex-1 min-w-0">
@@ -2596,11 +2592,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				</div>
 			)} */}
 			</div>
-			{/* kilocode_change start: parallel detail pane is a fixed docked sibling of the main column */}
-			{parallelSelectedId && (
-				<ParallelSessionPanel selectedId={parallelSelectedId} onClose={() => setParallelSelectedId(null)} />
-			)}
-			{/* kilocode_change end */}
+			{/* kilocode_change: subagent conversations reuse the main chat, not a side process panel */}
 			<div id="roo-portal" />
 			{/* kilocode_change: disable  */}
 			{/* <CloudUpsellDialog open={isUpsellOpen} onOpenChange={closeUpsell} onConnect={handleConnect} /> */}

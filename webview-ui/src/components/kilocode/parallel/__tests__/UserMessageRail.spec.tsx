@@ -46,4 +46,11 @@ describe("UserMessageRail", () => {
 		fireEvent.click(screen.getByTestId("user-message-rail-tick"))
 		expect(onJump).toHaveBeenCalledWith(1)
 	})
+
+	test("renders each tick as a horizontal line instead of a vertical bar", () => {
+		render(<UserMessageRail messages={[msg(1, "user_feedback", "only me")]} onJump={onJump} />)
+		const line = screen.getByTestId("user-message-rail-tick").querySelector("span")
+		expect(line).toHaveClass("h-px")
+		expect(line).toHaveClass("w-full")
+	})
 })

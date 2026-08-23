@@ -180,6 +180,13 @@ describe("WorkspaceService", () => {
 		expect(result.reason).toContain("busy")
 	})
 
+	test("merge lets the occupying owner leave and continue", async () => {
+		await service.create({ name: "self-busy" })
+		await service.claim("self-busy", "task:task-1")
+		const result = await service.merge({ name: "self-busy", allowOwner: "task-1" })
+		expect(result.ok).toBe(true)
+	})
+
 	test("merge with no new commits is a no-op success", async () => {
 		await service.create({ name: "empty" })
 		const result = await service.merge({ name: "empty" })

@@ -182,14 +182,38 @@ export class WorkspaceService {
 		await fs.promises.mkdir(worktreesDir, { recursive: true })
 		await this.ensureGitExclude(repoRoot)
 
-		const branch = `deeptask/${name}`
+		let branch = `deeptask/${name}`
 		try {
 			await gitAtRoot.raw(["worktree", "add", "-b", branch, wtPath, startPoint])
 		} catch (error) {
 			const detail = error instanceof Error ? error.message : String(error)
-			throw new Error(
-				`Failed to add git worktree "${name}" (branch ${branch} from ${startPoint}) at ${wtPath}: ${detail}`,
-			)
+			const leftover = /already exists|already used|is already checked out|not a valid path/i.test(detail)
+			if (!leftover) {
+				throw new Error(
+					`Failed to add git worktree "${name}" (branch ${branch} from ${startPoint}) at ${wtPath}: ${detail}`,
+				)
+			}
+			if (fs.existsSync(wtPath)) {
+				await fs.promises.rm(wtPath, { recursive: true, force: true }).catch(() => undefined)
+			}
+			const retryName = `${name}-${Date.now().toString(36)}`
+			const retryPath = path.join(repoRoot, ...WORKTREES_DIR, retryName)
+			branch = `deeptask/${retryName}`
+			try {
+				await gitAtRoot.raw(["worktree", "add", "-b", branch, retryPath, startPoint])
+				return await this.registerCreatedWorkspace({
+					name: retryName,
+					path: retryPath,
+					branch,
+					baseBranch: baseBranch === "HEAD" ? startPoint : baseBranch,
+					folderPath: params.folderPath ?? repoRoot,
+				})
+			} catch (retryError) {
+				const retryDetail = retryError instanceof Error ? retryError.message : String(retryError)
+				throw new Error(
+					`Failed to add git worktree "${name}" (branch ${branch} from ${startPoint}) at ${retryPath}: ${retryDetail}`,
+				)
+			}
 		}
 
 		const entry: ParallelWorkspace = {
@@ -199,6 +223,27 @@ export class WorkspaceService {
 			baseBranch: baseBranch === "HEAD" ? startPoint : baseBranch,
 			status: "available",
 			folderPath: params.folderPath ?? repoRoot,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		}
+		await this.registry.register(entry)
+		return entry
+	}
+
+	private async registerCreatedWorkspace(params: {
+		name: string
+		path: string
+		branch: string
+		baseBranch: string
+		folderPath: string
+	}): Promise<ParallelWorkspace> {
+		const entry: ParallelWorkspace = {
+			name: params.name,
+			path: params.path,
+			branch: params.branch,
+			baseBranch: params.baseBranch,
+			status: "available",
+			folderPath: params.folderPath,
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
 		}
@@ -314,15 +359,32 @@ export class WorkspaceService {
 		return result
 	}
 
-	async merge(params: { name: string; removeAfter?: boolean }): Promise<MergeResult> {
+	async findByNameOrPath(nameOrPath: string): Promise<ParallelWorkspace | undefined> {
+		const byName = await this.registry.get(nameOrPath)
+		if (byName) {
+			return byName
+		}
+		await this.registry.load()
+		const resolved = path.resolve(nameOrPath)
+		return this.registry.list().find((workspace) => path.resolve(workspace.path) === resolved)
+	}
+
+	async merge(params: { name: string; removeAfter?: boolean; allowOwner?: string }): Promise<MergeResult> {
 		const entry = await this.registry.get(params.name)
 		if (!entry) {
 			return { ok: false, reason: `Unknown workspace "${params.name}".` }
 		}
 		if (entry.status === "busy") {
-			return {
-				ok: false,
-				reason: `Workspace "${params.name}" is busy (owner: ${entry.owner ?? "unknown"}). Wait for it to finish before merging.`,
+			const owner = entry.owner ?? ""
+			const canLeave =
+				!!params.allowOwner && (owner === params.allowOwner || owner.endsWith(`:${params.allowOwner}`))
+			if (canLeave) {
+				await this.registry.release(params.name, "available")
+			} else {
+				return {
+					ok: false,
+					reason: `Workspace "${params.name}" is busy (owner: ${entry.owner ?? "unknown"}). Wait for it to finish before merging.`,
+				}
 			}
 		}
 		if (!fs.existsSync(entry.path)) {
@@ -393,8 +455,10 @@ export class WorkspaceService {
 			}
 			if (params.removeAfter) {
 				await this.removeWorktree(entry.path)
+				await this.registry.remove(entry.name)
+			} else {
+				await this.registry.mark(entry.name, "merged")
 			}
-			await this.registry.mark(entry.name, "merged")
 			return {
 				ok: true,
 				mergedCommits: String(ahead),

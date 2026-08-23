@@ -70,14 +70,17 @@ export function getWorkspaceMergeDescription(enabled: boolean | undefined): stri
 		return undefined
 	}
 	return `## workspace_merge
-Description: Merge a parallel workspace's branch back into the main branch. Pending changes in the workspace are auto-committed first. The user's checked-out working copy is never dirtied: when the main branch is not checked out (or is dirty) the merge happens through a temporary worktree. On conflict the merge is aborted cleanly and the conflicted file list is returned — resolve the conflicts INSIDE the workspace worktree, commit there, then call workspace_merge again. Do not merge a workspace while it is busy.
+Description: The only workspace change tool. Merge a parallel workspace's branch back into the main branch, optionally switch this conversation first, and optionally delete the old worktree. The current conversation may leave a workspace it occupies. Pending changes are auto-committed first. The user's checkout is never dirtied. On conflict the merge aborts and returns the conflicted files.
 
 Parameters:
-- name: (required) The workspace name to merge.
+- name: (required) Workspace name or path to merge.
 - delete_after: (optional, default false) Remove the workspace worktree after a successful merge (the branch is kept).
+- switch_to: (optional) Move this conversation first. Use "main" for the parent repo, or another workspace name/path.
 
 Usage:
 <workspace_merge>
 <name>refactor-auth</name>
+<switch_to>main</switch_to>
+<delete_after>true</delete_after>
 </workspace_merge>`
 }
