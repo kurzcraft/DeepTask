@@ -123,7 +123,8 @@ export class ParallelManager {
 		if (typeof this.provider.addBackgroundClineToStack === "function") {
 			void this.provider.addBackgroundClineToStack(child)
 		}
-		void this.registerSubagentConversation(parentTask, spec, child.taskId, workspacePath)
+		this.attachSubagentConversation(parentTask, spec, child.taskId, workspacePath)
+		const registered = this.registerSubagentConversation(parentTask, spec, child.taskId, workspacePath)
 
 		const done = runPromise
 			.then(() => {
@@ -144,7 +145,9 @@ export class ParallelManager {
 				void this.broadcast()
 			})
 
-		void this.broadcast()
+		void registered.finally(() => {
+			void this.broadcast()
+		})
 		return { sessionId, done }
 	}
 
@@ -511,6 +514,34 @@ export class ParallelManager {
 		})
 	}
 
+	/** Immediately attach a subagent conversation so the rail does not wait on persistence. */
+	private attachSubagentConversation(
+		parentTask: Task,
+		spec: SubagentSpec,
+		sessionId: string,
+		workspacePath: string,
+	): ParallelConversation {
+		const existing = this.conversationForSession(sessionId)
+		if (existing) {
+			return existing
+		}
+		const parentConversation = this.conversationForSession(parentTask.taskId)
+		const folderPath = parentConversation?.folderPath ?? this.folderPathForPath(workspacePath)
+		const now = Date.now()
+		const conversation: ParallelConversation = {
+			id: `cv-${now.toString(36)}-${randomUUID().slice(0, 6)}`,
+			folderPath,
+			workspacePath,
+			title: spec.label ?? spec.task.slice(0, 48),
+			sessionId,
+			createdAt: now,
+			lastActiveAt: now,
+		}
+		this.conversations = [conversation, ...(this.conversations ?? [])]
+		this.conversationsDirty = true
+		return conversation
+	}
+
 	/** Registers a subagent as a normal archivable conversation under the current folder workspace. */
 	private async registerSubagentConversation(
 		parentTask: Task,
@@ -519,14 +550,23 @@ export class ParallelManager {
 		workspacePath: string,
 	): Promise<void> {
 		try {
-			const parentConversation = this.conversationForSession(parentTask.taskId)
-			const folderPath = parentConversation?.folderPath ?? this.folderPathForPath(workspacePath)
-			await this.createConversation(folderPath, {
-				sessionId,
-				title: spec.label ?? spec.task.slice(0, 48),
-				workspacePath,
-				activate: false,
-			})
+			const attached = this.attachSubagentConversation(parentTask, spec, sessionId, workspacePath)
+			if (!this.conversationForSession(sessionId)) {
+				const parentConversation = this.conversationForSession(parentTask.taskId)
+				const folderPath = parentConversation?.folderPath ?? this.folderPathForPath(workspacePath)
+				await this.createConversation(folderPath, {
+					sessionId,
+					title: spec.label ?? spec.task.slice(0, 48),
+					workspacePath,
+					activate: false,
+				})
+			} else {
+				await this.enqueueConversationWrite(async () => {
+					await this.persistConversations()
+					void this.broadcast()
+				})
+			}
+			void attached
 			await this.provider.postStateToWebview()
 		} catch (error) {
 			console.error("[ParallelManager] failed to register subagent conversation:", error)
@@ -750,7 +790,8 @@ export class ParallelManager {
 		const sessions = [...this.sessions.values()].map((s) => ({ ...s.info }))
 		const liveTasks = typeof this.provider.getLiveTasks === "function" ? this.provider.getLiveTasks() : []
 		for (const task of liveTasks) {
-			if (!task.isStreaming) {
+			const isActivelyRunning = task.isActivelyRunning ?? task.isStreaming
+			if (!isActivelyRunning) {
 				continue
 			}
 			if (sessions.some((session) => session.sessionId === task.taskId || session.taskId === task.taskId)) {

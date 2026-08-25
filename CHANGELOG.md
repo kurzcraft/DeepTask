@@ -4,6 +4,7 @@
 
 ### Patch Changes
 
+- Register a subagent conversation as soon as it spawns, and show the live session under its worktree when persistence has not caught up yet.
 - Collapse inactive folders only when a VSCodium window first opens; later new conversations no longer recollapse the rail.
 - Show a radial spinning ring on live conversations, expand their folders, and add a green unread dot after a background conversation finishes until it is viewed without switching the current chat.
 - Keep a running task from flashing the empty start screen onto another conversation: background streams stay off the focused chat, and creating a parallel task no longer invokes `newChat`.

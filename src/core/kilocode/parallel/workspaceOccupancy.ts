@@ -32,6 +32,7 @@ export interface OccupancyInputs {
 		abort?: boolean
 		abandoned?: boolean
 		isStreaming?: boolean
+		isActivelyRunning?: boolean
 	}>
 	runningSubagents: Array<{
 		sessionId: string
@@ -59,7 +60,10 @@ export function collectWorkspaceOccupants(params: OccupancyInputs): WorkspaceOcc
 	}
 
 	const liveTasks = params.runningTasks.filter(
-		(task) => !task.abort && !task.abandoned && task.isStreaming === true,
+		(task) =>
+			!task.abort &&
+			!task.abandoned &&
+			(task.isActivelyRunning === true || (task.isActivelyRunning === undefined && task.isStreaming === true)),
 	)
 	const liveById = new Map(liveTasks.map((task) => [task.taskId, task]))
 

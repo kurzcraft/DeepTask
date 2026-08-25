@@ -46,6 +46,12 @@ const itemClass = (active: boolean) =>
 			: "hover:bg-vscode-list-hoverBackground text-vscode-foreground",
 	)
 
+const normalizePath = (value: string | undefined) =>
+	(value ?? "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()
+
+const samePath = (left: string | undefined, right: string | undefined) =>
+	normalizePath(left) === normalizePath(right) && Boolean(normalizePath(left))
+
 const conversationWorkspacePath = (conversation: ParallelConversation) =>
 	conversation.workspacePath ?? conversation.folderPath
 
@@ -59,18 +65,34 @@ const RunningRadialSpinner = () => (
 	</span>
 )
 
-const sessionWorkspacePath = (session: ParallelSession, folders: ParallelFolder[]) => {
+const sessionWorkspacePath = (
+	session: ParallelSession,
+	folders: ParallelFolder[],
+	workspaces: ParallelWorkspace[] = [],
+) => {
 	if (session.workspacePath) {
 		return session.workspacePath
 	}
 	if (session.workspaceName) {
-		return folders.find((folder) => folder.path.endsWith(`/${session.workspaceName}`))?.path
+		const nested = workspaces.find(
+			(workspace) =>
+				workspace.name === session.workspaceName ||
+				workspace.path.replace(/\\/g, "/").endsWith(`/${session.workspaceName}`),
+		)
+		if (nested) {
+			return nested.path
+		}
+		return folders.find((folder) => folder.path.replace(/\\/g, "/").endsWith(`/${session.workspaceName}`))?.path
 	}
 	return undefined
 }
 
-const parentFolderForSession = (session: ParallelSession, folders: ParallelFolder[]) => {
-	const workspacePath = sessionWorkspacePath(session, folders)
+const parentFolderForSession = (
+	session: ParallelSession,
+	folders: ParallelFolder[],
+	workspaces: ParallelWorkspace[] = [],
+) => {
+	const workspacePath = sessionWorkspacePath(session, folders, workspaces)
 	if (!workspacePath) {
 		return undefined
 	}
@@ -275,10 +297,6 @@ export const ParallelRail = ({
 				} else {
 					seenRunningRef.current.delete(conversation.id)
 				}
-				if (conversation.id === activeConversationId) {
-					next.delete(conversation.id)
-					continue
-				}
 				if (wasRunning && !isRunning) {
 					next.add(conversation.id)
 				}
@@ -385,6 +403,30 @@ export const ParallelRail = ({
 		openNewConversation(folderPath, workspacePath)
 	}
 
+	const renderSessionRow = (session: ParallelSession, nestedClass: string) => {
+		const label = session.label || session.task
+		return (
+			<div key={session.sessionId} className="group relative flex items-center" data-testid="parallel-session-row">
+				<button
+					aria-label={label}
+					onClick={() => onSelect(session.sessionId)}
+					data-testid="parallel-rail-session"
+					data-running={session.status === "running" ? "true" : "false"}
+					className={cn(itemClass(selectedId === session.sessionId), nestedClass, "pr-14")}>
+					{session.status === "running" ? (
+						<RunningRadialSpinner />
+					) : (
+						<span className="codicon codicon-comment-discussion shrink-0" />
+					)}
+					<span className="truncate flex-1">{label}</span>
+					{session.status && session.status !== "running" && (
+						<span className={cn("w-1.5 h-1.5 rounded-full shrink-0", sessionStatusColor[session.status])} />
+					)}
+				</button>
+			</div>
+		)
+	}
+
 	const renderConversationRow = (conversation: ParallelConversation, nestedClass: string) => {
 		const conversationId = `cv:${conversation.id}`
 		const conversationActive = activeConversationId === conversation.id
@@ -424,7 +466,17 @@ export const ParallelRail = ({
 							}>
 							<button
 								aria-label={label}
-								onClick={() => onSelect(conversationId)}
+								onClick={() => {
+									setUnreadConversationIds((prev) => {
+										if (!prev.has(conversation.id)) {
+											return prev
+										}
+										const next = new Set(prev)
+										next.delete(conversation.id)
+										return next
+									})
+									onSelect(conversationId)
+								}}
 								data-testid="parallel-rail-conversation"
 								data-active={conversationActive}
 								data-running={runningConversationIds.has(conversation.id) ? "true" : "false"}
@@ -487,8 +539,22 @@ export const ParallelRail = ({
 		const status = isMain ? undefined : workspace.status
 		const nestedConversations = activeConversations.filter(
 			(conversation) =>
-				conversation.folderPath === folder.path && conversationWorkspacePath(conversation) === workspacePath,
+				samePath(conversation.folderPath, folder.path) &&
+				samePath(conversationWorkspacePath(conversation), workspacePath),
 		)
+		const nestedSessions = sessions.filter((session) => {
+			if (
+				nestedConversations.some(
+					(conversation) =>
+						conversation.sessionId === session.sessionId || conversation.sessionId === session.taskId,
+				)
+			) {
+				return false
+			}
+			const sessionPath = sessionWorkspacePath(session, folders, workspaces) ?? session.workspacePath
+			const parent = parentFolderForSession(session, folders, workspaces) ?? folder.path
+			return samePath(parent, folder.path) && samePath(sessionPath, workspacePath)
+		})
 		const workspaceActive = nestedConversations.some((conversation) => conversation.id === activeConversationId)
 		return (
 			<div key={collapseKey} className="flex flex-col gap-0.5" data-testid="parallel-workspace-row">
@@ -565,7 +631,12 @@ export const ParallelRail = ({
 						)}
 					</div>
 				</div>
-				{!collapsed && nestedConversations.map((conversation) => renderConversationRow(conversation, "pl-16"))}
+				{!collapsed && (
+					<>
+						{nestedConversations.map((conversation) => renderConversationRow(conversation, "pl-16"))}
+						{nestedSessions.map((session) => renderSessionRow(session, "pl-16"))}
+					</>
+				)}
 			</div>
 		)
 	}
@@ -599,8 +670,8 @@ export const ParallelRail = ({
 
 			<div className="px-1 pt-1 flex flex-col gap-0.5 pb-2">
 				{activeFolders.map((folder) => {
-					const folderWorkspaces = workspaces.filter(
-						(workspace) => parentFolderForWorkspace(workspace, folders) === folder.path,
+					const folderWorkspaces = workspaces.filter((workspace) =>
+						samePath(parentFolderForWorkspace(workspace, folders), folder.path),
 					)
 					const folderCollapsed = collapsedFolders.has(folder.path)
 					return (

@@ -419,4 +419,35 @@ describe("ParallelManager conversations", () => {
 		expect(created[0]?.checkpointTimeout).toBe(42)
 		createSpy.mockRestore()
 	})
+
+	test("spawn immediately attaches a conversation under the worktree", async () => {
+		const { manager } = setup()
+		await manager.registerMainFolder("/repo")
+		const createSpy = vi.spyOn(Task, "create").mockImplementation((options) => {
+			const child = { taskId: "child-task" } as Task
+			return [child, Promise.resolve()]
+		})
+		const parent = {
+			taskId: "parent-task",
+			cwd: "/repo",
+			apiConfiguration: { apiProvider: "openai" },
+			enableCheckpoints: false,
+			diffEnabled: false,
+			checkpointTimeout: 42,
+			subagent: undefined,
+		} as unknown as Task
+
+		manager.spawn(parent, {
+			label: "term-a",
+			task: "write files",
+			workspaceName: "term-a",
+			workspacePath: "/repo/.kilocode/worktrees/term-a",
+		})
+
+		const conversation = manager.conversationForSession("child-task")
+		expect(conversation?.title).toBe("term-a")
+		expect(conversation?.workspacePath).toBe("/repo/.kilocode/worktrees/term-a")
+		expect(conversation?.folderPath).toBe("/repo")
+		createSpy.mockRestore()
+	})
 })

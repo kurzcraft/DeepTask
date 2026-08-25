@@ -229,6 +229,43 @@ describe("Workspace tools execute guards", () => {
 		expect(JSON.stringify(callbacks.pushToolResult.mock.calls[0][0])).toContain("moved this conversation")
 	})
 
+	test("workspace_create binds an unbound session then moves it under the new worktree", async () => {
+		const callbacks = makeCallbacks()
+		const created = {
+			name: "feature-x",
+			path: "/repo/.kilocode/worktrees/feature-x",
+			branch: "deeptask/feature-x",
+			baseBranch: "main",
+		}
+		const createdConversation = { id: "cv-new", folderPath: "/repo", workspacePath: created.path }
+		const provider = makeProvider({ agentWorkspaceManagementEnabled: true })
+		provider.workspaceService = {
+			create: vi.fn(async () => created),
+			claim: vi.fn(async () => created),
+		}
+		provider.parallelManager = {
+			folderPathForPath: (cwd: string) => cwd,
+			conversationForSession: vi.fn(() => undefined),
+			ensureTaskConversation: vi.fn(async () => createdConversation),
+			updateConversationWorkspace: vi.fn(async () => undefined),
+			broadcast: vi.fn(async () => undefined),
+		}
+		provider.postMessageToWebview = vi.fn(async () => undefined)
+		const task = makeTask(provider)
+		task.switchWorkspace = vi.fn(async () => undefined)
+		await workspaceCreateTool.execute({ name: "feature-x" }, task, callbacks)
+		expect(provider.parallelManager.ensureTaskConversation).toHaveBeenCalledWith({
+			sessionId: "task-1",
+			workspacePath: created.path,
+			folderPath: "/repo",
+		})
+		expect(provider.parallelManager.updateConversationWorkspace).toHaveBeenCalledWith(
+			"cv-new",
+			"/repo",
+			created.path,
+		)
+	})
+
 	test("workspace_status reports occupancy by workspacePath", async () => {
 		const callbacks = makeCallbacks()
 		const provider = makeProvider({})

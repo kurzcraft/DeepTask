@@ -424,7 +424,6 @@ export class WorkspaceCreateTool extends BaseTool<"workspace_create"> {
 
 			const manager = provider.parallelManager
 			const folderPath = manager?.folderPathForPath(task.cwd) ?? task.cwd
-			const bound = manager?.conversationForSession(task.taskId)
 			const created = await provider.getWorkspaceService(folderPath).create({
 				name: params.name,
 				description: params.task_description,
@@ -432,8 +431,19 @@ export class WorkspaceCreateTool extends BaseTool<"workspace_create"> {
 			})
 			await provider.getWorkspaceService(folderPath).claim(created.name, `task:${task.taskId}`)
 			await task.switchWorkspace(created.path)
-			if (bound && manager) {
-				await manager.updateConversationWorkspace(bound.id, folderPath, created.path)
+			if (manager) {
+				const bound =
+					manager.conversationForSession(task.taskId) ??
+					(typeof manager.ensureTaskConversation === "function"
+						? await manager.ensureTaskConversation({
+								sessionId: task.taskId,
+								workspacePath: created.path,
+								folderPath,
+							})
+						: undefined)
+				if (bound) {
+					await manager.updateConversationWorkspace(bound.id, folderPath, created.path)
+				}
 			}
 			await provider.postMessageToWebview({ type: "parallelWorkspaceChanged", text: created.path })
 			await manager?.broadcast()

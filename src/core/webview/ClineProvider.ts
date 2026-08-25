@@ -932,6 +932,7 @@ export class ClineProvider
 		abort: boolean
 		abandoned: boolean
 		isStreaming: boolean
+		isActivelyRunning: boolean
 	}> {
 		const local = this.clineStack
 			.filter((task) => !task.abort && !task.abandoned)
@@ -941,6 +942,8 @@ export class ClineProvider
 				abort: task.abort,
 				abandoned: task.abandoned,
 				isStreaming: task.isStreaming,
+				// Command/tool waits keep the task loop active after HTTP streaming ends.
+				isActivelyRunning: task.isActivelyRunningTaskLoop(),
 			}))
 		const remote = this._liveTaskCoordinator
 			? this._liveTaskCoordinator.listRemoteTasks().map((task) => ({
@@ -949,6 +952,7 @@ export class ClineProvider
 					abort: task.abort,
 					abandoned: task.abandoned,
 					isStreaming: true,
+					isActivelyRunning: true,
 				}))
 			: []
 		const byId = new Map(local.map((task) => [task.taskId, task]))

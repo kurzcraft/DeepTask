@@ -111,6 +111,28 @@ describe("ParallelRail", () => {
 		expect(screen.getByText("Auth work")).toBeInTheDocument()
 	})
 
+	test("falls back to a nested session when the worktree has no conversation yet", () => {
+		render(
+			<ParallelRail
+				sessions={[
+					makeSession({
+						sessionId: "sa-orphan",
+						taskId: "sa-orphan",
+						label: "orphan-ws",
+						workspaceName: "refactor-auth",
+						workspacePath: "/home/user/my-project/.kilocode/worktrees/refactor-auth",
+					}),
+				]}
+				workspaces={[makeWorkspace()]}
+				folders={[makeFolder()]}
+				conversations={[]}
+				onSelect={onSelect}
+			/>,
+		)
+		expect(screen.getByTestId("parallel-rail-session")).toBeInTheDocument()
+		expect(screen.getByText("orphan-ws")).toBeInTheDocument()
+	})
+
 	test("folder chevron collapses workspaces; folder name starts a main-workspace conversation", () => {
 		render(
 			<ParallelRail
@@ -379,6 +401,52 @@ describe("ParallelRail", () => {
 			/>,
 		)
 		expect(screen.getByTestId("parallel-conversation-unread")).toBeInTheDocument()
+	})
+
+	test("keeps the unread dot on the current conversation until it is clicked", () => {
+		const { rerender } = render(
+			<ParallelRail
+				sessions={[makeSession({ sessionId: "task-1", taskId: "task-1", status: "running" })]}
+				workspaces={[]}
+				folders={[makeFolder()]}
+				conversations={[makeConversation({ sessionId: "task-1" })]}
+				activeConversationId="cv-1"
+				onSelect={onSelect}
+			/>,
+		)
+		rerender(
+			<ParallelRail
+				sessions={[]}
+				workspaces={[]}
+				folders={[makeFolder()]}
+				conversations={[makeConversation({ sessionId: "task-1" })]}
+				activeConversationId="cv-1"
+				onSelect={onSelect}
+			/>,
+		)
+		expect(screen.getByTestId("parallel-conversation-unread")).toBeInTheDocument()
+		fireEvent.click(screen.getByTestId("parallel-rail-conversation"))
+		expect(screen.queryByTestId("parallel-conversation-unread")).not.toBeInTheDocument()
+		expect(onSelect).toHaveBeenCalledWith("cv:cv-1")
+	})
+
+	test("nests a conversation under a worktree even when the stored path has a trailing slash", () => {
+		render(
+			<ParallelRail
+				sessions={[]}
+				workspaces={[makeWorkspace()]}
+				folders={[makeFolder()]}
+				conversations={[
+					makeConversation({
+						id: "cv-slash",
+						workspacePath: "/home/user/my-project/.kilocode/worktrees/refactor-auth/",
+						title: "Slash work",
+					}),
+				]}
+				onSelect={onSelect}
+			/>,
+		)
+		expect(screen.getByText("Slash work")).toBeInTheDocument()
 	})
 
 	test("expands the current window folder even when another folder is newer", () => {
