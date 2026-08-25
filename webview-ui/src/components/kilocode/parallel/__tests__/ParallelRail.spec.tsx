@@ -278,6 +278,108 @@ describe("ParallelRail", () => {
 		expect(folderToggles[1]).toHaveAttribute("aria-expanded", "false")
 	})
 
+	test("does not recollapse folders after the initial window open", () => {
+		const { rerender } = render(
+			<ParallelRail
+				sessions={[]}
+				workspaces={[]}
+				folders={[makeFolder(), makeFolder({ name: "other", path: "/home/user/other", createdAt: 0 })]}
+				conversations={[makeConversation()]}
+				activeConversationId="cv-1"
+				onSelect={onSelect}
+			/>,
+		)
+		const otherToggle = screen.getAllByTestId("parallel-rail-folder")[1]
+		fireEvent.click(otherToggle)
+		expect(otherToggle).toHaveAttribute("aria-expanded", "true")
+
+		rerender(
+			<ParallelRail
+				sessions={[]}
+				workspaces={[]}
+				folders={[makeFolder(), makeFolder({ name: "other", path: "/home/user/other", createdAt: 0 })]}
+				conversations={[
+					makeConversation(),
+					makeConversation({
+						id: "cv-new",
+						folderPath: "/home/user/my-project",
+						workspacePath: "/home/user/my-project",
+						title: "New chat",
+					}),
+				]}
+				activeConversationId="cv-new"
+				onSelect={onSelect}
+			/>,
+		)
+		expect(screen.getAllByTestId("parallel-rail-folder")[1]).toHaveAttribute("aria-expanded", "true")
+		expect(screen.getByText("New chat")).toBeInTheDocument()
+	})
+
+	test("shows a running icon for live conversations and expands their folder", () => {
+		render(
+			<ParallelRail
+				sessions={[makeSession({ sessionId: "task-2", taskId: "task-2", status: "running" })]}
+				workspaces={[]}
+				folders={[makeFolder(), makeFolder({ name: "other", path: "/home/user/other", createdAt: 0 })]}
+				conversations={[
+					makeConversation(),
+					makeConversation({
+						id: "cv-2",
+						folderPath: "/home/user/other",
+						workspacePath: "/home/user/other",
+						sessionId: "task-2",
+						title: "Other chat",
+					}),
+				]}
+				activeConversationId="cv-1"
+				onSelect={onSelect}
+			/>,
+		)
+		const running = screen.getByText("Other chat").closest("[data-testid='parallel-rail-conversation']")
+		expect(running).toHaveAttribute("data-running", "true")
+		expect(screen.getAllByTestId("parallel-rail-folder")[1]).toHaveAttribute("aria-expanded", "true")
+	})
+
+	test("shows an unread dot after a background conversation finishes", () => {
+		const { rerender } = render(
+			<ParallelRail
+				sessions={[makeSession({ sessionId: "task-2", taskId: "task-2", status: "running" })]}
+				workspaces={[]}
+				folders={[makeFolder()]}
+				conversations={[
+					makeConversation(),
+					makeConversation({
+						id: "cv-2",
+						sessionId: "task-2",
+						title: "Background chat",
+						lastActiveAt: 2,
+					}),
+				]}
+				activeConversationId="cv-1"
+				onSelect={onSelect}
+			/>,
+		)
+		rerender(
+			<ParallelRail
+				sessions={[makeSession({ sessionId: "task-2", taskId: "task-2", status: "completed" })]}
+				workspaces={[]}
+				folders={[makeFolder()]}
+				conversations={[
+					makeConversation(),
+					makeConversation({
+						id: "cv-2",
+						sessionId: "task-2",
+						title: "Background chat",
+						lastActiveAt: 9,
+					}),
+				]}
+				activeConversationId="cv-1"
+				onSelect={onSelect}
+			/>,
+		)
+		expect(screen.getByTestId("parallel-conversation-unread")).toBeInTheDocument()
+	})
+
 	test("expands the current window folder even when another folder is newer", () => {
 		render(
 			<ParallelRail

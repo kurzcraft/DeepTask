@@ -774,6 +774,7 @@ export const webviewMessageHandler = async (
 					)
 					provider.pendingNewConversation = undefined
 					await provider.parallelManager.broadcast()
+					break
 				} else {
 					await provider.createTask(resolved.text, resolved.images)
 				}

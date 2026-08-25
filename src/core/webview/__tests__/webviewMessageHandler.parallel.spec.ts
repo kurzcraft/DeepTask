@@ -168,6 +168,7 @@ describe("webviewMessageHandler - pending new conversation", () => {
 		})
 		expect(provider.pendingNewConversation).toBeUndefined()
 		expect(bindConversation).toHaveBeenCalledWith("cv-new", "task-new", "second conversation")
+		expect(provider.postMessageToWebview).not.toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
 	})
 })
 

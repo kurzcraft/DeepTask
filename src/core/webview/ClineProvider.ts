@@ -934,7 +934,7 @@ export class ClineProvider
 		isStreaming: boolean
 	}> {
 		const local = this.clineStack
-			.filter((task) => task.isStreaming && !task.abort && !task.abandoned)
+			.filter((task) => !task.abort && !task.abandoned)
 			.map((task) => ({
 				taskId: task.taskId,
 				cwd: task.cwd,
@@ -963,6 +963,16 @@ export class ClineProvider
 	public shouldBroadcastTaskToChat(task: Task): boolean {
 		if (this.pendingNewConversation) {
 			return false
+		}
+		const focusedId = this.parallelManager?.focusedConversationId
+		if (focusedId) {
+			const bound = this.parallelManager.conversationForSession(task.taskId)
+			if (bound && bound.id !== focusedId) {
+				return false
+			}
+			if (!bound) {
+				return false
+			}
 		}
 		const current = this.getCurrentTask()
 		if (task.subagent && current?.taskId !== task.taskId) {

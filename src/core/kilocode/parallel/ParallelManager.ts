@@ -59,6 +59,10 @@ export class ParallelManager {
 	private mainFolders: ParallelFolder[] | undefined
 	private conversations: ParallelConversation[] | undefined
 	private activeConversationId: string | undefined
+
+	get focusedConversationId(): string | undefined {
+		return this.activeConversationId
+	}
 	private archivedFolders: Set<string> | undefined
 	private workspacesHydrated = false
 	private worktreeWatchers = new Map<string, vscode.Disposable>()
@@ -737,6 +741,26 @@ export class ParallelManager {
 		}
 		await this.reloadConversationsFromStorage()
 		const sessions = [...this.sessions.values()].map((s) => ({ ...s.info }))
+		const liveTasks = typeof this.provider.getLiveTasks === "function" ? this.provider.getLiveTasks() : []
+		for (const task of liveTasks) {
+			if (!task.isStreaming) {
+				continue
+			}
+			if (sessions.some((session) => session.sessionId === task.taskId || session.taskId === task.taskId)) {
+				continue
+			}
+			const conversation = this.conversationForSession(task.taskId)
+			sessions.push({
+				sessionId: task.taskId,
+				taskId: task.taskId,
+				parentTaskId: conversation?.id ?? task.taskId,
+				label: conversation?.title ?? task.taskId,
+				task: conversation?.title ?? task.taskId,
+				status: "running",
+				workspacePath: conversation?.workspacePath ?? task.cwd,
+				startedAt: conversation?.lastActiveAt ?? Date.now(),
+			})
+		}
 		const folders = await this.getFolders()
 		const workspaces: ParallelWorkspace[] = this.annotatedWorkspaces()
 		const conversations = await this.listConversations(true)

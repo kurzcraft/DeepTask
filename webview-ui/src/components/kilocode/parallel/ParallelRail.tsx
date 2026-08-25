@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { ParallelConversation, ParallelFolder, ParallelSession, ParallelWorkspace } from "@roo-code/types"
 import { PARALLEL_MAIN_WORKSPACE } from "@roo-code/types"
 
@@ -124,7 +124,7 @@ const RowAction = ({
  * chevron expands or collapses the nested list.
  */
 export const ParallelRail = ({
-	sessions: _sessions,
+	sessions,
 	workspaces,
 	folders,
 	conversations,
@@ -143,6 +143,9 @@ export const ParallelRail = ({
 	const createInputRef = useRef<HTMLInputElement>(null)
 	const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set())
 	const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(new Set())
+	const [unreadConversationIds, setUnreadConversationIds] = useState<Set<string>>(new Set())
+	const didStartupCollapse = useRef(false)
+	const seenActivityRef = useRef<Map<string, number>>(new Map())
 	const [railWidth, setRailWidth] = useState(() => {
 		try {
 			const stored = Number(window.localStorage.getItem(RAIL_WIDTH_KEY))
@@ -158,7 +161,34 @@ export const ParallelRail = ({
 	const railWidthRef = useRef(railWidth)
 	railWidthRef.current = railWidth
 
+	const runningConversationIds = useMemo(() => {
+		const ids = new Set<string>()
+		for (const conversation of conversations) {
+			if (!conversation.sessionId) {
+				continue
+			}
+			if (
+				sessions.some(
+					(session) =>
+						session.status === "running" &&
+						(session.sessionId === conversation.sessionId || session.taskId === conversation.sessionId),
+				)
+			) {
+				ids.add(conversation.id)
+			}
+		}
+		return ids
+	}, [conversations, sessions])
+	const runningConversationKey = [...runningConversationIds].sort().join("|")
+
 	useEffect(() => {
+		if (didStartupCollapse.current) {
+			return
+		}
+		if (folders.length === 0) {
+			return
+		}
+		didStartupCollapse.current = true
 		const active = conversations.find((conversation) => conversation.id === activeConversationId)
 		const activeFolder = active?.folderPath
 		const activeWorkspace = active ? conversationWorkspacePath(active) : undefined
@@ -197,6 +227,53 @@ export const ParallelRail = ({
 			})
 		}
 	}, [activeConversationId, conversations, currentFolderPath, folders, workspaces])
+
+	useEffect(() => {
+		const runningFolders = new Set(
+			conversations.filter((conversation) => runningConversationIds.has(conversation.id)).map((c) => c.folderPath),
+		)
+		if (runningFolders.size === 0) {
+			return
+		}
+		setCollapsedFolders((prev) => {
+			const next = new Set(prev)
+			for (const folderPath of runningFolders) {
+				next.delete(folderPath)
+			}
+			return next
+		})
+		setCollapsedWorkspaces((prev) => {
+			const next = new Set(prev)
+			for (const conversation of conversations) {
+				if (!runningConversationIds.has(conversation.id)) {
+					continue
+				}
+				next.delete(`${conversation.folderPath}::${conversationWorkspacePath(conversation)}`)
+			}
+			return next
+		})
+	}, [conversations, runningConversationKey])
+
+	useEffect(() => {
+		setUnreadConversationIds((prev) => {
+			const next = new Set(prev)
+			for (const conversation of conversations) {
+				const previous = seenActivityRef.current.get(conversation.id)
+				seenActivityRef.current.set(conversation.id, conversation.lastActiveAt)
+				if (conversation.id === activeConversationId) {
+					next.delete(conversation.id)
+					continue
+				}
+				if (runningConversationIds.has(conversation.id)) {
+					continue
+				}
+				if (previous !== undefined && conversation.lastActiveAt > previous) {
+					next.add(conversation.id)
+				}
+			}
+			return next
+		})
+	}, [activeConversationId, conversations, runningConversationKey])
 
 	useEffect(() => {
 		const onMove = (event: MouseEvent) => {
@@ -338,9 +415,24 @@ export const ParallelRail = ({
 								onClick={() => onSelect(conversationId)}
 								data-testid="parallel-rail-conversation"
 								data-active={conversationActive}
+								data-running={runningConversationIds.has(conversation.id) ? "true" : "false"}
+								data-unread={unreadConversationIds.has(conversation.id) ? "true" : "false"}
 								className={cn(itemClass(conversationActive), nestedClass, "pr-14")}>
-								<span className="codicon codicon-comment-discussion shrink-0" />
+								<span
+									className={cn(
+										"codicon shrink-0",
+										runningConversationIds.has(conversation.id)
+											? "codicon-sync animate-spin"
+											: "codicon-comment-discussion",
+									)}
+								/>
 								<span className="truncate flex-1">{label}</span>
+								{unreadConversationIds.has(conversation.id) && (
+									<span
+										data-testid="parallel-conversation-unread"
+										className="w-1.5 h-1.5 rounded-full shrink-0 bg-vscode-charts-green"
+									/>
+								)}
 							</button>
 						</StandardTooltip>
 						<div className="absolute right-1 hidden group-hover:flex items-center gap-0.5 rounded bg-vscode-sideBar-background px-0.5">
