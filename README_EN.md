@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.1.0</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.1.1</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.1.0** adds parallel subagents and multi-worktree support: the model can dispatch up to 5 subagents at once (each with the full chat UI and integrated terminals) and continues only after all of them finish; write-heavy subagents get isolated git worktrees. The left rail is folder → workspace → conversation, shared across every window, and existing workspaces reload as soon as a window opens. Occupancy counts only conversations that are actively inferring. Mid-task, the model can detect occupancy and use `workspace_merge` to move the current conversation onto a free workspace or a new worktree without a manual move. Deleting a workspace can keep conversations under main or Delete All to remove them with the worktree. Both permission toggles default to enabled.
+> **Deeptask 9.1.1** adds parallel subagents and multi-worktree support: the model can dispatch up to 5 subagents at once (each with the full chat UI and integrated terminals) and continues only after all of them finish; write-heavy subagents get isolated git worktrees. The left rail is folder → workspace → conversation, shared across every window, and existing workspaces reload as soon as a window opens. Occupancy counts only conversations that are actively inferring. Mid-task, the model can detect occupancy and use `workspace_merge` to move the current conversation onto a free workspace or a new worktree without a manual move. Deleting a workspace can keep conversations under main or Delete All to remove them with the worktree. Both permission toggles default to enabled.
 
 ## What you can do with Deeptask
 
@@ -113,17 +113,17 @@ Deeptask treats work as a recoverable state machine rather than a one-shot answe
 
 ## Start in three minutes
 
-1. Download `deeptask-9.1.0.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.1.1.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.1.0.vsix --force
+    codium --install-extension ./deeptask-9.1.1.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.1.0.vsix --force
+    code --install-extension ./deeptask-9.1.1.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

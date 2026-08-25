@@ -1,5 +1,16 @@
 # Deeptask
 
+## 9.1.1
+
+### Patch Changes
+
+- Open a folder in a VSCodium window and immediately show that folder's conversations in the left rail, expanding the current window folder even after restart and collapsing folders that are not open.
+- Open a history task with a single click, highlight the matching conversation in the left rail, and keep any already-running task alive so history can run in parallel.
+- Keep the left rail in sync with new conversations and agent workspace moves by serializing conversation writes and broadcasting after each change.
+- Remove deleted git worktrees from the left rail immediately by pruning the workspace registry on every broadcast and watching `.kilocode/worktrees/*` for create/delete events.
+- Pin a user-message jump to that message timestamp during streaming so the list does not stop mid-scroll; auto-follow resumes only after the user returns to the bottom.
+- Update the bilingual README, packaged Marketplace introduction, installation commands, and release notes for 9.1.1.
+
 ## 9.1.0
 
 ### Minor Changes

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import { Virtuoso } from "react-virtuoso"
 
 import { useAppTranslation } from "@/i18n/TranslationContext"
@@ -25,7 +25,9 @@ export const ParallelSessionPanel = ({ selectedId, onClose }: ParallelSessionPan
 	const { t } = useAppTranslation()
 	const { parallelSessions, parallelSessionMessages, parallelWorkspaces } = useExtensionState()
 	const [expanded, setExpanded] = useState<Set<number>>(new Set())
+	const [pinnedJumpTs, setPinnedJumpTs] = useState<number | null>(null)
 	const virtuosoRef = useRef<any>(null)
+	const pinnedJumpTsRef = useRef<number | null>(null)
 
 	const session = selectedId.startsWith("ws:") ? undefined : parallelSessions?.[selectedId]
 	const workspaceName = selectedId.startsWith("ws:") ? selectedId.slice(3) : session?.workspaceName
@@ -35,8 +37,24 @@ export const ParallelSessionPanel = ({ selectedId, onClose }: ParallelSessionPan
 		[session, parallelSessionMessages],
 	)
 
+	const scrollToPinnedMessage = useCallback(() => {
+		const ts = pinnedJumpTsRef.current
+		if (ts == null) {
+			return
+		}
+		const index = messages.findIndex((message) => message.ts === ts)
+		if (index < 0) {
+			return
+		}
+		virtuosoRef.current?.scrollToIndex({ index, align: "end", behavior: "auto" })
+	}, [messages])
+
 	const handleJump = (index: number) => {
-		virtuosoRef.current?.scrollToIndex({ index, align: "end", behavior: "smooth" })
+		const ts = messages[index]?.ts ?? null
+		pinnedJumpTsRef.current = ts
+		setPinnedJumpTs(ts)
+		scrollToPinnedMessage()
+		window.requestAnimationFrame(() => scrollToPinnedMessage())
 	}
 
 	return (
@@ -93,7 +111,12 @@ export const ParallelSessionPanel = ({ selectedId, onClose }: ParallelSessionPan
 						className="flex-1 overflow-y-auto"
 						data={messages}
 						initialTopMostItemIndex={Math.max(0, messages.length - 1)}
-						followOutput="smooth"
+						followOutput={pinnedJumpTs != null ? false : "smooth"}
+						totalListHeightChanged={() => {
+							if (pinnedJumpTsRef.current != null) {
+								scrollToPinnedMessage()
+							}
+						}}
 						itemContent={(index, message) => (
 							<ChatRow
 								key={message.ts}

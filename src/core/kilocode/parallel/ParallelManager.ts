@@ -10,6 +10,7 @@
 
 import { randomUUID } from "crypto"
 import * as path from "path"
+import * as vscode from "vscode"
 import type {
 	ClineMessage,
 	ParallelConversation,
@@ -60,6 +61,8 @@ export class ParallelManager {
 	private activeConversationId: string | undefined
 	private archivedFolders: Set<string> | undefined
 	private workspacesHydrated = false
+	private worktreeWatchers = new Map<string, vscode.Disposable>()
+	private worktreeRefreshTimer: ReturnType<typeof setTimeout> | undefined
 
 	constructor(
 		private readonly provider: ClineProvider,
@@ -279,10 +282,16 @@ export class ParallelManager {
 
 	/** Load persisted workspaces and discover on-disk Deeptask worktrees for every folder. */
 	async hydrateRegisteredWorkspaces(): Promise<void> {
-		await this.registry.load()
 		if (this.workspacesHydrated) {
+			this.watchWorktreeFolders()
 			return
 		}
+		await this.refreshWorkspacesFromDisk()
+	}
+
+	/** Re-scan disk so deleted/created worktrees show up in the left rail immediately. */
+	async refreshWorkspacesFromDisk(): Promise<void> {
+		await this.registry.load()
 		const folders = await this.getFolders()
 		for (const folder of folders) {
 			if (typeof this.provider.getWorkspaceService !== "function") {
@@ -295,6 +304,48 @@ export class ParallelManager {
 			}
 		}
 		this.workspacesHydrated = true
+		this.watchWorktreeFolders()
+	}
+
+	private watchWorktreeFolders(): void {
+		if (process.env.NODE_ENV === "test" || typeof vscode.workspace?.createFileSystemWatcher !== "function") {
+			return
+		}
+		const folders = this.mainFolders ?? []
+		const keep = new Set(folders.map((folder) => folder.path))
+		for (const [folderPath, disposable] of this.worktreeWatchers) {
+			if (!keep.has(folderPath)) {
+				disposable.dispose()
+				this.worktreeWatchers.delete(folderPath)
+			}
+		}
+		for (const folder of folders) {
+			if (this.worktreeWatchers.has(folder.path)) {
+				continue
+			}
+			try {
+				const pattern = new vscode.RelativePattern(folder.path, ".kilocode/worktrees/*")
+				const watcher = vscode.workspace.createFileSystemWatcher(pattern, false, true, false)
+				const refresh = () => this.queueWorktreeRefresh()
+				watcher.onDidCreate(refresh)
+				watcher.onDidDelete(refresh)
+				this.worktreeWatchers.set(folder.path, watcher)
+			} catch (error) {
+				console.error(`[ParallelManager] failed to watch worktrees for ${folder.path}:`, error)
+			}
+		}
+	}
+
+	private queueWorktreeRefresh(): void {
+		if (this.worktreeRefreshTimer) {
+			clearTimeout(this.worktreeRefreshTimer)
+		}
+		this.worktreeRefreshTimer = setTimeout(() => {
+			this.worktreeRefreshTimer = undefined
+			void this.refreshWorkspacesFromDisk()
+				.then(() => this.broadcast())
+				.catch((error) => console.error("[ParallelManager] worktree refresh failed:", error))
+		}, 50)
 	}
 
 	private async loadArchivedFolders(): Promise<void> {
@@ -340,7 +391,12 @@ export class ParallelManager {
 	async registerMainFolder(folderPath: string): Promise<boolean> {
 		await this.getFolders()
 		const folders = this.mainFolders ?? []
-		if (folders.some((folder) => folder.path === folderPath)) {
+		const existing = folders.find((folder) => folder.path === folderPath)
+		if (existing) {
+			if (existing.archivedAt || this.archivedFolders?.has(folderPath)) {
+				await this.setFolderArchived(folderPath, false)
+				void this.broadcast()
+			}
 			return false
 		}
 		const name = folderPath.split(/[\\/]/).filter(Boolean).pop() ?? folderPath
@@ -357,7 +413,20 @@ export class ParallelManager {
 				console.error(`[ParallelManager] failed to hydrate workspaces for ${folderPath}:`, error)
 			}
 		}
+		void this.broadcast()
 		return true
+	}
+
+	private conversationWrite: Promise<void> = Promise.resolve()
+	private conversationsDirty = false
+
+	private enqueueConversationWrite<T>(fn: () => Promise<T>): Promise<T> {
+		const run = this.conversationWrite.then(fn, fn)
+		this.conversationWrite = run.then(
+			() => undefined,
+			() => undefined,
+		)
+		return run
 	}
 
 	private migrateConversation(conversation: ParallelConversation): ParallelConversation {
@@ -373,7 +442,7 @@ export class ParallelManager {
 	}
 
 	private async loadConversations(force = false): Promise<ParallelConversation[]> {
-		if (this.conversations === undefined || force) {
+		if (this.conversations === undefined || (force && !this.conversationsDirty)) {
 			try {
 				this.conversations = await this.provider.context.globalState.get<ParallelConversation[]>(
 					CONVERSATIONS_STORAGE_KEY,
@@ -386,18 +455,22 @@ export class ParallelManager {
 			this.conversations = (this.conversations ?? []).map((conversation) =>
 				this.migrateConversation(conversation),
 			)
+			this.conversationsDirty = false
 		}
 		return this.conversations
 	}
 
 	/** Re-read persisted conversations so extra windows pick up new tasks. */
 	async reloadConversationsFromStorage(): Promise<ParallelConversation[]> {
+		await this.conversationWrite
 		return this.loadConversations(true)
 	}
 
 	private async persistConversations(): Promise<void> {
+		this.conversationsDirty = true
 		try {
 			await this.provider.context.globalState.update(CONVERSATIONS_STORAGE_KEY, this.conversations ?? [])
+			this.conversationsDirty = false
 		} catch (error) {
 			console.error("[ParallelManager] failed to persist conversations:", error)
 		}
@@ -408,26 +481,30 @@ export class ParallelManager {
 		folderPath: string,
 		init?: { sessionId?: string; title?: string; workspacePath?: string; activate?: boolean },
 	): Promise<ParallelConversation> {
-		await this.getFolders()
-		await this.loadConversations()
-		const now = Date.now()
-		const resolvedFolder = this.folderPathForPath(folderPath)
-		const workspacePath = init?.workspacePath ?? resolvedFolder
-		const conversation: ParallelConversation = {
-			id: `cv-${now.toString(36)}-${randomUUID().slice(0, 6)}`,
-			folderPath: resolvedFolder,
-			workspacePath,
-			title: init?.title,
-			sessionId: init?.sessionId,
-			createdAt: now,
-			lastActiveAt: now,
-		}
-		this.conversations = [conversation, ...(this.conversations ?? [])]
-		if (init?.activate !== false) {
-			await this.setActiveConversation(conversation.id)
-		}
-		await this.persistConversations()
-		return conversation
+		return this.enqueueConversationWrite(async () => {
+			await this.getFolders()
+			await this.loadConversations()
+			const now = Date.now()
+			const resolvedFolder = this.folderPathForPath(folderPath)
+			const workspacePath = init?.workspacePath ?? resolvedFolder
+			const conversation: ParallelConversation = {
+				id: `cv-${now.toString(36)}-${randomUUID().slice(0, 6)}`,
+				folderPath: resolvedFolder,
+				workspacePath,
+				title: init?.title,
+				sessionId: init?.sessionId,
+				createdAt: now,
+				lastActiveAt: now,
+			}
+			this.conversations = [conversation, ...(this.conversations ?? [])]
+			this.conversationsDirty = true
+			if (init?.activate !== false) {
+				await this.setActiveConversation(conversation.id)
+			}
+			await this.persistConversations()
+			void this.broadcast()
+			return conversation
+		})
 	}
 
 	/** Registers a subagent as a normal archivable conversation under the current folder workspace. */
@@ -482,6 +559,7 @@ export class ParallelManager {
 	}
 
 	async getConversation(id: string): Promise<ParallelConversation | undefined> {
+		await this.conversationWrite
 		const list = await this.loadConversations()
 		return list.find((c) => c.id === id)
 	}
@@ -490,13 +568,50 @@ export class ParallelManager {
 		return (this.conversations ?? []).find((c) => c.sessionId === sessionId)
 	}
 
+	/**
+	 * Make a history/task session visible in the left rail: register its folder,
+	 * create or reuse a conversation, and mark it active.
+	 */
+	async ensureTaskConversation(params: {
+		sessionId: string
+		title?: string
+		workspacePath?: string
+		folderPath?: string
+	}): Promise<ParallelConversation> {
+		await this.getFolders()
+		await this.loadConversations()
+		const workspacePath = params.workspacePath || params.folderPath || this.provider.cwd
+		const folderPath = params.folderPath || this.folderPathForPath(workspacePath)
+		if (folderPath) {
+			await this.registerMainFolder(folderPath)
+		}
+		const existing = this.conversationForSession(params.sessionId)
+		if (existing) {
+			await this.setActiveConversation(existing.id)
+			if (params.title && !existing.title) {
+				await this.bindConversation(existing.id, params.sessionId, params.title)
+			}
+			const refreshed = await this.getConversation(existing.id)
+			return refreshed ?? existing
+		}
+		return this.createConversation(folderPath, {
+			sessionId: params.sessionId,
+			title: params.title,
+			workspacePath,
+		})
+	}
+
 	/** Binds a conversation to its Task and records the display title. */
 	async bindConversation(id: string, sessionId: string, title?: string): Promise<void> {
-		await this.loadConversations()
-		this.conversations = (this.conversations ?? []).map((c) =>
-			c.id === id ? { ...c, sessionId, title: title ?? c.title, lastActiveAt: Date.now() } : c,
-		)
-		await this.persistConversations()
+		await this.enqueueConversationWrite(async () => {
+			await this.loadConversations()
+			this.conversations = (this.conversations ?? []).map((c) =>
+				c.id === id ? { ...c, sessionId, title: title ?? c.title, lastActiveAt: Date.now() } : c,
+			)
+			this.conversationsDirty = true
+			await this.persistConversations()
+			void this.broadcast()
+		})
 	}
 
 	/** Re-parents a not-yet-started conversation after a manual workspace switch. */
@@ -505,11 +620,15 @@ export class ParallelManager {
 	}
 
 	async updateConversationWorkspace(id: string, folderPath: string, workspacePath: string): Promise<void> {
-		await this.loadConversations()
-		this.conversations = (this.conversations ?? []).map((c) =>
-			c.id === id ? { ...c, folderPath, workspacePath, lastActiveAt: Date.now() } : c,
-		)
-		await this.persistConversations()
+		await this.enqueueConversationWrite(async () => {
+			await this.loadConversations()
+			this.conversations = (this.conversations ?? []).map((c) =>
+				c.id === id ? { ...c, folderPath, workspacePath, lastActiveAt: Date.now() } : c,
+			)
+			this.conversationsDirty = true
+			await this.persistConversations()
+			void this.broadcast()
+		})
 	}
 
 	/** Live occupants already writing in this workspace, excluding the caller. */
@@ -517,6 +636,7 @@ export class ParallelManager {
 		workspacePath: string,
 		except?: { taskId?: string; conversationId?: string },
 	): Promise<WorkspaceOccupant[]> {
+		await this.conversationWrite
 		await this.loadConversations()
 		await this.registry.load()
 		const liveTasks = typeof this.provider.getLiveTasks === "function" ? this.provider.getLiveTasks() : []
@@ -544,55 +664,77 @@ export class ParallelManager {
 
 	/** After a workspace is deleted, keep its conversations under the folder's main workspace. */
 	async moveConversationsToWorkspace(fromWorkspacePath: string, toWorkspacePath: string): Promise<void> {
-		await this.loadConversations()
-		this.conversations = (this.conversations ?? []).map((c) =>
-			(c.workspacePath ?? c.folderPath) === fromWorkspacePath
-				? { ...c, workspacePath: toWorkspacePath, lastActiveAt: Date.now() }
-				: c,
-		)
-		await this.persistConversations()
+		await this.enqueueConversationWrite(async () => {
+			await this.loadConversations()
+			this.conversations = (this.conversations ?? []).map((c) =>
+				(c.workspacePath ?? c.folderPath) === fromWorkspacePath
+					? { ...c, workspacePath: toWorkspacePath, lastActiveAt: Date.now() }
+					: c,
+			)
+			this.conversationsDirty = true
+			await this.persistConversations()
+			void this.broadcast()
+		})
 	}
 
 	/** Permanently drop conversations that live in a workspace (used by "delete all"). */
 	async deleteConversationsInWorkspace(workspacePath: string): Promise<ParallelConversation[]> {
-		await this.loadConversations()
-		const removed = (this.conversations ?? []).filter(
-			(conversation) => (conversation.workspacePath ?? conversation.folderPath) === workspacePath,
-		)
-		const removedIds = new Set(removed.map((conversation) => conversation.id))
-		this.conversations = (this.conversations ?? []).filter((conversation) => !removedIds.has(conversation.id))
-		if (this.activeConversationId && removedIds.has(this.activeConversationId)) {
-			await this.setActiveConversation(this.conversations[0]?.id)
-		}
-		await this.persistConversations()
-		return removed
+		return this.enqueueConversationWrite(async () => {
+			await this.loadConversations()
+			const removed = (this.conversations ?? []).filter(
+				(conversation) => (conversation.workspacePath ?? conversation.folderPath) === workspacePath,
+			)
+			const removedIds = new Set(removed.map((conversation) => conversation.id))
+			this.conversations = (this.conversations ?? []).filter((conversation) => !removedIds.has(conversation.id))
+			this.conversationsDirty = true
+			if (this.activeConversationId && removedIds.has(this.activeConversationId)) {
+				await this.setActiveConversation(this.conversations[0]?.id)
+			}
+			await this.persistConversations()
+			void this.broadcast()
+			return removed
+		})
 	}
 
 	/** Archives a conversation (hidden in the sidebar until unarchived). */
 	async setConversationArchived(id: string, archived: boolean): Promise<void> {
-		await this.loadConversations()
-		this.conversations = (this.conversations ?? []).map((c) =>
-			c.id === id ? { ...c, archivedAt: archived ? Date.now() : undefined } : c,
-		)
-		await this.persistConversations()
+		await this.enqueueConversationWrite(async () => {
+			await this.loadConversations()
+			this.conversations = (this.conversations ?? []).map((c) =>
+				c.id === id ? { ...c, archivedAt: archived ? Date.now() : undefined } : c,
+			)
+			this.conversationsDirty = true
+			await this.persistConversations()
+			void this.broadcast()
+		})
 	}
 
 	async renameConversation(id: string, title: string): Promise<void> {
-		await this.loadConversations()
-		const trimmed = title.trim()
-		this.conversations = (this.conversations ?? []).map((c) =>
-			c.id === id ? { ...c, title: trimmed || undefined, lastActiveAt: Date.now() } : c,
-		)
-		await this.persistConversations()
+		await this.enqueueConversationWrite(async () => {
+			await this.loadConversations()
+			const trimmed = title.trim()
+			this.conversations = (this.conversations ?? []).map((c) =>
+				c.id === id ? { ...c, title: trimmed || undefined, lastActiveAt: Date.now() } : c,
+			)
+			this.conversationsDirty = true
+			await this.persistConversations()
+			void this.broadcast()
+		})
 	}
 
 	async listConversations(includeArchived = false): Promise<ParallelConversation[]> {
+		await this.conversationWrite
 		const list = await this.loadConversations()
 		return [...list].filter((c) => includeArchived || !c.archivedAt).sort((a, b) => b.lastActiveAt - a.lastActiveAt)
 	}
 
 	async broadcast(): Promise<void> {
-		await this.hydrateRegisteredWorkspaces()
+		if (this.workspacesHydrated) {
+			await this.registry.prune()
+			this.watchWorktreeFolders()
+		} else {
+			await this.hydrateRegisteredWorkspaces()
+		}
 		await this.reloadConversationsFromStorage()
 		const sessions = [...this.sessions.values()].map((s) => ({ ...s.info }))
 		const folders = await this.getFolders()

@@ -217,6 +217,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const stickyFollowRef = useRef<boolean>(true)
 	const followOutputFrameRef = useRef<number>()
 	const lastTouchYRef = useRef<number>()
+	const pinnedJumpTsRef = useRef<number | null>(null)
 	// kilocode_change end
 	const [showScrollToBottom, setShowScrollToBottom] = useState(false)
 	const [isAtBottom, setIsAtBottom] = useState(false)
@@ -1821,19 +1822,38 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		})
 	}, [])
 
+	const scrollToPinnedMessage = useCallback(
+		(behavior: "auto" | "smooth" = "auto") => {
+			const ts = pinnedJumpTsRef.current
+			if (ts == null) {
+				return
+			}
+			const index = groupedMessages.findIndex((message) => message.ts === ts)
+			if (index < 0) {
+				return
+			}
+			virtuosoRef.current?.scrollToIndex({ index, align: "end", behavior })
+		},
+		[groupedMessages],
+	)
+
 	// kilocode_change start: coalesce streaming height changes into one bottom correction per frame
 	const keepFollowingOutput = useCallback(() => {
-		if (!stickyFollowRef.current || followOutputFrameRef.current !== undefined) {
+		if (followOutputFrameRef.current !== undefined) {
 			return
 		}
 
 		followOutputFrameRef.current = window.requestAnimationFrame(() => {
 			followOutputFrameRef.current = undefined
+			if (pinnedJumpTsRef.current != null) {
+				scrollToPinnedMessage("auto")
+				return
+			}
 			if (stickyFollowRef.current) {
 				scrollToBottomAuto()
 			}
 		})
-	}, [scrollToBottomAuto])
+	}, [scrollToBottomAuto, scrollToPinnedMessage])
 
 	useEffect(
 		() => () => {
@@ -1851,6 +1871,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const [highlightedMessageIndex, setHighlightedMessageIndex] = useState<number | null>(null)
 	// kilocode_change start: parallel subagents & workspaces left rail + right panel
 	const {
+		cwd,
 		parallelSessions,
 		parallelWorkspaces,
 		parallelFolders,
@@ -1872,19 +1893,33 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	}, [parallelConversationList, parallelSessionList])
 	// kilocode_change end
 
-	const handleMessageClick = useCallback((index: number) => {
-		setHighlightedMessageIndex(index)
-		virtuosoRef.current?.scrollToIndex({ index, align: "end", behavior: "smooth" })
+	const handleMessageClick = useCallback(
+		(index: number) => {
+			stickyFollowRef.current = false
+			pinnedJumpTsRef.current = groupedMessages[index]?.ts ?? null
+			setShowScrollToBottom(true)
+			setIsAtBottom(false)
+			setHighlightedMessageIndex(index)
+			scrollToPinnedMessage("auto")
+			window.requestAnimationFrame(() => scrollToPinnedMessage("auto"))
 
-		// Clear existing timer if present
-		if (highlightClearTimerRef.current) {
-			clearTimeout(highlightClearTimerRef.current)
+			// Clear existing timer if present
+			if (highlightClearTimerRef.current) {
+				clearTimeout(highlightClearTimerRef.current)
+			}
+			highlightClearTimerRef.current = setTimeout(() => {
+				setHighlightedMessageIndex(null)
+				highlightClearTimerRef.current = undefined
+			}, 1000)
+		},
+		[groupedMessages, scrollToPinnedMessage],
+	)
+
+	useEffect(() => {
+		if (pinnedJumpTsRef.current != null) {
+			scrollToPinnedMessage("auto")
 		}
-		highlightClearTimerRef.current = setTimeout(() => {
-			setHighlightedMessageIndex(null)
-			highlightClearTimerRef.current = undefined
-		}, 1000)
-	}, [])
+	}, [groupedMessages, scrollToPinnedMessage])
 
 	// Cleanup highlight timer on unmount
 	useEffect(() => {
@@ -1918,6 +1953,10 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 
 	const handleRowHeightChange = useCallback(
 		(isTaller: boolean) => {
+			if (pinnedJumpTsRef.current != null) {
+				keepFollowingOutput()
+				return
+			}
 			if (stickyFollowRef.current || isAtBottom) {
 				if (isTaller) {
 					scrollToBottomSmooth()
@@ -1933,11 +1972,13 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	// growth can temporarily move Virtuoso away from the bottom without user intent.
 	useEffect(() => {
 		stickyFollowRef.current = true
+		pinnedJumpTsRef.current = null
 	}, [task?.ts])
 
 	const releaseOutputFollowing = useCallback((target: EventTarget | null) => {
 		if (scrollContainerRef.current?.contains(target as Node)) {
 			stickyFollowRef.current = false
+			pinnedJumpTsRef.current = null
 		}
 	}, [])
 	const handleWheel = useCallback(
@@ -2231,6 +2272,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				folders={parallelFolderList}
 				conversations={parallelConversationList}
 				activeConversationId={parallelActiveConversationId}
+				currentFolderPath={cwd}
 				onSelect={handleParallelSelect}
 			/>
 			<div className="flex flex-col flex-1 min-w-0">
@@ -2424,12 +2466,16 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 										increaseViewportBy={{ top: 400, bottom: 400 }} // kilocode_change: use more modest numbers to see if they reduce gray screen incidence
 										data={groupedMessages}
 										itemContent={itemContent}
-										followOutput={(isAtBottom: boolean) => isAtBottom || stickyFollowRef.current}
+										followOutput={(isAtBottom: boolean) =>
+											pinnedJumpTsRef.current != null
+												? false
+												: isAtBottom || stickyFollowRef.current
+										}
 										// kilocode_change: cover same-message streaming and asynchronous Markdown reflow
 										totalListHeightChanged={keepFollowingOutput}
 										atBottomStateChange={(isAtBottom: boolean) => {
 											setIsAtBottom(isAtBottom)
-											if (isAtBottom) {
+											if (isAtBottom && pinnedJumpTsRef.current == null) {
 												stickyFollowRef.current = true
 											}
 											// Only show the scroll-to-bottom button if not at bottom
@@ -2465,6 +2511,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 											onClick={() => {
 												// Engage sticky follow until user scrolls up
 												stickyFollowRef.current = true
+												pinnedJumpTsRef.current = null
 												// Pin immediately to avoid lag during fast streaming
 												scrollToBottomAuto()
 												// Hide button immediately to prevent flash
@@ -2572,7 +2619,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 					onSelectImages={selectImages}
 					shouldDisableImages={shouldDisableImages}
 					onHeightChange={() => {
-						if (stickyFollowRef.current || isAtBottom) {
+						if (pinnedJumpTsRef.current != null || stickyFollowRef.current || isAtBottom) {
 							keepFollowingOutput()
 						}
 					}}

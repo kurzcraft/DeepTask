@@ -251,18 +251,75 @@ describe("ParallelRail", () => {
 		expect(screen.getAllByTestId("parallel-conversation-row")[0].querySelector(".pl-16")).toBeTruthy()
 	})
 
-	test("nests conversations under their workspace and highlights the active one", () => {
+	test("keeps the active folder expanded and collapses inactive folders", () => {
 		render(
 			<ParallelRail
 				sessions={[]}
-				workspaces={[]}
-				folders={[makeFolder(), makeFolder({ name: "other", path: "/home/user/other" })]}
+				workspaces={[makeWorkspace()]}
+				folders={[makeFolder(), makeFolder({ name: "other", path: "/home/user/other", createdAt: 0 })]}
 				conversations={[
 					makeConversation(),
 					makeConversation({
 						id: "cv-2",
 						folderPath: "/home/user/other",
 						workspacePath: "/home/user/other",
+						title: "Other chat",
+					}),
+				]}
+				activeConversationId="cv-1"
+				onSelect={onSelect}
+			/>,
+		)
+
+		expect(screen.getByText("Fix the login bug")).toBeInTheDocument()
+		expect(screen.queryByText("Other chat")).not.toBeInTheDocument()
+		const folderToggles = screen.getAllByTestId("parallel-rail-folder")
+		expect(folderToggles[0]).toHaveAttribute("aria-expanded", "true")
+		expect(folderToggles[1]).toHaveAttribute("aria-expanded", "false")
+	})
+
+	test("expands the current window folder even when another folder is newer", () => {
+		render(
+			<ParallelRail
+				sessions={[]}
+				workspaces={[]}
+				folders={[
+					makeFolder({ name: "other", path: "/home/user/other", createdAt: 99 }),
+					makeFolder({ createdAt: 1 }),
+				]}
+				conversations={[
+					makeConversation({
+						id: "cv-2",
+						folderPath: "/home/user/other",
+						workspacePath: "/home/user/other",
+						title: "Other chat",
+					}),
+					makeConversation(),
+				]}
+				currentFolderPath="/home/user/my-project"
+				onSelect={onSelect}
+			/>,
+		)
+
+		expect(screen.getByText("Fix the login bug")).toBeInTheDocument()
+		expect(screen.queryByText("Other chat")).not.toBeInTheDocument()
+		const folderToggles = screen.getAllByTestId("parallel-rail-folder")
+		expect(folderToggles[0]).toHaveAttribute("aria-expanded", "false")
+		expect(folderToggles[1]).toHaveAttribute("aria-expanded", "true")
+	})
+
+	test("nests conversations under their workspace and highlights the active one", () => {
+		render(
+			<ParallelRail
+				sessions={[]}
+				workspaces={[]}
+				folders={[makeFolder()]}
+				conversations={[
+					makeConversation(),
+					makeConversation({
+						id: "cv-2",
+						folderPath: "/home/user/my-project",
+						workspacePath: "/home/user/my-project",
 						title: undefined,
 						sessionId: undefined,
 					}),

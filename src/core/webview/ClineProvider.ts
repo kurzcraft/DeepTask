@@ -412,6 +412,7 @@ export class ClineProvider
 	private _workspaceServices?: Map<string, WorkspaceService>
 	private _parallelManager?: ParallelManager
 	private _parallelInit?: Promise<void>
+	private _parallelRegisteredCwd?: string
 	private conversationRestoreDone = false
 	public pendingNewConversation: { id: string; folderPath: string; workspacePath?: string } | undefined
 	private _liveTaskCoordinator?: LiveTaskCoordinator
@@ -443,9 +444,16 @@ export class ClineProvider
 	get parallelManager(): ParallelManager {
 		if (!this._parallelManager) {
 			this._parallelManager = new ParallelManager(this, this.workspaceRegistry)
+			this._parallelRegisteredCwd = this.cwd
 			this._parallelInit = (
 				this.cwd ? this._parallelManager.registerMainFolder(this.cwd) : Promise.resolve(false)
 			).then(() => this._parallelManager!.hydrateRegisteredWorkspaces())
+		} else if (this.cwd && this.cwd !== this._parallelRegisteredCwd) {
+			const folderPath = this.cwd
+			this._parallelRegisteredCwd = folderPath
+			this._parallelInit = (this._parallelInit ?? Promise.resolve()).then(async () => {
+				await this._parallelManager!.registerMainFolder(folderPath)
+			})
 		}
 		return this._parallelManager
 	}
@@ -2557,13 +2565,25 @@ export class ClineProvider
 	}
 
 	async showTaskWithId(id: string) {
-		if (id !== this.getCurrentTask()?.taskId) {
-			// Non-current task.
-			const { historyItem } = await this.getTaskWithId(id)
-			await this.createTaskWithHistoryItem(historyItem) // Clears existing task.
-		}
-
+		// Switch the chat tab immediately so a history click does not appear to
+		// no-op while the task is focused in the background.
 		await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
+		const { historyItem } = await this.getTaskWithId(id)
+		await this.parallelManager.ensureTaskConversation({
+			sessionId: id,
+			title: historyItem.task?.slice(0, 60),
+			workspacePath: historyItem.workspace,
+		})
+		if (id !== this.getCurrentTask()?.taskId) {
+			// Keep any already-running conversation alive; history opens in parallel.
+			await this.focusTask(id)
+		} else {
+			await this.parallelManager.setActiveConversation(
+				this.parallelManager.conversationForSession(id)?.id,
+			)
+			await this.postStateToWebview()
+		}
+		await this.parallelManager.broadcast()
 	}
 
 	async exportTaskWithId(id: string) {
@@ -2658,6 +2678,11 @@ export class ClineProvider
 				SessionManager.init()?.setWorkspaceDirectory(this.currentWorkspacePath)
 			}
 		})
+
+		if (this.cwd) {
+			await this.parallelManager.registerMainFolder(this.cwd)
+			await this.parallelManager.broadcast()
+		}
 
 		await this.postStateToWebview()
 	}
@@ -3773,14 +3798,26 @@ export class ClineProvider
 		if (index === -1) {
 			const { historyItem } = await this.getTaskWithId(taskId)
 			await this.createTaskWithHistoryItem(historyItem, { keepRunningTask: true })
+			const boundAfterCreate = this.parallelManager.conversationForSession(taskId)
+			if (boundAfterCreate) {
+				await this.parallelManager.setActiveConversation(boundAfterCreate.id)
+			}
+			await this.postStateToWebview()
+			await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
+			await this.parallelManager.broadcast()
 			return
 		}
 		if (index !== this.clineStack.length - 1) {
 			const [task] = this.clineStack.splice(index, 1)
 			this.clineStack.push(task)
 		}
+		const bound = this.parallelManager.conversationForSession(taskId)
+		if (bound) {
+			await this.parallelManager.setActiveConversation(bound.id)
+		}
 		await this.postStateToWebview()
 		await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
+		await this.parallelManager.broadcast()
 	}
 
 	public async forkTaskIntoNewSession(sourceTaskId: string): Promise<HistoryItem> {

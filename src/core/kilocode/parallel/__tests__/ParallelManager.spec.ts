@@ -61,6 +61,33 @@ describe("ParallelManager conversations", () => {
 		expect(conversation?.sessionId).toBe("t1")
 	})
 
+	test("ensureTaskConversation reuses an existing session and activates it", async () => {
+		const { manager } = setup()
+		const created = await manager.createConversation("/repo", { sessionId: "hist-1", title: "old" })
+		await manager.createConversation("/other")
+		const ensured = await manager.ensureTaskConversation({
+			sessionId: "hist-1",
+			title: "old",
+			workspacePath: "/repo",
+		})
+		expect(ensured.id).toBe(created.id)
+		expect(manager.getActiveConversationId()).toBe(created.id)
+	})
+
+	test("ensureTaskConversation creates a conversation for a history task", async () => {
+		const { manager } = setup()
+		const created = await manager.ensureTaskConversation({
+			sessionId: "hist-new",
+			title: "from history",
+			workspacePath: "/repo",
+		})
+		expect(created.sessionId).toBe("hist-new")
+		expect(created.title).toBe("from history")
+		expect(created.folderPath).toBe("/repo")
+		expect(manager.getActiveConversationId()).toBe(created.id)
+		expect((await manager.getFolders()).some((folder) => folder.path === "/repo")).toBe(true)
+	})
+
 	test("bindConversation attaches the session and updates the title", async () => {
 		const { manager } = setup()
 		const created = await manager.createConversation("/repo")
@@ -191,6 +218,16 @@ describe("ParallelManager conversations", () => {
 		expect(restored.find((f) => f.path === "/repo")?.archivedAt).toBeTruthy()
 	})
 
+	test("registerMainFolder unarchives the current window folder", async () => {
+		const { manager } = setup()
+		await manager.registerMainFolder("/repo")
+		await manager.setFolderArchived("/repo", true)
+		expect((await manager.getFolders()).find((f) => f.path === "/repo")?.archivedAt).toBeTruthy()
+
+		await manager.registerMainFolder("/repo")
+		expect((await manager.getFolders()).find((f) => f.path === "/repo")?.archivedAt).toBeUndefined()
+	})
+
 	test("restoreActiveConversation reads the persisted id", async () => {
 		const { manager, store } = setup()
 		const created = await manager.createConversation("/repo")
@@ -269,6 +306,43 @@ describe("ParallelManager conversations", () => {
 		const message = posted.find((entry) => entry.type === "parallelSessionsUpdated")
 		expect(message?.parallelWorkspaces?.map((workspace) => workspace.name)).toEqual(["feature"])
 		expect(hydrateFromDisk).toHaveBeenCalled()
+	})
+
+	test("broadcast prunes missing worktrees after the first hydrate", async () => {
+		const store = new Map<string, unknown>()
+		store.set("parallelFolders", [{ name: "repo", path: "/repo", kind: "main", createdAt: 1 }])
+		store.set("parallelWorkspaceRegistry", [
+			{
+				name: "feature",
+				path: "/repo/.kilocode/worktrees/feature",
+				branch: "deeptask/feature",
+				baseBranch: "main",
+				status: "available",
+				folderPath: "/repo",
+				createdAt: 1,
+				updatedAt: 1,
+			},
+		])
+		const posted: ExtensionMessage[] = []
+		const hydrateFromDisk = vi.fn().mockResolvedValue([])
+		const provider = {
+			context: { globalState: makeStorage(store) },
+			postMessageToWebview: async (message: ExtensionMessage) => {
+				posted.push(message)
+			},
+			getWorkspaceService: () => ({ hydrateFromDisk }),
+		} as unknown as ConstructorParameters<typeof ParallelManager>[0]
+		const registry = new WorkspaceRegistry(makeStorage(store) as never)
+		const prune = vi.spyOn(registry, "prune").mockResolvedValue(["feature"])
+		const manager = new ParallelManager(provider, registry)
+
+		await manager.broadcast()
+		hydrateFromDisk.mockClear()
+		posted.length = 0
+		await manager.broadcast()
+
+		expect(hydrateFromDisk).not.toHaveBeenCalled()
+		expect(prune).toHaveBeenCalled()
 	})
 
 	test("deleteConversationsInWorkspace removes only that workspace's conversations", async () => {

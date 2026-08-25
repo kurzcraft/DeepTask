@@ -439,6 +439,35 @@ describe("ChatView - streaming output following", () => {
 
 		expect(mockVirtuosoScrollTo).toHaveBeenCalledTimes(1)
 	})
+
+	it("stops following after jumping to a user message until the list is at the bottom again", async () => {
+		const result = renderChatView()
+		mockPostMessage({
+			clineMessages: [
+				{ type: "say", say: "task", ts: 1, text: "Active task" },
+				{ type: "say", say: "user_feedback", ts: 2, text: "first user" },
+				{ type: "say", say: "text", ts: 3, text: "assistant" },
+			],
+		})
+		await waitFor(() => expect(result.getByTestId("user-message-rail")).toBeInTheDocument())
+		mockVirtuosoScrollTo.mockClear()
+		mockVirtuosoScrollToIndex.mockClear()
+
+		fireEvent.click(result.getAllByTestId("user-message-rail-tick")[0])
+		act(() => latestVirtuosoProps.totalListHeightChanged?.(800))
+
+		expect(mockVirtuosoScrollToIndex).toHaveBeenCalled()
+		expect(animationFrames).toHaveLength(0)
+		expect(mockVirtuosoScrollTo).not.toHaveBeenCalled()
+
+		act(() => {
+			latestVirtuosoProps.atBottomStateChange?.(true)
+			latestVirtuosoProps.atBottomStateChange?.(false)
+			latestVirtuosoProps.totalListHeightChanged?.(850)
+		})
+		flushNextAnimationFrame()
+		expect(mockVirtuosoScrollTo).toHaveBeenCalledTimes(1)
+	})
 })
 
 // kilocode_change end

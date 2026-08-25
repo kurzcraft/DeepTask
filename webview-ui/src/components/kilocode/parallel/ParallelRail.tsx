@@ -18,6 +18,7 @@ interface ParallelRailProps {
 	folders: ParallelFolder[]
 	conversations: ParallelConversation[]
 	activeConversationId?: string | null
+	currentFolderPath?: string | null
 	selectedId?: string | null
 	onSelect: (id: string) => void
 }
@@ -128,6 +129,7 @@ export const ParallelRail = ({
 	folders,
 	conversations,
 	activeConversationId,
+	currentFolderPath,
 	selectedId,
 	onSelect,
 }: ParallelRailProps) => {
@@ -155,6 +157,46 @@ export const ParallelRail = ({
 	const dragState = useRef<{ startX: number; startWidth: number } | null>(null)
 	const railWidthRef = useRef(railWidth)
 	railWidthRef.current = railWidth
+
+	useEffect(() => {
+		const active = conversations.find((conversation) => conversation.id === activeConversationId)
+		const activeFolder = active?.folderPath
+		const activeWorkspace = active ? conversationWorkspacePath(active) : undefined
+		const currentFolder = folders.find(
+			(folder) => !folder.archivedAt && folder.kind !== "worktree" && folder.path === currentFolderPath,
+		)
+		const newestFolder = [...folders]
+			.filter((folder) => !folder.archivedAt && folder.kind !== "worktree")
+			.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))[0]
+		const keepOpen = currentFolder?.path ?? activeFolder ?? newestFolder?.path
+		setCollapsedFolders(
+			new Set(
+				folders
+					.filter((folder) => !folder.archivedAt && folder.kind !== "worktree" && folder.path !== keepOpen)
+					.map((folder) => folder.path),
+			),
+		)
+		if (keepOpen) {
+			setCollapsedWorkspaces((prev) => {
+				const next = new Set(prev)
+				for (const workspace of workspaces) {
+					const parent = parentFolderForWorkspace(workspace, folders)
+					if (parent !== keepOpen) {
+						next.add(`${parent}::${workspace.path}`)
+					} else if (activeWorkspace && workspace.path !== activeWorkspace) {
+						next.add(`${parent}::${workspace.path}`)
+					} else {
+						next.delete(`${parent}::${workspace.path}`)
+					}
+				}
+				if (activeWorkspace) {
+					next.delete(`${keepOpen}::${activeWorkspace}`)
+				}
+				next.delete(`${keepOpen}::${keepOpen}`)
+				return next
+			})
+		}
+	}, [activeConversationId, conversations, currentFolderPath, folders, workspaces])
 
 	useEffect(() => {
 		const onMove = (event: MouseEvent) => {
