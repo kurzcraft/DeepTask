@@ -337,6 +337,7 @@ describe("ParallelRail", () => {
 		)
 		const running = screen.getByText("Other chat").closest("[data-testid='parallel-rail-conversation']")
 		expect(running).toHaveAttribute("data-running", "true")
+		expect(screen.getByTestId("parallel-conversation-running")).toBeInTheDocument()
 		expect(screen.getAllByTestId("parallel-rail-folder")[1]).toHaveAttribute("aria-expanded", "true")
 	})
 
@@ -361,7 +362,7 @@ describe("ParallelRail", () => {
 		)
 		rerender(
 			<ParallelRail
-				sessions={[makeSession({ sessionId: "task-2", taskId: "task-2", status: "completed" })]}
+				sessions={[]}
 				workspaces={[]}
 				folders={[makeFolder()]}
 				conversations={[
@@ -370,7 +371,7 @@ describe("ParallelRail", () => {
 						id: "cv-2",
 						sessionId: "task-2",
 						title: "Background chat",
-						lastActiveAt: 9,
+						lastActiveAt: 2,
 					}),
 				]}
 				activeConversationId="cv-1"

@@ -49,6 +49,16 @@ const itemClass = (active: boolean) =>
 const conversationWorkspacePath = (conversation: ParallelConversation) =>
 	conversation.workspacePath ?? conversation.folderPath
 
+const RunningRadialSpinner = () => (
+	<span
+		data-testid="parallel-conversation-running"
+		aria-hidden="true"
+		className="relative w-3 h-3 shrink-0">
+		<span className="absolute inset-0 rounded-full border border-vscode-descriptionForeground/30" />
+		<span className="absolute inset-0 rounded-full border-2 border-transparent border-t-vscode-charts-blue animate-spin" />
+	</span>
+)
+
 const sessionWorkspacePath = (session: ParallelSession, folders: ParallelFolder[]) => {
 	if (session.workspacePath) {
 		return session.workspacePath
@@ -145,7 +155,7 @@ export const ParallelRail = ({
 	const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(new Set())
 	const [unreadConversationIds, setUnreadConversationIds] = useState<Set<string>>(new Set())
 	const didStartupCollapse = useRef(false)
-	const seenActivityRef = useRef<Map<string, number>>(new Map())
+	const seenRunningRef = useRef<Set<string>>(new Set())
 	const [railWidth, setRailWidth] = useState(() => {
 		try {
 			const stored = Number(window.localStorage.getItem(RAIL_WIDTH_KEY))
@@ -258,16 +268,18 @@ export const ParallelRail = ({
 		setUnreadConversationIds((prev) => {
 			const next = new Set(prev)
 			for (const conversation of conversations) {
-				const previous = seenActivityRef.current.get(conversation.id)
-				seenActivityRef.current.set(conversation.id, conversation.lastActiveAt)
+				const wasRunning = seenRunningRef.current.has(conversation.id)
+				const isRunning = runningConversationIds.has(conversation.id)
+				if (isRunning) {
+					seenRunningRef.current.add(conversation.id)
+				} else {
+					seenRunningRef.current.delete(conversation.id)
+				}
 				if (conversation.id === activeConversationId) {
 					next.delete(conversation.id)
 					continue
 				}
-				if (runningConversationIds.has(conversation.id)) {
-					continue
-				}
-				if (previous !== undefined && conversation.lastActiveAt > previous) {
+				if (wasRunning && !isRunning) {
 					next.add(conversation.id)
 				}
 			}
@@ -418,14 +430,11 @@ export const ParallelRail = ({
 								data-running={runningConversationIds.has(conversation.id) ? "true" : "false"}
 								data-unread={unreadConversationIds.has(conversation.id) ? "true" : "false"}
 								className={cn(itemClass(conversationActive), nestedClass, "pr-14")}>
-								<span
-									className={cn(
-										"codicon shrink-0",
-										runningConversationIds.has(conversation.id)
-											? "codicon-sync animate-spin"
-											: "codicon-comment-discussion",
-									)}
-								/>
+								{runningConversationIds.has(conversation.id) ? (
+									<RunningRadialSpinner />
+								) : (
+									<span className="codicon codicon-comment-discussion shrink-0" />
+								)}
 								<span className="truncate flex-1">{label}</span>
 								{unreadConversationIds.has(conversation.id) && (
 									<span

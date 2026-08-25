@@ -964,21 +964,11 @@ export class ClineProvider
 		if (this.pendingNewConversation) {
 			return false
 		}
-		const focusedId = this.parallelManager?.focusedConversationId
-		if (focusedId) {
-			const bound = this.parallelManager.conversationForSession(task.taskId)
-			if (bound && bound.id !== focusedId) {
-				return false
-			}
-			if (!bound) {
-				return false
-			}
-		}
-		const current = this.getCurrentTask()
-		if (task.subagent && current?.taskId !== task.taskId) {
+		const focused = this.getFocusedChatTask()
+		if (!focused) {
 			return false
 		}
-		return !current || current.taskId === task.taskId
+		return focused.taskId === task.taskId
 	}
 
 	public syncLiveTask(task: Task): void {
@@ -3053,11 +3043,11 @@ export class ClineProvider
 			).defaultModel,
 			currentTaskItem: this.pendingNewConversation
 				? undefined
-				: this.getCurrentTask()?.taskId
-					? (taskHistory || []).find((item: HistoryItem) => item.id === this.getCurrentTask()?.taskId)
+				: this.getFocusedChatTask()?.taskId
+					? (taskHistory || []).find((item: HistoryItem) => item.id === this.getFocusedChatTask()?.taskId)
 					: undefined,
-			clineMessages: this.pendingNewConversation ? [] : this.getCurrentTask()?.clineMessages || [],
-			currentTaskTodos: this.pendingNewConversation ? [] : this.getCurrentTask()?.todoList || [],
+			clineMessages: this.pendingNewConversation ? [] : this.getFocusedChatTask()?.clineMessages || [],
+			currentTaskTodos: this.pendingNewConversation ? [] : this.getFocusedChatTask()?.todoList || [],
 			// kilocode_change start
 			// Visible message queues are disabled. Do not expose stale queue state to
 			// ChatView; user input is routed through direct askResponse/terminal paths.
@@ -3798,6 +3788,22 @@ export class ClineProvider
 		}
 
 		return this.clineStack[this.clineStack.length - 1]
+	}
+
+	/** Chat UI follows the focused/pending conversation, never the stack-top background task. */
+	public getFocusedChatTask(): Task | undefined {
+		if (this.pendingNewConversation) {
+			return undefined
+		}
+		const focusedId = this.parallelManager?.focusedConversationId
+		if (!focusedId) {
+			return this.getCurrentTask()
+		}
+		const sessionId = this.parallelManager.getConversationById(focusedId)?.sessionId
+		if (!sessionId) {
+			return undefined
+		}
+		return this.clineStack.find((task) => task.taskId === sessionId || task.subagent?.sessionId === sessionId)
 	}
 
 	// kilocode_change start: parallel conversations

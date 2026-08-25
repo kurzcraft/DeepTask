@@ -568,6 +568,13 @@ export class ParallelManager {
 		return list.find((c) => c.id === id)
 	}
 
+	getConversationById(id: string | undefined): ParallelConversation | undefined {
+		if (!id) {
+			return undefined
+		}
+		return (this.conversations ?? []).find((c) => c.id === id)
+	}
+
 	conversationForSession(sessionId: string): ParallelConversation | undefined {
 		return (this.conversations ?? []).find((c) => c.sessionId === sessionId)
 	}
