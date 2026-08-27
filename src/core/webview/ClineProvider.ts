@@ -115,6 +115,7 @@ import { Task, type UserContinuationOptions } from "../task/Task"
 import { getSystemPromptFilePath } from "../prompts/sections/custom-system-prompt"
 
 import { webviewMessageHandler } from "./webviewMessageHandler"
+import { widenDeeptaskChatPanelOnce } from "../../activate/widenChatPanel" // kilocode_change
 import type { ClineMessage, TodoItem } from "@roo-code/types"
 import { readApiMessages, saveApiMessages, saveTaskMessages } from "../task-persistence"
 import { readTaskMessages } from "../task-persistence/taskMessages"
@@ -1936,8 +1937,14 @@ export class ClineProvider
 	 * @param webview A reference to the extension webview
 	 */
 	private setWebviewMessageListener(webview: vscode.Webview) {
-		const onReceiveMessage = async (message: WebviewMessage) =>
-			webviewMessageHandler(this, message, this.marketplaceManager)
+		const onReceiveMessage = async (message: WebviewMessage) => {
+			// kilocode_change start: widen main chat panel lazily
+			// The first webview message proves the panel is rendered; widen it
+			// then (not at activation, which caused the panel to disappear).
+			void widenDeeptaskChatPanelOnce()
+			// kilocode_change end
+			return webviewMessageHandler(this, message, this.marketplaceManager)
+		}
 
 		const messageDisposable = webview.onDidReceiveMessage(onReceiveMessage)
 		this.webviewDisposables.push(messageDisposable)
@@ -3880,6 +3887,48 @@ export class ClineProvider
 	 * history metadata and mode defaults are untouched; only the runtime API
 	 * handler and UI state follow the focused conversation.
 	 */
+	/**
+	 * kilocode_change start: per-session model isolation
+	 *
+	 * When a chat edit (model switch, reasoning effort, ...) targets the same
+	 * provider profile that the focused conversation is sticky-bound to, and
+	 * that profile is not yet a conversation-scoped copy, fork it into one
+	 * named `<base> · t<shortTaskId>` and return the scoped name. Later edits
+	 * to an already-scoped profile update it in place. Returns the unchanged
+	 * name when there is no focused task or the names do not match, so global
+	 * settings edits keep working.
+	 */
+	public async ensureTaskScopedProfileName(profileName: string): Promise<string> {
+		const task = this.getCurrentTask()
+		if (!task || !profileName) {
+			return profileName
+		}
+		const stickyName = await task.getTaskApiConfigName()
+		if (!stickyName || stickyName !== profileName) {
+			return profileName
+		}
+
+		const shortId = task.taskId.replace(/-/g, "").slice(0, 6)
+		const scopedName = `${profileName} · t${shortId}`
+		if (profileName.endsWith(` · t${shortId}`)) {
+			return profileName
+		}
+
+		const entries = this.getProviderProfileEntries()
+		if (!entries.some((entry) => entry.name === scopedName)) {
+			// First edit on a shared profile: copy the shared settings under the
+			// scoped name so the fork starts from the shared profile's values.
+			const base = await this.providerSettingsManager.getProfile({ name: profileName })
+			await this.providerSettingsManager.saveConfig(scopedName, { ...base })
+			await this.updateGlobalState(
+				"listApiConfigMeta",
+				await this.providerSettingsManager.listConfig(),
+			)
+		}
+		return scopedName
+	}
+	// kilocode_change end
+
 	private async restoreFocusedTaskProviderProfile(): Promise<void> {
 		const task = this.getCurrentTask()
 		if (!task) {
