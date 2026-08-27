@@ -37,7 +37,6 @@ import { migrateSettings } from "./utils/migrateSettings"
 import { checkAndRunAutoLaunchingTask as checkAndRunAutoLaunchingTask } from "./utils/autoLaunchingTask"
 import { autoImportSettings } from "./utils/autoImportSettings"
 import { API } from "./extension/api"
-import { alignDeeptaskPanelToWindowCenter } from "./activate/alignDeeptaskPanel" // kilocode_change
 
 import {
 	handleUri,
@@ -387,7 +386,9 @@ export async function activate(context: vscode.ExtensionContext) {
 	)
 
 	// kilocode_change start
-	void alignDeeptaskPanelToWindowCenter(context)
+	// Removed automatic sidebar resizing/focusing: the startup command loop made
+	// the main chat panel disappear on some windows. Panel width now follows the
+	// user's own workbench layout.
 	// kilocode_change end
 
 	// kilocode_change start

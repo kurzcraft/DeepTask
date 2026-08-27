@@ -2595,6 +2595,12 @@ export class ClineProvider
 			await this.parallelManager.setActiveConversation(
 				this.parallelManager.conversationForSession(id)?.id,
 			)
+			// kilocode_change start: per-session model isolation
+			// Re-focusing the already-active task must also restore that
+			// conversation's sticky provider profile; the global profile may
+			// have been switched while another conversation was focused.
+			await this.restoreFocusedTaskProviderProfile()
+			// kilocode_change end
 			await this.postStateToWebview()
 		}
 		await this.parallelManager.broadcast()
@@ -3839,6 +3845,11 @@ export class ClineProvider
 			if (boundAfterCreate) {
 				await this.parallelManager.setActiveConversation(boundAfterCreate.id)
 			}
+			// kilocode_change start: per-session model isolation
+			// A task rebuilt from history must adopt its own sticky provider
+			// profile instead of whatever global profile is active right now.
+			await this.restoreFocusedTaskProviderProfile()
+			// kilocode_change end
 			await this.postStateToWebview()
 			await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
 			await this.parallelManager.broadcast()
