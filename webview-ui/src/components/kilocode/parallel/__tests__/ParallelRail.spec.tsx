@@ -429,6 +429,49 @@ describe("ParallelRail", () => {
 		expect(screen.queryByTestId("parallel-conversation-running")).not.toBeInTheDocument()
 	})
 
+	test("expands a collapsed folder when its conversation becomes the focused one", () => {
+		// kilocode_change: opening a task from history focuses a conversation that
+		// lives inside a folder the startup collapse kept closed. The rail must
+		// reveal it instead of leaving the focused conversation invisible.
+		const newerFolder = makeFolder({ createdAt: 3 })
+		const olderFolder = makeFolder({
+			name: "other-project",
+			path: "/home/user/other-project",
+			createdAt: 1,
+		})
+		const historyConversation = makeConversation({
+			id: "cv-2",
+			title: "History task",
+			sessionId: "task-2",
+			folderPath: "/home/user/other-project",
+			workspacePath: "/home/user/other-project",
+		})
+		const { rerender } = render(
+			<ParallelRail
+				sessions={[]}
+				workspaces={[]}
+				folders={[olderFolder, newerFolder]}
+				conversations={[historyConversation]}
+				onSelect={onSelect}
+			/>,
+		)
+		// Startup collapse keeps only the newest folder open, so the older
+		// folder's conversation is hidden before it is focused.
+		expect(screen.queryByText("History task")).not.toBeInTheDocument()
+		rerender(
+			<ParallelRail
+				sessions={[]}
+				workspaces={[]}
+				folders={[olderFolder, newerFolder]}
+				conversations={[historyConversation]}
+				activeConversationId="cv-2"
+				onSelect={onSelect}
+			/>,
+		)
+		const row = screen.getByText("History task").closest("[data-testid='parallel-rail-conversation']")
+		expect(row).toHaveAttribute("data-active", "true")
+	})
+
 	test("does not show an unread dot on the focused conversation after it finishes", () => {
 		const { rerender } = render(
 			<ParallelRail

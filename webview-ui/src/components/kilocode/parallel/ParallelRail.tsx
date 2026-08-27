@@ -286,6 +286,55 @@ export const ParallelRail = ({
 		})
 	}, [conversations, runningConversationKey])
 
+	// kilocode_change start: auto-reveal the focused conversation
+	// Opening a task from history focuses its conversation, but the startup
+	// collapse keeps only one folder expanded and the running-conversation
+	// effect only reveals running sessions. Without this reveal, a focused
+	// non-running conversation stays hidden inside a collapsed folder and the
+	// rail shows no focus at all. The ref records the last revealed id so a
+	// user-initiated collapse after focusing is respected; re-focusing the
+	// same conversation does not force it open again.
+	const lastRevealedActiveRef = useRef<string | null>(null)
+	useEffect(() => {
+		if (!activeConversationId) {
+			lastRevealedActiveRef.current = null
+			return
+		}
+		// Wait until the startup collapse has settled so it cannot re-collapse
+		// the folder this effect just expanded.
+		if (!didStartupCollapse.current) {
+			return
+		}
+		if (lastRevealedActiveRef.current === activeConversationId) {
+			return
+		}
+		const active = conversations.find((conversation) => conversation.id === activeConversationId)
+		if (!active) {
+			// Conversations may arrive after the active id; retry when they load.
+			return
+		}
+		lastRevealedActiveRef.current = activeConversationId
+		const workspacePath = conversationWorkspacePath(active)
+		setCollapsedFolders((prev) => {
+			if (!prev.has(active.folderPath)) {
+				return prev
+			}
+			const next = new Set(prev)
+			next.delete(active.folderPath)
+			return next
+		})
+		setCollapsedWorkspaces((prev) => {
+			const key = `${active.folderPath}::${workspacePath}`
+			if (!prev.has(key)) {
+				return prev
+			}
+			const next = new Set(prev)
+			next.delete(key)
+			return next
+		})
+	}, [activeConversationId, conversations, folders])
+	// kilocode_change end
+
 	useEffect(() => {
 		setUnreadConversationIds((prev) => {
 			const next = new Set(prev)

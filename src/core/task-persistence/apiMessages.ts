@@ -37,6 +37,81 @@ export type ApiMessage = Anthropic.MessageParam & {
 	isTruncationMarker?: boolean
 }
 
+// kilocode_change start: torn-JSON self-healing
+/**
+ * Attempts to recover the longest valid prefix of a JSON array that was torn
+ * by a concurrent write or crash. A forward scan (whose lexer state is correct
+ * from byte 0 up to the tear) records every top-level element boundary — a
+ * `,` at depth 1 outside any string. Candidates are then validated from the
+ * last boundary backwards with JSON.parse; the first parseable prefix wins.
+ * Attempts are capped so a large corrupted file cannot trigger quadratic work.
+ * Returns undefined when no prefix can be recovered.
+ */
+const MAX_RECOVERY_ATTEMPTS = 64
+
+export function recoverApiMessagesPrefix(fileContent: string): ApiMessage[] | undefined {
+	const trimmed = fileContent.trim()
+	if (!trimmed.startsWith("[")) {
+		return undefined
+	}
+	// Collect top-level `,` boundaries with a forward scan. State before the
+	// tear is always correct; boundaries recorded after the tear are garbage
+	// but harmless because JSON.parse validation filters them out.
+	const boundaries: number[] = []
+	let depth = 0
+	let inString = false
+	let escaped = false
+	for (let i = 0; i < trimmed.length; i++) {
+		const ch = trimmed[i]
+		if (inString) {
+			if (escaped) {
+				escaped = false
+			} else if (ch === "\\") {
+				escaped = true
+			} else if (ch === '"') {
+				inString = false
+			}
+			continue
+		}
+		if (ch === '"') {
+			inString = true
+		} else if (ch === "[" || ch === "{") {
+			depth++
+		} else if (ch === "]" || ch === "}") {
+			depth--
+		} else if (ch === "," && depth === 1) {
+			boundaries.push(i)
+		}
+	}
+	// Fast path: the tear only dropped the closing bracket; appending it
+	// recovers every intact element instead of losing the last one.
+	if (!trimmed.endsWith("]")) {
+		try {
+			const parsed = JSON.parse(`${trimmed}]`)
+			if (Array.isArray(parsed) && parsed.length > 0) {
+				return parsed as ApiMessage[]
+			}
+		} catch {
+			// fall through to boundary scan
+		}
+	}
+	// Validate candidates from the tail; the first parseable prefix is the
+	// longest recoverable message list.
+	for (let b = boundaries.length - 1; b >= 0 && boundaries.length - b <= MAX_RECOVERY_ATTEMPTS; b--) {
+		const candidate = `${trimmed.slice(0, boundaries[b])}]`
+		try {
+			const parsed = JSON.parse(candidate)
+			if (Array.isArray(parsed) && parsed.length > 0) {
+				return parsed as ApiMessage[]
+			}
+		} catch {
+			// keep scanning further back
+		}
+	}
+	return undefined
+}
+// kilocode_change end
+
 export async function readApiMessages({
 	taskId,
 	globalStoragePath,
@@ -61,6 +136,27 @@ export async function readApiMessages({
 			console.error(
 				`[Roo-Debug] readApiMessages: Error parsing API conversation history file. TaskId: ${taskId}, Path: ${filePath}, Error: ${error}`,
 			)
+			// kilocode_change start: torn-JSON self-healing
+			// A torn write (concurrent mutation during streaming serialization
+			// or an interrupted write) used to make the task permanently
+			// unopenable because this threw. Recover the longest valid prefix,
+			// back up the corrupt file for inspection, and persist the healed
+			// history so the task opens again.
+			const recovered = recoverApiMessagesPrefix(fileContent)
+			if (recovered && recovered.length > 0) {
+				try {
+					const backupPath = `${filePath}.corrupt_${Date.now()}.bak`
+					await fs.copyFile(filePath, backupPath)
+					await fs.writeFile(filePath, JSON.stringify(recovered), "utf8")
+					console.error(
+						`[readApiMessages] Recovered ${recovered.length} messages from torn history for task ${taskId}; corrupt file backed up to ${backupPath}`,
+					)
+				} catch (healError) {
+					console.error(`[readApiMessages] Failed to persist healed history: ${healError}`)
+				}
+				return recovered
+			}
+			// kilocode_change end
 			throw error
 		}
 	} else {
@@ -105,5 +201,11 @@ export async function saveApiMessages({
 }) {
 	const taskDir = await getTaskDirectoryPath(globalStoragePath, taskId)
 	const filePath = path.join(taskDir, GlobalFileNames.apiConversationHistory)
-	await safeWriteJson(filePath, messages)
+	// kilocode_change start: snapshot before writing
+	// Message objects in `messages` are shared references that other async
+	// flows can mutate while stream-json serializes them, tearing the JSON
+	// mid-file (observed with 9MB histories). Snapshot=true serializes
+	// synchronously before any I/O so the bytes on disk are immutable.
+	await safeWriteJson(filePath, messages, { snapshot: true })
+	// kilocode_change end
 }

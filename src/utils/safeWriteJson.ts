@@ -18,12 +18,49 @@ import Stringer from "stream-json/Stringer"
  * @returns {Promise<void>}
  */
 
-async function safeWriteJson(filePath: string, data: any): Promise<void> {
+// kilocode_change start: optional synchronous snapshot before streaming
+/**
+ * Options for safeWriteJson.
+ * - snapshot: synchronously JSON.stringify `data` BEFORE any awaits so the
+ *   serialized bytes are an immutable point-in-time snapshot. This eliminates
+ *   torn writes caused by concurrent in-place mutation of shared message
+ *   objects while stream-json asynchronously walks the object graph
+ *   (observed with 9MB api_conversation_history.json files tearing mid-file).
+ */
+interface SafeWriteJsonOptions {
+	snapshot?: boolean
+}
+// kilocode_change end
+
+async function safeWriteJson(filePath: string, data: any, options?: SafeWriteJsonOptions): Promise<void> {
 	const absoluteFilePath = path.resolve(filePath)
 	let releaseLock = async () => {} // Initialized to a no-op
 
 	// For directory creation
 	const dirPath = path.dirname(absoluteFilePath)
+
+	// kilocode_change start: optional synchronous snapshot before streaming
+	// Serialize BEFORE any await so concurrent mutations of `data` cannot tear
+	// the JSON mid-stream. The resulting string is immutable; streaming it to
+	// disk is then purely I/O-bound and crash-safe.
+	let dataToWrite: any = data
+	if (options?.snapshot) {
+		try {
+			// Strings stream through stream-json as a single JSON string token;
+			// parse-free passthrough is what we want, so hand the string itself
+			// to _streamDataToFile via a tiny wrapper.
+			dataToWrite = JSON.stringify(data)
+		} catch (stringifyError) {
+			// Cyclic or BigInt structures would throw; fall back to streaming
+			// the live object (previous behavior) rather than failing the save.
+			console.error(
+				`Failed to snapshot JSON for ${absoluteFilePath}, falling back to streaming the live object:`,
+				stringifyError,
+			)
+			dataToWrite = data
+		}
+	}
+	// kilocode_change end
 
 	// Ensure directory structure exists with improved reliability
 	try {
@@ -75,7 +112,7 @@ async function safeWriteJson(filePath: string, data: any): Promise<void> {
 			`.${path.basename(absoluteFilePath)}.new_${Date.now()}_${Math.random().toString(36).substring(2)}.tmp`,
 		)
 
-		await _streamDataToFile(actualTempNewFilePath, data)
+		await _streamDataToFile(actualTempNewFilePath, dataToWrite)
 
 		// Step 2: Check if the target file exists. If so, rename it to a backup path.
 		try {
@@ -185,6 +222,15 @@ async function safeWriteJson(filePath: string, data: any): Promise<void> {
  * @returns Promise<void>
  */
 async function _streamDataToFile(targetPath: string, data: any): Promise<void> {
+	// kilocode_change start: fast path for pre-serialized snapshot strings
+	// When `data` is already a JSON string produced by the snapshot option,
+	// write it directly. Routing it through stream-json would re-encode it as
+	// a quoted JSON string token (double encoding).
+	if (typeof data === "string") {
+		await fs.writeFile(targetPath, data, "utf8")
+		return
+	}
+	// kilocode_change end
 	// Stream data to avoid high memory usage for large JSON objects.
 	const fileWriteStream = fsSync.createWriteStream(targetPath, { encoding: "utf8" })
 	const disassembler = Disassembler.disassembler()

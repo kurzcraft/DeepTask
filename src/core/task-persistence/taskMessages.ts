@@ -38,5 +38,8 @@ export type SaveTaskMessagesOptions = {
 export async function saveTaskMessages({ messages, taskId, globalStoragePath }: SaveTaskMessagesOptions) {
 	const taskDir = await getTaskDirectoryPath(globalStoragePath, taskId)
 	const filePath = path.join(taskDir, GlobalFileNames.uiMessages)
-	await safeWriteJson(filePath, messages)
+	// kilocode_change start: snapshot before writing (prevents torn JSON under
+	// concurrent mutation, same rationale as saveApiMessages).
+	await safeWriteJson(filePath, messages, { snapshot: true })
+	// kilocode_change end
 }

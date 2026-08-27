@@ -2304,6 +2304,12 @@ export class ClineProvider
 		args: { name: string } | { id: string },
 		options?: { persistModeConfig?: boolean; persistTaskHistory?: boolean },
 	) {
+		// kilocode_change start: capture the focused task BEFORE any await.
+		// New-conversation creation or focus switches can land mid-activation;
+		// without this capture the sticky write below would attribute the
+		// newly activated profile to the WRONG (previous) conversation.
+		const focusedTaskAtEntry = this.getCurrentTask()
+		// kilocode_change end
 		const { name, id, ...providerSettings } = await this.providerSettingsManager.activateProfile(args)
 
 		const persistModeConfig = options?.persistModeConfig ?? true
@@ -2322,14 +2328,22 @@ export class ClineProvider
 			await this.providerSettingsManager.setModeConfig(mode, id)
 		}
 
-		// Change the provider for the current task.
-		this.updateTaskApiHandlerIfNeeded(providerSettings, { forceRebuild: true })
+		// kilocode_change start: verify focus did not drift across the awaits.
+		// Only mutate the handler of the task that was focused when the user
+		// initiated the switch; a conversation created meanwhile gets its own
+		// configuration from task creation, not from this stale activation.
+		const focusedTaskNow = this.getCurrentTask()
+		if (focusedTaskNow === focusedTaskAtEntry) {
+			// Change the provider for the current task.
+			this.updateTaskApiHandlerIfNeeded(providerSettings, { forceRebuild: true })
 
-		// Update the current task's sticky provider profile, unless this activation is
-		// being used purely as a non-persisting restoration (e.g., reopening a task from history).
-		if (persistTaskHistory) {
-			await this.persistStickyProviderProfileToCurrentTask(name)
+			// Update the current task's sticky provider profile, unless this activation is
+			// being used purely as a non-persisting restoration (e.g., reopening a task from history).
+			if (persistTaskHistory) {
+				await this.persistStickyProviderProfileToCurrentTask(name)
+			}
 		}
+		// kilocode_change end
 
 		await this.postStateToWebview()
 		await TelemetryService.instance.updateIdentity(providerSettings.kilocodeToken ?? "") // kilocode_change
@@ -2591,12 +2605,32 @@ export class ClineProvider
 		// Switch the chat tab immediately so a history click does not appear to
 		// no-op while the task is focused in the background.
 		await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
-		const { historyItem } = await this.getTaskWithId(id)
+		// kilocode_change start: never let rail registration depend on history
+		// load success. A torn api_conversation_history.json used to throw in
+		// getTaskWithId BEFORE ensureTaskConversation ran, so the conversation
+		// never appeared in the left folder rail.
+		let taskTitle: string | undefined
+		let taskWorkspace: string | undefined
+		try {
+			const { historyItem } = await this.getTaskWithId(id)
+			taskTitle = historyItem.task?.slice(0, 60)
+			taskWorkspace = historyItem.workspace
+		} catch (historyError) {
+			this.log(
+				`Failed to load history for task ${id} while opening from history: ${
+					historyError instanceof Error ? historyError.message : String(historyError)
+				}`,
+			)
+		}
 		await this.parallelManager.ensureTaskConversation({
 			sessionId: id,
-			title: historyItem.task?.slice(0, 60),
-			workspacePath: historyItem.workspace,
+			title: taskTitle,
+			// Fall back to the current cwd when the history item carries no
+			// usable workspace so the conversation groups under a real folder
+			// instead of a ghost path.
+			workspacePath: taskWorkspace || this.cwd,
 		})
+		// kilocode_change end
 		if (id !== this.getCurrentTask()?.taskId) {
 			// Keep any already-running conversation alive; history opens in parallel.
 			await this.focusTask(id)
@@ -3885,16 +3919,28 @@ export class ClineProvider
 		* follow the focused conversation.
 		*/
 	private async restoreFocusedTaskProviderProfile(): Promise<void> {
-		const task = this.getCurrentTask()
-		if (!task) {
+		// kilocode_change start: capture the focused task BEFORE any await.
+		// focusTask itself awaits; if focus drifted during those awaits this
+		// restoration must not write another conversation's profile.
+		const taskAtEntry = this.getCurrentTask()
+		if (!taskAtEntry) {
 			return
 		}
-		const savedName = await task.getTaskApiConfigName()
+		const savedName = await taskAtEntry.getTaskApiConfigName()
 		if (!savedName) {
+			return
+		}
+		// Re-check focus after the await: the user may have switched to a
+		// different conversation while the saved name was loading.
+		if (this.getCurrentTask() !== taskAtEntry) {
 			return
 		}
 		const { currentApiConfigName } = await this.getState()
 		if (savedName === currentApiConfigName) {
+			return
+		}
+		// Re-check focus once more after the second await.
+		if (this.getCurrentTask() !== taskAtEntry) {
 			return
 		}
 		const profile = this.getProviderProfileEntry(savedName)
