@@ -237,6 +237,26 @@ describe("ParallelManager conversations", () => {
 		expect(message?.parallelConversations?.[0]?.archivedAt).toBeTypeOf("number")
 	})
 
+	// kilocode_change start: reopening a task from history must unarchive its
+	// rail conversation so the rail (which filters on archivedAt) shows it.
+	test("ensureTaskConversation unarchives an archived conversation on reopen", async () => {
+		const { manager } = setup()
+		const created = await manager.createConversation("/repo", { sessionId: "task-9", title: "archived chat" })
+		await manager.setConversationArchived(created.id, true)
+		expect((await manager.listConversations()).map((c) => c.id)).toEqual([])
+
+		const ensured = await manager.ensureTaskConversation({
+			sessionId: "task-9",
+			title: "archived chat",
+			workspacePath: "/repo",
+		})
+
+		expect(ensured.id).toBe(created.id)
+		expect(ensured.archivedAt).toBeUndefined()
+		expect((await manager.listConversations()).map((c) => c.id)).toContain(created.id)
+	})
+	// kilocode_change end
+
 	test("renameConversation updates the title", async () => {
 		const { manager } = setup()
 		const created = await manager.createConversation("/repo")

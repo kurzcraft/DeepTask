@@ -713,6 +713,14 @@ export class ParallelManager {
 		}
 		const existing = this.conversationForSession(params.sessionId)
 		if (existing) {
+			// kilocode_change start: reopening a task from history must also
+			// unarchive its rail conversation. The rail filters on archivedAt,
+			// so leaving the flag set kept the conversation invisible even
+			// though it was correctly registered and active.
+			if (existing.archivedAt) {
+				await this.setConversationArchived(existing.id, false)
+			}
+			// kilocode_change end
 			await this.setActiveConversation(existing.id)
 			if (params.title && !existing.title) {
 				await this.bindConversation(existing.id, params.sessionId, params.title)
