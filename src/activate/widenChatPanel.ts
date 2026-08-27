@@ -6,11 +6,9 @@ import * as vscode from "vscode"
 
 import { Package } from "../shared/package"
 
-const widenedWindowSessions = new Set<string>()
 const DEFAULT_SIDEBAR_WIDTH = 300
 const VIEW_WIDTH_STEP = 40
 const MIN_WINDOW_WIDTH = 640
-const WIDEN_DELAY_MS = 200
 
 function readNumber(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined
@@ -71,25 +69,20 @@ export function sidebarGrowCountForWindowWidth(windowWidth: number): number {
 }
 
 /**
- * Widen the Deeptask primary sidebar so the main chat panel covers about half
- * of the window width. Runs at most once per window session and is triggered
- * lazily from the first webview message (the panel is guaranteed to be live
- * and rendered then), so no activation-time focus loop can make the panel
- * disappear. Uses only `increaseViewWidth`; never resizes vertically and
- * never closes or opens any workbench bar.
+ * kilocode_change: manually widen the Deeptask primary sidebar.
  *
- * Unlike earlier iterations there is NO restored-layout guard: the user
- * explicitly wants the widened chat panel in every window session.
+ * Design (7th iteration, per user feedback):
+ * - NO automatic widening anywhere (activation-time focus loops and lazy
+ *   webview-message triggers both made the main chat panel disappear due to
+ *   focus/resize races in the workbench).
+ * - Clicking conversations and restoring windows never touches the width.
+ * - On a fresh window the user runs the `deeptask.widenChatPanel` command
+ *   once; the sidebar grows to about half the window width. The workbench
+ *   persists the resulting width itself, so afterwards the wide layout is
+ *   restored automatically and the user can still drag-resize freely.
  */
-export async function widenDeeptaskChatPanelOnce(): Promise<void> {
-	const sessionId = vscode.env.sessionId || "activation"
-	if (widenedWindowSessions.has(sessionId)) {
-		return
-	}
-	widenedWindowSessions.add(sessionId)
-
+export async function widenDeeptaskChatPanel(): Promise<void> {
 	try {
-		await new Promise((resolve) => setTimeout(resolve, WIDEN_DELAY_MS))
 		await vscode.commands
 			.executeCommand(`${Package.name}.SidebarProvider.focus`)
 			.then(
@@ -109,8 +102,4 @@ export async function widenDeeptaskChatPanelOnce(): Promise<void> {
 			error instanceof Error ? error.message : String(error),
 		)
 	}
-}
-
-export function resetDeeptaskPanelWidenForTests(): void {
-	widenedWindowSessions.clear()
 }

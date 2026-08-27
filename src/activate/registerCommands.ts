@@ -9,6 +9,7 @@ import { ClineProvider } from "../core/webview/ClineProvider"
 import { exportSettings } from "../core/config/importExport" // kilocode_change
 import { ContextProxy } from "../core/config/ContextProxy"
 import { focusPanel } from "../utils/focusPanel"
+import { widenDeeptaskChatPanel } from "./widenChatPanel" // kilocode_change
 
 import { registerHumanRelayCallback, unregisterHumanRelayCallback, handleHumanRelayResponse } from "./humanRelay"
 import { handleNewTask } from "./handleTask"
@@ -227,6 +228,15 @@ const getCommandsMap = ({ context, outputChannel }: RegisterCommandOptions): Rec
 			outputChannel.appendLine(`Error focusing panel: ${error}`)
 		}
 	},
+	// kilocode_change start: manual panel widening command
+	widenChatPanel: async () => {
+		try {
+			await widenDeeptaskChatPanel()
+		} catch (error) {
+			outputChannel.appendLine(`Error widening chat panel: ${error}`)
+		}
+	},
+	// kilocode_change end
 	acceptInput: () => {
 		const visibleProvider = getVisibleProviderOrLog(outputChannel)
 
