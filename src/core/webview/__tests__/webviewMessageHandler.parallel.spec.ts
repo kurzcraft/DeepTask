@@ -126,6 +126,24 @@ describe("webviewMessageHandler - parallel.deleteWorkspace", () => {
 		expect(broadcast).toHaveBeenCalled()
 	})
 
+	test("switching workspace re-parents the bound conversation of the running task", async () => {
+		const updateConversationWorkspace = vi.fn().mockResolvedValue(undefined)
+		const conversationForSession = vi.fn().mockReturnValue({ id: "cv-1", sessionId: "task-1" })
+		vi.mocked(provider.parallelManager).updateConversationWorkspace = updateConversationWorkspace
+		vi.mocked(provider.parallelManager).conversationForSession = conversationForSession
+		vi.mocked(provider.getCurrentTask).mockReturnValue({
+			cwd: "/repo/.kilocode/worktrees/feature",
+			taskId: "task-1",
+			switchWorkspace,
+		} as never)
+
+		await webviewMessageHandler(provider, { type: "parallel.switchWorkspace", text: "/repo" })
+
+		expect(switchWorkspace).toHaveBeenCalledWith("/repo")
+		expect(updateConversationWorkspace).toHaveBeenCalledWith("cv-1", "/repo", "/repo")
+		expect(provider.pendingNewConversation).toBeUndefined()
+	})
+
 	test("dismissing the confirm dialog does not delete", async () => {
 		vi.mocked(vscode.window.showWarningMessage).mockResolvedValue(undefined as never)
 
