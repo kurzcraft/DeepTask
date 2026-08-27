@@ -509,15 +509,32 @@ export class ParallelManager {
 
 	private async loadConversations(force = false): Promise<ParallelConversation[]> {
 		if (this.conversations === undefined || (force && !this.conversationsDirty)) {
+			// kilocode_change start: guard against the load/attach race. A
+			// concurrent synchronous mutation (attachSubagentConversation)
+			// can mark the in-memory list dirty while this load is suspended
+			// on globalState.get. Assigning the stale snapshot back then
+			// would silently drop those unpersisted conversations and a
+			// later persist would write the polluted snapshot to storage.
+			// So: read into a local first, and only adopt it when nothing
+			// dirtied the in-memory list while we were suspended.
+			let stored: ParallelConversation[] | undefined
 			try {
-				this.conversations = await this.provider.context.globalState.get<ParallelConversation[]>(
+				stored = await this.provider.context.globalState.get<ParallelConversation[]>(
 					CONVERSATIONS_STORAGE_KEY,
 					[],
 				)
 			} catch (error) {
 				console.error("[ParallelManager] failed to load conversations:", error)
-				this.conversations = []
+				stored = []
 			}
+			if (this.conversationsDirty) {
+				// The in-memory list has newer, unpersisted data: keep it and
+				// flush it instead of clobbering it with the stale snapshot.
+				await this.persistConversations()
+				return this.conversations!
+			}
+			this.conversations = stored
+			// kilocode_change end
 			const beforeCount = (this.conversations ?? []).length
 			this.conversations = this.dedupeConversations(
 				(this.conversations ?? []).map((conversation) => this.migrateConversation(conversation)),
@@ -623,25 +640,46 @@ export class ParallelManager {
 		spec: SubagentSpec,
 		sessionId: string,
 		workspacePath: string,
+		attempt = 0,
 	): Promise<void> {
 		try {
 			const attached = this.attachSubagentConversation(parentTask, spec, sessionId, workspacePath)
-			if (!this.conversationForSession(sessionId)) {
-				const parentConversation = this.conversationForSession(parentTask.taskId)
-				const folderPath = parentConversation?.folderPath ?? this.folderPathForPath(workspacePath)
-				await this.createConversation(folderPath, {
-					sessionId,
-					title: spec.label ?? spec.task.slice(0, 48),
-					workspacePath,
-					activate: false,
-				})
-			} else {
-				await this.enqueueConversationWrite(async () => {
-					await this.persistConversations()
-					void this.broadcast()
-				})
-			}
 			void attached
+			// kilocode_change start: run the registration through the write
+			// queue and verify afterwards. A concurrent forced reload could
+			// still drop the in-memory attach before it was persisted, which
+			// left dispatched subagents with no conversation in the rail.
+			await this.enqueueConversationWrite(async () => {
+				await this.loadConversations()
+				if (!this.conversationForSession(sessionId)) {
+					const parentConversation = this.conversationForSession(parentTask.taskId)
+					const folderPath = parentConversation?.folderPath ?? this.folderPathForPath(workspacePath)
+					const now = Date.now()
+					this.conversations = [
+						{
+							id: `cv-${now.toString(36)}-${randomUUID().slice(0, 6)}`,
+							folderPath,
+							workspacePath,
+							title: spec.label ?? spec.task.slice(0, 48),
+							sessionId,
+							createdAt: now,
+							lastActiveAt: now,
+						},
+						...(this.conversations ?? []),
+					]
+					this.conversationsDirty = true
+				}
+				await this.persistConversations()
+			})
+			// Self-heal: retry a bounded number of times when a concurrent
+			// write still dropped the conversation, so the subagent always
+			// ends up visible in the left rail without unbounded recursion.
+			if (!this.conversationForSession(sessionId) && attempt < 2) {
+				await this.registerSubagentConversation(parentTask, spec, sessionId, workspacePath, attempt + 1)
+				return
+			}
+			// kilocode_change end
+			void this.broadcast()
 			await this.provider.postStateToWebview()
 		} catch (error) {
 			console.error("[ParallelManager] failed to register subagent conversation:", error)

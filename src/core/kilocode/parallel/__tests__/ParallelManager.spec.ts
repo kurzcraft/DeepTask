@@ -1,5 +1,5 @@
 // kilocode_change - new file: tests for the parallel conversation registry
-import type { ExtensionMessage } from "@roo-code/types"
+import type { ExtensionMessage, ParallelConversation } from "@roo-code/types"
 
 import { Task } from "../../../task/Task"
 import { ParallelManager } from "../ParallelManager"
@@ -254,6 +254,69 @@ describe("ParallelManager conversations", () => {
 		expect(ensured.id).toBe(created.id)
 		expect(ensured.archivedAt).toBeUndefined()
 		expect((await manager.listConversations()).map((c) => c.id)).toContain(created.id)
+	})
+	// kilocode_change end
+
+	// kilocode_change start: loadConversations must not clobber a dirty
+	// in-memory list with a stale storage snapshot when the load suspends on
+	// globalState.get while attachSubagentConversation inserts synchronously.
+	// This reproduced subagent conversations vanishing from the rail.
+	test("forced reload keeps dirty in-memory conversations added while the load was suspended", async () => {
+		const { manager, store } = setup()
+		await manager.createConversation("/repo", { sessionId: "t1", title: "base" })
+		// Storage snapshot is now "t1 only".
+		expect(store.get("parallelConversations")).toHaveLength(1)
+
+		// Start a forced reload that suspends on globalState.get...
+		let releaseGet!: () => void
+		let gate: Promise<void> | undefined = new Promise<void>((resolve) => {
+			releaseGet = resolve
+		})
+		const store2 = store as Map<string, unknown>
+		const originalGet = store2.get.bind(store2) as (key?: unknown) => unknown
+		store2.get = ((key: unknown) => {
+			if (key === "parallelConversations" && gate) {
+				const pending = gate
+				gate = undefined
+				return Promise.resolve(pending).then(() => originalGet(key))
+			}
+			return originalGet(key)
+		}) as typeof store2.get
+
+		const reload = manager.reloadConversationsFromStorage()
+		await Promise.resolve()
+		await Promise.resolve()
+
+		// ...simulate the synchronous attach that happens in spawn() while
+		// the reload is suspended: insert directly + mark dirty, exactly like
+		// attachSubagentConversation does.
+		const dirtyList: ParallelConversation[] = [
+			{
+				id: "cv-race-subagent",
+				folderPath: "/repo",
+				workspacePath: "/repo/.kilocode/worktrees/ws-race",
+				title: "race subagent",
+				sessionId: "sa-race",
+				createdAt: Date.now(),
+				lastActiveAt: Date.now(),
+			},
+		]
+		// Access privates through the same path production code uses.
+		const internals = manager as unknown as {
+			conversations: ParallelConversation[] | undefined
+			conversationsDirty: boolean
+		}
+		internals.conversations = [...dirtyList, ...(internals.conversations ?? [])]
+		internals.conversationsDirty = true
+
+		releaseGet()
+		await reload
+
+		// The dirty subagent conversation must survive the reload and be
+		// persisted, not overwritten by the stale "t1 only" snapshot.
+		const stored = store.get("parallelConversations") as Array<{ id: string }>
+		expect(stored.map((c) => c.id)).toContain("cv-race-subagent")
+		expect((await manager.listConversations(true)).map((c) => c.id)).toContain("cv-race-subagent")
 	})
 	// kilocode_change end
 
