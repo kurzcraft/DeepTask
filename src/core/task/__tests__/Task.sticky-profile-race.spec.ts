@@ -34,6 +34,7 @@ vi.mock("vscode", () => {
 	const mockTabGroup = { tabs: [mockTab] }
 
 	return {
+		RelativePattern: vi.fn().mockImplementation((base: unknown, pattern: string) => ({ base, pattern })),
 		TabInputTextDiff: vi.fn(),
 		CodeActionKind: {
 			QuickFix: { value: "quickfix" },

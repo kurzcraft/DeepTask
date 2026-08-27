@@ -1016,8 +1016,34 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 		this.providerProfileChangeListener = async () => {
 			try {
+				// kilocode_change start: per-session provider profile stickiness
+				// Only the focused task follows global provider profile switches.
+				// Background tasks keep their own sticky profiles untouched; when
+				// the user refocuses them, focusTask() ->
+				// restoreFocusedTaskProviderProfile() re-activates their profile.
+				// Without this guard, activating a profile in a new conversation
+				// would re-point every running background conversation's API
+				// handler at the new profile (silent cross-conversation pollution).
+				// Falls back to legacy follow-global behavior for test mocks that
+				// do not implement getCurrentTask().
+				const focusedTask =
+					typeof provider.getCurrentTask === "function" ? provider.getCurrentTask() : this
+				if (focusedTask !== this) {
+					return
+				}
+				// kilocode_change end
 				const newState = await provider.getState()
 				if (newState?.apiConfiguration) {
+					// kilocode_change start: per-session provider profile stickiness
+					// Re-check focus after the await: the focused conversation may
+					// have changed while state was loading; never apply a foreign
+					// profile to this task.
+					const focusedTaskAfterAwait =
+						typeof provider.getCurrentTask === "function" ? provider.getCurrentTask() : this
+					if (focusedTaskAfterAwait !== this) {
+						return
+					}
+					// kilocode_change end
 					this.updateApiConfiguration(newState.apiConfiguration)
 				}
 			} catch (error) {
