@@ -365,6 +365,18 @@ describe("ParallelManager conversations", () => {
 		expect(manager.getActiveConversationId()).toBe(keep.id)
 	})
 
+	test("deleteConversationsForSession removes the matching rail conversation", async () => {
+		const { manager } = setup()
+		await manager.registerMainFolder("/repo")
+		const keep = await manager.createConversation("/repo", { sessionId: "keep-task", title: "keep" })
+		await manager.createConversation("/repo", { sessionId: "gone-task", title: "gone" })
+
+		const removed = await manager.deleteConversationsForSession("gone-task")
+		expect(removed).toHaveLength(1)
+		expect(removed[0]?.sessionId).toBe("gone-task")
+		expect((await manager.listConversations()).map((conversation) => conversation.id)).toEqual([keep.id])
+	})
+
 	test("broadcast reloads conversations written by another window", async () => {
 		const { manager, store, posted } = setup()
 		await manager.registerMainFolder("/repo")

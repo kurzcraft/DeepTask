@@ -657,7 +657,23 @@ export class ParallelManager {
 		await this.enqueueConversationWrite(async () => {
 			await this.loadConversations()
 			this.conversations = (this.conversations ?? []).map((c) =>
-				c.id === id ? { ...c, sessionId, title: title ?? c.title, lastActiveAt: Date.now() } : c,
+				c.id === id
+					? { ...c, sessionId, title: title ?? c.title, lastActiveAt: Date.now(), completedAt: undefined }
+					: c,
+			)
+			this.conversationsDirty = true
+			await this.persistConversations()
+			void this.broadcast()
+		})
+	}
+
+	/** Mark a conversation as having a green completion summary. */
+	async markConversationCompleted(sessionId: string): Promise<void> {
+		await this.enqueueConversationWrite(async () => {
+			await this.loadConversations()
+			const now = Date.now()
+			this.conversations = (this.conversations ?? []).map((c) =>
+				c.sessionId === sessionId ? { ...c, completedAt: now, lastActiveAt: now } : c,
 			)
 			this.conversationsDirty = true
 			await this.persistConversations()
@@ -725,6 +741,26 @@ export class ParallelManager {
 			this.conversationsDirty = true
 			await this.persistConversations()
 			void this.broadcast()
+		})
+	}
+
+	/** Permanently drop conversations bound to a deleted history task. */
+	async deleteConversationsForSession(sessionId: string): Promise<ParallelConversation[]> {
+		return this.enqueueConversationWrite(async () => {
+			await this.loadConversations()
+			const removed = (this.conversations ?? []).filter((conversation) => conversation.sessionId === sessionId)
+			if (removed.length === 0) {
+				return removed
+			}
+			const removedIds = new Set(removed.map((conversation) => conversation.id))
+			this.conversations = (this.conversations ?? []).filter((conversation) => !removedIds.has(conversation.id))
+			this.conversationsDirty = true
+			if (this.activeConversationId && removedIds.has(this.activeConversationId)) {
+				await this.setActiveConversation(this.conversations[0]?.id)
+			}
+			await this.persistConversations()
+			void this.broadcast()
+			return removed
 		})
 	}
 
@@ -798,15 +834,18 @@ export class ParallelManager {
 				continue
 			}
 			const conversation = this.conversationForSession(task.taskId)
+			if (!conversation) {
+				continue
+			}
 			sessions.push({
 				sessionId: task.taskId,
 				taskId: task.taskId,
-				parentTaskId: conversation?.id ?? task.taskId,
-				label: conversation?.title ?? task.taskId,
-				task: conversation?.title ?? task.taskId,
+				parentTaskId: conversation.id,
+				label: conversation.title ?? conversation.id,
+				task: conversation.title ?? conversation.id,
 				status: "running",
-				workspacePath: conversation?.workspacePath ?? task.cwd,
-				startedAt: conversation?.lastActiveAt ?? Date.now(),
+				workspacePath: conversation.workspacePath ?? task.cwd,
+				startedAt: conversation.lastActiveAt ?? Date.now(),
 			})
 		}
 		const folders = await this.getFolders()

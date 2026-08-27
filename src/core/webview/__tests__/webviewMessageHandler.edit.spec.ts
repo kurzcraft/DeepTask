@@ -215,9 +215,10 @@ describe("webviewMessageHandler - Edit Message with Timestamp Fallback", () => {
 			{ force: true },
 		)
 
-		// The target is absent from API history, so no structural boundary can prove
-		// that even an earlier timestamped entry belongs to the retained branch.
-		expect(mockCurrentTask.overwriteApiConversationHistory).toHaveBeenCalledWith([], { force: true })
+		expect(mockCurrentTask.overwriteApiConversationHistory).toHaveBeenCalledWith(
+			[mockCurrentTask.apiConversationHistory[0]],
+			{ force: true },
+		)
 	})
 
 	it("should not use fallback when exact apiConversationHistoryIndex is found", async () => {
@@ -298,9 +299,11 @@ describe("webviewMessageHandler - Edit Message with Timestamp Fallback", () => {
 			restoreCheckpoint: false,
 		})
 
-		// Strict branch replacement force-persists an empty, safe prefix.
 		expect(mockCurrentTask.overwriteClineMessages).toHaveBeenCalledWith([], { force: true })
-		expect(mockCurrentTask.overwriteApiConversationHistory).toHaveBeenCalledWith([], { force: true })
+		expect(mockCurrentTask.overwriteApiConversationHistory).toHaveBeenCalledWith(
+			mockCurrentTask.apiConversationHistory,
+			{ force: true },
+		)
 	})
 
 	it("should handle empty API conversation history gracefully", async () => {
@@ -463,7 +466,7 @@ describe("webviewMessageHandler - Edit Message with Timestamp Fallback", () => {
 		expect(mockCurrentTask.overwriteApiConversationHistory).toHaveBeenCalledWith([], { force: true })
 	})
 
-	it("edits an assistant response in place and appends an editable continue prompt even when unchanged", async () => {
+	it("edits an assistant response in place, drops later turns, and inserts an editable 继续 row", async () => {
 		const assistantTs = 2000
 		mockCurrentTask.clineMessages = [
 			{ ts: 1000, type: "say", say: "user_feedback", text: "Initial request" },
@@ -475,17 +478,18 @@ describe("webviewMessageHandler - Edit Message with Timestamp Fallback", () => {
 			{ ts: assistantTs, role: "assistant", content: [{ type: "text", text: "Assistant response" }] },
 			{ ts: 3000, role: "assistant", content: [{ type: "text", text: "Discarded later response" }] },
 		] as ApiMessage[]
+		mockCurrentTask.freezeHistoryPersistenceForBranchReplacement = vi.fn()
 
 		await webviewMessageHandler(mockClineProvider, {
 			type: "submitEditedAssistantMessage",
 			value: assistantTs,
-			editedMessageContent: "Assistant response",
+			editedMessageContent: "Edited assistant",
 		})
 
 		expect(mockCurrentTask.overwriteClineMessages).toHaveBeenCalledWith(
 			[
 				{ ts: 1000, type: "say", say: "user_feedback", text: "Initial request" },
-				{ ts: assistantTs, type: "say", say: "text", text: "Assistant response" },
+				{ ts: assistantTs, type: "say", say: "text", text: "Edited assistant" },
 				expect.objectContaining({
 					type: "say",
 					say: "user_feedback",
@@ -498,12 +502,15 @@ describe("webviewMessageHandler - Edit Message with Timestamp Fallback", () => {
 		expect(mockCurrentTask.overwriteApiConversationHistory).toHaveBeenCalledWith(
 			[
 				mockCurrentTask.apiConversationHistory[0],
-				mockCurrentTask.apiConversationHistory[1],
-				expect.objectContaining({ role: "user", content: [{ type: "text", text: "继续" }] }),
+				expect.objectContaining({
+					role: "assistant",
+					content: [{ type: "text", text: "Edited assistant" }],
+				}),
 			],
 			{ force: true },
 		)
+		expect(mockCurrentTask.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
 		expect(mockClineProvider.setPendingCancelledTaskContinuation).not.toHaveBeenCalled()
-		expect(mockClineProvider.cancelTask).toHaveBeenCalledTimes(1)
+		expect(mockClineProvider.cancelTask).not.toHaveBeenCalled()
 	})
 })

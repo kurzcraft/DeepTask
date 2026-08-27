@@ -301,6 +301,7 @@ export class ClineProvider
 				kilo_execIfExtension(() => {
 					SessionManager.init()?.doSync(true)
 				})
+				void this.parallelManager.markConversationCompleted(taskId)
 
 				return this.emit(RooCodeEventName.TaskCompleted, taskId, tokenUsage, toolUsage) // kilocode_change: return
 			}
@@ -814,6 +815,15 @@ export class ClineProvider
 
 		// Perform special setup provider specific tasks.
 		await this.performPreparationTasks(task)
+
+		if (!task.subagent) {
+			const title = task.metadata?.task?.slice(0, 60)
+			await this.parallelManager.ensureTaskConversation({
+				sessionId: task.taskId,
+				title,
+				workspacePath: task.cwd,
+			})
+		}
 
 		// Ensure getState() resolves correctly.
 		const state = await this.getState()
@@ -2671,6 +2681,13 @@ export class ClineProvider
 		await this.updateGlobalState("taskHistory", updatedTaskHistory)
 		this.kiloCodeTaskHistoryVersion++
 		this.recentTasksCache = undefined
+		try {
+			await this.parallelManager.deleteConversationsForSession(id)
+		} catch (error) {
+			console.error(
+				`[deleteTaskFromState ${id}] failed to drop parallel conversation: ${error instanceof Error ? error.message : String(error)}`,
+			)
+		}
 		await this.postStateToWebview()
 	}
 

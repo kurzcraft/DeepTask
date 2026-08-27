@@ -1,6 +1,16 @@
 # Deeptask
 
+## 9.1.2
+
+### Patch Changes
+
+- Persist an edited assistant or user message immediately, drop every later turn, and insert an editable user “继续” row so the new branch can be sent without waiting.
+- Show the left-rail green unread dot only after a conversation produces a green completion summary and is not focused.
+- Bind a newly running task to a clickable conversation row instead of rendering a raw task ID.
+- Update the bilingual README, packaged Marketplace introduction, installation commands, and release notes for 9.1.2.
+
 ## 9.1.1
+
 
 ### Patch Changes
 

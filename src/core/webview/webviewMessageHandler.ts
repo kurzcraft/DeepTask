@@ -479,6 +479,7 @@ export const webviewMessageHandler = async (
 			if (rewindTs) {
 				await currentCline.messageManager.rewindToTimestamp(rewindTs, {
 					includeTargetMessage: false,
+					strictCutoff: true,
 				})
 			}
 
@@ -491,21 +492,32 @@ export const webviewMessageHandler = async (
 			}
 
 			// Save the updated messages with restored checkpoints
+			if (!isInlineResend) {
+				const replacementUserMessage: ClineMessage = {
+					...targetMessage,
+					text: editedContent,
+					images,
+				}
+				await currentCline.overwriteClineMessages(
+					appendEditableContinuePrompt([...currentCline.clineMessages, replacementUserMessage], images),
+					{ force: true },
+				)
+				await saveTaskMessages({
+					messages: currentCline.clineMessages,
+					taskId: currentCline.taskId,
+					globalStoragePath: provider.contextProxy.globalStorageUri.fsPath,
+				})
+				currentCline.freezeHistoryPersistenceForBranchReplacement?.()
+				await provider.postStateToWebview()
+				return
+			}
+
 			await saveTaskMessages({
 				messages: currentCline.clineMessages,
 				taskId: currentCline.taskId,
 				globalStoragePath: provider.contextProxy.globalStorageUri.fsPath,
 			})
-
-			// Update the UI to reflect the deletion
 			await provider.postStateToWebview()
-
-			// A strict edit has frozen the old Task's persistence so late stream/tool
-			// callbacks cannot restore the discarded branch. That old instance must never
-			// be reused, even when its loop appears idle: reusing it would either let a
-			// pending callback mutate shared state or make the replacement prompt bypass
-			// the freshly persisted API prefix. Always consume the edit on a rehydrated
-			// Task from the strict boundary.
 			provider.setPendingCancelledTaskContinuation?.(editedContent, images, {
 				kind: "edited_resend",
 			})
@@ -521,9 +533,23 @@ export const webviewMessageHandler = async (
 		}
 	}
 
+	const appendEditableContinuePrompt = (messages: ClineMessage[], images?: string[]): ClineMessage[] => {
+		return [
+			...messages,
+			{
+				ts: Date.now(),
+				type: "say",
+				say: "user_feedback",
+				text: "继续",
+				images,
+				editPrompt: true,
+			},
+		]
+	}
+
 	/**
-	 * Replaces an assistant response while preserving it as assistant context, then
-	 * appends an editable synthetic user turn so the user can continue from that point.
+	 * Replaces an assistant response in place, drops every later turn, then
+	 * inserts an editable user "继续" row. Do not auto-send that prompt.
 	 */
 	const handleAssistantMessageEdit = async (messageTs: number, editedContent: string, images?: string[]) => {
 		const currentCline = provider.getCurrentTask()
@@ -587,35 +613,15 @@ export const webviewMessageHandler = async (
 			editedApiMessage.content = editedContent
 		}
 
-		const continuationTs = Math.max(Date.now(), messageTs + 1)
-		const continuationMessage: ClineMessage = {
-			ts: continuationTs,
-			type: "say",
-			say: "user_feedback",
-			text: "继续",
-			images,
-			editPrompt: true,
-		}
-		const continuationApiMessage: ApiMessage = {
-			role: "user",
-			content: [{ type: "text", text: "继续" }],
-			ts: continuationTs,
-		}
-
 		await currentCline.overwriteClineMessages(
-			[
-				...currentCline.clineMessages.slice(0, messageIndex),
-				{ ...targetMessage, text: editedContent, images },
-				continuationMessage,
-			],
+			appendEditableContinuePrompt(
+				[...currentCline.clineMessages.slice(0, messageIndex), { ...targetMessage, text: editedContent, images }],
+				images,
+			),
 			{ force: true },
 		)
 		await currentCline.overwriteApiConversationHistory(
-			[
-				...currentCline.apiConversationHistory.slice(0, apiConversationHistoryIndex),
-				editedApiMessage,
-				continuationApiMessage,
-			],
+			[...currentCline.apiConversationHistory.slice(0, apiConversationHistoryIndex), editedApiMessage],
 			{ force: true },
 		)
 		await saveTaskMessages({
@@ -623,13 +629,8 @@ export const webviewMessageHandler = async (
 			taskId: currentCline.taskId,
 			globalStoragePath: provider.contextProxy.globalStorageUri.fsPath,
 		})
+		currentCline.freezeHistoryPersistenceForBranchReplacement?.()
 		await provider.postStateToWebview()
-
-		// Treat assistant edits as branch replacements too. The old Task must be
-		// cancelled and rehydrated so late stream/tool callbacks cannot restore the
-		// discarded tail. Do not park the edited assistant text as a continuation:
-		// the synthetic "继续" row is intentionally left in edit mode for the user.
-		await provider.cancelTask()
 	}
 
 	/**
