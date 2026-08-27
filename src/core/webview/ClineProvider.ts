@@ -3839,6 +3839,10 @@ export class ClineProvider
 			if (boundAfterCreate) {
 				await this.parallelManager.setActiveConversation(boundAfterCreate.id)
 			}
+			// kilocode_change start: per-session profile stickiness
+			// A task rebuilt from history adopts its own saved provider profile.
+			await this.restoreFocusedTaskProviderProfile()
+			// kilocode_change end
 			await this.postStateToWebview()
 			await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
 			await this.parallelManager.broadcast()
@@ -3852,10 +3856,56 @@ export class ClineProvider
 		if (bound) {
 			await this.parallelManager.setActiveConversation(bound.id)
 		}
+		// kilocode_change start: per-session profile stickiness
+		// Re-activate the focused conversation's saved provider profile so
+		// switching conversations keeps independent provider configurations.
+		await this.restoreFocusedTaskProviderProfile()
+		// kilocode_change end
 		await this.postStateToWebview()
 		await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
 		await this.parallelManager.broadcast()
 	}
+
+	/**
+		* kilocode_change start: per-session profile stickiness
+		*
+		* Re-activates the focused task's saved provider profile when it differs
+		* from the current global one, so each conversation keeps its own provider
+		* configuration. Uses the non-persisting restoration path (no mode config
+		* or task-history rewrite); only the runtime API handler and UI state
+		* follow the focused conversation.
+		*/
+	private async restoreFocusedTaskProviderProfile(): Promise<void> {
+		const task = this.getCurrentTask()
+		if (!task) {
+			return
+		}
+		const savedName = await task.getTaskApiConfigName()
+		if (!savedName) {
+			return
+		}
+		const { currentApiConfigName } = await this.getState()
+		if (savedName === currentApiConfigName) {
+			return
+		}
+		const profile = this.getProviderProfileEntry(savedName)
+		if (!profile) {
+			return
+		}
+		try {
+			await this.activateProviderProfile(
+				{ name: savedName },
+				{ persistModeConfig: false, persistTaskHistory: false },
+			)
+		} catch (error) {
+			this.log(
+				`Failed to restore provider profile '${savedName}' for focused task: ${
+					error instanceof Error ? error.message : String(error)
+				}. Continuing with current configuration.`,
+			)
+		}
+	}
+	// kilocode_change end
 
 	public async forkTaskIntoNewSession(sourceTaskId: string): Promise<HistoryItem> {
 		const { historyItem, apiConversationHistoryFilePath, uiMessagesFilePath } =
