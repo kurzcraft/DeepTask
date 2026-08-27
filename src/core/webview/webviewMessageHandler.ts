@@ -3107,13 +3107,6 @@ export const webviewMessageHandler = async (
 		case "upsertApiConfiguration":
 			// kilocode_change start: check for kilocodeToken change to remove organizationId and fetch organization modes
 			if (message.text && message.apiConfiguration) {
-				// kilocode_change start: per-session model isolation
-				// Chat-driven profile edits (model switch, reasoning effort, ...)
-				// are rewritten to a conversation-scoped profile copy so other
-				// conversations sticky-bound to the same shared profile are not
-				// affected.
-				message.text = await provider.ensureTaskScopedProfileName(message.text)
-				// kilocode_change end
 				let configToSave = message.apiConfiguration
 				let organizationChanged = false
 
