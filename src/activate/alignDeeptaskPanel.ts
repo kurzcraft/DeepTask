@@ -64,14 +64,13 @@ export function readWorkbenchWindowWidth(): number {
 }
 
 /**
- * Grow the primary sidebar until it is about three times the previous
- * half-window target, capped just inside the workbench so a thin editor
- * strip remains. Each increaseViewWidth step is VIEW_WIDTH_STEP CSS pixels.
+ * Grow the Deeptask main chat panel (primary sidebar view) until it covers
+ * about half of the window width. Each increaseViewWidth step is
+ * VIEW_WIDTH_STEP CSS pixels.
  */
 export function sidebarGrowCountForWindowWidth(windowWidth: number): number {
 	const width = Math.max(MIN_WINDOW_WIDTH, windowWidth)
-	const halfWindow = Math.floor(width / 2)
-	const target = Math.min(Math.floor(width * 0.92), halfWindow * 3)
+	const target = Math.floor(width / 2)
 	return Math.max(0, Math.ceil((target - DEFAULT_SIDEBAR_WIDTH) / VIEW_WIDTH_STEP))
 }
 
@@ -109,9 +108,9 @@ export function isRestoredWorkbenchLayout(): boolean {
 
 /**
  * On a fresh VSCodium/VS Code window, keep Deeptask in the primary (left)
- * sidebar and grow that sidebar so its right edge starts on the window
- * center line. Do not open the auxiliary/secondary bar. Skip this when the
- * window restored the previous session layout.
+ * sidebar and grow that sidebar so the main chat panel covers about half of
+ * the window width. Do not close or open any workbench bar. Skip this when
+ * the window restored the previous session layout.
  */
 export async function alignDeeptaskPanelToWindowCenter(
 	_context?: vscode.ExtensionContext,
@@ -128,14 +127,6 @@ export async function alignDeeptaskPanelToWindowCenter(
 
 	try {
 		await new Promise((resolve) => setTimeout(resolve, 400))
-		await vscode.commands.executeCommand("workbench.action.closeAuxiliaryBar").then(
-			() => undefined,
-			() => undefined,
-		)
-		await vscode.commands.executeCommand("workbench.action.closePanel").then(
-			() => undefined,
-			() => undefined,
-		)
 		await vscode.commands.executeCommand(`${Package.name}.SidebarProvider.focus`)
 		await vscode.commands.executeCommand("workbench.action.focusSideBar").then(
 			() => undefined,

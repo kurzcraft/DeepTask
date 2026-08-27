@@ -28,10 +28,11 @@ describe("alignDeeptaskPanelToWindowCenter", () => {
 		vi.clearAllMocks()
 	})
 
-	it("keeps Deeptask in the primary sidebar and closes the auxiliary bar", async () => {
+	it("keeps Deeptask in the primary sidebar without closing any workbench bar", async () => {
 		await alignDeeptaskPanelToWindowCenter()
 		const commands = vi.mocked(vscode.commands.executeCommand).mock.calls.map((call) => call[0])
-		expect(commands).toContain("workbench.action.closeAuxiliaryBar")
+		expect(commands).not.toContain("workbench.action.closeAuxiliaryBar")
+		expect(commands).not.toContain("workbench.action.closePanel")
 		expect(commands).toContain("workbench.action.focusSideBar")
 		expect(commands).not.toContain("workbench.action.moveFocusedViewToSecondarySideBar")
 		expect(commands).not.toContain("workbench.action.focusAuxiliaryBar")
@@ -78,8 +79,8 @@ describe("alignDeeptaskPanelToWindowCenter", () => {
 		expect(commands).not.toContain("workbench.action.focusActiveEditorGroup")
 	})
 
-	it("grows about three times the previous half-window target, capped inside the window", () => {
+	it("grows the main chat panel to about half of the window width", () => {
 		expect(sidebarGrowCountForWindowWidth(1280)).toBeLessThan(sidebarGrowCountForWindowWidth(2560))
-		expect(sidebarGrowCountForWindowWidth(1920)).toBe(37)
+		expect(sidebarGrowCountForWindowWidth(1920)).toBe(17)
 	})
 })

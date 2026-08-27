@@ -643,7 +643,7 @@ export class ClineProvider
 
 		const { name, ...providerSettings } = await this.providerSettingsManager.activateProfile({
 			name: profileToActivate.name,
-		})
+		}).catch(() => this.providerSettingsManager.activateProfile({ name: "default" }))
 		const updatedProfiles = await this.providerSettingsManager.listConfig()
 
 		await Promise.all([
@@ -3852,10 +3852,54 @@ export class ClineProvider
 		if (bound) {
 			await this.parallelManager.setActiveConversation(bound.id)
 		}
+		// kilocode_change start: per-session model isolation
+		// Re-activate the focused conversation's own sticky provider profile so
+		// switching conversations no longer leaks the previously focused chat's
+		// provider/model into this one.
+		await this.restoreFocusedTaskProviderProfile()
+		// kilocode_change end
 		await this.postStateToWebview()
 		await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
 		await this.parallelManager.broadcast()
 	}
+
+	/**
+	 * Re-activates the focused task's saved provider profile when it differs
+	 * from the current global one. Uses the non-persisting restoration path so
+	 * history metadata and mode defaults are untouched; only the runtime API
+	 * handler and UI state follow the focused conversation.
+	 */
+	private async restoreFocusedTaskProviderProfile(): Promise<void> {
+		const task = this.getCurrentTask()
+		if (!task) {
+			return
+		}
+		const savedName = await task.getTaskApiConfigName()
+		if (!savedName) {
+			return
+		}
+		const { currentApiConfigName } = await this.getState()
+		if (savedName === currentApiConfigName) {
+			return
+		}
+		const profile = this.getProviderProfileEntry(savedName)
+		if (!profile) {
+			return
+		}
+		try {
+			await this.activateProviderProfile(
+				{ name: savedName },
+				{ persistModeConfig: false, persistTaskHistory: false },
+			)
+		} catch (error) {
+			this.log(
+				`Failed to restore provider profile '${savedName}' for focused task: ${
+					error instanceof Error ? error.message : String(error)
+				}. Continuing with current configuration.`,
+			)
+		}
+	}
+	// kilocode_change end
 
 	public async forkTaskIntoNewSession(sourceTaskId: string): Promise<HistoryItem> {
 		const { historyItem, apiConversationHistoryFilePath, uiMessagesFilePath } =
