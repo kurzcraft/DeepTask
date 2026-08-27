@@ -115,6 +115,7 @@ import { Task, type UserContinuationOptions } from "../task/Task"
 import { getSystemPromptFilePath } from "../prompts/sections/custom-system-prompt"
 
 import { webviewMessageHandler } from "./webviewMessageHandler"
+import { widenDeeptaskChatPanelOnce } from "../../activate/widenChatPanel" // kilocode_change
 import type { ClineMessage, TodoItem } from "@roo-code/types"
 import { readApiMessages, saveApiMessages, saveTaskMessages } from "../task-persistence"
 import { readTaskMessages } from "../task-persistence/taskMessages"
@@ -1533,9 +1534,18 @@ export class ClineProvider
 							// overwrite the CLI's working API configuration with empty settings.
 							const fullProfile = await this.providerSettingsManager.getProfile({ name: profile.name })
 							const hasActualSettings = !!fullProfile.apiProvider
-
+	
 							if (hasActualSettings) {
-								await this.activateProviderProfile({ name: profile.name })
+								// kilocode_change start: per-session profile stickiness
+								// Mode-default activation must not persist: at this point the new
+								// task is not on the stack yet, so persisting would overwrite the
+								// previously focused/restored task's sticky profile (chain pollution
+								// when multiple sessions are restored in the background).
+								await this.activateProviderProfile(
+									{ name: profile.name },
+									{ persistModeConfig: false, persistTaskHistory: false },
+								)
+								// kilocode_change end
 							} else {
 								// The task will continue with the current/default configuration.
 							}
@@ -1936,8 +1946,14 @@ export class ClineProvider
 	 * @param webview A reference to the extension webview
 	 */
 	private setWebviewMessageListener(webview: vscode.Webview) {
-		const onReceiveMessage = async (message: WebviewMessage) =>
-			webviewMessageHandler(this, message, this.marketplaceManager)
+		const onReceiveMessage = async (message: WebviewMessage) => {
+			// kilocode_change start: widen main chat panel lazily
+			// The first webview message proves the panel is rendered; widen it
+			// then (not at activation, which caused the panel to disappear).
+			void widenDeeptaskChatPanelOnce()
+			// kilocode_change end
+			return webviewMessageHandler(this, message, this.marketplaceManager)
+		}
 
 		const messageDisposable = webview.onDidReceiveMessage(onReceiveMessage)
 		this.webviewDisposables.push(messageDisposable)
