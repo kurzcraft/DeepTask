@@ -12,6 +12,9 @@
 - Remove a conversation from the left rail as soon as it is deleted from history.
 - Keep Deeptask in the primary sidebar, close the extra right auxiliary view, and grow the panel so its right edge starts on the window centerline for any window width.
 - Refresh z.ai model catalogs automatically and keep the listed reasoning tiers aligned with the live vendor directory.
+- Keep each conversation bound to its own provider profile: switching or creating conversations no longer rewrites another conversation's profile.
+- Unarchive a conversation automatically when it is reopened from history so the entry reappears in the left folder rail and expands into focus.
+- Write task history files with an atomic snapshot and auto-recover the intact message prefix when a corrupted file is detected after restart.
 - Update the bilingual README, packaged Marketplace introduction, installation commands, and release notes for 9.1.2.
 
 ## 9.1.1
