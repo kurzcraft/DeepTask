@@ -1,21 +1,36 @@
 import { useCallback } from "react"
 import { VSCodeTextField, VSCodeDropdown, VSCodeOption } from "@vscode/webview-ui-toolkit/react"
 
-import { type ProviderSettings, zaiApiLineConfigs, zaiApiLineSchema } from "@roo-code/types"
+import {
+	type ProviderSettings,
+	type RouterModels,
+	internationalZAiDefaultModelId,
+	internationalZAiModels,
+	mainlandZAiDefaultModelId,
+	mainlandZAiModels,
+	zaiApiLineConfigs,
+	zaiApiLineSchema,
+} from "@roo-code/types"
 
 import { useAppTranslation } from "@src/i18n/TranslationContext"
 import { VSCodeButtonLink } from "@src/components/common/VSCodeButtonLink"
 
 import { inputEventTransform } from "../transforms"
 import { cn } from "@/lib/utils"
+import { DynamicVendorModelSettings } from "./DynamicVendorModelSettings"
 
 type ZAiProps = {
 	apiConfiguration: ProviderSettings
 	setApiConfigurationField: (field: keyof ProviderSettings, value: ProviderSettings[keyof ProviderSettings]) => void
+	routerModels?: RouterModels
 }
 
-export const ZAi = ({ apiConfiguration, setApiConfigurationField }: ZAiProps) => {
+export const ZAi = ({ apiConfiguration, setApiConfigurationField, routerModels }: ZAiProps) => {
 	const { t } = useAppTranslation()
+	const isChina = zaiApiLineConfigs[apiConfiguration.zaiApiLine ?? "international_coding"].isChina
+	const staticModels = isChina ? mainlandZAiModels : internationalZAiModels
+	const defaultModelId = isChina ? mainlandZAiDefaultModelId : internationalZAiDefaultModelId
+	const baseUrl = zaiApiLineConfigs[apiConfiguration.zaiApiLine ?? "international_coding"].baseUrl
 
 	const handleInputChange = useCallback(
 		<K extends keyof ProviderSettings, E>(
@@ -73,6 +88,16 @@ export const ZAi = ({ apiConfiguration, setApiConfigurationField }: ZAiProps) =>
 					</VSCodeButtonLink>
 				)}
 			</div>
+			<DynamicVendorModelSettings
+				provider="zai"
+				defaultModelId={defaultModelId}
+				staticModels={staticModels}
+				remoteModels={routerModels?.zai}
+				apiKey={apiConfiguration.zaiApiKey}
+				baseUrl={baseUrl}
+				apiConfiguration={apiConfiguration}
+				setApiConfigurationField={setApiConfigurationField}
+			/>
 		</>
 	)
 }

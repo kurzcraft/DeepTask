@@ -145,7 +145,9 @@ describe("webviewMessageHandler - pending new conversation", () => {
 			return { taskId: "task-new" }
 		})
 		const bindConversation = vi.fn().mockResolvedValue(undefined)
+		const setActiveConversation = vi.fn().mockResolvedValue(undefined)
 		const broadcast = vi.fn().mockResolvedValue(undefined)
+		const focusTask = vi.fn().mockResolvedValue(undefined)
 		const ensureUnoccupiedWorkspace = vi.fn().mockResolvedValue({ path: "/repo/.kilocode/worktrees/isolated" })
 		const provider = {
 			pendingNewConversation: pending,
@@ -154,8 +156,9 @@ describe("webviewMessageHandler - pending new conversation", () => {
 			cwd: "/repo",
 			ensureUnoccupiedWorkspace,
 			createTask,
+			focusTask,
 			getWorkspaceService: vi.fn().mockReturnValue({ claim: vi.fn() }),
-			parallelManager: { bindConversation, broadcast },
+			parallelManager: { bindConversation, setActiveConversation, broadcast },
 			postMessageToWebview: vi.fn().mockResolvedValue(undefined),
 		} as unknown as ClineProvider
 
@@ -168,6 +171,9 @@ describe("webviewMessageHandler - pending new conversation", () => {
 		})
 		expect(provider.pendingNewConversation).toBeUndefined()
 		expect(bindConversation).toHaveBeenCalledWith("cv-new", "task-new", "second conversation")
+		expect(setActiveConversation).toHaveBeenCalledWith("cv-new")
+		expect(focusTask).toHaveBeenCalledWith("task-new")
+		expect(provider.postMessageToWebview).toHaveBeenCalledWith({ type: "action", action: "chatButtonClicked" })
 		expect(provider.postMessageToWebview).not.toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
 	})
 })

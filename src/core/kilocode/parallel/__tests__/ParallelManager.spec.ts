@@ -61,6 +61,14 @@ describe("ParallelManager conversations", () => {
 		expect(conversation?.sessionId).toBe("t1")
 	})
 
+	test("createConversation reuses an existing session instead of duplicating the rail row", async () => {
+		const { manager } = setup()
+		const first = await manager.createConversation("/repo", { sessionId: "same-task", title: "first" })
+		const second = await manager.createConversation("/repo", { sessionId: "same-task", title: "second" })
+		expect(second.id).toBe(first.id)
+		expect((await manager.listConversations()).filter((conversation) => conversation.sessionId === "same-task")).toHaveLength(1)
+	})
+
 	test("ensureTaskConversation reuses an existing session and activates it", async () => {
 		const { manager } = setup()
 		const created = await manager.createConversation("/repo", { sessionId: "hist-1", title: "old" })
@@ -97,6 +105,17 @@ describe("ParallelManager conversations", () => {
 		expect(conversation?.sessionId).toBe("task-9")
 		expect(conversation?.title).toBe("Fix login")
 		expect(manager.conversationForSession("task-9")?.id).toBe(created.id)
+	})
+
+	test("bindConversation merges a placeholder row into the existing session row", async () => {
+		const { manager } = setup()
+		await manager.createConversation("/repo", { sessionId: "task-dup", title: "real" })
+		const placeholder = await manager.createConversation("/repo")
+
+		await manager.bindConversation(placeholder.id, "task-dup", "real")
+		const list = await manager.listConversations()
+		expect(list.filter((conversation) => conversation.sessionId === "task-dup")).toHaveLength(1)
+		expect(manager.conversationForSession("task-dup")?.title).toBe("real")
 	})
 
 	test("createConversation nests under the folder's main workspace by default", async () => {

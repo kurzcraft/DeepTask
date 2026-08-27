@@ -448,6 +448,65 @@ export class ParallelManager {
 		return { ...conversation, workspacePath: conversation.folderPath }
 	}
 
+	private conversationScore(conversation: ParallelConversation): number {
+		return (conversation.sessionId ? 4 : 0) + (conversation.title ? 2 : 0) + (conversation.completedAt ? 1 : 0)
+	}
+
+	private mergeConversationPair(
+		kept: ParallelConversation,
+		incoming: ParallelConversation,
+	): ParallelConversation {
+		const incomingScore = this.conversationScore(incoming)
+		const keptScore = this.conversationScore(kept)
+		const preferIncoming =
+			incomingScore > keptScore ||
+			(incomingScore === keptScore && incoming.createdAt < kept.createdAt)
+		const primary = preferIncoming ? incoming : kept
+		const secondary = preferIncoming ? kept : incoming
+		return {
+			...secondary,
+			...primary,
+			id: primary.id,
+			title: primary.title || secondary.title,
+			sessionId: primary.sessionId || secondary.sessionId,
+			completedAt: primary.completedAt ?? secondary.completedAt,
+			createdAt: Math.min(primary.createdAt, secondary.createdAt),
+			lastActiveAt: Math.max(primary.lastActiveAt, secondary.lastActiveAt),
+		}
+	}
+
+	private dedupeConversations(conversations: ParallelConversation[]): ParallelConversation[] {
+		const byId = new Map<string, ParallelConversation>()
+		const bySession = new Map<string, string>()
+		for (const conversation of conversations) {
+			const existingById = byId.get(conversation.id)
+			const mergedById = existingById ? this.mergeConversationPair(existingById, conversation) : conversation
+			if (existingById && existingById.id !== mergedById.id) {
+				byId.delete(existingById.id)
+			}
+			byId.set(mergedById.id, mergedById)
+			if (!mergedById.sessionId) {
+				continue
+			}
+			const existingSessionId = bySession.get(mergedById.sessionId)
+			if (!existingSessionId || existingSessionId === mergedById.id) {
+				bySession.set(mergedById.sessionId, mergedById.id)
+				continue
+			}
+			const existing = byId.get(existingSessionId)
+			if (!existing) {
+				bySession.set(mergedById.sessionId, mergedById.id)
+				continue
+			}
+			const merged = this.mergeConversationPair(existing, mergedById)
+			byId.delete(existing.id)
+			byId.delete(mergedById.id)
+			byId.set(merged.id, merged)
+			bySession.set(merged.sessionId!, merged.id)
+		}
+		return Array.from(byId.values()).sort((left, right) => right.lastActiveAt - left.lastActiveAt)
+	}
+
 	private async loadConversations(force = false): Promise<ParallelConversation[]> {
 		if (this.conversations === undefined || (force && !this.conversationsDirty)) {
 			try {
@@ -459,10 +518,16 @@ export class ParallelManager {
 				console.error("[ParallelManager] failed to load conversations:", error)
 				this.conversations = []
 			}
-			this.conversations = (this.conversations ?? []).map((conversation) =>
-				this.migrateConversation(conversation),
+			const beforeCount = (this.conversations ?? []).length
+			this.conversations = this.dedupeConversations(
+				(this.conversations ?? []).map((conversation) => this.migrateConversation(conversation)),
 			)
-			this.conversationsDirty = false
+			if ((this.conversations ?? []).length !== beforeCount) {
+				this.conversationsDirty = true
+				await this.persistConversations()
+			} else {
+				this.conversationsDirty = false
+			}
 		}
 		return this.conversations
 	}
@@ -491,6 +556,16 @@ export class ParallelManager {
 		return this.enqueueConversationWrite(async () => {
 			await this.getFolders()
 			await this.loadConversations()
+			if (init?.sessionId) {
+				const existing = (this.conversations ?? []).find((conversation) => conversation.sessionId === init.sessionId)
+				if (existing) {
+					if (init.activate !== false) {
+						await this.setActiveConversation(existing.id)
+					}
+					void this.broadcast()
+					return existing
+				}
+			}
 			const now = Date.now()
 			const resolvedFolder = this.folderPathForPath(folderPath)
 			const workspacePath = init?.workspacePath ?? resolvedFolder
@@ -661,6 +736,7 @@ export class ParallelManager {
 					? { ...c, sessionId, title: title ?? c.title, lastActiveAt: Date.now(), completedAt: undefined }
 					: c,
 			)
+			this.conversations = this.dedupeConversations(this.conversations)
 			this.conversationsDirty = true
 			await this.persistConversations()
 			void this.broadcast()
@@ -675,6 +751,14 @@ export class ParallelManager {
 			this.conversations = (this.conversations ?? []).map((c) =>
 				c.sessionId === sessionId ? { ...c, completedAt: now, lastActiveAt: now } : c,
 			)
+			for (const state of this.sessions.values()) {
+				if (state.info.sessionId === sessionId || state.info.taskId === sessionId) {
+					if (state.info.status === "running") {
+						state.info.status = "completed"
+						state.info.endedAt = now
+					}
+				}
+			}
 			this.conversationsDirty = true
 			await this.persistConversations()
 			void this.broadcast()
@@ -834,7 +918,7 @@ export class ParallelManager {
 				continue
 			}
 			const conversation = this.conversationForSession(task.taskId)
-			if (!conversation) {
+			if (!conversation || conversation.completedAt) {
 				continue
 			}
 			sessions.push({

@@ -62,6 +62,7 @@ export const dynamicProviders = [
 	"groq",
 	"mistral",
 	"cerebras",
+	"zai",
 	// kilocode_change end
 	"deepinfra",
 	"io-intelligence",

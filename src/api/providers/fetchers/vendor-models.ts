@@ -7,11 +7,14 @@ import {
   cerebrasModels,
   deepSeekModels,
   groqModels,
+  internationalZAiModels,
+  mainlandZAiModels,
   mistralModels,
   NATIVE_TOOL_DEFAULTS,
+  zaiApiLineConfigs,
 } from "@roo-code/types"
 
-export type DiscoverableVendor = "deepseek" | "groq" | "mistral" | "cerebras"
+export type DiscoverableVendor = "deepseek" | "groq" | "mistral" | "cerebras" | "zai"
 
 const VENDOR_CONFIG: Record<
   DiscoverableVendor,
@@ -32,6 +35,10 @@ const VENDOR_CONFIG: Record<
   cerebras: {
     baseUrl: "https://api.cerebras.ai/v1",
     staticModels: cerebrasModels,
+  },
+  zai: {
+    baseUrl: zaiApiLineConfigs.international_coding.baseUrl,
+    staticModels: { ...internationalZAiModels, ...mainlandZAiModels },
   },
 }
 
@@ -85,6 +92,26 @@ export async function getVendorModels(
         : []
 
   const models: ModelRecord = {}
+  const inferZaiReasoning = (id: string, info: ModelInfo): ModelInfo => {
+    if (provider !== "zai" || info.supportsReasoningEffort) {
+      return info
+    }
+
+    const lowerId = id.toLowerCase()
+    const looksLikeThinkingModel =
+      /glm-4\.(6|7|8|9)|glm-5|thinking|reason/.test(lowerId) && !/flash$/.test(lowerId)
+    if (!looksLikeThinkingModel) {
+      return info
+    }
+
+    return {
+      ...info,
+      supportsReasoningEffort: ["disable", "low", "medium", "high"],
+      reasoningEffort: info.reasoningEffort ?? "medium",
+      preserveReasoning: true,
+    }
+  }
+
   for (const remoteModel of remoteModels) {
     if (!remoteModel || typeof remoteModel.id !== "string" || !remoteModel.id.trim()) {
       continue
@@ -121,7 +148,7 @@ export async function getVendorModels(
       remoteModel.limits?.max_completion_tokens,
     )
 
-    models[id] = {
+    models[id] = inferZaiReasoning(id, {
       ...UNKNOWN_VENDOR_MODEL_DEFAULTS,
       ...staticInfo,
       ...(remoteContextWindow ? { contextWindow: remoteContextWindow } : {}),
@@ -130,7 +157,7 @@ export async function getVendorModels(
       ...(remoteModel.capabilities?.function_calling === true
         ? { supportsNativeTools: true, defaultToolProtocol: "native" as const }
         : {}),
-    }
+    })
   }
 
   return models

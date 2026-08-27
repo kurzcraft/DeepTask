@@ -37,6 +37,7 @@ import { migrateSettings } from "./utils/migrateSettings"
 import { checkAndRunAutoLaunchingTask as checkAndRunAutoLaunchingTask } from "./utils/autoLaunchingTask"
 import { autoImportSettings } from "./utils/autoImportSettings"
 import { API } from "./extension/api"
+import { alignDeeptaskPanelToWindowCenter } from "./activate/alignDeeptaskPanel" // kilocode_change
 
 import {
 	handleUri,
@@ -384,6 +385,10 @@ export async function activate(context: vscode.ExtensionContext) {
 			webviewOptions: { retainContextWhenHidden: true },
 		}),
 	)
+
+	// kilocode_change start
+	void alignDeeptaskPanelToWindowCenter(context)
+	// kilocode_change end
 
 	// kilocode_change start
 	if (!context.globalState.get("firstInstallCompleted")) {

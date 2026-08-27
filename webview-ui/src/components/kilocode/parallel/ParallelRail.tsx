@@ -196,7 +196,7 @@ export const ParallelRail = ({
 	const runningConversationIds = useMemo(() => {
 		const ids = new Set<string>()
 		for (const conversation of conversations) {
-			if (!conversation.sessionId) {
+			if (!conversation.sessionId || conversation.completedAt) {
 				continue
 			}
 			if (
@@ -297,9 +297,17 @@ export const ParallelRail = ({
 				} else {
 					seenRunningRef.current.delete(conversation.id)
 				}
-				if (wasRunning && !isRunning) {
+				if (
+					wasRunning &&
+					!isRunning &&
+					conversation.completedAt &&
+					conversation.id !== activeConversationId
+				) {
 					next.add(conversation.id)
 				}
+			}
+			if (activeConversationId) {
+				next.delete(activeConversationId)
 			}
 			return next
 		})
@@ -542,19 +550,7 @@ export const ParallelRail = ({
 				samePath(conversation.folderPath, folder.path) &&
 				samePath(conversationWorkspacePath(conversation), workspacePath),
 		)
-		const nestedSessions = sessions.filter((session) => {
-			if (
-				nestedConversations.some(
-					(conversation) =>
-						conversation.sessionId === session.sessionId || conversation.sessionId === session.taskId,
-				)
-			) {
-				return false
-			}
-			const sessionPath = sessionWorkspacePath(session, folders, workspaces) ?? session.workspacePath
-			const parent = parentFolderForSession(session, folders, workspaces) ?? folder.path
-			return samePath(parent, folder.path) && samePath(sessionPath, workspacePath)
-		})
+		const nestedSessions: ParallelSession[] = []
 		const workspaceActive = nestedConversations.some((conversation) => conversation.id === activeConversationId)
 		return (
 			<div key={collapseKey} className="flex flex-col gap-0.5" data-testid="parallel-workspace-row">

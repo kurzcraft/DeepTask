@@ -70,6 +70,8 @@ type RouterModelsQueryKey = {
 	groqApiKey?: string
 	mistralApiKey?: string
 	cerebrasApiKey?: string
+	zaiApiKey?: string
+	zaiBaseUrl?: string
 	chutesApiKey?: string
 	nanoGptApiKey?: string
 	nanoGptModelList?: "all" | "personalized" | "subscription"
@@ -92,6 +94,10 @@ const getProviderRequestOptions = (provider: string, queryKey: RouterModelsQuery
 			break
 		case "cerebras":
 			values.apiKey = queryKey.cerebrasApiKey
+			break
+		case "zai":
+			values.apiKey = queryKey.zaiApiKey
+			values.baseUrl = queryKey.zaiBaseUrl
 			break
 	}
 

@@ -30,8 +30,8 @@ describe("getVendorModels", () => {
     expect(Object.keys(models)).toEqual(["deepseek-v4-pro", "deepseek-v4-flash"])
     expect(models["deepseek-v4-pro"]).toEqual(
       expect.objectContaining({
-        contextWindow: 256_000,
-        maxTokens: 8192,
+        contextWindow: 1_000_000,
+        maxTokens: 32_768,
         supportsNativeTools: true,
         defaultToolProtocol: "native",
       }),
@@ -98,5 +98,27 @@ describe("getVendorModels", () => {
   it("rejects missing credentials without making a network request", async () => {
     await expect(getVendorModels("groq", "  ")).rejects.toThrow("groq API key is required")
     expect(axios.get).not.toHaveBeenCalled()
+  })
+
+  it("fetches z.ai models from the selected line and infers reasoning effort", async () => {
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        data: [{ id: "glm-4.7" }, { id: "glm-5-thinking" }, { id: "glm-4.6-flash" }],
+      },
+    })
+
+    const models = await getVendorModels("zai", "zai-key", "https://api.z.ai/api/coding/paas/v4")
+
+    expect(axios.get).toHaveBeenCalledWith("https://api.z.ai/api/coding/paas/v4/models", {
+      headers: { Authorization: "Bearer zai-key" },
+      timeout: 10_000,
+    })
+    expect(models["glm-5-thinking"]).toEqual(
+      expect.objectContaining({
+        supportsReasoningEffort: ["disable", "low", "medium", "high"],
+        reasoningEffort: "medium",
+      }),
+    )
+    expect(models["glm-4.6-flash"].supportsReasoningEffort).toBeUndefined()
   })
 })

@@ -14,7 +14,7 @@ import { ModelPicker } from "../ModelPicker"
 const VENDOR_CONTEXT_FALLBACK = 256_000
 
 type DynamicVendorModelSettingsProps = {
-	provider: "deepseek" | "groq" | "mistral" | "cerebras"
+	provider: "deepseek" | "groq" | "mistral" | "cerebras" | "zai"
 	defaultModelId: string
 	staticModels: ModelRecord
 	remoteModels?: ModelRecord
@@ -53,6 +53,8 @@ export const DynamicVendorModelSettings = ({
 			groqApiKey: provider === "groq" ? debouncedApiKey : undefined,
 			mistralApiKey: provider === "mistral" ? debouncedApiKey : undefined,
 			cerebrasApiKey: provider === "cerebras" ? debouncedApiKey : undefined,
+			zaiApiKey: provider === "zai" ? debouncedApiKey : undefined,
+			zaiBaseUrl: provider === "zai" ? baseUrl : undefined,
 		}),
 		[baseUrl, debouncedApiKey, provider],
 	)

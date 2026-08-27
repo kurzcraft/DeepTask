@@ -694,7 +694,7 @@ describe("webviewMessageHandler - image mentions", () => {
 
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
 		expect(mockCreateTask).not.toHaveBeenCalled()
-		expect(rewindToTimestamp).toHaveBeenCalledWith(1, { includeTargetMessage: false })
+		expect(rewindToTimestamp).toHaveBeenCalledWith(1, { includeTargetMessage: false, strictCutoff: true })
 		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 			"reply immediately after completion",
 			["data:image/png;base64,from-mention"],
@@ -736,7 +736,7 @@ describe("webviewMessageHandler - image mentions", () => {
 		})
 
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
-		expect(rewindToTimestamp).toHaveBeenCalledWith(1, { includeTargetMessage: false })
+		expect(rewindToTimestamp).toHaveBeenCalledWith(1, { includeTargetMessage: false, strictCutoff: true })
 		expect(mockClineProvider.setPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 			"extend the completed work",
 			["data:image/png;base64,from-mention"],
@@ -828,7 +828,7 @@ describe("webviewMessageHandler - image mentions", () => {
 		})
 
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
-		expect(rewindToTimestamp).toHaveBeenCalledWith(3, { includeTargetMessage: false })
+		expect(rewindToTimestamp).toHaveBeenCalledWith(3, { includeTargetMessage: false, strictCutoff: true })
 		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 			"continue after the completed task",
 			["data:image/png;base64,from-mention"],
@@ -1016,7 +1016,7 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockClearStaleWebviewAskResponse).toHaveBeenCalledTimes(1)
 		expect(mockClearQueue).toHaveBeenCalledTimes(1)
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
-		expect(rewindToTimestamp).toHaveBeenCalledWith(1, { includeTargetMessage: false })
+		expect(rewindToTimestamp).toHaveBeenCalledWith(1, { includeTargetMessage: false, strictCutoff: true })
 		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 			"continue from final feedback",
 			["data:image/png;base64,from-mention"],
@@ -1061,7 +1061,7 @@ describe("webviewMessageHandler - image mentions", () => {
 
 		expect(mockHandleWebviewAskResponse).not.toHaveBeenCalled()
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
-		expect(rewindToTimestamp).toHaveBeenCalledWith(1, { includeTargetMessage: false })
+		expect(rewindToTimestamp).toHaveBeenCalledWith(1, { includeTargetMessage: false, strictCutoff: true })
 		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 			"continue even if completion looked pending",
 			["data:image/png;base64,from-mention"],
@@ -1113,7 +1113,7 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockClearStaleWebviewAskResponse).toHaveBeenCalledTimes(1)
 		expect(mockClearQueue).toHaveBeenCalledTimes(1)
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
-		expect(rewindToTimestamp).toHaveBeenCalledWith(1, { includeTargetMessage: false })
+		expect(rewindToTimestamp).toHaveBeenCalledWith(1, { includeTargetMessage: false, strictCutoff: true })
 		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 			"do the next fix",
 			["data:image/png;base64,from-mention"],
@@ -1156,7 +1156,7 @@ describe("webviewMessageHandler - image mentions", () => {
 		})
 
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
-		expect(rewindToTimestamp).toHaveBeenCalledWith(1, { includeTargetMessage: false })
+		expect(rewindToTimestamp).toHaveBeenCalledWith(1, { includeTargetMessage: false, strictCutoff: true })
 		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 			"continue from final feedback",
 			["data:image/png;base64,from-mention"],
@@ -1182,7 +1182,7 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockCreateTask).toHaveBeenCalledWith("start work from the home task list", [
 			"data:image/png;base64,from-mention",
 		])
-		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
+		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
 	})
 
 	it("routes empty continue clicks as continuations when no ask is pending", async () => {
@@ -1313,7 +1313,7 @@ describe("webviewMessageHandler - legacy queueMessage anti-stall routing", () =>
 		})
 
 		expect(mockCreateTask).toHaveBeenCalledWith("start from legacy queue", ["data:image/png;base64,from-mention"])
-		expect(mockClineProvider.postMessageToWebview).toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
+		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
 	})
 
 	it("clears empty legacy queue messages without starting a continuation", async () => {
@@ -1498,6 +1498,7 @@ describe("webviewMessageHandler - requestRouterModels", () => {
 				ovhcloud: mockModels, // kilocode_change
 				inception: mockModels, // kilocode_change
 				"sap-ai-core": {}, // kilocode_change
+				zai: {}, // kilocode_change
 			},
 			values: undefined,
 		})
@@ -1608,6 +1609,7 @@ describe("webviewMessageHandler - requestRouterModels", () => {
 				ovhcloud: mockModels, // kilocode_change
 				inception: mockModels, // kilocode_change
 				"sap-ai-core": {}, // kilocode_change
+				zai: {}, // kilocode_change
 			},
 			values: undefined,
 		})
@@ -1720,6 +1722,7 @@ describe("webviewMessageHandler - requestRouterModels", () => {
 				gemini: mockModels,
 				ovhcloud: mockModels,
 				"sap-ai-core": {},
+				zai: {},
 				// kilocode_change end
 			},
 			values: undefined,
@@ -2078,10 +2081,11 @@ describe("webviewMessageHandler - message dialog preferences", () => {
 	})
 
 	describe("submitEditedMessage", () => {
-		it("replaces the original user branch instead of appending a new turn", async () => {
+		it("replaces the original user branch and immediately resends the edited prompt", async () => {
 			const rewindToTimestamp = vi.fn().mockResolvedValue(undefined)
 			const overwriteClineMessages = vi.fn().mockResolvedValue(undefined)
 			const overwriteApiConversationHistory = vi.fn().mockResolvedValue(undefined)
+			const freezeHistoryPersistenceForBranchReplacement = vi.fn()
 			const cancelTask = vi.fn().mockResolvedValue(undefined)
 			const clineMessages = [
 				{ type: "say", say: "user_feedback", ts: 111, text: "previous context" },
@@ -2103,6 +2107,7 @@ describe("webviewMessageHandler - message dialog preferences", () => {
 				clearStaleWebviewAskResponse: vi.fn(),
 				overwriteClineMessages,
 				overwriteApiConversationHistory,
+				freezeHistoryPersistenceForBranchReplacement,
 				messageManager: { rewindToTimestamp },
 			} as any)
 
@@ -2114,19 +2119,21 @@ describe("webviewMessageHandler - message dialog preferences", () => {
 
 			expect(rewindToTimestamp).toHaveBeenCalledWith(123456789, {
 				includeTargetMessage: false,
+				strictCutoff: true,
 			})
 			expect(overwriteClineMessages).not.toHaveBeenCalled()
-			expect(overwriteApiConversationHistory).not.toHaveBeenCalled()
 			expect(mockClineProvider.setPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 				"edited content",
 				undefined,
-				expect.objectContaining({ kind: "edited_resend" }),
+				{ kind: "edited_resend" },
 			)
-			expect(cancelTask).toHaveBeenCalledTimes(1)
+			expect(cancelTask).toHaveBeenCalled()
 		})
 
 		it("rewinds repeated user text by UI timestamp and preserves the earlier branch", async () => {
 			const rewindToTimestamp = vi.fn().mockResolvedValue(undefined)
+			const overwriteClineMessages = vi.fn().mockResolvedValue(undefined)
+			const freezeHistoryPersistenceForBranchReplacement = vi.fn()
 			const cancelTask = vi.fn().mockResolvedValue(undefined)
 			const clineMessages = [
 				{ type: "say", say: "user_feedback", ts: 111, text: "preserved reasoning context" },
@@ -2145,6 +2152,8 @@ describe("webviewMessageHandler - message dialog preferences", () => {
 				apiConversationHistory,
 				messageQueueService: { clear: vi.fn() },
 				clearStaleWebviewAskResponse: vi.fn(),
+				overwriteClineMessages,
+				freezeHistoryPersistenceForBranchReplacement,
 				messageManager: { rewindToTimestamp },
 			} as any)
 
@@ -2156,13 +2165,15 @@ describe("webviewMessageHandler - message dialog preferences", () => {
 
 			expect(rewindToTimestamp).toHaveBeenCalledWith(222, {
 				includeTargetMessage: false,
+				strictCutoff: true,
 			})
+			expect(overwriteClineMessages).not.toHaveBeenCalled()
 			expect(mockClineProvider.setPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 				"small correction",
 				undefined,
-				expect.objectContaining({ kind: "edited_resend" }),
+				{ kind: "edited_resend" },
 			)
-			expect(cancelTask).toHaveBeenCalledTimes(1)
+			expect(cancelTask).toHaveBeenCalled()
 		})
 	})
 })

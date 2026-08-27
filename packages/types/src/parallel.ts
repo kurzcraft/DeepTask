@@ -88,6 +88,8 @@ export const parallelConversationSchema = z.object({
 	createdAt: z.number(),
 	lastActiveAt: z.number(),
 	archivedAt: z.number().optional(),
+	/** Set when a green completion_result is persisted for this conversation. */
+	completedAt: z.number().optional(),
 })
 
 export type ParallelConversation = z.infer<typeof parallelConversationSchema>

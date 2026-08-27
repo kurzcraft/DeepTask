@@ -85,6 +85,7 @@ describe("Model Validation Functions", () => {
 		groq: {},
 		mistral: {},
 		cerebras: {},
+		zai: {},
 		inception: {},
 		synthetic: {},
 		"sap-ai-core": {},

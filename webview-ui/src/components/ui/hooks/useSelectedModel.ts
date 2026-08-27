@@ -33,6 +33,7 @@ import {
 	doubaoModels,
 	internationalZAiModels,
 	mainlandZAiModels,
+	zaiApiLineConfigs,
 	fireworksModels,
 	featherlessModels,
 	ioIntelligenceModels,
@@ -135,6 +136,10 @@ export const useSelectedModel = (apiConfiguration?: ProviderSettings) => {
 			groqApiKey: apiConfiguration?.groqApiKey,
 			mistralApiKey: apiConfiguration?.mistralApiKey,
 			cerebrasApiKey: apiConfiguration?.cerebrasApiKey,
+			zaiApiKey: apiConfiguration?.zaiApiKey,
+			zaiBaseUrl: apiConfiguration?.zaiApiLine
+				? zaiApiLineConfigs[apiConfiguration.zaiApiLine]?.baseUrl
+				: undefined,
 		},
 		// kilocode_change end
 		{
@@ -356,9 +361,13 @@ function getSelectedModel({
 			const isChina = apiConfiguration.zaiApiLine === "china_coding"
 			const models = isChina ? mainlandZAiModels : internationalZAiModels
 			const defaultModelId = getProviderDefaultModelId(provider, { isChina })
-			const id = apiConfiguration.apiModelId ?? defaultModelId
-			const info = models[id as keyof typeof models]
-			return { id, info }
+			return getVendorModel(
+				apiConfiguration.apiModelId,
+				defaultModelId,
+				models,
+				routerModels.zai,
+				apiConfiguration,
+			)
 		}
 		case "openai-native": {
 			const id = apiConfiguration.apiModelId ?? defaultModelId

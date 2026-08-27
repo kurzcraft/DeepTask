@@ -900,7 +900,11 @@ const ApiOptions = ({
 			)}
 
 			{selectedProvider === "zai" && (
-				<ZAi apiConfiguration={apiConfiguration} setApiConfigurationField={setApiConfigurationField} />
+				<ZAi
+					apiConfiguration={apiConfiguration}
+					setApiConfigurationField={setApiConfigurationField}
+					routerModels={routerModels}
+				/>
 			)}
 
 			{selectedProvider === "io-intelligence" && (
@@ -976,7 +980,7 @@ const ApiOptions = ({
 
 			{/* kilocode_change start: providers with dedicated editable model controls must not render twice */}
 			{selectedProviderModels.length > 0 &&
-				!["claude-code", "openai-codex", "deepseek", "groq", "mistral", "cerebras"].includes(
+				!["claude-code", "openai-codex", "deepseek", "groq", "mistral", "cerebras", "zai"].includes(
 					selectedProvider,
 				) && (
 					<>

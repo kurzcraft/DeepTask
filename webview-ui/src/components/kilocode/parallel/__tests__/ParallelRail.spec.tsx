@@ -111,7 +111,7 @@ describe("ParallelRail", () => {
 		expect(screen.getByText("Auth work")).toBeInTheDocument()
 	})
 
-	test("falls back to a nested session when the worktree has no conversation yet", () => {
+	test("does not render an unbound live session as a duplicate row", () => {
 		render(
 			<ParallelRail
 				sessions={[
@@ -129,8 +129,8 @@ describe("ParallelRail", () => {
 				onSelect={onSelect}
 			/>,
 		)
-		expect(screen.getByTestId("parallel-rail-session")).toBeInTheDocument()
-		expect(screen.getByText("orphan-ws")).toBeInTheDocument()
+		expect(screen.queryByTestId("parallel-rail-session")).not.toBeInTheDocument()
+		expect(screen.queryByText("orphan-ws")).not.toBeInTheDocument()
 	})
 
 	test("folder chevron collapses workspaces; folder name starts a main-workspace conversation", () => {
@@ -363,7 +363,7 @@ describe("ParallelRail", () => {
 		expect(screen.getAllByTestId("parallel-rail-folder")[1]).toHaveAttribute("aria-expanded", "true")
 	})
 
-	test("shows an unread dot after a background conversation finishes", () => {
+	test("shows an unread dot after a background conversation finishes with a green summary", () => {
 		const { rerender } = render(
 			<ParallelRail
 				sessions={[makeSession({ sessionId: "task-2", taskId: "task-2", status: "running" })]}
@@ -394,6 +394,7 @@ describe("ParallelRail", () => {
 						sessionId: "task-2",
 						title: "Background chat",
 						lastActiveAt: 2,
+						completedAt: 3,
 					}),
 				]}
 				activeConversationId="cv-1"
@@ -403,7 +404,32 @@ describe("ParallelRail", () => {
 		expect(screen.getByTestId("parallel-conversation-unread")).toBeInTheDocument()
 	})
 
-	test("keeps the unread dot on the current conversation until it is clicked", () => {
+	test("does not keep a completed background conversation spinning when a stale running session remains", () => {
+		render(
+			<ParallelRail
+				sessions={[makeSession({ sessionId: "task-2", taskId: "task-2", status: "running" })]}
+				workspaces={[]}
+				folders={[makeFolder()]}
+				conversations={[
+					makeConversation(),
+					makeConversation({
+						id: "cv-2",
+						sessionId: "task-2",
+						title: "Background chat",
+						lastActiveAt: 2,
+						completedAt: 3,
+					}),
+				]}
+				activeConversationId="cv-1"
+				onSelect={onSelect}
+			/>,
+		)
+		const row = screen.getByText("Background chat").closest("[data-testid='parallel-rail-conversation']")
+		expect(row).toHaveAttribute("data-running", "false")
+		expect(screen.queryByTestId("parallel-conversation-running")).not.toBeInTheDocument()
+	})
+
+	test("does not show an unread dot on the focused conversation after it finishes", () => {
 		const { rerender } = render(
 			<ParallelRail
 				sessions={[makeSession({ sessionId: "task-1", taskId: "task-1", status: "running" })]}
@@ -419,15 +445,12 @@ describe("ParallelRail", () => {
 				sessions={[]}
 				workspaces={[]}
 				folders={[makeFolder()]}
-				conversations={[makeConversation({ sessionId: "task-1" })]}
+				conversations={[makeConversation({ sessionId: "task-1", completedAt: 3 })]}
 				activeConversationId="cv-1"
 				onSelect={onSelect}
 			/>,
 		)
-		expect(screen.getByTestId("parallel-conversation-unread")).toBeInTheDocument()
-		fireEvent.click(screen.getByTestId("parallel-rail-conversation"))
 		expect(screen.queryByTestId("parallel-conversation-unread")).not.toBeInTheDocument()
-		expect(onSelect).toHaveBeenCalledWith("cv:cv-1")
 	})
 
 	test("nests a conversation under a worktree even when the stored path has a trailing slash", () => {

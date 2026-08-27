@@ -4,9 +4,14 @@
 
 ### Patch Changes
 
-- Persist an edited assistant or user message immediately, drop every later turn, and insert an editable user “继续” row so the new branch can be sent without waiting.
+- Persist an edited user message immediately, drop every later turn, and resend the edited prompt without inserting “继续”.
+- Persist an edited assistant message immediately, drop every later turn, and insert an editable user “继续” row.
 - Show the left-rail green unread dot only after a conversation produces a green completion summary and is not focused.
 - Bind a newly running task to a clickable conversation row instead of rendering a raw task ID.
+- Deduplicate left-rail rows that share the same session so a placeholder and a bound conversation never appear together.
+- Remove a conversation from the left rail as soon as it is deleted from history.
+- Keep Deeptask in the primary sidebar, close the extra right auxiliary view, and grow the panel so its right edge starts on the window centerline for any window width.
+- Refresh z.ai model catalogs automatically and keep the listed reasoning tiers aligned with the live vendor directory.
 - Update the bilingual README, packaged Marketplace introduction, installation commands, and release notes for 9.1.2.
 
 ## 9.1.1

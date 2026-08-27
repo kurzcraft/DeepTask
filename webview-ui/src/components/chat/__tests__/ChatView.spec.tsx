@@ -2029,7 +2029,7 @@ describe("ChatView - Command Execution Status", () => {
 	})
 
 	it("starts a new task from the home/history list screen even when sendingDisabled is sticky", async () => {
-		const { getByTestId } = renderChatView()
+		const { getByTestId, queryByTestId } = renderChatView()
 
 		// No active conversation: this is the home / recent-task-list screen.
 		mockPostMessage({
@@ -2076,6 +2076,7 @@ describe("ChatView - Command Execution Status", () => {
 		})
 
 		expect(vscode.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "askResponse" }))
+		expect(queryByTestId("history-preview")).not.toBeInTheDocument()
 	})
 
 	it("starts a new task from the home screen even if a previous shell is still marked active", async () => {

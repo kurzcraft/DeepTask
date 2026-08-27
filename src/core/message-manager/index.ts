@@ -219,6 +219,19 @@ export class MessageManager {
 			)
 		}
 
+		if (strictCutoff) {
+			const discardedCondenseParents = new Set(
+				originalHistory
+					.filter((msg) => (msg.ts === undefined || msg.ts >= actualCutoff) && msg.condenseParent)
+					.map((msg) => msg.condenseParent as string),
+			)
+			if (discardedCondenseParents.size > 0) {
+				apiHistory = apiHistory.filter(
+					(msg) => !(msg.isSummary && msg.condenseId && discardedCondenseParents.has(msg.condenseId)),
+				)
+			}
+		}
+
 		// Step 3: Remove Summaries whose condense_context was removed
 		if (removedIds.condenseIds.size > 0) {
 			apiHistory = apiHistory.filter((msg) => {

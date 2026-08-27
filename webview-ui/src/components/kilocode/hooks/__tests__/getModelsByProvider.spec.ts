@@ -40,6 +40,7 @@ describe("getModelsByProvider", () => {
 		groq: {},
 		mistral: {},
 		cerebras: {},
+		zai: {},
 		ovhcloud: { "test-model": testModel },
 		chutes: { "test-model": testModel },
 		"sap-ai-core": { "test-model": testModel },

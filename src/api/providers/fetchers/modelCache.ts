@@ -147,6 +147,7 @@ async function fetchModelsFromProvider(options: GetModelsOptions): Promise<Model
 		case "groq":
 		case "mistral":
 		case "cerebras":
+		case "zai":
 			models = await getVendorModels(provider, options.apiKey, options.baseUrl)
 			break
 		// kilocode_change end

@@ -146,14 +146,19 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	// kilocode_change: reject accidental duplicate submits before host state can round-trip.
 	const lastSubmittedMessageRef = useRef<{ signature: string; timestamp: number }>()
 
+	const [optimisticHomeTask, setOptimisticHomeTask] = useState<ClineMessage | undefined>(undefined)
+
 	useEffect(() => {
 		messagesRef.current = messages
+		if (messages.length > 0) {
+			setOptimisticHomeTask(undefined)
+		}
 	}, [messages])
 
 	// Leaving this less safe version here since if the first message is not a
 	// task, then the extension is in a bad state and needs to be debugged (see
 	// Cline.abort).
-	const task = useMemo(() => messages.at(0), [messages])
+	const task = useMemo(() => messages.at(0) ?? optimisticHomeTask, [messages, optimisticHomeTask])
 
 	// kilocode_change start
 	// Initialize expanded state based on the persisted setting (default to expanded if undefined)
@@ -1013,6 +1018,13 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 					settledCommandExecutionIdsRef.current.clear()
 					commandExitBarrierRef.current = false
 					setActiveCommandCount(0)
+					setOptimisticHomeTask({
+						ts: Date.now(),
+						type: "say",
+						say: "text",
+						text,
+						images,
+					})
 					vscode.postMessage({ type: "newTask", text, images })
 					handleChatReset()
 					return
@@ -1842,18 +1854,18 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		if (followOutputFrameRef.current !== undefined) {
 			return
 		}
+		if (!stickyFollowRef.current) {
+			return
+		}
 
 		followOutputFrameRef.current = window.requestAnimationFrame(() => {
 			followOutputFrameRef.current = undefined
-			if (pinnedJumpTsRef.current != null) {
-				scrollToPinnedMessage("auto")
+			if (!stickyFollowRef.current) {
 				return
 			}
-			if (stickyFollowRef.current) {
-				scrollToBottomAuto()
-			}
+			scrollToBottomAuto()
 		})
-	}, [scrollToBottomAuto, scrollToPinnedMessage])
+	}, [scrollToBottomAuto])
 
 	useEffect(
 		() => () => {
@@ -1901,7 +1913,6 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			setIsAtBottom(false)
 			setHighlightedMessageIndex(index)
 			scrollToPinnedMessage("auto")
-			window.requestAnimationFrame(() => scrollToPinnedMessage("auto"))
 
 			// Clear existing timer if present
 			if (highlightClearTimerRef.current) {
@@ -1954,7 +1965,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const handleRowHeightChange = useCallback(
 		(isTaller: boolean) => {
 			if (pinnedJumpTsRef.current != null) {
-				keepFollowingOutput()
+				scrollToPinnedMessage("auto")
 				return
 			}
 			if (stickyFollowRef.current || isAtBottom) {
@@ -1965,7 +1976,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				}
 			}
 		},
-		[scrollToBottomSmooth, keepFollowingOutput, isAtBottom],
+		[scrollToBottomSmooth, keepFollowingOutput, isAtBottom, scrollToPinnedMessage],
 	)
 
 	// kilocode_change start: only explicit upward input releases following; content
@@ -2475,7 +2486,8 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 										totalListHeightChanged={keepFollowingOutput}
 										atBottomStateChange={(isAtBottom: boolean) => {
 											setIsAtBottom(isAtBottom)
-											if (isAtBottom && pinnedJumpTsRef.current == null) {
+											if (isAtBottom) {
+												pinnedJumpTsRef.current = null
 												stickyFollowRef.current = true
 											}
 											// Only show the scroll-to-bottom button if not at bottom
@@ -2619,7 +2631,11 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 					onSelectImages={selectImages}
 					shouldDisableImages={shouldDisableImages}
 					onHeightChange={() => {
-						if (pinnedJumpTsRef.current != null || stickyFollowRef.current || isAtBottom) {
+						if (pinnedJumpTsRef.current != null) {
+							scrollToPinnedMessage("auto")
+							return
+						}
+						if (stickyFollowRef.current || isAtBottom) {
 							keepFollowingOutput()
 						}
 					}}

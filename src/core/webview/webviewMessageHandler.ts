@@ -31,6 +31,7 @@ import {
 	// kilocode_change start
 	ghostServiceSettingsSchema,
 	fastApplyModelSchema,
+	zaiApiLineConfigs,
 	// kilocode_change end
 	DEFAULT_CHECKPOINT_TIMEOUT_SECONDS,
 	RooCodeSettings,
@@ -492,26 +493,6 @@ export const webviewMessageHandler = async (
 			}
 
 			// Save the updated messages with restored checkpoints
-			if (!isInlineResend) {
-				const replacementUserMessage: ClineMessage = {
-					...targetMessage,
-					text: editedContent,
-					images,
-				}
-				await currentCline.overwriteClineMessages(
-					appendEditableContinuePrompt([...currentCline.clineMessages, replacementUserMessage], images),
-					{ force: true },
-				)
-				await saveTaskMessages({
-					messages: currentCline.clineMessages,
-					taskId: currentCline.taskId,
-					globalStoragePath: provider.contextProxy.globalStorageUri.fsPath,
-				})
-				currentCline.freezeHistoryPersistenceForBranchReplacement?.()
-				await provider.postStateToWebview()
-				return
-			}
-
 			await saveTaskMessages({
 				messages: currentCline.clineMessages,
 				taskId: currentCline.taskId,
@@ -521,7 +502,7 @@ export const webviewMessageHandler = async (
 			provider.setPendingCancelledTaskContinuation?.(editedContent, images, {
 				kind: "edited_resend",
 			})
-			await cancelTaskAndRestoreUi("edited message resend")
+			await cancelTaskAndRestoreUi("edited user message resend")
 			return
 		} catch (error) {
 			console.error("Error in edit message:", error)
@@ -774,14 +755,18 @@ export const webviewMessageHandler = async (
 						resolved.text.slice(0, 60),
 					)
 					provider.pendingNewConversation = undefined
+					await provider.parallelManager.setActiveConversation(pendingConversation.id)
+					await provider.focusTask(task.taskId)
 					await provider.parallelManager.broadcast()
+					await provider.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
 					break
 				} else {
 					await provider.createTask(resolved.text, resolved.images)
 				}
+				await provider.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
 				// kilocode_change end
-				// Task created successfully - notify the UI to reset
-				await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
+				// Keep the newly created task visible. newChat would reset the
+				// start screen after the first message from the home view.
 			} catch (error) {
 				provider.pendingNewConversation = undefined // kilocode_change
 				// For all errors, reset the UI and show error
@@ -1240,7 +1225,6 @@ export const webviewMessageHandler = async (
 				if (!task && message.askResponse === "messageResponse" && hasMessagePayload) {
 					try {
 						await provider.createTask(resolved.text ?? "", resolved.images)
-						await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
 					} catch (error) {
 						await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
 						vscode.window.showErrorMessage(
@@ -1701,6 +1685,7 @@ export const webviewMessageHandler = async (
 						groq: {},
 						mistral: {},
 						cerebras: {},
+						zai: {},
 						// kilocode_change end
 						openrouter: {},
 						"vercel-ai-gateway": {},
@@ -1857,6 +1842,18 @@ export const webviewMessageHandler = async (
 				candidates.push({
 					key: "cerebras",
 					options: { provider: "cerebras", apiKey: cerebrasApiKey, baseUrl: requestedBaseUrl },
+				})
+			}
+			const zaiApiKey = requestedApiKey ?? apiConfiguration.zaiApiKey
+			if (zaiApiKey) {
+				const zaiLine = apiConfiguration.zaiApiLine ?? "international_coding"
+				candidates.push({
+					key: "zai",
+					options: {
+						provider: "zai",
+						apiKey: zaiApiKey,
+						baseUrl: requestedBaseUrl ?? zaiApiLineConfigs[zaiLine].baseUrl,
+					},
 				})
 			}
 			// kilocode_change end
@@ -5132,7 +5129,6 @@ export const webviewMessageHandler = async (
 				if (hasMessagePayload) {
 					try {
 						await provider.createTask(resolved.text ?? "", resolved.images)
-						await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
 					} catch (error) {
 						await provider.postMessageToWebview({ type: "invoke", invoke: "newChat" })
 						vscode.window.showErrorMessage(
