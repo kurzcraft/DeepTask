@@ -22,6 +22,7 @@ import type {
 import type { ClineProvider } from "../../webview/ClineProvider"
 import { Task } from "../../task/Task"
 import { WorkspaceRegistry } from "./WorkspaceRegistry"
+import { MementoParallelStateStore, type ParallelStateStorage } from "./ParallelStateStore"
 import { collectWorkspaceOccupants, type WorkspaceOccupant } from "./workspaceOccupancy"
 
 export interface SubagentSpec {
@@ -59,6 +60,8 @@ export class ParallelManager {
 	private mainFolders: ParallelFolder[] | undefined
 	private conversations: ParallelConversation[] | undefined
 	private activeConversationId: string | undefined
+	/** Shared cross-window store; wraps globalState when no file store is provided (tests). */
+	private readonly stateStore: ParallelStateStorage
 
 	get focusedConversationId(): string | undefined {
 		return this.activeConversationId
@@ -71,7 +74,11 @@ export class ParallelManager {
 	constructor(
 		private readonly provider: ClineProvider,
 		private readonly registry: WorkspaceRegistry,
-	) {}
+		stateStore?: ParallelStateStorage,
+	) {
+		this.stateStore =
+			stateStore ?? new MementoParallelStateStore(this.provider.context.globalState)
+	}
 
 	getSession(sessionId: string): SessionState | undefined {
 		return this.sessions.get(sessionId)
@@ -223,10 +230,7 @@ export class ParallelManager {
 	async getFolders(): Promise<ParallelFolder[]> {
 		if (this.mainFolders === undefined) {
 			try {
-				this.mainFolders = await this.provider.context.globalState.get<ParallelFolder[]>(
-					FOLDERS_STORAGE_KEY,
-					[],
-				)
+				this.mainFolders = (await this.stateStore.read<ParallelFolder[]>(FOLDERS_STORAGE_KEY)) ?? []
 			} catch (error) {
 				console.error("[ParallelManager] failed to load folders:", error)
 				this.mainFolders = []
@@ -358,8 +362,7 @@ export class ParallelManager {
 	private async loadArchivedFolders(): Promise<void> {
 		if (this.archivedFolders === undefined) {
 			try {
-				const list =
-					(await this.provider.context.globalState.get<string[]>(ARCHIVED_FOLDERS_STORAGE_KEY, [])) ?? []
+				const list = (await this.stateStore.read<string[]>(ARCHIVED_FOLDERS_STORAGE_KEY)) ?? []
 				this.archivedFolders = new Set(list)
 			} catch (error) {
 				console.error("[ParallelManager] failed to load archived folders:", error)
@@ -381,14 +384,12 @@ export class ParallelManager {
 			folder.path === path ? { ...folder, archivedAt: archived ? Date.now() : undefined } : folder,
 		)
 		try {
-			await this.provider.context.globalState.update(FOLDERS_STORAGE_KEY, this.mainFolders)
+			await this.stateStore.write(FOLDERS_STORAGE_KEY, this.mainFolders)
 		} catch (error) {
 			console.error("[ParallelManager] failed to persist folders:", error)
 		}
 		try {
-			await this.provider.context.globalState.update(ARCHIVED_FOLDERS_STORAGE_KEY, [
-				...(this.archivedFolders ?? []),
-			])
+			await this.stateStore.write(ARCHIVED_FOLDERS_STORAGE_KEY, [...(this.archivedFolders ?? [])])
 		} catch (error) {
 			console.error("[ParallelManager] failed to persist archived folders:", error)
 		}
@@ -409,7 +410,7 @@ export class ParallelManager {
 		const name = folderPath.split(/[\\/]/).filter(Boolean).pop() ?? folderPath
 		this.mainFolders = [...folders, { name, path: folderPath, kind: "main", createdAt: Date.now() }]
 		try {
-			await this.provider.context.globalState.update(FOLDERS_STORAGE_KEY, this.mainFolders)
+			await this.stateStore.write(FOLDERS_STORAGE_KEY, this.mainFolders)
 		} catch (error) {
 			console.error("[ParallelManager] failed to persist folders:", error)
 		}
@@ -512,17 +513,14 @@ export class ParallelManager {
 			// kilocode_change start: guard against the load/attach race. A
 			// concurrent synchronous mutation (attachSubagentConversation)
 			// can mark the in-memory list dirty while this load is suspended
-			// on globalState.get. Assigning the stale snapshot back then
+			// on the storage read. Assigning the stale snapshot back then
 			// would silently drop those unpersisted conversations and a
 			// later persist would write the polluted snapshot to storage.
 			// So: read into a local first, and only adopt it when nothing
 			// dirtied the in-memory list while we were suspended.
 			let stored: ParallelConversation[] | undefined
 			try {
-				stored = await this.provider.context.globalState.get<ParallelConversation[]>(
-					CONVERSATIONS_STORAGE_KEY,
-					[],
-				)
+				stored = await this.stateStore.read<ParallelConversation[]>(CONVERSATIONS_STORAGE_KEY)
 			} catch (error) {
 				console.error("[ParallelManager] failed to load conversations:", error)
 				stored = []
@@ -533,7 +531,7 @@ export class ParallelManager {
 				await this.persistConversations()
 				return this.conversations!
 			}
-			this.conversations = stored
+			this.conversations = stored ?? []
 			// kilocode_change end
 			const beforeCount = (this.conversations ?? []).length
 			this.conversations = this.dedupeConversations(
@@ -555,10 +553,32 @@ export class ParallelManager {
 		return this.loadConversations(true)
 	}
 
-	private async persistConversations(): Promise<void> {
+	/**
+	 * Persist the in-memory conversation list.
+	 *
+	 * kilocode_change: by default each stored entry is merged per-id with the
+	 * freshest on-disk snapshot (newest lastActiveAt wins), so a window with a
+	 * stale in-memory list can no longer roll back updates another window
+	 * persisted moments ago (the round-16 cross-window clobber). Deletions use
+	 * mode "replace" so removed entries cannot resurrect from disk.
+	 */
+	private async persistConversations(mode: "merge" | "replace" = "merge"): Promise<void> {
 		this.conversationsDirty = true
 		try {
-			await this.provider.context.globalState.update(CONVERSATIONS_STORAGE_KEY, this.conversations ?? [])
+			await this.stateStore.mutate<ParallelConversation[]>(CONVERSATIONS_STORAGE_KEY, (current) => {
+				const memory = this.conversations ?? []
+				if (mode === "replace") {
+					return memory
+				}
+				const byId = new Map<string, ParallelConversation>()
+				for (const conversation of [...(current ?? []), ...memory]) {
+					const existing = byId.get(conversation.id)
+					if (!existing || (conversation.lastActiveAt ?? 0) >= (existing.lastActiveAt ?? 0)) {
+						byId.set(conversation.id, conversation)
+					}
+				}
+				return [...byId.values()]
+			})
 			this.conversationsDirty = false
 		} catch (error) {
 			console.error("[ParallelManager] failed to persist conversations:", error)
@@ -696,9 +716,8 @@ export class ParallelManager {
 			return this.activeConversationId
 		}
 		try {
-			this.activeConversationId = await this.provider.context.globalState.get<string | undefined>(
+			this.activeConversationId = await this.stateStore.read<string | undefined>(
 				ACTIVE_CONVERSATION_STORAGE_KEY,
-				undefined,
 			)
 		} catch (error) {
 			console.error("[ParallelManager] failed to load active conversation:", error)
@@ -709,7 +728,7 @@ export class ParallelManager {
 	async setActiveConversation(id: string | undefined): Promise<void> {
 		this.activeConversationId = id
 		try {
-			await this.provider.context.globalState.update(ACTIVE_CONVERSATION_STORAGE_KEY, id)
+			await this.stateStore.write(ACTIVE_CONVERSATION_STORAGE_KEY, id)
 		} catch (error) {
 			console.error("[ParallelManager] failed to persist active conversation:", error)
 		}
@@ -910,7 +929,8 @@ export class ParallelManager {
 			if (this.activeConversationId && removedIds.has(this.activeConversationId)) {
 				await this.setActiveConversation(this.conversations[0]?.id)
 			}
-			await this.persistConversations()
+			// replace: deletions must not resurrect from another window's snapshot
+			await this.persistConversations("replace")
 			void this.broadcast()
 			return removed
 		})
@@ -929,7 +949,8 @@ export class ParallelManager {
 			if (this.activeConversationId && removedIds.has(this.activeConversationId)) {
 				await this.setActiveConversation(this.conversations[0]?.id)
 			}
-			await this.persistConversations()
+			// replace: deletions must not resurrect from another window's snapshot
+			await this.persistConversations("replace")
 			void this.broadcast()
 			return removed
 		})
@@ -939,8 +960,10 @@ export class ParallelManager {
 	async setConversationArchived(id: string, archived: boolean): Promise<void> {
 		await this.enqueueConversationWrite(async () => {
 			await this.loadConversations()
+			// bump lastActiveAt so the merged persist treats this entry as the
+			// newest version of the conversation (archivedAt survives merges)
 			this.conversations = (this.conversations ?? []).map((c) =>
-				c.id === id ? { ...c, archivedAt: archived ? Date.now() : undefined } : c,
+				c.id === id ? { ...c, archivedAt: archived ? Date.now() : undefined, lastActiveAt: Date.now() } : c,
 			)
 			this.conversationsDirty = true
 			await this.persistConversations()

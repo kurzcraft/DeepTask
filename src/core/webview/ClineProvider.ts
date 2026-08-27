@@ -82,6 +82,11 @@ import { ShadowCheckpointService } from "../../services/checkpoints/ShadowCheckp
 import { ParallelManager } from "../kilocode/parallel/ParallelManager"
 import { LiveTaskCoordinator } from "../kilocode/parallel/LiveTaskCoordinator"
 import { WorkspaceRegistry } from "../kilocode/parallel/WorkspaceRegistry"
+import {
+	FileParallelStateStore,
+	MementoParallelStateStore,
+	type ParallelStateStorage,
+} from "../kilocode/parallel/ParallelStateStore"
 import { WorkspaceService } from "../kilocode/parallel/WorkspaceService"
 import { CodeIndexManager } from "../../services/code-index/manager"
 import type { IndexProgressUpdate } from "../../services/code-index/interfaces/manager"
@@ -417,10 +422,38 @@ export class ClineProvider
 	private conversationRestoreDone = false
 	public pendingNewConversation: { id: string; folderPath: string; workspacePath?: string } | undefined
 	private _liveTaskCoordinator?: LiveTaskCoordinator
+	private _parallelStateStore?: ParallelStateStorage
+
+	/**
+	 * Cross-window shared file store for all parallel state. Every window of
+	 * the extension host uses the same file, so reads see the freshest data
+	 * and writes serialize on the same advisory lock instead of clobbering
+	 * each other through per-window globalState blob snapshots.
+	 */
+	private get parallelStateStore(): ParallelStateStorage {
+		if (!this._parallelStateStore) {
+			// kilocode_change: globalState blob writes from other windows roll
+			// back parallel keys (round-16 root cause); use a dedicated shared
+			// file guarded by an inter-process lock instead. Tests run with
+			// mocked storages, so keep the in-memory Memento wrapper there.
+			if (process.env.NODE_ENV === "test" || process.env.VITEST) {
+				this._parallelStateStore = new MementoParallelStateStore(this.context.globalState)
+			} else {
+				this._parallelStateStore = new FileParallelStateStore({
+					filePath: path.join(
+						this.contextProxy?.globalStorageUri?.fsPath ?? this.context.globalStorageUri.fsPath,
+						"parallel-state.json",
+					),
+					legacy: this.context.globalState,
+				})
+			}
+		}
+		return this._parallelStateStore
+	}
 
 	get workspaceRegistry(): WorkspaceRegistry {
 		if (!this._workspaceRegistry) {
-			this._workspaceRegistry = new WorkspaceRegistry(this.context.globalState)
+			this._workspaceRegistry = new WorkspaceRegistry(this.parallelStateStore)
 		}
 		return this._workspaceRegistry
 	}
@@ -444,7 +477,7 @@ export class ClineProvider
 
 	get parallelManager(): ParallelManager {
 		if (!this._parallelManager) {
-			this._parallelManager = new ParallelManager(this, this.workspaceRegistry)
+			this._parallelManager = new ParallelManager(this, this.workspaceRegistry, this.parallelStateStore)
 			this._parallelRegisteredCwd = this.cwd
 			this._parallelInit = (
 				this.cwd ? this._parallelManager.registerMainFolder(this.cwd) : Promise.resolve(false)
