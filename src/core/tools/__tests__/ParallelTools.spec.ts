@@ -212,7 +212,7 @@ describe("Workspace tools execute guards", () => {
 		provider.parallelManager = {
 			folderPathForPath: (cwd: string) => cwd,
 			conversationForSession: () => ({ id: "cv-1", folderPath: "/repo", workspacePath: "/repo" }),
-			updateConversationWorkspace: vi.fn(async () => undefined),
+			syncSessionWorkspace: vi.fn(async () => undefined),
 			broadcast: vi.fn(async () => undefined),
 		}
 		provider.postMessageToWebview = vi.fn(async () => undefined)
@@ -225,7 +225,7 @@ describe("Workspace tools execute guards", () => {
 			folderPath: "/repo",
 		})
 		expect(task.switchWorkspace).toHaveBeenCalledWith(created.path)
-		expect(provider.parallelManager.updateConversationWorkspace).toHaveBeenCalledWith("cv-1", "/repo", created.path)
+		expect(provider.parallelManager.syncSessionWorkspace).toHaveBeenCalledWith("task-1", created.path)
 		expect(JSON.stringify(callbacks.pushToolResult.mock.calls[0][0])).toContain("moved this conversation")
 	})
 
@@ -247,23 +247,14 @@ describe("Workspace tools execute guards", () => {
 			folderPathForPath: (cwd: string) => cwd,
 			conversationForSession: vi.fn(() => undefined),
 			ensureTaskConversation: vi.fn(async () => createdConversation),
-			updateConversationWorkspace: vi.fn(async () => undefined),
+			syncSessionWorkspace: vi.fn(async () => undefined),
 			broadcast: vi.fn(async () => undefined),
 		}
 		provider.postMessageToWebview = vi.fn(async () => undefined)
 		const task = makeTask(provider)
 		task.switchWorkspace = vi.fn(async () => undefined)
 		await workspaceCreateTool.execute({ name: "feature-x" }, task, callbacks)
-		expect(provider.parallelManager.ensureTaskConversation).toHaveBeenCalledWith({
-			sessionId: "task-1",
-			workspacePath: created.path,
-			folderPath: "/repo",
-		})
-		expect(provider.parallelManager.updateConversationWorkspace).toHaveBeenCalledWith(
-			"cv-new",
-			"/repo",
-			created.path,
-		)
+		expect(provider.parallelManager.syncSessionWorkspace).toHaveBeenCalledWith("task-1", created.path)
 	})
 
 	test("workspace_status reports occupancy by workspacePath", async () => {
@@ -311,7 +302,7 @@ describe("Workspace tools execute guards", () => {
 		provider.parallelManager = {
 			folderPathForPath: () => "/repo",
 			conversationForSession: () => ({ id: "cv-1" }),
-			updateConversationWorkspace: vi.fn(async () => undefined),
+			syncSessionWorkspace: vi.fn(async () => undefined),
 			moveConversationsToWorkspace: vi.fn(async () => undefined),
 			broadcast: vi.fn(async () => undefined),
 		}
@@ -324,6 +315,7 @@ describe("Workspace tools execute guards", () => {
 			callbacks,
 		)
 		expect(task.switchWorkspace).toHaveBeenCalledWith("/repo")
+		expect(provider.parallelManager.syncSessionWorkspace).toHaveBeenCalledWith("task-1", "/repo")
 		expect(provider.workspaceService.merge).toHaveBeenCalledWith({
 			name: source.name,
 			removeAfter: true,

@@ -156,6 +156,32 @@ describe("ParallelManager conversations", () => {
 		expect(conversation?.sessionId).toBeUndefined()
 	})
 
+	test("syncSessionWorkspace creates a conversation for an unbound session under the new workspace", async () => {
+		const { manager } = setup()
+		await manager.registerMainFolder("/repo")
+
+		await manager.syncSessionWorkspace("task-9", "/repo/.kilocode/worktrees/ws-9")
+
+		const conversation = manager.conversationForSession("task-9")
+		expect(conversation).toBeDefined()
+		expect(conversation?.folderPath).toBe("/repo")
+		expect(conversation?.workspacePath).toBe("/repo/.kilocode/worktrees/ws-9")
+	})
+
+	test("syncSessionWorkspace re-parents an already bound session conversation", async () => {
+		const { manager } = setup()
+		await manager.registerMainFolder("/repo")
+		await manager.ensureTaskConversation({ sessionId: "task-10", folderPath: "/repo" })
+
+		await manager.syncSessionWorkspace("task-10", "/repo/.kilocode/worktrees/ws-10")
+
+		const conversations = manager.conversationForSession("task-10")
+		expect(conversations?.folderPath).toBe("/repo")
+		expect(conversations?.workspacePath).toBe("/repo/.kilocode/worktrees/ws-10")
+		const listed = await manager.listConversations(true)
+		expect(listed.filter((c) => c.sessionId === "task-10")).toHaveLength(1)
+	})
+
 	test("getFolders lists only main folders, not worktree workspaces", async () => {
 		const { manager } = setup()
 		await manager.registerMainFolder("/repo")

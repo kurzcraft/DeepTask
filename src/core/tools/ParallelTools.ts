@@ -431,19 +431,10 @@ export class WorkspaceCreateTool extends BaseTool<"workspace_create"> {
 			})
 			await provider.getWorkspaceService(folderPath).claim(created.name, `task:${task.taskId}`)
 			await task.switchWorkspace(created.path)
+			// kilocode_change: bind-or-reuse the conversation, then re-parent it so the
+			// left rail always shows this conversation under the new worktree.
 			if (manager) {
-				const bound =
-					manager.conversationForSession(task.taskId) ??
-					(typeof manager.ensureTaskConversation === "function"
-						? await manager.ensureTaskConversation({
-								sessionId: task.taskId,
-								workspacePath: created.path,
-								folderPath,
-							})
-						: undefined)
-				if (bound) {
-					await manager.updateConversationWorkspace(bound.id, folderPath, created.path)
-				}
+				await manager.syncSessionWorkspace(task.taskId, created.path)
 			}
 			await provider.postMessageToWebview({ type: "parallelWorkspaceChanged", text: created.path })
 			await manager?.broadcast()
@@ -525,10 +516,9 @@ export class WorkspaceMergeTool extends BaseTool<"workspace_merge"> {
 
 			if (nextPath && nextPath !== task.cwd) {
 				await task.switchWorkspace(nextPath)
-				const bound = manager?.conversationForSession(task.taskId)
-				if (bound && manager) {
-					await manager.updateConversationWorkspace(bound.id, folderPath, nextPath)
-				}
+				// kilocode_change: bind-or-reuse then re-parent so the rail never loses
+				// this conversation when switching to the merge target workspace.
+				await manager?.syncSessionWorkspace(task.taskId, nextPath)
 				await provider.postMessageToWebview({ type: "parallelWorkspaceChanged", text: nextPath })
 			}
 

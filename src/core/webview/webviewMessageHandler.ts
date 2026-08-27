@@ -822,13 +822,10 @@ export const webviewMessageHandler = async (
 			if (currentTask) {
 				await currentTask.switchWorkspace(nextPath)
 			}
-			// kilocode_change start: bound conversations must follow the task into
-			// the new workspace or the left rail keeps grouping them under the old one.
+			// kilocode_change start: bind-or-reuse the conversation, then re-parent it so
+			// the left rail always groups this session under the switched workspace.
 			if (currentTask) {
-				const bound = manager.conversationForSession(currentTask.taskId)
-				if (bound) {
-					await manager.updateConversationWorkspace(bound.id, folderPath, nextPath)
-				}
+				await manager.syncSessionWorkspace(currentTask.taskId, nextPath)
 			}
 			// kilocode_change end
 			if (provider.pendingNewConversation) {

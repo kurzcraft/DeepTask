@@ -127,9 +127,9 @@ describe("webviewMessageHandler - parallel.deleteWorkspace", () => {
 	})
 
 	test("switching workspace re-parents the bound conversation of the running task", async () => {
-		const updateConversationWorkspace = vi.fn().mockResolvedValue(undefined)
+		const syncSessionWorkspace = vi.fn().mockResolvedValue(undefined)
 		const conversationForSession = vi.fn().mockReturnValue({ id: "cv-1", sessionId: "task-1" })
-		vi.mocked(provider.parallelManager).updateConversationWorkspace = updateConversationWorkspace
+		vi.mocked(provider.parallelManager).syncSessionWorkspace = syncSessionWorkspace
 		vi.mocked(provider.parallelManager).conversationForSession = conversationForSession
 		vi.mocked(provider.getCurrentTask).mockReturnValue({
 			cwd: "/repo/.kilocode/worktrees/feature",
@@ -140,7 +140,7 @@ describe("webviewMessageHandler - parallel.deleteWorkspace", () => {
 		await webviewMessageHandler(provider, { type: "parallel.switchWorkspace", text: "/repo" })
 
 		expect(switchWorkspace).toHaveBeenCalledWith("/repo")
-		expect(updateConversationWorkspace).toHaveBeenCalledWith("cv-1", "/repo", "/repo")
+		expect(syncSessionWorkspace).toHaveBeenCalledWith("task-1", "/repo")
 		expect(provider.pendingNewConversation).toBeUndefined()
 	})
 

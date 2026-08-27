@@ -782,6 +782,28 @@ export class ParallelManager {
 		})
 	}
 
+	/**
+	 * Bind a session to the workspace its task now runs in: reuse the existing
+	 * conversation or create one, then re-parent it. Without this, switching a
+	 * workspace for a session that has no conversation yet silently drops it
+	 * from the left rail (kilocode_change).
+	 */
+	async syncSessionWorkspace(sessionId: string, workspacePath: string): Promise<void> {
+		if (!sessionId || !workspacePath) {
+			return
+		}
+		const folderPath = this.folderPathForPath(workspacePath)
+		const existing = this.conversationForSession(sessionId)
+		const conversation =
+			existing ??
+			(await this.ensureTaskConversation({
+				sessionId,
+				workspacePath,
+				folderPath,
+			}))
+		await this.updateConversationWorkspace(conversation.id, folderPath, workspacePath)
+	}
+
 	/** Live occupants already writing in this workspace, excluding the caller. */
 	async occupantsOf(
 		workspacePath: string,
