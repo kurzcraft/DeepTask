@@ -370,6 +370,11 @@ export const webviewMessageHandler = async (
 		restoreCheckpoint?: boolean,
 		images?: string[],
 		isInlineResend = false,
+		// kilocode_change start
+		// Post-completion boundary continuations reuse the rewind transaction but are
+		// NEW user messages, not edits. This selects which continuation semantics the
+		// parked payload carries through rehydration.
+		continuationKind: "continuation" | "edited_resend" = "edited_resend",
 	): Promise<void> => {
 		const currentCline = provider.getCurrentTask()
 		if (!currentCline) {
@@ -396,16 +401,16 @@ export const webviewMessageHandler = async (
 
 				if (isCancellingOrAbandoned) {
 					provider.setPendingCancelledTaskContinuation?.(editedContent, images, {
-						kind: "edited_resend",
+						kind: continuationKind,
 					})
 				} else if (currentCline.isActivelyRunningTaskLoop?.()) {
 					provider.setPendingCancelledTaskContinuation?.(editedContent, images, {
-						kind: "edited_resend",
+						kind: continuationKind,
 					})
 					await cancelTaskAndRestoreUi("stale inline edit resend")
 				} else {
 					await currentCline.continueTaskFromUserMessage(editedContent, images, {
-						kind: "edited_resend",
+						kind: continuationKind,
 					})
 				}
 			}
@@ -519,7 +524,7 @@ export const webviewMessageHandler = async (
 			})
 			await provider.postStateToWebview()
 			provider.setPendingCancelledTaskContinuation?.(editedContent, images, {
-				kind: "edited_resend",
+				kind: continuationKind,
 			})
 			await cancelTaskAndRestoreUi("edited user message resend")
 			return
@@ -1364,20 +1369,29 @@ export const webviewMessageHandler = async (
 					task.messageQueueService.clear()
 					provider.setPendingCancelledTaskContinuation?.(resolved.text ?? "", resolved.images)
 					await provider.postStateToWebview()
-				} else if (task && isCompletionContinuation && completionMessage?.ts !== undefined) {
-					// A post-completion message is a resend from the final stable boundary. Use
-					// the exact strict edit/resend transaction: rewind the completion tail,
-					// persist the prefix, park an edited_resend continuation, then replace the
-					// old Task. Keeping a separate completion rehydrate path allowed late
-					// finalization to consume the human message without starting a model turn.
-					await handleEditMessageConfirm(
-						completionMessage.ts,
-						resolved.text ?? "",
-						false,
-						resolved.images,
-						true,
-					)
-				} else if (task && hasPendingAsk && isAskResponseForCurrentAsk) {
+			} else if (task && isCompletionContinuation && completionMessage?.ts !== undefined) {
+				// A post-completion message is a resend from the final stable boundary. Use
+				// the exact strict edit/resend transaction: rewind the completion tail,
+				// persist the prefix, park an edited_resend continuation, then replace the
+				// old Task. Keeping a separate completion rehydrate path allowed late
+				// finalization to consume the human message without starting a model turn.
+				// kilocode_change start
+				// The rewind transaction is reused for state integrity, but the payload is
+				// a NEW user message after a completed boundary, not an edit of an older
+				// message. Tag it as a plain continuation so the model classifies the
+				// message semantically (discussion vs. actionable work) instead of being
+				// forced into "answer directly, no task work" edited_resend semantics that
+				// ended the turn with an empty attempt_completion.
+				await handleEditMessageConfirm(
+					completionMessage.ts,
+					resolved.text ?? "",
+					false,
+					resolved.images,
+					true,
+					"continuation",
+				)
+				// kilocode_change end
+			} else if (task && hasPendingAsk && isAskResponseForCurrentAsk) {
 					task.handleWebviewAskResponse(message.askResponse!, resolved.text, resolved.images)
 				} else if (
 					task &&

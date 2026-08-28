@@ -11,6 +11,9 @@
 - Keep the green completion summary visible in the panel when continuing a finished task: the resend rewinds API history as before but now preserves the displayed completion row.
 - Add the `manage_provider_profile` tool: the model can list profiles, create or update provider profiles (provider, endpoint, key, model, context window, raw settings), rename them, and switch its own reasoning effort level including turning reasoning off; secrets are redacted in listings and every mutation goes through user approval.
 - Mirror child-process fallback execution live in the integrated terminal: the empty shell terminal is swapped to a pseudoterminal transcript that shows the command line, streamed stdout/stderr, the exit code, and user-initiated aborts, so cmd.exe fallback runs are fully visible instead of leaving a blank prompt.
+- Auto-approve every `manage_provider_profile` action (including reasoning-effort switching) under the same default-on profile-switch gate, so the reasoning popover no longer pops an approval prompt.
+- Sync reasoning-effort changes made on the currently active profile immediately: the webview selector and the next in-flight request both read the new value without reactivating the profile.
+- Deliver an immediate reply after a task completes as a continuation turn: the model answers the new user message directly instead of re-ending the task with an empty completion summary.
 - Update the bilingual README, packaged Marketplace introduction, installation commands, and release notes for 9.1.3.
 
 ## 9.1.2

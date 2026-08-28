@@ -180,7 +180,11 @@ export async function checkAutoApproval({
 		}
 
 		// kilocode_change start - provider/profile switching has an independent permission.
-		if (tool?.tool === "switchProviderProfile") {
+		// manageProviderProfile (create/update/set_reasoning/rename) shares the same
+		// permission gate as switching: both mutate provider profile state, and leaving
+		// it unhandled here made set_reasoning fall through to a manual ask even when
+		// the provider-profile permission was enabled.
+		if (tool?.tool === "switchProviderProfile" || tool?.tool === "manageProviderProfile") {
 			return state.alwaysAllowProviderProfileSwitch === true ? { decision: "approve" } : { decision: "ask" }
 		}
 		// kilocode_change end

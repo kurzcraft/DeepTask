@@ -89,4 +89,40 @@ describe("checkAutoApproval", () => {
 
 		expect(result).toEqual({ decision: "ask" })
 	})
+
+	it("approves manage_provider_profile actions (set_reasoning/update/create/rename) with the provider-profile toggle", async () => {
+		const result = await checkAutoApproval({
+			state: {
+				autoApprovalEnabled: true,
+				alwaysAllowProviderProfileSwitch: true,
+			} as unknown as ExtensionState,
+			ask: "tool",
+			text: JSON.stringify({
+				tool: "manageProviderProfile",
+				action: "set_reasoning",
+				profile: "deepseek",
+				reasoningEffort: "medium",
+			}),
+		})
+
+		expect(result).toEqual({ decision: "approve" })
+	})
+
+	it("asks before manage_provider_profile actions when the provider-profile toggle is disabled", async () => {
+		const result = await checkAutoApproval({
+			state: {
+				autoApprovalEnabled: true,
+				alwaysAllowProviderProfileSwitch: false,
+			} as unknown as ExtensionState,
+			ask: "tool",
+			text: JSON.stringify({
+				tool: "manageProviderProfile",
+				action: "set_reasoning",
+				profile: "deepseek",
+				reasoningEffort: "medium",
+			}),
+		})
+
+		expect(result).toEqual({ decision: "ask" })
+	})
 })

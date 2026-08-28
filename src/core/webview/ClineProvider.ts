@@ -2195,6 +2195,20 @@ export class ClineProvider
 				// Keep the current task's sticky provider profile in sync with the newly-activated profile.
 				await this.persistStickyProviderProfileToCurrentTask(name)
 			} else {
+				// kilocode_change start
+				// A non-activating upsert can still target the *currently active* profile
+				// (e.g. manage_provider_profile set_reasoning / update). The webview and
+				// running tasks read settings from contextProxy, so without syncing here
+				// the bottom reasoning-effort selector kept showing the stale value and
+				// the next request never picked up the change.
+				const currentName = this.contextProxy.getValue("currentApiConfigName")
+				if (currentName === name) {
+					await this.contextProxy.setProviderSettings(providerSettings)
+					// Keep any live task's API handler aware the profile contents changed
+					// (reasoning effort etc. are read from state at request-build time).
+					this.updateTaskApiHandlerIfNeeded(providerSettings, {})
+				}
+				// kilocode_change end
 				await this.updateGlobalState("listApiConfigMeta", await this.providerSettingsManager.listConfig())
 			}
 

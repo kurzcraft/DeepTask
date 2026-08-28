@@ -698,7 +698,7 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 			"reply immediately after completion",
 			["data:image/png;base64,from-mention"],
-			{ kind: "edited_resend" },
+			{ kind: "continuation" },
 		)
 		expect(mockCancelTask).toHaveBeenCalledTimes(1)
 		expect(mockClineProvider.postMessageToWebview).not.toHaveBeenCalledWith({ type: "invoke", invoke: "newChat" })
@@ -740,7 +740,7 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockClineProvider.setPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 			"extend the completed work",
 			["data:image/png;base64,from-mention"],
-			{ kind: "edited_resend" },
+			{ kind: "continuation" },
 		)
 		expect(mockCancelTask).toHaveBeenCalledTimes(1)
 		expect(mockClearStaleWebviewAskResponse).toHaveBeenCalledTimes(1)
@@ -832,7 +832,7 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 			"continue after the completed task",
 			["data:image/png;base64,from-mention"],
-			{ kind: "edited_resend" },
+			{ kind: "continuation" },
 		)
 		expect(mockCancelTask).toHaveBeenCalledTimes(1)
 		expect(mockHandleWebviewAskResponse).not.toHaveBeenCalled()
@@ -1020,7 +1020,7 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 			"continue from final feedback",
 			["data:image/png;base64,from-mention"],
-			{ kind: "edited_resend" },
+			{ kind: "continuation" },
 		)
 		expect(mockCancelTask).toHaveBeenCalledTimes(1)
 		expect(mockCreateTask).not.toHaveBeenCalled()
@@ -1065,7 +1065,7 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 			"continue even if completion looked pending",
 			["data:image/png;base64,from-mention"],
-			{ kind: "edited_resend" },
+			{ kind: "continuation" },
 		)
 		expect(mockCancelTask).toHaveBeenCalledTimes(1)
 		expect(mockCreateTask).not.toHaveBeenCalled()
@@ -1125,7 +1125,7 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 			"do the next fix",
 			["data:image/png;base64,from-mention"],
-			{ kind: "edited_resend" },
+			{ kind: "continuation" },
 		)
 		expect(mockCancelTask).toHaveBeenCalledTimes(1)
 		expect(mockCreateTask).not.toHaveBeenCalled()
@@ -1168,7 +1168,7 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 			"continue from final feedback",
 			["data:image/png;base64,from-mention"],
-			{ kind: "edited_resend" },
+			{ kind: "continuation" },
 		)
 		expect(mockCancelTask).toHaveBeenCalledTimes(1)
 		expect(mockCreateTask).not.toHaveBeenCalled()

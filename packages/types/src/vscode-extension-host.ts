@@ -1302,6 +1302,7 @@ export interface ClineSayTool {
 		| "searchFiles"
 		| "switchMode"
 		| "switchProviderProfile" // kilocode_change
+		| "manageProviderProfile" // kilocode_change: agent-managed provider profiles
 		| "newTask"
 		| "finishTask"
 		| "dispatchSubagents" // kilocode_change: parallel subagents
