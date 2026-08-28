@@ -1081,6 +1081,7 @@ describe("webviewMessageHandler - image mentions", () => {
 		const mockSetPendingCancelledTaskContinuation = vi.fn()
 		const mockCancelTask = vi.fn().mockResolvedValue(undefined)
 		const rewindToTimestamp = vi.fn().mockResolvedValue(undefined)
+		const overwriteClineMessages = vi.fn().mockResolvedValue(undefined)
 		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
 			taskId: "test-task-id",
 			cwd: "/mock/workspace",
@@ -1091,6 +1092,7 @@ describe("webviewMessageHandler - image mentions", () => {
 			],
 			apiConversationHistory: [],
 			messageManager: { rewindToTimestamp },
+			overwriteClineMessages,
 			getPendingWebviewAskTs: vi.fn().mockReturnValue(undefined),
 			hasPendingWebviewAskResponse: vi.fn().mockReturnValue(false),
 			handleWebviewAskResponse: mockHandleWebviewAskResponse,
@@ -1114,6 +1116,12 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockClearQueue).toHaveBeenCalledTimes(1)
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
 		expect(rewindToTimestamp).toHaveBeenCalledWith(1, { includeTargetMessage: false, strictCutoff: true })
+		// kilocode_change: the completion row stays visible as a display-only tail
+		// while its API history is strictly stripped by the rewind above.
+		expect(overwriteClineMessages).toHaveBeenCalledTimes(1)
+		const restoredMessages = overwriteClineMessages.mock.calls[0][0] as any[]
+		expect(restoredMessages.at(-1)?.ts).toBe(1)
+		expect(restoredMessages.at(-1)?.ask).toBe("completion_result")
 		expect(mockSetPendingCancelledTaskContinuation).toHaveBeenCalledWith(
 			"do the next fix",
 			["data:image/png;base64,from-mention"],
@@ -2175,6 +2183,105 @@ describe("webviewMessageHandler - message dialog preferences", () => {
 			)
 			expect(cancelTask).toHaveBeenCalled()
 		})
+
+		// kilocode_change start
+		it("delivers an edit as edited_resend when the target user row is already gone", async () => {
+			const continueTaskFromUserMessage = vi.fn().mockResolvedValue(undefined)
+			const clineMessages = [{ type: "say", say: "user_feedback", ts: 111, text: "previous context" }]
+			const apiConversationHistory = [
+				{ role: "user", ts: 111, content: [{ type: "text", text: "previous context" }] },
+			]
+			vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
+				taskId: "test-task-id",
+				clineMessages,
+				apiConversationHistory,
+				messageQueueService: { clear: vi.fn() },
+				clearStaleWebviewAskResponse: vi.fn(),
+				continueTaskFromUserMessage,
+				isActivelyRunningTaskLoop: vi.fn().mockReturnValue(false),
+				abortReason: undefined,
+				abandoned: false,
+			} as any)
+
+			await webviewMessageHandler(mockClineProvider, {
+				type: "submitEditedMessage",
+				value: 999,
+				editedMessageContent: "edited late content",
+			})
+
+			expect(continueTaskFromUserMessage).toHaveBeenCalledWith("edited late content", undefined, {
+				kind: "edited_resend",
+			})
+		})
+
+		it("parks an assistant edit as edited_resend when its row was rewound away", async () => {
+			const continueTaskFromUserMessage = vi.fn().mockResolvedValue(undefined)
+			const clineMessages = [{ type: "say", say: "text", ts: 111, text: "remaining row" }]
+			const apiConversationHistory = [
+				{ role: "user", ts: 110, content: [{ type: "text", text: "question" }] },
+				{ role: "assistant", ts: 111, content: [{ type: "text", text: "remaining row" }] },
+			]
+			vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
+				taskId: "test-task-id",
+				clineMessages,
+				apiConversationHistory,
+				messageQueueService: { clear: vi.fn() },
+				clearStaleWebviewAskResponse: vi.fn(),
+				continueTaskFromUserMessage,
+				isActivelyRunningTaskLoop: vi.fn().mockReturnValue(false),
+				abortReason: undefined,
+				abandoned: false,
+			} as any)
+
+			await webviewMessageHandler(mockClineProvider, {
+				type: "submitEditedAssistantMessage",
+				value: 999,
+				editedMessageContent: "edited assistant text",
+			})
+
+			expect(continueTaskFromUserMessage).toHaveBeenCalledWith("edited assistant text", undefined, {
+				kind: "edited_resend",
+			})
+		})
+
+		it("still replaces the UI assistant row when its API counterpart cannot be matched", async () => {
+			const overwriteClineMessages = vi.fn().mockResolvedValue(undefined)
+			const freezeHistoryPersistenceForBranchReplacement = vi.fn()
+			const targetMessage = { type: "say", say: "completion_result", ts: 500, text: "old summary" }
+			const clineMessages = [
+				{ type: "say", say: "user_feedback", ts: 400, text: "question" },
+				targetMessage,
+			]
+			// API history has drifted: no assistant entry matches ts 500 nor the payload.
+			const apiConversationHistory = [
+				{ role: "user", ts: 400, content: [{ type: "text", text: "question" }] },
+				{ role: "assistant", ts: 450, content: [{ type: "text", text: "different content" }] },
+			]
+			vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
+				taskId: "test-task-id",
+				clineMessages,
+				apiConversationHistory,
+				messageQueueService: { clear: vi.fn() },
+				clearStaleWebviewAskResponse: vi.fn(),
+				overwriteClineMessages,
+				freezeHistoryPersistenceForBranchReplacement,
+			} as any)
+
+			await webviewMessageHandler(mockClineProvider, {
+				type: "submitEditedAssistantMessage",
+				value: 500,
+				editedMessageContent: "edited summary",
+			})
+
+			expect(overwriteClineMessages).toHaveBeenCalledTimes(1)
+			const replaced = overwriteClineMessages.mock.calls[0][0] as any[]
+			expect(replaced[0].text).toBe("question")
+			expect(replaced[1].text).toBe("edited summary")
+			// An editable continue prompt row is appended.
+			expect(replaced.at(-1).editPrompt).toBe(true)
+			expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
+		})
+		// kilocode_change end
 	})
 })
 

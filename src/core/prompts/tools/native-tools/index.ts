@@ -25,6 +25,9 @@ import edit_file from "./edit_file"
 import searchFiles from "./search_files"
 import switchMode from "./switch_mode"
 import { createSwitchProviderProfileTool, type SwitchProviderProfileToolOptions } from "./switch_provider_profile"
+// kilocode_change start: agent-managed provider profiles
+import { createManageProviderProfileTool } from "./manage_provider_profile"
+// kilocode_change end
 import updateTodoList from "./update_todo_list"
 import writeToFile from "./write_to_file"
 
@@ -50,6 +53,13 @@ export interface NativeToolsOptions {
 	/** Whether provider/profile switching is available to the model (default: true). */
 	providerProfileSwitchEnabled?: boolean
 }
+
+// kilocode_change start: agent-managed provider profiles
+export interface GetNativeToolsProviderProfileOptions {
+	providerProfiles?: NativeToolsOptions["providerProfiles"]
+	providerProfileSwitchEnabled?: NativeToolsOptions["providerProfileSwitchEnabled"]
+}
+// kilocode_change end
 
 /**
  * Get native tools array, optionally customizing based on settings.
@@ -107,6 +117,9 @@ export function getNativeTools(options: NativeToolsOptions = {}): OpenAI.Chat.Ch
 		searchFiles,
 		switchMode,
 		...(providerProfileSwitchEnabled ? [createSwitchProviderProfileTool({ profiles: providerProfiles })] : []),
+		// kilocode_change start: agent-managed provider profiles
+		createManageProviderProfileTool({ providerProfileSwitchEnabled }),
+		// kilocode_change end
 		updateTodoList,
 		writeToFile,
 	] satisfies OpenAI.Chat.ChatCompletionTool[]

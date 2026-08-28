@@ -477,11 +477,30 @@ export const webviewMessageHandler = async (
 			// Delete the original user message and later messages using the same boundary
 			// as the original Kilo implementation. The manager handles delayed API rows.
 			const rewindTs = currentCline.clineMessages[deleteFromMessageIndex]?.ts
+			// kilocode_change start
+			// An inline resend anchored on a soft-completion row rewinds away the green
+			// completion summary. Keep that row visible as a display-only tail: the API
+			// history stays strictly stripped by the rewind, but the panel must keep
+			// showing what was already delivered.
+			const preserveCompletionRowForInlineResend =
+				isInlineResend &&
+				(targetMessage.say === "completion_result" || targetMessage.ask === "completion_result")
+			// kilocode_change end
 			if (rewindTs) {
 				await currentCline.messageManager.rewindToTimestamp(rewindTs, {
 					includeTargetMessage: false,
 					strictCutoff: true,
 				})
+				// kilocode_change start
+				if (
+					preserveCompletionRowForInlineResend &&
+					currentCline.clineMessages.at(-1)?.ts !== targetMessage.ts
+				) {
+					await currentCline.overwriteClineMessages([...currentCline.clineMessages, targetMessage], {
+						force: true,
+					})
+				}
+				// kilocode_change end
 			}
 
 			// Restore checkpoint associations for preserved messages
@@ -538,8 +557,29 @@ export const webviewMessageHandler = async (
 
 		const { messageIndex, apiConversationHistoryIndex: exactApiIndex } = findMessageIndices(messageTs, currentCline)
 		if (messageIndex === -1) {
+			// kilocode_change start
+			// The edited assistant row is already gone (prior rewind, resume, or
+			// condensation). Do not drop the edit silently: deliver it as an
+			// edited_resend continuation on the current history tail so the user's
+			// edit still produces a model turn.
+			provider.log(
+				`[handleAssistantMessageEdit] assistant row ts=${messageTs} not found; delivering edit as edited_resend`,
+			)
+			currentCline.clearStaleWebviewAskResponse?.()
+			currentCline.messageQueueService?.clear?.()
+			const isCancellingOrAbandoned =
+				currentCline.abortReason === "user_cancelled" || currentCline.abandoned === true
+			if (isCancellingOrAbandoned) {
+				provider.setPendingCancelledTaskContinuation?.(editedContent, images, { kind: "edited_resend" })
+			} else if (currentCline.isActivelyRunningTaskLoop?.()) {
+				provider.setPendingCancelledTaskContinuation?.(editedContent, images, { kind: "edited_resend" })
+				await cancelTaskAndRestoreUi("stale assistant edit resend")
+			} else {
+				await currentCline.continueTaskFromUserMessage(editedContent, images, { kind: "edited_resend" })
+			}
 			await provider.postStateToWebview()
 			return
+			// kilocode_change end
 		}
 
 		const targetMessage = currentCline.clineMessages[messageIndex]
@@ -563,13 +603,56 @@ export const webviewMessageHandler = async (
 						)
 					})
 		if (apiConversationHistoryIndex === -1) {
+			// kilocode_change start
+			// The UI row exists but its API counterpart cannot be located (delayed
+			// persistence or condensation). Still apply the visible UI replacement and
+			// keep the API tail untouched rather than returning without any effect.
+			provider.log(
+				`[handleAssistantMessageEdit] no API match for assistant row ts=${messageTs}; replacing UI row only`,
+			)
+			await currentCline.overwriteClineMessages(
+				appendEditableContinuePrompt(
+					[...currentCline.clineMessages.slice(0, messageIndex), { ...targetMessage, text: editedContent, images }],
+					images,
+				),
+				{ force: true },
+			)
+			await saveTaskMessages({
+				messages: currentCline.clineMessages,
+				taskId: currentCline.taskId,
+				globalStoragePath: provider.contextProxy.globalStorageUri.fsPath,
+			})
+			currentCline.freezeHistoryPersistenceForBranchReplacement?.()
+			await provider.postStateToWebview()
+			return
+			// kilocode_change end
+		}
+
+		// kilocode_change start
+		// The webview only renders edit buttons for text/completion_result rows, but a
+		// stale webview bundle can still submit other say types. Apply the same UI
+		// replacement instead of silently returning so the edit is never a no-op.
+		if (targetMessage.type !== "say" || !["text", "completion_result"].includes(targetMessage.say || "")) {
+			provider.log(
+				`[handleAssistantMessageEdit] unexpected say type "${targetMessage.say}" for ts=${messageTs}; replacing UI row only`,
+			)
+			await currentCline.overwriteClineMessages(
+				appendEditableContinuePrompt(
+					[...currentCline.clineMessages.slice(0, messageIndex), { ...targetMessage, text: editedContent, images }],
+					images,
+				),
+				{ force: true },
+			)
+			await saveTaskMessages({
+				messages: currentCline.clineMessages,
+				taskId: currentCline.taskId,
+				globalStoragePath: provider.contextProxy.globalStorageUri.fsPath,
+			})
+			currentCline.freezeHistoryPersistenceForBranchReplacement?.()
 			await provider.postStateToWebview()
 			return
 		}
-
-		if (targetMessage.type !== "say" || !["text", "completion_result"].includes(targetMessage.say || "")) {
-			return
-		}
+		// kilocode_change end
 
 		const apiMessage = currentCline.apiConversationHistory[apiConversationHistoryIndex]
 		if (apiMessage.role !== "assistant") return
@@ -588,7 +671,31 @@ export const webviewMessageHandler = async (
 				}
 				return block
 			})
-			if (!replaced) return
+			// kilocode_change start
+			// An assistant API message without text/attempt_completion blocks (pure
+			// tool calls) previously returned without any UI effect. Replace the UI
+			// row and append the editable continue prompt so the edit visibly lands.
+			if (!replaced) {
+				provider.log(
+					`[handleAssistantMessageEdit] no text/attempt_completion block in API row ts=${messageTs}; replacing UI row only`,
+				)
+				await currentCline.overwriteClineMessages(
+					appendEditableContinuePrompt(
+						[...currentCline.clineMessages.slice(0, messageIndex), { ...targetMessage, text: editedContent, images }],
+						images,
+					),
+					{ force: true },
+				)
+				await saveTaskMessages({
+					messages: currentCline.clineMessages,
+					taskId: currentCline.taskId,
+					globalStoragePath: provider.contextProxy.globalStorageUri.fsPath,
+				})
+				currentCline.freezeHistoryPersistenceForBranchReplacement?.()
+				await provider.postStateToWebview()
+				return
+			}
+			// kilocode_change end
 			editedApiMessage.content = content
 		} else {
 			editedApiMessage.content = editedContent
@@ -2738,15 +2845,18 @@ export const webviewMessageHandler = async (
 			}
 			break
 		}
-		case "submitEditedMessage": {
-			if (typeof message.value === "number" && message.value && message.editedMessageContent) {
-				// A user-message edit replaces the original branch. Reuse the strict edit
-				// path so the original message and every later response are removed before
-				// the replacement request is started.
-				await handleEditMessageConfirm(message.value, message.editedMessageContent, false, message.images)
-			}
-			break
+	case "submitEditedMessage": {
+		if (typeof message.value === "number" && message.value && message.editedMessageContent) {
+			// A user-message edit replaces the original branch. Reuse the strict edit
+			// path so the original message and every later response are removed before
+			// the replacement request is started. Pass isInlineResend=true so an
+			// explicit edit whose target row was already rewound away still delivers
+			// the edited text as an edited_resend continuation instead of vanishing
+			// silently (the delayed editMessageConfirm dialog callback stays excluded).
+			await handleEditMessageConfirm(message.value, message.editedMessageContent, false, message.images, true)
 		}
+		break
+	}
 
 		case "hasOpenedModeSelector":
 			await updateGlobalState("hasOpenedModeSelector", message.bool ?? true)

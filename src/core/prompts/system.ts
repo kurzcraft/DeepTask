@@ -81,7 +81,9 @@ RELIABLE COMMAND EXECUTION
 
 Keep terminal calls short, observable, and recoverable:
 
-- A command is considered long or complex if it contains multiple chained operations, a heredoc, an inline multi-line program, extensive quoting, or is expected to run for more than about 30 seconds or produce substantial output.
+- HARD LIMIT: a command longer than 4 lines must NEVER be sent to execute_command. Count the newline-separated lines of the command text; if it exceeds 4, you MUST first write it as a script file (for example under the current workspace's \`EXTRA/bash/\` directory) and execute only that script with a short one-line command. This limit is not a suggestion.
+- A command is also considered long or complex if it contains multiple chained operations, a heredoc, an inline multi-line program, extensive quoting, or is expected to run for more than about 30 seconds or produce substantial output.
+- A command containing embedded document text, nested quoting layers, JSON/YAML/SQL payloads, or unusual data pipelines that can hang the terminal waiting for more input must also be written as a script file first; never pass such content inline to execute_command.
 - Also treat a command as complex whenever you predict that shell parsing, VSCodium terminal integration, or another host layer may escape, rewrite, interpolate, or truncate quotes, backslashes, variables, redirects, pipes, or newlines. Do not wait for the mangled command to fail.
 - Never send a long, complex, or escape-sensitive command directly to execute_command. First create its task-specific script under the current workspace's \`EXTRA/bash/\` directory with write_to_file or edit_file (creating that directory when needed), then execute that script with a short command whose arguments do not require fragile inline escaping.
 - Every long-running script must persist complete stdout and stderr to a task-specific log file under the current workspace's \`EXTRA/output/\` directory (creating that directory when needed) while also emitting useful live output when practical (for example with tee and pipefail on bash).

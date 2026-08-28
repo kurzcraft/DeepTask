@@ -1,9 +1,28 @@
 // Mock VSCode API for Vitest tests
-const mockEventEmitter = () => ({
-	event: () => () => {},
-	fire: () => {},
-	dispose: () => {},
-})
+// kilocode_change start: EventEmitter must be constructible (vscode.EventEmitter<T>
+// is a class used with `new`); `fire()` records emissions per instance.
+const mockEventEmitter = class {
+	constructor() {
+		this.listeners = []
+		this.event = (listener) => {
+			this.listeners.push(listener)
+			return { dispose: () => {} }
+		}
+	}
+
+	fire(data) {
+		for (const listener of [...this.listeners]) {
+			try {
+				listener(data)
+			} catch {
+				// A failing listener must not break other subscribers in tests.
+			}
+		}
+	}
+
+	dispose() {}
+}
+// kilocode_change end
 
 const mockDisposable = {
 	dispose: () => {},

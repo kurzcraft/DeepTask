@@ -496,6 +496,29 @@ export class NativeToolCallParser {
 				}
 				break
 
+			// kilocode_change start: agent-managed provider profiles
+			case "manage_provider_profile":
+				if (
+					partialArgs.action !== undefined ||
+					partialArgs.profile_name !== undefined ||
+					partialArgs.reason !== undefined
+				) {
+					nativeArgs = {
+						action: partialArgs.action,
+						profile_name: partialArgs.profile_name,
+						new_name: partialArgs.new_name,
+						provider: partialArgs.provider,
+						model_id: partialArgs.model_id,
+						api_key: partialArgs.api_key,
+						base_url: partialArgs.base_url,
+						reasoning_effort: partialArgs.reasoning_effort,
+						settings: partialArgs.settings,
+						reason: partialArgs.reason,
+					}
+				}
+				break
+			// kilocode_change end
+
 			case "update_todo_list":
 				if (partialArgs.todos !== undefined) {
 					nativeArgs = {
@@ -803,6 +826,25 @@ export class NativeToolCallParser {
 						} as NativeArgsFor<TName>
 					}
 					break
+
+				// kilocode_change start: agent-managed provider profiles
+				case "manage_provider_profile":
+					if (args.action !== undefined) {
+						nativeArgs = {
+							action: args.action,
+							profile_name: args.profile_name,
+							new_name: args.new_name,
+							provider: args.provider,
+							model_id: args.model_id,
+							api_key: args.api_key,
+							base_url: args.base_url,
+							reasoning_effort: args.reasoning_effort,
+							settings: args.settings,
+							reason: args.reason,
+						} as NativeArgsFor<TName>
+					}
+					break
+				// kilocode_change end
 
 				case "update_todo_list":
 					if (args.todos !== undefined) {

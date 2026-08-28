@@ -12,5 +12,7 @@ export type ToolArgs = {
 	partialReadsEnabled?: boolean
 	settings?: Record<string, any>
 	providerProfiles?: ProviderSettingsEntry[] // kilocode_change
+	/** Whether the switch_provider_profile tool is visible (kilocode_change). */
+	providerProfileSwitchEnabled?: boolean
 	experiments?: Partial<Experiments>
 }

@@ -1,5 +1,18 @@
 # Deeptask
 
+## 9.1.3
+
+### Patch Changes
+
+- Run commands out of the box when the Windows default integrated terminal is cmd.exe: the extension detects the cmd profile and executes commands through a child-process executor with full output and a real exit code instead of timing out waiting for the OSC 633;A shell-integration handshake.
+- Degrade Windows shell-integration initialization timeouts to direct child-process execution instead of failing execute_command; non-Windows platforms keep the previous behavior.
+- Add hard prompt rules: commands longer than 4 lines, and commands containing embedded document text, nested quoting, JSON/YAML/SQL payloads, or exotic data pipelines that can hang the terminal, must be written to a script file first and executed as that script.
+- Never silently drop an edited message: an edit whose target row was already rewound away is delivered as an edited_resend continuation, and assistant-row edits that cannot match API history still replace the visible row with a diagnostic log instead of doing nothing.
+- Keep the green completion summary visible in the panel when continuing a finished task: the resend rewinds API history as before but now preserves the displayed completion row.
+- Add the `manage_provider_profile` tool: the model can list profiles, create or update provider profiles (provider, endpoint, key, model, context window, raw settings), rename them, and switch its own reasoning effort level including turning reasoning off; secrets are redacted in listings and every mutation goes through user approval.
+- Mirror child-process fallback execution live in the integrated terminal: the empty shell terminal is swapped to a pseudoterminal transcript that shows the command line, streamed stdout/stderr, the exit code, and user-initiated aborts, so cmd.exe fallback runs are fully visible instead of leaving a blank prompt.
+- Update the bilingual README, packaged Marketplace introduction, installation commands, and release notes for 9.1.3.
+
 ## 9.1.2
 
 ### Patch Changes

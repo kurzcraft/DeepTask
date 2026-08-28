@@ -22,6 +22,9 @@ import { getUseMcpToolDescription } from "./use-mcp-tool"
 import { getAccessMcpResourceDescription } from "./access-mcp-resource"
 import { getSwitchModeDescription } from "./switch-mode"
 import { getSwitchProviderProfileDescription } from "./switch-provider-profile"
+// kilocode_change start: agent-managed provider profiles
+import { getManageProviderProfileDescription } from "./manage-provider-profile"
+// kilocode_change end
 import { getNewTaskDescription } from "./new-task"
 import { getCodebaseSearchDescription } from "./codebase-search"
 import { getUpdateTodoListDescription } from "./update-todo-list"
@@ -60,6 +63,12 @@ const toolDescriptionMap: Record<string, (args: ToolArgs) => string | undefined>
 	codebase_search: (args) => getCodebaseSearchDescription(args),
 	switch_mode: () => getSwitchModeDescription(),
 	switch_provider_profile: (args) => getSwitchProviderProfileDescription(args.providerProfiles), // kilocode_change
+	// kilocode_change start: agent-managed provider profiles
+	manage_provider_profile: (args) =>
+		getManageProviderProfileDescription({
+			providerProfileSwitchEnabled: args.providerProfileSwitchEnabled,
+		}),
+	// kilocode_change end
 	new_task: (args) => getNewTaskDescription(args),
 	// kilocode_change start: parallel subagents & workspaces
 	dispatch_subagents: (args) => getDispatchSubagentsDescription(args.settings?.agentSubagentDispatchEnabled),
@@ -103,6 +112,7 @@ export function getToolDescriptionsForMode(
 		mcpHub,
 		partialReadsEnabled,
 		providerProfiles: clineProviderState?.listApiConfigMeta, // kilocode_change
+		providerProfileSwitchEnabled: clineProviderState?.alwaysAllowProviderProfileSwitch !== false, // kilocode_change
 		settings: {
 			...settings,
 			enableMcpServerCreation,

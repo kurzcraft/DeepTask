@@ -41,11 +41,25 @@ async function getChildPids(parentPid: number): Promise<number[]> {
 }
 // kilocode_change end
 
+// kilocode_change start
+/**
+ * Real-time echo sink for terminal mirroring. Unlike the throttled `line`
+ * event (500ms batches), every stream chunk is forwarded immediately so an
+ * attached pseudoterminal can display live command output.
+ */
+export type EchoSink = (chunk: string) => void
+// kilocode_change end
+
 export class ExecaTerminalProcess extends BaseTerminalProcess {
 	private terminalRef: WeakRef<RooTerminal>
 	private aborted = false
 	private pid?: number
 	private subprocess?: ReturnType<typeof execa>
+
+	// kilocode_change start
+	/** Optional live-output mirror (e.g. pseudoterminal echo); never affects capture. */
+	public echoSink?: EchoSink
+	// kilocode_change end
 
 	constructor(terminal: RooTerminal) {
 		super()
@@ -117,6 +131,20 @@ export class ExecaTerminalProcess extends BaseTerminalProcess {
 
 				this.fullOutput += line
 
+				// kilocode_change: mirror every chunk to the attached echo sink
+				// (pseudoterminal) immediately, independent of the throttled
+				// `line` event batching used for model-facing capture.
+				if (this.echoSink) {
+					try {
+						this.echoSink(line)
+					} catch (echoError) {
+						console.warn(
+							`[ExecaTerminalProcess#run] echo sink failed: ${echoError instanceof Error ? echoError.message : String(echoError)}`,
+						)
+						this.echoSink = undefined
+					}
+				}
+
 				const now = Date.now()
 
 				if (this.isListening && (now - this.lastEmitTime_ms > 500 || this.lastEmitTime_ms === 0)) {
@@ -167,6 +195,15 @@ export class ExecaTerminalProcess extends BaseTerminalProcess {
 
 	public override abort() {
 		this.aborted = true
+
+		// kilocode_change: let a mirrored pseudoterminal show the cancellation.
+		if (this.echoSink) {
+			try {
+				this.echoSink("\r\n\x1b[33m^C command aborted by user\x1b[0m\r\n")
+			} catch {
+				this.echoSink = undefined
+			}
+		}
 
 		if (!this.pid) {
 			return

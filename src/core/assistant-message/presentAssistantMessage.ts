@@ -33,6 +33,9 @@ import { accessMcpResourceTool } from "../tools/accessMcpResourceTool"
 import { askFollowupQuestionTool } from "../tools/AskFollowupQuestionTool"
 import { switchModeTool } from "../tools/SwitchModeTool"
 import { switchProviderProfileTool } from "../tools/SwitchProviderProfileTool"
+// kilocode_change start: agent-managed provider profiles
+import { manageProviderProfileTool } from "../tools/ManageProviderProfileTool"
+// kilocode_change end
 import { attemptCompletionTool, AttemptCompletionCallbacks } from "../tools/AttemptCompletionTool"
 import { newTaskTool } from "../tools/NewTaskTool"
 // kilocode_change start: parallel subagents & workspaces
@@ -1252,19 +1255,34 @@ export async function presentAssistantMessage(cline: Task) {
 									toolProtocol,
 								})
 								break
-							case "switch_provider_profile":
-								await switchProviderProfileTool.handle(
-									cline,
-									block as ToolUse<"switch_provider_profile">,
-									{
-										askApproval,
-										handleError,
-										pushToolResult,
-										removeClosingTag,
-										toolProtocol,
-									},
-								)
-								break
+						case "switch_provider_profile":
+							await switchProviderProfileTool.handle(
+								cline,
+								block as ToolUse<"switch_provider_profile">,
+								{
+									askApproval,
+									handleError,
+									pushToolResult,
+									removeClosingTag,
+									toolProtocol,
+								},
+							)
+							break
+						// kilocode_change start: agent-managed provider profiles
+						case "manage_provider_profile":
+							await manageProviderProfileTool.handle(
+								cline,
+								block as ToolUse<"manage_provider_profile">,
+								{
+									askApproval,
+									handleError,
+									pushToolResult,
+									removeClosingTag,
+									toolProtocol,
+								},
+							)
+							break
+						// kilocode_change end
 							case "new_task":
 								await newTaskTool.handle(cline, block as ToolUse<"new_task">, {
 									askApproval,

@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.1.2</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.1.3</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.1.2** adds parallel subagents and multi-worktree support: the model can dispatch up to 5 subagents at once (each with the full chat UI and integrated terminals) and continues only after all of them finish; write-heavy subagents get isolated git worktrees. The left rail is folder → workspace → conversation, shared across every window, and existing workspaces reload as soon as a window opens. Occupancy counts only conversations that are actively inferring. Mid-task, the model can detect occupancy and use `workspace_merge` to move the current conversation onto a free workspace or a new worktree without a manual move. Deleting a workspace can keep conversations under main or Delete All to remove them with the worktree. Both permission toggles default to enabled.
+> **Deeptask 9.1.3** makes Windows command execution work out of the box: when the default integrated terminal is `cmd.exe` (which has no official VS Code shell-integration script), the extension automatically runs commands through a child-process executor with full stdout/stderr and a real exit code instead of failing after waiting 5s for the OSC 633;A handshake; Windows integration-init timeouts degrade the same way, so `echo`, `.bat/.cmd`, and `.ps1` all work on the first command with zero settings changes; the fallback execution (command line, live output, exit code, aborts) is mirrored live into a pseudoterminal transcript in the integrated terminal, so the panel never shows just an empty prompt. The system prompt also gains hard rules: commands longer than 4 lines, and commands containing embedded document text, nested quoting, JSON/YAML/SQL payloads, or exotic pipelines that can hang the terminal, must be written to a script file first and executed as that script. Edited messages are never silently dropped (edits whose target row was rewound away are delivered as continuations), and continuing a finished task no longer deletes the green completion summary from the panel. A new `manage_provider_profile` tool lets the model list, create, update, and rename provider profiles (provider, endpoint, key, model, context window, raw settings) and switch its own reasoning effort including off, with secrets always redacted and every mutation gated by user approval.
 
 ## What you can do with Deeptask
 
@@ -113,17 +113,17 @@ Deeptask treats work as a recoverable state machine rather than a one-shot answe
 
 ## Start in three minutes
 
-1. Download `deeptask-9.1.2.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.1.3.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.1.2.vsix --force
+    codium --install-extension ./deeptask-9.1.3.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.1.2.vsix --force
+    code --install-extension ./deeptask-9.1.3.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

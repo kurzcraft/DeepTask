@@ -84,6 +84,14 @@ export const toolParamNames = [
 	"todos",
 	"prompt",
 	"image",
+	// kilocode_change start: agent-managed provider profiles
+	"settings", // manage_provider_profile raw settings JSON
+	"new_name", // manage_provider_profile rename target
+	"reasoning_effort", // manage_provider_profile reasoning level
+	"provider", // manage_provider_profile apiProvider
+	"api_key", // manage_provider_profile credential
+	"base_url", // manage_provider_profile endpoint
+	// kilocode_change end
 	"files", // Native protocol parameter for read_file
 	"operations", // search_and_replace parameter for multiple operations
 	"patch", // apply_patch parameter
@@ -133,6 +141,20 @@ export type NativeToolArgs = {
 	search_files: { path: string; regex: string; file_pattern?: string | null }
 	switch_mode: { mode_slug: string; reason: string }
 	switch_provider_profile: { profile_name: string; model_id?: string; reason: string }
+	// kilocode_change start: agent-managed provider profiles
+	manage_provider_profile: {
+		action: "list" | "create" | "update" | "set_reasoning" | "rename"
+		profile_name?: string
+		new_name?: string
+		provider?: string
+		model_id?: string
+		api_key?: string
+		base_url?: string
+		reasoning_effort?: string
+		settings?: Record<string, unknown>
+		reason?: string
+	}
+	// kilocode_change end
 	update_todo_list: { todos: string }
 	use_mcp_tool: { server_name: string; tool_name: string; arguments?: Record<string, unknown> }
 	write_to_file: { path: string; content: string }
@@ -274,6 +296,27 @@ export interface SwitchProviderProfileToolUse extends ToolUse<"switch_provider_p
 	params: Partial<Pick<Record<ToolParamName, string>, "profile_name" | "model_id" | "reason">>
 }
 
+// kilocode_change start: agent-managed provider profiles
+export interface ManageProviderProfileToolUse extends ToolUse<"manage_provider_profile"> {
+	name: "manage_provider_profile"
+	params: Partial<
+		Pick<
+			Record<ToolParamName, string>,
+			| "action"
+			| "profile_name"
+			| "new_name"
+			| "provider"
+			| "model_id"
+			| "api_key"
+			| "base_url"
+			| "reasoning_effort"
+			| "settings"
+			| "reason"
+		>
+	>
+}
+// kilocode_change end
+
 export interface NewTaskToolUse extends ToolUse<"new_task"> {
 	name: "new_task"
 	params: Partial<Pick<Record<ToolParamName, string>, "mode" | "message" | "todos">>
@@ -332,6 +375,9 @@ export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
 	attempt_completion: "complete tasks",
 	switch_mode: "switch modes",
 	switch_provider_profile: "switch provider profiles",
+	// kilocode_change start: agent-managed provider profiles
+	manage_provider_profile: "manage provider profiles",
+	// kilocode_change end
 	new_task: "create new task",
 	// kilocode_change start: parallel subagents & workspaces
 	dispatch_subagents: "dispatch parallel subagents",
@@ -379,6 +425,9 @@ export const TOOL_GROUPS: Record<ToolGroup, ToolGroupConfig> = {
 		tools: [
 			"switch_mode",
 			"switch_provider_profile",
+			// kilocode_change start: agent-managed provider profiles
+			"manage_provider_profile",
+			// kilocode_change end
 			"new_task",
 			// kilocode_change start: parallel subagents & workspaces
 			"dispatch_subagents",
@@ -397,6 +446,9 @@ export const ALWAYS_AVAILABLE_TOOLS: ToolName[] = [
 	"attempt_completion",
 	"switch_mode",
 	"switch_provider_profile",
+	// kilocode_change start: agent-managed provider profiles
+	"manage_provider_profile",
+	// kilocode_change end
 	"new_task",
 	"report_bug",
 	"condense", // kilocode_Change

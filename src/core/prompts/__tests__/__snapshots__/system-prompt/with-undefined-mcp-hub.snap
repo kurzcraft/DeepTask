@@ -230,7 +230,7 @@ Delete a directory (requires approval with statistics):
 ```
 
 ## execute_command
-Description: Request to execute a short CLI command on the system. Use this when you need to perform system operations or run specific commands to accomplish a task step. You must tailor the command to the user's system and explain what it does. Keep execute_command calls short and observable. If an operation is long or complex (multiple chained operations, heredoc, inline multi-line code, extensive quoting, expected runtime over about 30 seconds, or substantial output), first create its script under the current workspace's `EXTRA/bash/` directory, make the script persist complete stdout/stderr under the current workspace's `EXTRA/output/` directory, and then execute only that script here. Create those directories when needed. After it returns, inspect the durable log with read_file. Never place heredocs or long inline programs directly in this tool. Prefer relative paths that avoid location sensitivity, e.g. `touch ./testdata/example.file` or `go test ./cmd/front --config ./cmd/front/config.yml`. If directed by the user, use the `cwd` parameter for another directory.
+Description: Request to execute a short CLI command on the system. Use this when you need to perform system operations or run specific commands to accomplish a task step. You must tailor the command to the user's system and explain what it does. Keep execute_command calls short and observable. HARD LIMIT: a command longer than 4 lines must NEVER be sent to this tool — first write it as a script file and execute only the script with a short one-line command. Commands containing embedded document text, nested quoting layers, JSON/YAML/SQL payloads, heredocs, or unusual data pipelines that can hang the terminal must also be written as script files first. If an operation is long or complex (multiple chained operations, inline multi-line code, extensive quoting, expected runtime over about 30 seconds, or substantial output), first create its script under the current workspace's `EXTRA/bash/` directory, make the script persist complete stdout/stderr under the current workspace's `EXTRA/output/` directory, and then execute only that script here. Create those directories when needed. After it returns, inspect the durable log with read_file. Never place heredocs or long inline programs directly in this tool. Prefer relative paths that avoid location sensitivity, e.g. `touch ./testdata/example.file` or `go test ./cmd/front --config ./cmd/front/config.yml`. If directed by the user, use the `cwd` parameter for another directory.
 Parameters:
 - command: (required) The CLI command to execute. This should be valid for the current operating system. Ensure the command is properly formatted and does not contain any harmful instructions.
 - cwd: (optional) The working directory to execute the command in (default: /test/path)
@@ -326,6 +326,37 @@ Usage:
 <reason>Reason for switching provider</reason>
 </switch_provider_profile>
 
+## manage_provider_profile
+Description: Create, update, rename, or list provider profiles, or switch the reasoning effort of the current profile (including turning reasoning off). Use switch_provider_profile to ACTIVATE a profile; use this tool to DEFINE or EDIT profiles. All mutating actions require user approval.
+Actions:
+- list: no other params. Returns every profile with provider, model, reasoning state and redacted settings (secrets replaced with «redacted»).
+- create: profile_name + provider + model_id required; api_key / base_url / reasoning_effort / settings optional. settings is a JSON object of raw ProviderSettings fields for provider-specific options.
+- update: profile_name + any of model_id / api_key / base_url / reasoning_effort / provider / settings. Only provided fields change.
+- set_reasoning: profile_name (defaults to active profile) + reasoning_effort (disable|none|minimal|low|medium|high|xhigh). disable/none turns reasoning off.
+- rename: profile_name (old) + new_name.
+Common rules:
+- Only create or update profiles when the user explicitly asks for it or when the task cannot proceed otherwise; state what will be stored.
+- Never invent API keys; ask the user when a credential is required and missing.
+- reasoning_effort: use "disable" or "none" to turn reasoning off.
+Parameters:
+- action: (required) list | create | update | set_reasoning | rename
+- profile_name: (create/update/rename: required; set_reasoning: optional = active profile)
+- new_name: (rename only) new profile name
+- provider: (create/update) provider id, e.g. anthropic, openai, openai-responses, deepseek, openrouter, ollama, lmstudio, gemini, zai, groq
+- model_id: exact model ID explicitly requested by the user
+- api_key: credential to store for the provider
+- base_url: custom endpoint base URL
+- reasoning_effort: disable | none | minimal | low | medium | high | xhigh
+- settings: JSON object of raw ProviderSettings fields (merged last, wins over convenience params)
+- reason: why this change is needed
+Usage:
+<manage_provider_profile>
+<action>set_reasoning</action>
+<profile_name>deepseek</profile_name>
+<reasoning_effort>high</reasoning_effort>
+<reason>Complex debugging task benefits from deeper reasoning</reason>
+</manage_provider_profile>
+
 ## new_task
 Description: This will let you create a new task instance in the chosen mode using your provided message.
 
@@ -416,6 +447,69 @@ Replace the entire TODO list with an updated checklist reflecting the current st
 - Use clear, descriptive task names.
 
 
+## dispatch_subagents
+Description: Run several self-contained subtasks in PARALLEL as isolated subagents. Each subagent is a full agent with its own conversation, integrated terminal, and file access. The main task BLOCKS until every subagent finishes, then receives all of their results at once. Use this for independent chunks of work (e.g., "implement feature A" + "write tests for B" + "investigate C") that do not need to coordinate with each other.
+
+Workspace rules (write-conflict prevention):
+- A subagent that WRITES files should get its own isolated git workspace: set "needs_workspace": true. It then works on its own branch in a git worktree — no conflicts with other agents or the main checkout.
+- A subagent that only reads/analyzes should run without a workspace (omit the flag) to keep things light.
+	- To reuse an existing workspace by name, set "workspace": "<name>". If that workspace is already occupied, a sibling git worktree is created automatically so two writers never share a directory.
+- After all subagents finish, merge their workspace branches into the main branch yourself with workspace_merge (resolve reported conflicts in the workspace worktree first, then retry the merge).
+
+Parameters:
+- tasks: (required) JSON array of subagent specs, each object:
+  - task: (required) Complete, self-contained instructions for the subagent. Include all needed context — subagents cannot see this conversation.
+  - label: (optional) Short display name.
+  - needs_workspace: (optional, default false) Set true when the subagent will write files; it gets a fresh isolated git workspace.
+	  - workspace: (optional) Name of an existing workspace to run in; a busy workspace is forked automatically.
+
+Usage:
+<dispatch_subagents>
+<tasks>
+[
+  {"task": "Implement X end to end, run tests, and summarize", "label": "impl-x", "needs_workspace": true},
+  {"task": "Read src/a.ts and report the public API", "label": "audit-a"}
+]
+</tasks>
+</dispatch_subagents>
+
+## workspace_status
+	Description: List all parallel agent workspaces with their status (available / busy / merged / conflicted), git branch, dirty files, occupancy by conversations/subagents, and how far each is ahead of the main branch. ALWAYS call this before dispatching a subagent into an existing workspace or merging. Occupied directories are isolated automatically by creating a sibling worktree.
+
+Parameters: none
+
+Usage:
+<workspace_status>
+</workspace_status>
+
+## workspace_create
+	Description: Create a new isolated git workspace (a git worktree on its own branch based on the current folder) that this conversation and its subagents can safely write to. The creating task is switched into that worktree and the left-rail conversation moves with it. The workspace is claimed until you merge it.
+
+Parameters:
+- name: (optional) Short workspace name; auto-generated from the description when omitted.
+- task_description: (optional) What the workspace will be used for (used for the default name).
+
+Usage:
+<workspace_create>
+<name>refactor-auth</name>
+<task_description>Refactor the auth module</task_description>
+</workspace_create>
+
+## workspace_merge
+Description: The only workspace change tool. Merge a parallel workspace's branch back into the main branch, optionally switch this conversation first, and optionally delete the old worktree. The current conversation may leave a workspace it occupies. Pending changes are auto-committed first. The user's checkout is never dirtied. On conflict the merge aborts and returns the conflicted files.
+
+Parameters:
+- name: (required) Workspace name or path to merge.
+- delete_after: (optional, default false) Remove the workspace worktree after a successful merge (the branch is kept).
+- switch_to: (optional) Move this conversation first. Use "main" for the parent repo, or another workspace name/path.
+
+Usage:
+<workspace_merge>
+<name>refactor-auth</name>
+<switch_to>main</switch_to>
+<delete_after>true</delete_after>
+</workspace_merge>
+
 # Tool Use Guidelines
 
 1. Assess what information you already have and what information you need to proceed with the task.
@@ -497,7 +591,9 @@ RELIABLE COMMAND EXECUTION
 
 Keep terminal calls short, observable, and recoverable:
 
-- A command is considered long or complex if it contains multiple chained operations, a heredoc, an inline multi-line program, extensive quoting, or is expected to run for more than about 30 seconds or produce substantial output.
+- HARD LIMIT: a command longer than 4 lines must NEVER be sent to execute_command. Count the newline-separated lines of the command text; if it exceeds 4, you MUST first write it as a script file (for example under the current workspace's `EXTRA/bash/` directory) and execute only that script with a short one-line command. This limit is not a suggestion.
+- A command is also considered long or complex if it contains multiple chained operations, a heredoc, an inline multi-line program, extensive quoting, or is expected to run for more than about 30 seconds or produce substantial output.
+- A command containing embedded document text, nested quoting layers, JSON/YAML/SQL payloads, or unusual data pipelines that can hang the terminal waiting for more input must also be written as a script file first; never pass such content inline to execute_command.
 - Also treat a command as complex whenever you predict that shell parsing, VSCodium terminal integration, or another host layer may escape, rewrite, interpolate, or truncate quotes, backslashes, variables, redirects, pipes, or newlines. Do not wait for the mangled command to fail.
 - Never send a long, complex, or escape-sensitive command directly to execute_command. First create its task-specific script under the current workspace's `EXTRA/bash/` directory with write_to_file or edit_file (creating that directory when needed), then execute that script with a short command whose arguments do not require fragile inline escaping.
 - Every long-running script must persist complete stdout and stderr to a task-specific log file under the current workspace's `EXTRA/output/` directory (creating that directory when needed) while also emitting useful live output when practical (for example with tee and pipefail on bash).
