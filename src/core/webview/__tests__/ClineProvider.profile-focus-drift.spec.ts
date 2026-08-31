@@ -20,10 +20,12 @@ describe("ClineProvider - provider profile focus drift", () => {
 	})
 
 	it("activateProviderProfile guards sticky write and handler rebuild against focus drift", () => {
-		// The guard must capture the focused task before any await and compare
-		// the reference after the awaits.
-		expect(source).toContain("const focusedTaskAtEntry = this.getCurrentTask()")
-		expect(source).toContain("const focusedTaskNow = this.getCurrentTask()")
+		// The guard must capture the sticky target before any await and compare
+		// the reference after the awaits. Since 9.1.5 the capture uses
+		// resolveStickyTaskTarget(), which also refuses the stack-top fallback
+		// while a new conversation is pending (pollution guard).
+		expect(source).toContain("const focusedTaskAtEntry = this.resolveStickyTaskTarget()")
+		expect(source).toContain("const focusedTaskNow = this.resolveStickyTaskTarget()")
 		expect(source).toContain("if (focusedTaskNow === focusedTaskAtEntry) {")
 
 		// The sticky write must live INSIDE the focus-drift guard (search after
@@ -49,9 +51,12 @@ describe("ClineProvider - provider profile focus drift", () => {
 		const fnBody = source.slice(fnStart, fnEnd)
 
 		// Focus must be captured before the first await and re-verified after
-		// every subsequent await.
-		expect(fnBody).toContain("const taskAtEntry = this.getCurrentTask()")
-		expect((fnBody.match(/this\.getCurrentTask\(\) !== taskAtEntry/g) ?? []).length).toBeGreaterThanOrEqual(2)
+		// every subsequent await. Since 9.1.5 both capture and re-checks go
+		// through resolveStickyTaskTarget() (pending-conversation safe).
+		expect(fnBody).toContain("const taskAtEntry = this.resolveStickyTaskTarget()")
+		expect((fnBody.match(/this\.resolveStickyTaskTarget\(\) !== taskAtEntry/g) ?? []).length).toBeGreaterThanOrEqual(
+			2,
+		)
 	})
 
 	it("showTaskWithId registers the rail conversation even when history loading fails", () => {

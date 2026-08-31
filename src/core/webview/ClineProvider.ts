@@ -2280,12 +2280,44 @@ export class ClineProvider
 		await this.postStateToWebview()
 	}
 
+	// kilocode_change start: parallel conversations focus resolution
+	/**
+	 * Single source of truth for "which task does a user-initiated profile or
+	 * model switch apply to". Rules:
+	 * 1. A pending (not yet constructed) new conversation owns the switch:
+	 *    no existing task may be touched (returns undefined).
+	 * 2. Otherwise the focused chat task -- the conversation the user is
+	 *    actually chatting with -- receives it.
+	 * 3. When focus management is not engaged (legacy single-task flow),
+	 *    fall back to the stack-top task.
+	 */
+	private resolveStickyTaskTarget(): Task | undefined {
+		if (this.pendingNewConversation) {
+			return undefined
+		}
+		const focused = this.getFocusedChatTask()
+		if (focused) {
+			return focused
+		}
+		// A focused conversation exists but its Task has not landed yet --
+		// same rule as updateTaskApiHandlerIfNeeded: touch nothing.
+		if (this.parallelManager?.focusedConversationId) {
+			return undefined
+		}
+		return this.getCurrentTask()
+	}
+	// kilocode_change end
+
 	private async persistStickyProviderProfileToCurrentTask(apiConfigName: string): Promise<void> {
 		// kilocode_change: parallel conversations
 		// The sticky profile/model must follow the conversation the user is
 		// configuring, not the stack top (which can be a background task).
-		const task =
-			(this.pendingNewConversation ? undefined : this.getFocusedChatTask()) ?? this.getCurrentTask()
+		// Use the shared focus resolver: when a new conversation is pending
+		// (its Task not yet constructed) there is NO conversation to persist
+		// for -- the previous `?? getCurrentTask()` fallback polluted the
+		// stack-top background conversation's sticky memory when the user
+		// picked a provider in a brand-new conversation.
+		const task = this.resolveStickyTaskTarget()
 		if (!task) {
 			return
 		}
@@ -2395,11 +2427,14 @@ export class ClineProvider
 		args: { name: string } | { id: string },
 		options?: { persistModeConfig?: boolean; persistTaskHistory?: boolean },
 	) {
-		// kilocode_change start: capture the focused task BEFORE any await.
+		// kilocode_change start: capture the sticky target BEFORE any await.
 		// New-conversation creation or focus switches can land mid-activation;
 		// without this capture the sticky write below would attribute the
 		// newly activated profile to the WRONG (previous) conversation.
-		const focusedTaskAtEntry = this.getCurrentTask()
+		// resolveStickyTaskTarget also blocks the stack-top fallback while a
+		// new conversation is pending, so a provider picked for a brand-new
+		// conversation cannot pollute an older background conversation.
+		const focusedTaskAtEntry = this.resolveStickyTaskTarget()
 		// kilocode_change end
 		const { name, id, ...providerSettings } = await this.providerSettingsManager.activateProfile(args)
 
@@ -2423,7 +2458,7 @@ export class ClineProvider
 		// Only mutate the handler of the task that was focused when the user
 		// initiated the switch; a conversation created meanwhile gets its own
 		// configuration from task creation, not from this stale activation.
-		const focusedTaskNow = this.getCurrentTask()
+		const focusedTaskNow = this.resolveStickyTaskTarget()
 		if (focusedTaskNow === focusedTaskAtEntry) {
 			// Change the provider for the current task.
 			this.updateTaskApiHandlerIfNeeded(providerSettings, { forceRebuild: true })
@@ -4013,7 +4048,10 @@ export class ClineProvider
 		// kilocode_change start: capture the focused task BEFORE any await.
 		// focusTask itself awaits; if focus drifted during those awaits this
 		// restoration must not write another conversation's profile.
-		const taskAtEntry = this.getCurrentTask()
+		// resolveStickyTaskTarget keeps the pending-new-conversation window
+		// out of stack-top fallback so restoration cannot target a background
+		// conversation the user is not chatting with.
+		const taskAtEntry = this.resolveStickyTaskTarget()
 		if (!taskAtEntry) {
 			return
 		}
@@ -4028,7 +4066,7 @@ export class ClineProvider
 		}
 		// Re-check focus after the await: the user may have switched to a
 		// different conversation while the saved name was loading.
-		if (this.getCurrentTask() !== taskAtEntry) {
+		if (this.resolveStickyTaskTarget() !== taskAtEntry) {
 			return
 		}
 		const { currentApiConfigName, apiConfiguration } = await this.getState()
@@ -4039,7 +4077,7 @@ export class ClineProvider
 			return
 		}
 		// Re-check focus once more after the second await.
-		if (this.getCurrentTask() !== taskAtEntry) {
+		if (this.resolveStickyTaskTarget() !== taskAtEntry) {
 			return
 		}
 
@@ -4059,7 +4097,7 @@ export class ClineProvider
 			if (modelKey) {
 				const scoped: ProviderSettings = { ...stored, [modelKey]: savedModelId }
 				// Re-check focus after the profile await.
-				if (this.getCurrentTask() !== taskAtEntry) {
+				if (this.resolveStickyTaskTarget() !== taskAtEntry) {
 					return
 				}
 				taskAtEntry.updateApiConfiguration(scoped)

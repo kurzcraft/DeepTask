@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.1.4</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.1.5</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.1.4** 彻底消除多行/长命令执行完毕后界面卡在“强制继续”的问题：VS Code 对多行或引号跨行命令可能既不发 shell 集成结束事件、也不发 OSC 633;C 起始标记、还不关闭输出流，终端进程现在改为对累计缓冲做标记匹配（跨 chunk 分裂安全，兼容 BEL 与 ST 终止符），把“命令回显之后出现的新交互提示符”识别为完成边界，起始标记缺失时也接受 D 标记收口，并轮询终端关闭状态，任何类型的命令最终都会收敛出真实结果。被吞的命令输出也能找回：只带回显的标记缺失流、以及被竞争消费者吃空的框架内空流，都会回读终端屏幕转录，把真实输出还给模型。系统提示词进一步硬化：所有命令必须先写入 `EXTRA/bash/` 脚本文件再以单行方式执行，脚本用 tee 把完整 stdout/stderr 持久化到 `EXTRA/output/` 并打印日志路径与退出码（原生与 XML 工具描述、capabilities、rules、system 五处对齐）。同时修复并行对话模型串扰：给全新并行对话选模型时，不再把旧后台对话的 API handler 一并切过去。终端关闭轮询对已被回收的终端引用做了防御，并在到达任一完成边界后立即停止，命令完成后终端不再被标记为忙碌。
+> **Deeptask 9.1.5** 修复并行对话的提供商/模型记忆污染：在尚未创建 Task 的新对话里手动切换提供商或模型，不再把栈顶旧对话记住的 apiConfigName/apiModelId 和任务历史一并改写，切回旧对话时恢复的是它自己真正的提供商。所有 sticky 持久化、profile 激活、焦点恢复路径统一走同一个焦点感知解析器 `resolveStickyTaskTarget()`：pending 新对话解析为无目标、焦点对话优先、未知焦点对话解析为无目标、仅无焦点管理的 legacy 单任务流才回退栈顶；`activateProviderProfile` 与 `restoreFocusedTaskProviderProfile` 的入口快照与漂移检测同样使用该解析器，pending 期间切换 profile 不再误重建旧后台对话的 API handler。
 
 ## 你可以怎样使用 Deeptask
 
@@ -113,17 +113,17 @@ Deeptask 将任务视为可恢复状态机，而不是一次性回答。未完�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.1.4.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.1.5.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.1.4.vsix --force
+    codium --install-extension ./deeptask-9.1.5.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.1.4.vsix --force
+    code --install-extension ./deeptask-9.1.5.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

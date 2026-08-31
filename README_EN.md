@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.1.4</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.1.5</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.1.4** eliminates the "force continue" stuck state after multi-line or long commands finish running: for such commands VS Code may skip the shell-integration end event, never emit the OSC 633;C start marker, and leave the execution stream open forever. The terminal process now matches start/end markers against the accumulated buffer (safe across chunk splits, accepting both BEL and ST terminators), treats a fresh interactive prompt after the command echo as the completion boundary, closes on a D marker found before the start marker, and polls terminal closure, so every kind of command eventually settles with a real result. Swallowed output is also recovered: marker-less streams that carried only the command echo, and framed-but-empty streams (competing stream consumers), now fall back to reading the visible terminal transcript so the model receives the real output. The system prompt is further hardened: every command must be written to a script file under `EXTRA/bash/` first and executed as a one-line script invocation, with the script teeing full stdout/stderr to `EXTRA/output/` and printing the log path and exit code (native and XML tool descriptions, capabilities, rules, and system sections aligned). Parallel-conversation model cross-talk is fixed too: picking a model for a brand-new parallel conversation no longer rebuilds an older background conversation's API handler. Terminal-close polling is defensive against garbage-collected terminal references and stops as soon as any completion boundary is reached, so finished commands never keep the terminal marked busy.
+> **Deeptask 9.1.5** fixes parallel-conversation provider/model memory pollution: manually switching provider or model inside a brand-new not-yet-created conversation no longer overwrites the remembered apiConfigName/apiModelId and task history of the older conversation at the top of the stack, so switching back restores its real provider. All sticky-persist, profile-activate, and focused-restore paths now resolve their target task through one shared focus-aware resolver (`resolveStickyTaskTarget`): a pending new conversation resolves to no task, the focused chat task wins, an unknown focused conversation resolves to no task, and only the legacy single-task flow without focus management falls back to the stack top; the task-at-entry snapshots and drift checks of `activateProviderProfile` and `restoreFocusedTaskProviderProfile` use the same resolver, so profile switching while a new conversation is pending no longer rebuilds an older background conversation's API handler.
 
 ## What you can do with Deeptask
 
@@ -113,17 +113,17 @@ Deeptask treats work as a recoverable state machine rather than a one-shot answe
 
 ## Start in three minutes
 
-1. Download `deeptask-9.1.4.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.1.5.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.1.4.vsix --force
+    codium --install-extension ./deeptask-9.1.5.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.1.4.vsix --force
+    code --install-extension ./deeptask-9.1.5.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

@@ -1,5 +1,12 @@
 # Deeptask
 
+## 9.1.5
+
+### Patch Changes
+
+- Fix parallel-conversation provider/model memory pollution: manually switching provider or model inside a brand-new not-yet-created conversation no longer overwrites the remembered apiConfigName/apiModelId and task history of the older conversation at the top of the stack, so switching back to that older conversation restores its real provider instead of the newly picked one. All sticky-persist, profile-activate, and focused-restore paths now resolve their target task through one shared focus-aware resolver (`resolveStickyTaskTarget`): pending new conversation resolves to no task, the focused chat task wins, an unknown focused conversation resolves to no task, and only the legacy single-task flow without focus management falls back to the stack top.
+- The same focus-aware resolver also guards the task-at-entry snapshots of `activateProviderProfile` and `restoreFocusedTaskProviderProfile`, so profile switching while a new conversation is pending no longer rebuilds the API handler of the old background conversation.
+
 ## 9.1.4
 
 ### Patch Changes
