@@ -77,7 +77,12 @@ vi.mock("vscode", () => {
 			},
 			showErrorMessage: vi.fn(),
 		},
-		workspace: {
+		// kilocode_change: Task constructor watches EXTRA/task/*.md progress files
+	RelativePattern: vi.fn().mockImplementation((base: unknown, pattern: string) => ({
+		base,
+		pattern,
+	})),
+	workspace: {
 			workspaceFolders: [
 				{
 					uri: { fsPath: "/mock/workspace/path" },

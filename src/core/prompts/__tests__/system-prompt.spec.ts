@@ -266,9 +266,11 @@ describe("SYSTEM_PROMPT", () => {
 		)
 
 		expect(prompt).toContain("RELIABLE COMMAND EXECUTION")
-		expect(prompt).toContain("Never send a long, complex, or escape-sensitive command directly to execute_command")
+		expect(prompt).toContain("MANDATORY SCRIPT-FIRST RULE")
+		expect(prompt).toContain(
+			"must NEVER be sent directly to execute_command",
+		)
 		expect(prompt).toContain("VSCodium terminal integration")
-		expect(prompt).toContain("escape-sensitive command")
 		expect(prompt).toContain("current workspace's `EXTRA/bash/` directory")
 		expect(prompt).toContain("current workspace's `EXTRA/output/` directory")
 		expect(prompt).toContain("persist complete stdout and stderr to a task-specific log file")

@@ -68,6 +68,11 @@ vi.mock("vscode", () => {
 			},
 			showErrorMessage: vi.fn(),
 		},
+		// kilocode_change: Task constructor watches EXTRA/task/*.md progress files
+		RelativePattern: vi.fn().mockImplementation((base: unknown, pattern: string) => ({
+			base,
+			pattern,
+		})),
 		workspace: {
 			workspaceFolders: [
 				{
@@ -76,13 +81,14 @@ vi.mock("vscode", () => {
 					index: 0,
 				},
 			],
-			createFileSystemWatcher: vi.fn(() => ({
-				onDidCreate: vi.fn(() => mockDisposable),
-				onDidDelete: vi.fn(() => mockDisposable),
-				onDidChange: vi.fn(() => mockDisposable),
-				dispose: vi.fn(),
-			})),
-			fs: {
+		createFileSystemWatcher: vi.fn(() => ({
+			onDidCreate: vi.fn(() => mockDisposable),
+			onDidDelete: vi.fn(() => mockDisposable),
+			onDidChange: vi.fn(() => mockDisposable),
+			dispose: vi.fn(),
+		})),
+		// kilocode_change: Task constructor watches EXTRA/task/*.md progress files (moved to top level)
+		fs: {
 				stat: vi.fn().mockResolvedValue({ type: 1 }),
 			},
 			onDidSaveTextDocument: vi.fn(() => mockDisposable),

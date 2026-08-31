@@ -53,6 +53,8 @@ describe("Command Execution Timeout Integration", () => {
 				}),
 			},
 			say: vitest.fn().mockResolvedValue(undefined),
+			// kilocode_change: pending command-output feedback queue consumed by ExecuteCommandTool
+			consumePendingCommandOutputFeedback: vitest.fn().mockReturnValue(undefined),
 		}
 
 		// Mock terminal process
@@ -248,10 +250,12 @@ describe("Command Execution Timeout Integration", () => {
 				rooIgnoreController: {
 					validateCommand: vitest.fn().mockReturnValue(null),
 				},
-				lastMessageTs: Date.now(),
-				ask: vitest.fn(),
-				didRejectTool: false,
-			}
+			lastMessageTs: Date.now(),
+			ask: vitest.fn(),
+			didRejectTool: false,
+			// kilocode_change: pending command-output feedback queue consumed by ExecuteCommandTool
+			consumePendingCommandOutputFeedback: vitest.fn().mockReturnValue(undefined),
+		}
 		})
 
 		it("should skip timeout for commands in allowlist", async () => {

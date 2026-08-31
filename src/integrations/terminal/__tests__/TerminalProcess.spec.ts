@@ -323,6 +323,42 @@ describe("TerminalProcess", () => {
 			expect(noShellIntegrationSpy).not.toHaveBeenCalled()
 		})
 
+		// kilocode_change start: echo-only stream recovery
+		it("recovers real output from the terminal screen when the marker-less stream carried only the command echo", async () => {
+			let completedOutput = ""
+			const continueSpy = vi.fn()
+			// Stream contains the pre-command prompt (A/B) plus only the echoed
+			// command line; the actual grep results never reached the stream.
+			const echoOnlyStream = (async function* () {
+				yield "\x1b]633;A\x1b\\user@host:~/proj\x1b]633;B\x1b\\"
+				yield "grep -rn 'match' src\n"
+				terminalProcess.emit("shell_execution_complete", { exitCode: 0 })
+			})()
+
+			terminalProcess.on("completed", (output) => {
+				completedOutput = output || ""
+			})
+			terminalProcess.on("continue", continueSpy)
+
+			const screenContentsSpy = vi.spyOn(Terminal, "getTerminalContents").mockResolvedValue(
+				"user@host:~/proj$ grep -rn 'match' src\nsrc/foo.ts:42:const match = 7\nsrc/bar.ts:7:match found",
+			)
+			mockTerminal.shellIntegration.executeCommand.mockReturnValue({
+				read: vi.fn().mockReturnValue(echoOnlyStream),
+			})
+
+			const runPromise = terminalProcess.run("grep -rn 'match' src")
+			await expect(runPromise).resolves.toBeUndefined()
+
+			expect(screenContentsSpy).toHaveBeenCalled()
+			expect(completedOutput).toContain("src/foo.ts:42:const match = 7")
+			expect(completedOutput).toContain("terminal screen content used to recover the command output")
+			expect(completedOutput).not.toContain("raw terminal output preserved")
+			expect(continueSpy).toHaveBeenCalledTimes(1)
+			screenContentsSpy.mockRestore()
+		})
+		// kilocode_change end
+
 		it("completes when shell execution ends but the output stream never closes", async () => {
 			let completedOutput = ""
 			const continueSpy = vi.fn()

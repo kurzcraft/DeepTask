@@ -226,6 +226,15 @@ export class TerminalProcess extends BaseTerminalProcess {
 
 		let preOutput = ""
 		let commandOutputStarted = false
+		// kilocode_change start
+		// Fresh-prompt lookback: VS Code sometimes never emits OSC 633;C for
+		// multi-line / quoted inline commands, and may never fire the shell end
+		// event either. Once the shell paints a NEW prompt (OSC 633;A / 133;A after
+		// the command echo has already streamed), the command has finished and the
+		// terminal is interactive again. Detect that boundary on the accumulated
+		// buffer so the tool result can still settle.
+		let freshPromptDetected: string | undefined
+		// kilocode_change end
 
 		/*
 		 * Extract clean output from raw accumulated output. FYI:
@@ -257,13 +266,17 @@ export class TerminalProcess extends BaseTerminalProcess {
 					setTimeout(() => resolve("deadline"), 1_000)
 				}),
 		)
-		// If VS Code closes the backing terminal shell, neither the shell execution
-		// end event nor the output iterator is guaranteed to resolve. Poll the
-		// terminal close state so a failed/terminated bash cannot leave the command
-		// tool waiting forever on an abandoned stream.
-		let terminalClosePollId: NodeJS.Timeout | undefined
-		const terminalClosed = new Promise<"terminal_closed">((resolve) => {
-			terminalClosePollId = setInterval(() => {
+	// If VS Code closes the backing terminal shell, neither the shell execution
+	// end event nor the output iterator is guaranteed to resolve. Poll the
+	// terminal close state so a failed/terminated bash cannot leave the command
+	// tool waiting forever on an abandoned stream.
+	let terminalClosePollId: NodeJS.Timeout | undefined
+	const terminalClosed = new Promise<"terminal_closed">((resolve) => {
+		terminalClosePollId = setInterval(() => {
+			// kilocode_change: the terminal reference can be garbage-collected
+			// while a retained process still polls; dereference defensively so the
+			// poll itself can never crash the extension host.
+			try {
 				if (this.terminal.isClosed()) {
 					if (terminalClosePollId) {
 						clearInterval(terminalClosePollId)
@@ -271,8 +284,15 @@ export class TerminalProcess extends BaseTerminalProcess {
 					}
 					resolve("terminal_closed")
 				}
-			}, 100)
-		})
+			} catch {
+				if (terminalClosePollId) {
+					clearInterval(terminalClosePollId)
+					terminalClosePollId = undefined
+				}
+				resolve("terminal_closed")
+			}
+		}, 100)
+	})
 		while (true) {
 			const next = await Promise.race([
 				streamIterator.next().then((result) => ({ kind: "item" as const, result })),
@@ -284,10 +304,15 @@ export class TerminalProcess extends BaseTerminalProcess {
 			}
 
 			let data = next.result.value
-			// Check for command output start marker
+			// kilocode_change start
+
 			if (!commandOutputStarted) {
 				preOutput += data
-				const match = this.matchAfterVsceStartMarkers(data)
+
+				// The accumulated buffer makes marker matching robust to arbitrary
+				// chunk boundaries; the previous single-chunk match silently dropped
+				// output whenever VS Code split an OSC marker across chunks.
+				const match = this.matchAfterVsceStartMarkers(preOutput)
 
 				if (match !== undefined) {
 					commandOutputStarted = true
@@ -295,9 +320,39 @@ export class TerminalProcess extends BaseTerminalProcess {
 					this.fullOutput = "" // Reset fullOutput when command actually starts
 					this.emit("line", "") // Trigger UI to proceed
 				} else {
+					// No C marker yet. Two bounded exits remain available for commands
+					// whose C marker never arrives:
+					//   1. A D marker in the pre-start buffer: VS Code already ran and
+					//      finished the command without ever marking its start.
+					//   2. A fresh prompt after the command echo: the shell returned
+					//      to the interactive prompt, so the command has completed
+					//      even though OSC 633;C was swallowed.
+					const preEndMatch = this.matchBeforeVsceEndMarkers(preOutput)
+
+					if (preEndMatch !== undefined) {
+						// Command completed without a C marker: preserve the raw
+						// output instead of looping forever waiting for one.
+						freshPromptDetected = "end_marker_in_preoutput"
+						this.fullOutput = preEndMatch
+						commandOutputStarted = true
+						break
+					}
+
+					// The initial pre-command prompt marker (633;A...633;B) is the
+					// first marker in the buffer. Any additional 633;A/133;A marker
+					// after the echoed command lines is a fresh interactive prompt:
+					// the command has finished.
+					if (this.hasFreshPromptAfterEcho(preOutput)) {
+						freshPromptDetected = "fresh_prompt_after_echo"
+						this.fullOutput = this.stripLeadingEchoAndPrompt(preOutput)
+						commandOutputStarted = true
+						break
+					}
+
 					continue
 				}
 			}
+			// kilocode_change end
 
 			// Command output started, accumulate data without filtering.
 			// notice to future programmers: do not add escape sequence
@@ -349,6 +404,23 @@ export class TerminalProcess extends BaseTerminalProcess {
 
 		this.isHot = false
 
+		// kilocode_change start
+		if (freshPromptDetected) {
+			// The command completed through the fresh-prompt or pre-output D-marker
+			// boundary. fullOutput already holds the preserved output; annotate the
+			// completion so the model knows why no OSC 633;C marker framed it.
+			this.emitRemainingBufferIfListening()
+			this.stopHotTimer()
+			const freshOutput = this.removeEscapeSequences(this.fullOutput)
+			this.emit(
+				"completed",
+				`${freshOutput}\n<VSCE shell integration start marker missing (${freshPromptDetected}); command completion detected via fresh shell prompt / end marker in raw terminal output.>`,
+			)
+			this.continue()
+			return
+		}
+		// kilocode_change end
+
 		if (commandOutputStarted) {
 			// Emit any remaining output before completing
 			this.emitRemainingBufferIfListening()
@@ -363,6 +435,69 @@ export class TerminalProcess extends BaseTerminalProcess {
 			// emitting no_shell_integration here. That event is a terminal-abort signal and
 			// its constructor listener would otherwise complete the process with a placeholder
 			// before the preserved raw output can be delivered.
+			const cleanedPreOutput = this.removeEscapeSequences(preOutput).trim()
+
+			if (cleanedPreOutput.length === 0) {
+				// The stream produced no usable data at all (dropped stream, competing
+				// consumer, or completion-before-stream ordering). Fall back to the
+				// visible terminal transcript for the last command so the executed
+				// command's output still reaches the model instead of an empty result.
+				let screenFallback = ""
+
+				try {
+					// Note: this reads the *active* terminal panel; it is a last-resort
+					// recovery path only, because no stream data survived to reuse.
+					screenFallback = (await Terminal.getTerminalContents(1)).trim()
+				} catch (error) {
+					console.warn("[TerminalProcess] Terminal screen fallback failed:", error)
+				}
+
+				this.fullOutput = screenFallback
+
+				this.emit(
+					"completed",
+					`${screenFallback}\n<VSCE shell integration start marker missing and stream data was empty; terminal screen content used as fallback output.>`,
+				)
+				this.continue()
+				return
+			}
+
+		// kilocode_change start: echo-only stream recovery
+		// When the C marker is missing, VS Code can hand us a stream that only
+		// ever carried the echoed command line while the real command output
+		// went straight to the terminal buffer. Preserving that echo as the
+		// "output" shows the model the command text instead of its results and
+		// made users report the output as swallowed. Strip the echo first; if
+		// nothing meaningful remains, recover the visible terminal transcript.
+		const preservedRaw = this.removeEscapeSequences(preOutput).trim()
+		const strippedEcho = this.removeEscapeSequences(this.stripLeadingEchoAndPrompt(preOutput, command)).trim()
+
+		// A marker-less stream whose only real content was the command echo (or
+		// that carried no data at all) cannot satisfy any output requirement:
+		// recover from the visible terminal transcript instead.
+		if (preservedRaw.length === 0 || strippedEcho.length === 0) {
+			let screenFallback = ""
+
+			try {
+				// Note: this reads the *active* terminal panel; it is a last-resort
+				// recovery path only, because no stream data survived to reuse.
+				screenFallback = (await Terminal.getTerminalContents(1)).trim()
+			} catch (error) {
+				console.warn("[TerminalProcess] Terminal screen fallback failed:", error)
+			}
+
+			const recovered = screenFallback.length > 0 ? screenFallback : preservedRaw
+			this.fullOutput = recovered
+
+			this.emit(
+				"completed",
+				`${recovered}\n<VSCE shell integration start marker missing; stream carried only the command echo or no data; terminal screen content used to recover the command output.>`,
+			)
+			this.continue()
+			return
+		}
+		// kilocode_change end
+
 			this.fullOutput = this.removeEscapeSequences(preOutput)
 			this.emit(
 				"completed",
@@ -386,6 +521,27 @@ export class TerminalProcess extends BaseTerminalProcess {
 		// so that api request stalls to let diagnostics catch up").
 		this.stopHotTimer()
 		let output = this.removeEscapeSequences(this.fullOutput)
+
+		// kilocode_change: a competing stream consumer (or a VS Code stream race)
+		// can leave fullOutput empty even though the C/D markers framed normally.
+		// An empty result would starve the model of the command output entirely,
+		// so recover from the visible terminal transcript as a last resort.
+		if (output.trim().length === 0) {
+			let screenFallback = ""
+
+			try {
+				screenFallback = (await Terminal.getTerminalContents(1)).trim()
+			} catch (error) {
+				console.warn("[TerminalProcess] Terminal screen fallback failed:", error)
+			}
+
+			if (screenFallback.length > 0) {
+				this.fullOutput = screenFallback
+				output = screenFallback
+				output += "\n<VSCE command stream produced no data; terminal screen content used to recover the command output.>"
+			}
+		}
+
 		if (missingShellExecutionEndEvent) {
 			output +=
 				"\n<VSCE shell execution end event not received after stream closed; treated stream close as command completion.>"
@@ -477,6 +633,97 @@ export class TerminalProcess extends BaseTerminalProcess {
 		return this.removeEscapeSequences(outputToProcess)
 	}
 
+	// kilocode_change start
+	// Fresh-prompt lookback helpers: see the streaming loop in run(). When VS Code
+	// swallows the OSC 633;C start marker for multi-line / quoted inline commands
+	// but the shell still returns to a fresh interactive prompt after the command
+	// finishes, use that prompt as the completion boundary instead of waiting
+	// forever for a marker or end event that never arrives.
+	private hasFreshPromptAfterEcho(buffer: string): boolean {
+		// A prompt start marker that appears strictly after the first line break
+		// cannot be part of the initial pre-command prompt echo.
+		// eslint-disable-next-line no-control-regex
+		const promptMarkerRe = /(?:\x1b\]633;A|\x1b\]133;A)[^\x07\x1b]*(?:\x07|\x1b\\)/g
+		const firstNewline = buffer.indexOf("\n")
+
+		if (firstNewline === -1) {
+			return false
+		}
+
+		promptMarkerRe.lastIndex = 0
+		let match: RegExpExecArray | null
+		let freshPrompt = false
+
+		while ((match = promptMarkerRe.exec(buffer)) !== null) {
+			if (match.index > firstNewline) {
+				freshPrompt = true
+				break
+			}
+		}
+
+		return freshPrompt
+	}
+
+	private stripLeadingEchoAndPrompt(buffer: string, command?: string): string {
+		// Remove the leading pre-command prompt (OSC 633;A...633;B) and the echoed
+		// command line so the preserved output resembles normal command output.
+		// eslint-disable-next-line no-control-regex
+		const promptEndMarker = /\x1b\]633;B[^\x07\x1b]*(?:\x07|\x1b\\)/
+		const promptEndMatch = promptEndMarker.exec(buffer)
+
+		if (promptEndMatch) {
+			const afterPrompt = buffer.slice(promptEndMatch.index + promptEndMatch[0].length)
+			// Skip the echoed command line: the first line after the prompt is the
+			// command itself (or the first line of a multi-line command).
+			const firstNewline = afterPrompt.indexOf("\n")
+
+			if (firstNewline !== -1) {
+				return afterPrompt.slice(firstNewline + 1)
+			}
+
+			return afterPrompt
+		}
+
+		// kilocode_change: no OSC prompt markers at all (marker-less stream). Such a
+		// stream commonly carries only the echoed command line(s) while the real
+		// command output went straight to the terminal buffer. Strip leading lines
+		// that reproduce the command text so echo-only streams are recognized as
+		// content-free and the screen-recovery path can supply the real output.
+		if (command) {
+			const cmdLines = command
+				.split("\n")
+				.map((line) => line.trim())
+				.filter((line) => line.length > 0)
+			const lines = buffer.split("\n")
+			let i = 0
+
+			// Skip leading blank lines before the echo.
+			while (i < lines.length && lines[i].trim().length === 0) {
+				i++
+			}
+
+			for (const cmdLine of cmdLines) {
+				const candidate = (lines[i] ?? "").trim()
+
+				if (
+					candidate.length === 0 ||
+					candidate === cmdLine ||
+					candidate.endsWith(cmdLine) ||
+					cmdLine.startsWith(candidate)
+				) {
+					i++
+				} else {
+					break
+				}
+			}
+
+			return lines.slice(i).join("\n")
+		}
+
+		return buffer
+	}
+	// kilocode_change end
+
 	private emitRemainingBufferIfListening() {
 		if (this.isListening) {
 			const remainingBuffer = this.getUnretrievedOutput()
@@ -491,7 +738,6 @@ export class TerminalProcess extends BaseTerminalProcess {
 		data: string,
 		prefix?: string,
 		suffix?: string,
-		bell: string = "\x07",
 	): string | undefined {
 		let startIndex: number
 		let endIndex: number
@@ -507,19 +753,34 @@ export class TerminalProcess extends BaseTerminalProcess {
 				return undefined
 			}
 
-			if (bell.length > 0) {
-				// Find the bell character after the prefix
-				const bellIndex = data.indexOf(bell, startIndex + prefix.length)
+			// kilocode_change: OSC sequences can be terminated by either BEL
+			// (\x07) or ST (\x1b\\). Accept whichever terminates the marker first.
+			const belIndex = data.indexOf("\x07", startIndex + prefix.length)
+			const stIndex = data.indexOf("\x1b\\", startIndex + prefix.length)
+			let terminatorIndex = -1
+			let terminatorLength = 0
 
-				if (bellIndex === -1) {
-					return undefined
+			if (belIndex !== -1 && stIndex !== -1) {
+				if (belIndex <= stIndex) {
+					terminatorIndex = belIndex
+					terminatorLength = 1
+				} else {
+					terminatorIndex = stIndex
+					terminatorLength = 2
 				}
-
-				const distanceToBell = bellIndex - startIndex
-				prefixLength = distanceToBell + bell.length
-			} else {
-				prefixLength = prefix.length
+			} else if (belIndex !== -1) {
+				terminatorIndex = belIndex
+				terminatorLength = 1
+			} else if (stIndex !== -1) {
+				terminatorIndex = stIndex
+				terminatorLength = 2
 			}
+
+			if (terminatorIndex === -1) {
+				return undefined
+			}
+
+			prefixLength = terminatorIndex - startIndex + terminatorLength
 		}
 
 		const contentStart = startIndex + prefixLength
@@ -547,8 +808,15 @@ export class TerminalProcess extends BaseTerminalProcess {
 	// should be carefully considered to ensure they only remove control codes and don't
 	// alter the actual content or behavior of the output stream.
 	private removeEscapeSequences(str: string): string {
+		// kilocode_change: also strip OSC sequences terminated by ST (\x1b\\),
+		// which VSCodium can emit instead of BEL (\x07). BEL-only matching left
+		// raw ]633;... sequences visible in command output.
 		// eslint-disable-next-line no-control-regex
-		return stripAnsi(str.replace(/\x1b\]633;[^\x07]+\x07/gs, "").replace(/\x1b\]133;[^\x07]+\x07/gs, ""))
+		return stripAnsi(
+			str
+				.replace(/\x1b\]633;[^\x07\x1b]*(?:\x07|\x1b\\)/gs, "")
+				.replace(/\x1b\]133;[^\x07\x1b]*(?:\x07|\x1b\\)/gs, ""),
+		)
 	}
 
 	/**

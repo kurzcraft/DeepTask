@@ -378,6 +378,16 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	private _taskApiConfigName: string | undefined
 
 	/**
+	 * Model ID the task is bound to (kilocode_change).
+	 *
+	 * Parallel conversations share one ClineProvider; switching the model inside
+	 * one conversation updates the global profile, which would otherwise leak to
+	 * every other conversation. This field records the exact model this task
+	 * uses so focus switches can restore it, mirroring `_taskApiConfigName`.
+	 */
+	private _taskApiModelId: string | undefined
+
+	/**
 	 * Promise that resolves when the task API config name has been initialized.
 	 * This ensures async API config name initialization completes before the task is used.
 	 *
@@ -778,6 +788,8 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		if (historyItem) {
 			this._taskMode = historyItem.mode || defaultModeSlug
 			this._taskApiConfigName = historyItem.apiConfigName
+			// kilocode_change: sticky model isolation for parallel conversations
+			this._taskApiModelId = historyItem.apiModelId
 			this.taskModeReady = Promise.resolve()
 			this.taskApiConfigReady = Promise.resolve()
 			TelemetryService.instance.captureTaskRestarted(this.taskId)
@@ -789,6 +801,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			// For new tasks, don't set the mode/apiConfigName yet - wait for async initialization.
 			this._taskMode = undefined
 			this._taskApiConfigName = undefined
+			this._taskApiModelId = undefined // kilocode_change
 			this.taskModeReady = this.initializeTaskMode(provider)
 			this.taskApiConfigReady = this.initializeTaskApiConfigName(provider)
 			TelemetryService.instance.captureTaskCreated(this.taskId)
@@ -990,6 +1003,11 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			if (this._taskApiConfigName === undefined) {
 				this._taskApiConfigName = state?.currentApiConfigName ?? "default"
 			}
+			// kilocode_change: capture the model id the task starts with so later
+			// in-profile model switches in another conversation cannot leak here.
+			if (this._taskApiModelId === undefined && state?.apiConfiguration) {
+				this._taskApiModelId = getModelId(state.apiConfiguration)
+			}
 		} catch (error) {
 			// If there's an error getting state, use the default profile (unless a newer value was set).
 			if (this._taskApiConfigName === undefined) {
@@ -1024,10 +1042,18 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 				// Without this guard, activating a profile in a new conversation
 				// would re-point every running background conversation's API
 				// handler at the new profile (silent cross-conversation pollution).
+				// Prefer getFocusedChatTask() (pending-aware): while a brand-new
+				// conversation is pending (no Task yet) the stack top is still an
+				// older conversation, and that older conversation must NOT adopt
+				// the model the user is picking for the pending one.
 				// Falls back to legacy follow-global behavior for test mocks that
-				// do not implement getCurrentTask().
+				// do not implement these methods.
 				const focusedTask =
-					typeof provider.getCurrentTask === "function" ? provider.getCurrentTask() : this
+					typeof provider.getFocusedChatTask === "function"
+						? (provider.getFocusedChatTask() ?? null)
+						: typeof provider.getCurrentTask === "function"
+							? provider.getCurrentTask()
+							: this
 				if (focusedTask !== this) {
 					return
 				}
@@ -1039,7 +1065,11 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 					// have changed while state was loading; never apply a foreign
 					// profile to this task.
 					const focusedTaskAfterAwait =
-						typeof provider.getCurrentTask === "function" ? provider.getCurrentTask() : this
+						typeof provider.getFocusedChatTask === "function"
+							? (provider.getFocusedChatTask() ?? null)
+							: typeof provider.getCurrentTask === "function"
+								? provider.getCurrentTask()
+								: this
 					if (focusedTaskAfterAwait !== this) {
 						return
 					}
@@ -1212,6 +1242,20 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	 */
 	public setTaskApiConfigName(apiConfigName: string | undefined): void {
 		this._taskApiConfigName = apiConfigName
+	}
+
+	/**
+	 * The model this task is bound to (kilocode_change). Used by
+	 * `restoreFocusedTaskProviderProfile` to bring the focused parallel
+	 * conversation back to its own model after another conversation switched
+	 * models inside the same provider profile.
+	 */
+	public get taskApiModelId(): string | undefined {
+		return this._taskApiModelId
+	}
+
+	public setTaskApiModelId(apiModelId: string | undefined): void {
+		this._taskApiModelId = apiModelId
 	}
 
 	static create(options: TaskOptions): [Task, Promise<void>] {
@@ -1744,6 +1788,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 					workspace: this.cwd,
 					mode: this._taskMode || defaultModeSlug, // Use the task's own mode, not the current provider mode.
 					apiConfigName: this._taskApiConfigName, // Use the task's own provider profile, not the current provider profile.
+					apiModelId: this._taskApiModelId ?? getModelId(this.apiConfiguration), // kilocode_change: sticky model isolation
 					taskProgressFilePath: this.taskProgressFilePath,
 					taskProgressInstanceId: this.taskProgressInstanceId,
 					initialStatus: this.continuationStatusOverride ?? this.initialStatus,
@@ -2219,6 +2264,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	private applyApiConfiguration(newApiConfiguration: ProviderSettings): void {
 		this.apiConfiguration = newApiConfiguration
 		this.api = buildApiHandler(this.apiConfiguration)
+		// Record the model this task now runs on so a later focus switch can
+		// restore it even when the global profile itself changed models.
+		this._taskApiModelId = getModelId(newApiConfiguration)
 	}
 
 	private applyPendingApiConfiguration(): void {

@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.1.3</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.1.4</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.1.3** 让 Windows 命令执行开箱即用：当默认集成终端是 `cmd.exe`（没有 VS Code 官方 shell 集成脚本）时，插件自动改走带完整输出与退出码的子进程执行路径，不再死等 OSC 633;A 握手 5 秒后失败；Windows 上集成初始化超时同样自动降级为直接执行，`echo`、`.bat/.cmd`、`.ps1` 第一条命令就能跑通，无需改任何 VS Code 设置；降级执行的命令行、实时输出、退出码与中止还会实时回显到集成终端的伪终端转录视图，终端不再只剩空提示符。同时系统提示词加入硬性规则：超过 4 行的命令、含内嵌文档文本/嵌套引号/JSON/YAML/SQL 载荷/特殊数据管道等易卡死结构的命令，必须先写成脚本文件再执行，防止终端卡死。消息编辑不再被静默丢弃（目标行已移除时自动转为续发投递），任务完成后继续发消息也不再删掉面板中的绿色完成总结。新增 `manage_provider_profile` 工具：模型可列出、创建、更新、重命名提供商配置（provider、endpoint、key、模型、上下文窗口、原始 settings），并可直接切换自身推理强度（含关闭），密钥始终脱敏且每次变更都需用户确认；该工具所有操作（含推理强度切换）随默认开启的配置切换门控自动批准，推理强度变化也会即时同步到界面与下一次请求。任务完成后的即时回复现在作为续发轮次投递：模型直接回应用户的新消息，不再用空的完成总结直接结束任务。
+> **Deeptask 9.1.4** 彻底消除多行/长命令执行完毕后界面卡在“强制继续”的问题：VS Code 对多行或引号跨行命令可能既不发 shell 集成结束事件、也不发 OSC 633;C 起始标记、还不关闭输出流，终端进程现在改为对累计缓冲做标记匹配（跨 chunk 分裂安全，兼容 BEL 与 ST 终止符），把“命令回显之后出现的新交互提示符”识别为完成边界，起始标记缺失时也接受 D 标记收口，并轮询终端关闭状态，任何类型的命令最终都会收敛出真实结果。被吞的命令输出也能找回：只带回显的标记缺失流、以及被竞争消费者吃空的框架内空流，都会回读终端屏幕转录，把真实输出还给模型。系统提示词进一步硬化：所有命令必须先写入 `EXTRA/bash/` 脚本文件再以单行方式执行，脚本用 tee 把完整 stdout/stderr 持久化到 `EXTRA/output/` 并打印日志路径与退出码（原生与 XML 工具描述、capabilities、rules、system 五处对齐）。同时修复并行对话模型串扰：给全新并行对话选模型时，不再把旧后台对话的 API handler 一并切过去。终端关闭轮询对已被回收的终端引用做了防御，并在到达任一完成边界后立即停止，命令完成后终端不再被标记为忙碌。
 
 ## 你可以怎样使用 Deeptask
 
@@ -113,17 +113,17 @@ Deeptask 将任务视为可恢复状态机，而不是一次性回答。未完�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.1.3.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.1.4.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.1.3.vsix --force
+    codium --install-extension ./deeptask-9.1.4.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.1.3.vsix --force
+    code --install-extension ./deeptask-9.1.4.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

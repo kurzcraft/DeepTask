@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.1.3</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.1.4</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.1.3** makes Windows command execution work out of the box: when the default integrated terminal is `cmd.exe` (which has no official VS Code shell-integration script), the extension automatically runs commands through a child-process executor with full stdout/stderr and a real exit code instead of failing after waiting 5s for the OSC 633;A handshake; Windows integration-init timeouts degrade the same way, so `echo`, `.bat/.cmd`, and `.ps1` all work on the first command with zero settings changes; the fallback execution (command line, live output, exit code, aborts) is mirrored live into a pseudoterminal transcript in the integrated terminal, so the panel never shows just an empty prompt. The system prompt also gains hard rules: commands longer than 4 lines, and commands containing embedded document text, nested quoting, JSON/YAML/SQL payloads, or exotic pipelines that can hang the terminal, must be written to a script file first and executed as that script. Edited messages are never silently dropped (edits whose target row was rewound away are delivered as continuations), and continuing a finished task no longer deletes the green completion summary from the panel. A new `manage_provider_profile` tool lets the model list, create, update, and rename provider profiles (provider, endpoint, key, model, context window, raw settings) and switch its own reasoning effort including off, with secrets always redacted and every mutation gated by user approval; every action of that tool (including reasoning-effort switching) is auto-approved under the default-on profile-switch gate, and reasoning-effort changes sync immediately to the UI and the next request. An immediate reply after task completion is now delivered as a continuation turn: the model answers the new user message directly instead of re-ending the task with an empty summary.
+> **Deeptask 9.1.4** eliminates the "force continue" stuck state after multi-line or long commands finish running: for such commands VS Code may skip the shell-integration end event, never emit the OSC 633;C start marker, and leave the execution stream open forever. The terminal process now matches start/end markers against the accumulated buffer (safe across chunk splits, accepting both BEL and ST terminators), treats a fresh interactive prompt after the command echo as the completion boundary, closes on a D marker found before the start marker, and polls terminal closure, so every kind of command eventually settles with a real result. Swallowed output is also recovered: marker-less streams that carried only the command echo, and framed-but-empty streams (competing stream consumers), now fall back to reading the visible terminal transcript so the model receives the real output. The system prompt is further hardened: every command must be written to a script file under `EXTRA/bash/` first and executed as a one-line script invocation, with the script teeing full stdout/stderr to `EXTRA/output/` and printing the log path and exit code (native and XML tool descriptions, capabilities, rules, and system sections aligned). Parallel-conversation model cross-talk is fixed too: picking a model for a brand-new parallel conversation no longer rebuilds an older background conversation's API handler. Terminal-close polling is defensive against garbage-collected terminal references and stops as soon as any completion boundary is reached, so finished commands never keep the terminal marked busy.
 
 ## What you can do with Deeptask
 
@@ -113,17 +113,17 @@ Deeptask treats work as a recoverable state machine rather than a one-shot answe
 
 ## Start in three minutes
 
-1. Download `deeptask-9.1.3.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.1.4.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.1.3.vsix --force
+    codium --install-extension ./deeptask-9.1.4.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.1.3.vsix --force
+    code --install-extension ./deeptask-9.1.4.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

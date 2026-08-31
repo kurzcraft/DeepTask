@@ -31,6 +31,8 @@ export const historyItemSchema = z.object({
 	 */
 	toolProtocol: z.enum(["xml", "native"]).optional(),
 	apiConfigName: z.string().optional(), // Provider profile name for sticky profile feature
+	/** Model ID the task last used (sticky profile + model isolation for parallel conversations). */
+	apiModelId: z.string().optional(), // kilocode_change
 	/** Stable workspace-relative progress checklist binding for cross-host restoration. */
 	taskProgressFilePath: z.string().optional(),
 	taskProgressInstanceId: z.string().optional(),

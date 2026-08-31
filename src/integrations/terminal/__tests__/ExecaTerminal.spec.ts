@@ -20,7 +20,8 @@ describe("ExecaTerminal", () => {
 			onShellExecutionComplete: vi.fn(),
 		}
 
-		const subprocess = terminal.runCommand("ls -al", callbacks)
+		// Force a stable locale so the `ls` header ("total") is locale-independent.
+		const subprocess = terminal.runCommand("LC_ALL=C ls -al", callbacks)
 		await subprocess
 
 		expect(callbacks.onLine).toHaveBeenCalled()

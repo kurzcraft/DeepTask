@@ -1,21 +1,21 @@
 import type OpenAI from "openai"
 
-const EXECUTE_COMMAND_DESCRIPTION = `Request to execute a short CLI command on the system. Tailor it to the user's environment and explain its purpose. Keep calls short and observable. HARD LIMIT: a command longer than 4 lines must NEVER be sent to this tool — first write it as a script file and execute only the script with a short one-line command. Commands containing embedded document text, nested quoting layers, JSON/YAML/SQL payloads, heredocs, or unusual data pipelines that can hang the terminal must also be written as script files first. For any long or complex operation (multiple chained operations, extensive quoting, expected runtime over about 30 seconds, or substantial output), first create its script under the current workspace's EXTRA/bash/ directory, make it persist complete stdout/stderr under the current workspace's EXTRA/output/ directory, and execute only that script here. Create those directories when needed. Then inspect the saved log with read_file. Prefer relative paths for terminal consistency.
+const EXECUTE_COMMAND_DESCRIPTION = `Request to execute a CLI command on the system. MANDATORY SCRIPT-FIRST RULE: every command, regardless of length, MUST first be written to a script file under the current workspace's EXTRA/bash/ directory (create the directory when needed) and then executed by running that script with a short one-line command — never send multi-line commands, heredocs, inline python -c / node -e programs, JSON/YAML/SQL payloads, or nested quoting directly to this tool. The script itself MUST stream the full execution process to the integrated terminal AND persist complete stdout and stderr (for example with tee and pipefail on bash) to a log file under the current workspace's EXTRA/output/ directory, then print the log file path and final exit status; afterwards inspect the saved log with read_file. Tailor commands to the user's environment and explain their purpose. Keep calls short and observable. Prefer relative paths for terminal consistency.
 
 Parameters:
-- command: (required) The CLI command to execute. This should be valid for the current operating system. Ensure the command is properly formatted and does not contain any harmful instructions.
+- command: (required) The short one-line command that runs the prepared script. This should be valid for the current operating system. Ensure the command is properly formatted and does not contain any harmful instructions.
 - cwd: (optional) The working directory to execute the command in
 
-Example: Executing npm run dev
-{ "command": "npm run dev", "cwd": null }
+Example: Executing a prepared script
+{ "command": "bash EXTRA/bash/run_build.sh", "cwd": null }
 
-Example: Executing ls in a specific directory if directed
-{ "command": "ls -la", "cwd": "/home/user/projects" }
+Example: Running the prepared script in a specific directory if directed
+{ "command": "bash EXTRA/bash/check_status.sh", "cwd": "/home/user/projects" }
 
 Example: Using relative paths
-{ "command": "touch ./testdata/example.file", "cwd": null }`
+{ "command": "bash ./scripts/verify.sh", "cwd": null }`
 
-const COMMAND_PARAMETER_DESCRIPTION = `Short shell command to execute; long or complex work must be placed in a durable-logging script first`
+const COMMAND_PARAMETER_DESCRIPTION = `Short one-line command that executes a prepared script file; all multi-line or complex work must be scripted under EXTRA/bash/ with durable logs under EXTRA/output/ first`
 
 const CWD_PARAMETER_DESCRIPTION = `Optional working directory for the command, relative or absolute`
 

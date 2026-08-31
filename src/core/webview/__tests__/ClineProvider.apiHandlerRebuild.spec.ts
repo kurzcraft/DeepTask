@@ -115,6 +115,9 @@ vi.mock("../../task/Task", () => ({
 			overwriteApiConversationHistory: vi.fn(),
 			taskId: options?.historyItem?.id || "test-task-id",
 			emit: vi.fn(),
+			// kilocode_change: state broadcast reads the task-loop liveness flag
+			// (commands/tools keep the loop active after HTTP streaming ends).
+			isActivelyRunningTaskLoop: vi.fn().mockReturnValue(false),
 			updateApiConfiguration: vi.fn().mockImplementation(function (this: any, newConfig: any) {
 				this.apiConfiguration = newConfig
 			}),

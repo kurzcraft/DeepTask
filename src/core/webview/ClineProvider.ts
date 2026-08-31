@@ -2105,8 +2105,41 @@ export class ClineProvider
 		providerSettings: ProviderSettings,
 		options: { forceRebuild?: boolean } = {},
 	): void {
-		const task = this.getCurrentTask()
+		// kilocode_change start: parallel conversations
+		// Route handler updates to the task the user is actually chatting with,
+		// not blindly to the stack top. With parallel conversations the stack
+		// top can be a background task while the user is configuring a model
+		// for a pending/focused conversation; rebuilding the background task's
+		// handler silently switched that conversation's model (cross-talk).
+		if (this.pendingNewConversation) {
+			// The user is configuring a model for a conversation whose Task has
+			// not been created yet. That selection must not touch any existing
+			// conversation's handler; the pending task will pick the global
+			// profile up when it is constructed.
+			return
+		}
+		let task: Task | undefined
+		if (typeof this.getFocusedChatTask === "function") {
+			task = this.getFocusedChatTask()
+
+			// kilocode_change: model cross-talk guard. getFocusedChatTask()
+			// returns undefined when the focused conversation exists but its
+			// Task has not landed in clineStack yet (fresh parallel tab /
+			// subagent pending). Falling back to the stack top in that window
+			// applied the new conversation's model to an older background
+			// conversation. When a focused conversation is resolvable but has
+			// no live Task, touch nothing: the future task adopts the profile
+			// at construction time.
+			if (!task && this.parallelManager?.focusedConversationId) {
+				return
+			}
+
+			task ??= this.getCurrentTask()
+		} else {
+			task = this.getCurrentTask()
+		}
 		if (!task) return
+		// kilocode_change end
 
 		const { forceRebuild = false } = options
 
@@ -2248,7 +2281,11 @@ export class ClineProvider
 	}
 
 	private async persistStickyProviderProfileToCurrentTask(apiConfigName: string): Promise<void> {
-		const task = this.getCurrentTask()
+		// kilocode_change: parallel conversations
+		// The sticky profile/model must follow the conversation the user is
+		// configuring, not the stack top (which can be a background task).
+		const task =
+			(this.pendingNewConversation ? undefined : this.getFocusedChatTask()) ?? this.getCurrentTask()
 		if (!task) {
 			return
 		}
@@ -2257,12 +2294,19 @@ export class ClineProvider
 			// Update in-memory state immediately so sticky behavior works even before the task has
 			// been persisted into taskHistory (it will be captured on the next save).
 			task.setTaskApiConfigName(apiConfigName)
+			// kilocode_change: model-level stickiness so two conversations on
+			// the same profile can hold different models.
+			task.setTaskApiModelId(task.apiConfiguration ? getModelId(task.apiConfiguration) : undefined)
 
 			const history = this.getGlobalState("taskHistory") ?? []
 			const taskHistoryItem = history.find((item) => item.id === task.taskId)
 
 			if (taskHistoryItem) {
-				await this.updateTaskHistory({ ...taskHistoryItem, apiConfigName })
+				await this.updateTaskHistory({
+					...taskHistoryItem,
+					apiConfigName,
+					apiModelId: task.taskApiModelId,
+				})
 			}
 		} catch (error) {
 			// If persistence fails, log the error but don't fail the profile switch.
@@ -3974,6 +4018,11 @@ export class ClineProvider
 			return
 		}
 		const savedName = await taskAtEntry.getTaskApiConfigName()
+		// kilocode_change: model-level stickiness. Two conversations can share
+		// one provider profile while using different models; restoring by name
+		// alone silently moved the refocused conversation onto whichever model
+		// the other conversation last selected inside that profile.
+		const savedModelId = taskAtEntry.taskApiModelId
 		if (!savedName) {
 			return
 		}
@@ -3982,14 +4031,44 @@ export class ClineProvider
 		if (this.getCurrentTask() !== taskAtEntry) {
 			return
 		}
-		const { currentApiConfigName } = await this.getState()
-		if (savedName === currentApiConfigName) {
+		const { currentApiConfigName, apiConfiguration } = await this.getState()
+		const currentModelId = apiConfiguration ? getModelId(apiConfiguration) : undefined
+		const profileMatches = savedName === currentApiConfigName
+		const modelMatches = !savedModelId || savedModelId === currentModelId
+		if (profileMatches && modelMatches) {
 			return
 		}
 		// Re-check focus once more after the second await.
 		if (this.getCurrentTask() !== taskAtEntry) {
 			return
 		}
+
+		if (profileMatches && savedModelId && !modelMatches) {
+			// Same profile, different model: re-point only this task's handler
+			// at its sticky model without rewriting the global profile (the
+			// other conversation keeps its own selection).
+			const profile = await this.providerSettingsManager.getProfile({ name: savedName })
+			const { name: _n, id: _i, ...stored } = profile
+			const modelKey =
+				modelIdKeys.find((key) => key in stored) ??
+				(isTypicalProvider(stored.apiProvider)
+					? modelIdKeysByProvider[stored.apiProvider]
+					: stored.apiProvider === "openai" || stored.apiProvider === "openai-responses"
+						? "openAiModelId"
+						: undefined)
+			if (modelKey) {
+				const scoped: ProviderSettings = { ...stored, [modelKey]: savedModelId }
+				// Re-check focus after the profile await.
+				if (this.getCurrentTask() !== taskAtEntry) {
+					return
+				}
+				taskAtEntry.updateApiConfiguration(scoped)
+				await this.postStateToWebview()
+				return
+			}
+			// No usable model key: fall through to whole-profile restoration.
+		}
+
 		const profile = this.getProviderProfileEntry(savedName)
 		if (!profile) {
 			return

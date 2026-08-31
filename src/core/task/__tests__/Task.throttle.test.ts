@@ -6,6 +6,42 @@ import { hasToolUsageChanged, hasTokenUsageChanged } from "../../../shared/getAp
 
 // Mock dependencies
 vi.mock("../../webview/ClineProvider")
+// kilocode_change start: Task constructor watches EXTRA/task/*.md progress files
+vi.mock("vscode", () => {
+	const mockDisposable = { dispose: vi.fn() }
+	return {
+		RelativePattern: vi.fn().mockImplementation((base: unknown, pattern: string) => ({
+			base,
+			pattern,
+		})),
+		workspace: {
+			workspaceFolders: [{ uri: { fsPath: "/mock/workspace/path" }, name: "mock-workspace", index: 0 }],
+			createFileSystemWatcher: vi.fn(() => ({
+				onDidCreate: vi.fn(() => mockDisposable),
+				onDidDelete: vi.fn(() => mockDisposable),
+				onDidChange: vi.fn(() => mockDisposable),
+				dispose: vi.fn(),
+			})),
+			fs: { stat: vi.fn().mockResolvedValue({ type: 1 }) },
+			onDidSaveTextDocument: vi.fn(() => mockDisposable),
+			getConfiguration: vi.fn(() => ({ get: (_k: string, d: any) => d })),
+		},
+		window: {
+			showErrorMessage: vi.fn(),
+			createTextEditorDecorationType: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+			visibleTextEditors: [],
+			tabGroups: { all: [], close: vi.fn(), onDidChangeTabs: vi.fn(() => mockDisposable) },
+		},
+		env: { uriScheme: "vscode", language: "en" },
+		EventEmitter: vi.fn().mockImplementation(() => ({ event: vi.fn(), fire: vi.fn() })),
+		Disposable: { from: vi.fn() },
+		TabInputText: vi.fn(),
+		TabInputTextDiff: vi.fn(),
+		CodeActionKind: { QuickFix: { value: "quickfix" }, RefactorRewrite: { value: "refactor.rewrite" } },
+		version: "1.85.0",
+	}
+})
+// kilocode_change end
 vi.mock("../../../integrations/terminal/TerminalRegistry", () => ({
 	TerminalRegistry: {
 		releaseTerminalsForTask: vi.fn(),

@@ -23,6 +23,8 @@ export type TaskMetadataOptions = {
 	mode?: string
 	/** Provider profile name for the task (sticky profile feature) */
 	apiConfigName?: string
+	/** Model ID the task last used (kilocode_change: sticky model isolation) */
+	apiModelId?: string
 	taskProgressFilePath?: string
 	taskProgressInstanceId?: string
 	/** Initial status for the task (e.g., "active" for child tasks) */
@@ -44,6 +46,7 @@ export async function taskMetadata({
 	workspace,
 	mode,
 	apiConfigName,
+	apiModelId,
 	taskProgressFilePath,
 	taskProgressInstanceId,
 	initialStatus,
@@ -124,6 +127,7 @@ export async function taskMetadata({
 		mode,
 		...(toolProtocol && { toolProtocol }),
 		...(typeof apiConfigName === "string" && apiConfigName.length > 0 ? { apiConfigName } : {}),
+		...(typeof apiModelId === "string" && apiModelId.length > 0 ? { apiModelId } : {}), // kilocode_change
 		...(taskProgressFilePath && { taskProgressFilePath }),
 		...(taskProgressInstanceId && { taskProgressInstanceId }),
 		...(initialStatus && { status: initialStatus }),

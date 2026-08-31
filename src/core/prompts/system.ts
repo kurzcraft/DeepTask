@@ -79,15 +79,14 @@ function getReliableCommandExecutionInstructions(): string {
 
 RELIABLE COMMAND EXECUTION
 
-Keep terminal calls short, observable, and recoverable:
+All commands are script-first and durably logged:
 
-- HARD LIMIT: a command longer than 4 lines must NEVER be sent to execute_command. Count the newline-separated lines of the command text; if it exceeds 4, you MUST first write it as a script file (for example under the current workspace's \`EXTRA/bash/\` directory) and execute only that script with a short one-line command. This limit is not a suggestion.
+- MANDATORY SCRIPT-FIRST RULE: every command, long or short, MUST first be written to a script file under the current workspace's \`EXTRA/bash/\` directory (create the directory when needed) and then executed by running that script with a short one-line command. Multi-line commands, heredocs, inline python -c / node -e programs, JSON/YAML/SQL payloads, and nested quoting layers must NEVER be sent directly to execute_command. This rule is not a suggestion and applies to every command.
+- The script must stream the full execution process live to the integrated terminal AND persist complete stdout and stderr to a task-specific log file under the current workspace's \`EXTRA/output/\` directory (for example with tee and pipefail on bash).
+- Print the log file path and final exit status at the end of the script. After execution returns, use read_file to inspect the saved log instead of depending only on terminal streaming.
 - A command is also considered long or complex if it contains multiple chained operations, a heredoc, an inline multi-line program, extensive quoting, or is expected to run for more than about 30 seconds or produce substantial output.
-- A command containing embedded document text, nested quoting layers, JSON/YAML/SQL payloads, or unusual data pipelines that can hang the terminal waiting for more input must also be written as a script file first; never pass such content inline to execute_command.
 - Also treat a command as complex whenever you predict that shell parsing, VSCodium terminal integration, or another host layer may escape, rewrite, interpolate, or truncate quotes, backslashes, variables, redirects, pipes, or newlines. Do not wait for the mangled command to fail.
-- Never send a long, complex, or escape-sensitive command directly to execute_command. First create its task-specific script under the current workspace's \`EXTRA/bash/\` directory with write_to_file or edit_file (creating that directory when needed), then execute that script with a short command whose arguments do not require fragile inline escaping.
-- Every long-running script must persist complete stdout and stderr to a task-specific log file under the current workspace's \`EXTRA/output/\` directory (creating that directory when needed) while also emitting useful live output when practical (for example with tee and pipefail on bash).
-- Print the log file path and final exit status. After execution returns, use read_file to inspect the saved log instead of depending only on terminal streaming.
+- Create scripts with write_to_file or edit_file under \`EXTRA/bash/\`, then execute that script with a short command whose arguments do not require fragile inline escaping.
 - Do not use inline heredocs, nested shell programs, or very long command chains in execute_command; put that content in the script file.
 - For commands that intentionally remain running (servers, watchers, training), start them through a script with durable logging, state that they are long-running, and inspect the log file in later steps.
 - If terminal output is empty, truncated, delayed, or the completion status is uncertain, do not blindly rerun the operation. Read the durable log and any generated status file first.`

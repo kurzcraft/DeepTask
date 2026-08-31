@@ -1,5 +1,15 @@
 # Deeptask
 
+## 9.1.4
+
+### Patch Changes
+
+- Fix the "force continue" stuck state after multi-line or quoted inline commands finish running: VS Code can skip the shell-integration end event, never emit the OSC 633;C start marker, and leave the execution stream open forever. The terminal process now matches start/end markers against the accumulated buffer (chunk-split safe, BEL and ST terminators), treats a fresh interactive prompt after the command echo as completion, closes on a D marker found before the start marker, and polls terminal closure so every command settles with a real result.
+- Recover swallowed command output: marker-less streams that carried only the echoed command line, and framed-but-empty streams (competing stream consumers), now fall back to reading the visible terminal transcript so the model still receives the real output instead of the bare echo or an empty result.
+- Harden system-prompt rules: every command must be written to a script file under `EXTRA/bash/` first and executed as a one-line script invocation, with the script teeing full stdout/stderr to `EXTRA/output/` and printing the log path and exit code (native and XML tool descriptions, capabilities, rules, and system sections aligned).
+- Fix parallel-conversation model cross-talk: selecting a model for a brand-new parallel conversation no longer rebuilds the API handler of an older background conversation while the new conversation's Task has not been created yet.
+- Terminal close polling is defensive against garbage-collected terminal references and stops as soon as any completion boundary is reached, so completed commands never keep the terminal marked busy.
+
 ## 9.1.3
 
 ### Patch Changes
