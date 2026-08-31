@@ -3236,7 +3236,9 @@ describe("Queued message processing after condense", () => {
 		expect(continuationContent).toMatch(
 			/^<latest_human_message>\ncontinue with a new real task\n<\/latest_human_message>/,
 		)
-		expect(continuationContent).toContain("Do not call attempt_completion for a discussion-only reply")
+		expect(continuationContent).toContain(
+			"Never call attempt_completion merely because earlier work was completed or because the message is short.",
+		)
 		expect(continuationContent).not.toContain("same-task work")
 	})
 
@@ -3668,9 +3670,10 @@ describe("Queued message processing after condense", () => {
 		const continuationBlocks = initiateSpy.mock.calls[0][0] as Array<{ text?: string }>
 		const continuationContent = continuationBlocks[0]?.text ?? ""
 		expect(continuationContent).toMatch(/^<latest_human_message>\nexpand list and work\n<\/latest_human_message>/)
-		expect(continuationContent).toContain(
-			"Treat the message above as the current instruction and respond to its meaning directly.",
-		)
+		expect(continuationContent).toContain("reply to it the way a person in a normal chat would")
+		expect(continuationContent).toContain("This is mandatory for every user message, whatever its type.")
+		expect(continuationContent).toContain("is a defect report stating the previous fix failed")
+		expect(continuationContent).toContain("record it as a new milestone")
 		expect(continuationContent).not.toContain("update_todo_list")
 		expect(continuationContent).not.toContain("progress-file")
 		expect(continuationContent).not.toContain("archive")
@@ -4001,10 +4004,9 @@ describe("Queued message processing after condense", () => {
 		expect(continuationContent).toMatch(
 			new RegExp(`^<latest_human_message>\\n${latestHumanMessage}\\n</latest_human_message>`),
 		)
-		expect(continuationContent).toContain("It supersedes any earlier state or conclusion.")
-		expect(continuationContent).toContain(
-			"Treat the message above as the current instruction and respond to its meaning directly.",
-		)
+		expect(continuationContent).toContain("reply to it the way a person in a normal chat would")
+		expect(continuationContent).toContain("This is mandatory for every user message, whatever its type.")
+		expect(continuationContent).toContain("is a defect report stating the previous fix failed")
 		expect(continuationContent).not.toContain("archive")
 		expect(continuationContent).not.toContain("progress-file")
 		expect(continuationContent).not.toContain("update_todo_list")
@@ -4065,6 +4067,61 @@ describe("Queued message processing after condense", () => {
 
 		expect(task.todoList).toBeUndefined()
 		expect((task as any).latestUserContinuationFocus).toBe(longInstruction)
+	})
+
+	it("treats bare negative outcome replies as actionable defect feedback", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context, // kilocode_change
+		})
+
+		// Short negative replies after a repair attempt state the fix failed and
+		// must trigger the progress-list expansion gate instead of being read as
+		// acknowledgements or small talk.
+		for (const reply of ["没有用", "没用", "不行", "没效果", "还是没声音", "didn't work", "still broken"]) {
+			;(task as any).requiresProgressListExpansion = false
+			;(task as any).establishUserFeedbackWorkTurn(reply)
+			expect(task.shouldRequireProgressListExpansion()).toBe(true)
+		}
+
+		// Pure acknowledgement and small talk remain non-actionable for the host
+		// gate; semantic judgment stays with the model.
+		for (const reply of ["好的", "谢谢", "ok", "got it"]) {
+			;(task as any).requiresProgressListExpansion = false
+			;(task as any).establishUserFeedbackWorkTurn(reply)
+			expect(task.shouldRequireProgressListExpansion()).toBe(false)
+		}
+	})
+
+	it("continuation prompt for a bare negative reply frames it as a failed-fix defect report", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context, // kilocode_change
+		})
+		;(task as any).apiConversationHistory = [
+			{ role: "user", content: [{ type: "text", text: "original task" }], ts: 1 },
+		]
+		vi.spyOn(task as any, "getSavedApiConversationHistory").mockResolvedValue((task as any).apiConversationHistory)
+		const initiateSpy = vi.spyOn(task as any, "initiateTaskLoop").mockResolvedValue(undefined)
+
+		await task.continueTaskFromUserMessage("没有用")
+
+		expect(task.shouldRequireProgressListExpansion()).toBe(true)
+		const continuationBlocks = initiateSpy.mock.calls[0][0] as Array<{ text?: string }>
+		const continuationContent = continuationBlocks[0]?.text ?? ""
+		expect(continuationContent).toMatch(/^<latest_human_message>\n没有用\n<\/latest_human_message>/)
+		expect(continuationContent).toContain("is a defect report stating the previous fix failed")
+		expect(continuationContent).toContain("pursue a materially different approach")
+		expect(continuationContent).toContain("Do not restate old status")
+		expect(continuationContent).not.toContain("answer conversationally without creating")
 	})
 
 	it("deduplicates identical continuation requests arriving in a short window", async () => {

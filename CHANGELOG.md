@@ -1,5 +1,12 @@
 # Deeptask
 
+## 9.1.6
+
+### Patch Changes
+
+- Fix the agent ignoring short negative user feedback ("没有用", "不行", "didn't work") after a repair attempt: the injected continuation guidance previously used a rigid two-way split (question/acknowledgement/discussion → conversational-only reply vs concrete work → milestones), which steered bare negative replies into the chat-only branch so the agent restated old status, repeated the failed approach, and asked the user to re-confirm it. The guidance is now semantic and chat-first: every user message must first get a natural conversational reply showing the agent understood it; tracking mechanisms (failure diagnosis, a materially different new approach, progress-list milestones) follow within the same reply instead of replacing it. The "supersedes" clause is bounded to earlier assistant turns and never overrides system rules.
+- The host-side actionable-continuation gate now recognizes bare negative outcome replies in Chinese and English (没有用/没用/不行/没效果/还是没/didn't work/still broken etc.) as executable defect feedback that must expand the progress list, while pure acknowledgements and small talk remain non-actionable.
+
 ## 9.1.5
 
 ### Patch Changes

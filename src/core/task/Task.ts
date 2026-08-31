@@ -2543,8 +2543,13 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		const actionablePatterns = [
 			/(修复|解决|处理|实现|添加|新增|改进|改善|优化|调整|更新|修改|重做|重新|继续|执行|排查|定位|检查|验证|补充|删除|移除|同步|安装|打包|发布)/,
 			/(不够|不及时|不积极|不正确|不一致|有问题|出错|错误|失败|缺失|遗漏|漏掉|没有生效|没生效|怎么不|为什么不)/,
+			// Bare negative outcome feedback on a previous fix (e.g. after a repair
+			// attempt): these short replies state the fix failed and are executable
+			// defect reports, not acknowledgements or small talk.
+			/(没有用|没用|不管用|没效果|没反应|没声音|没输出|没结果|不行|不好使|没用啦|无效|失灵|卡住|还是没|仍然没|依旧没|没用啊)/,
 			/\b(fix|resolve|handle|implement|add|create|improve|optimize|adjust|update|change|modify|redo|continue|run|execute|investigate|diagnose|verify|validate|remove|delete|sync|install|package|publish)\b/,
 			/\b(not enough|too slow|incorrect|inconsistent|broken|failing|missing|omitted|does not work|doesn't work|why (?:did|do|does)n?'?t)\b/,
+			/\b(doesn'?t work|didn'?t work|did not work|not working|no effect|no luck|useless|still broken|still not|no sound|no output|no result|failed again|nothing changed|nothing happened)\b/,
 		]
 
 		return actionablePatterns.some((pattern) => pattern.test(normalized))
@@ -2609,8 +2614,17 @@ ${protocolHint}
 	private buildUserContinuationText(continuationText: string): string {
 		// kilocode_change start
 		// Put the human's words first and make their control priority explicit. A
-		// completed historical turn must never preempt new input.
-		return `<latest_human_message>\n${continuationText}\n</latest_human_message>\n\nTreat the message above as the current instruction and respond to its meaning directly. It supersedes any earlier state or conclusion. Never call attempt_completion merely because earlier work was completed. First classify this latest message: if it is only a question, clarification, acknowledgement, or ordinary discussion, answer conversationally without creating or expanding a task list. If it requests concrete work, create or expand the task list with new actionable milestones before doing that work, then proceed until that work is handled. Do not call attempt_completion for a discussion-only reply.`
+		// completed historical turn must never preempt new input. The guidance is
+		// deliberately semantic, not a rigid category split: EVERY user message
+		// must first get a natural conversational reply that shows the agent
+		// understood what was said — like a normal chat. Tracking mechanisms
+		// (diagnosis, new plans, milestones) may follow within the same reply, but
+		// they never replace the reply itself. Short negative replies like "没有用"
+		// / "didn't work" are defect reports about the previous fix, not
+		// acknowledgements or small talk: acknowledge the failure in words, then
+		// diagnose why the fix failed and pursue a materially different approach,
+		// recording it as a new milestone in the task progress list.
+		return `<latest_human_message>\n${continuationText}\n</latest_human_message>\n\nTreat the message above as the user's newest statement and reply to it the way a person in a normal chat would — first show you understood what they said, in their language. This is mandatory for every user message, whatever its type. Beyond that conversational reply, classify the message by meaning: a short negative reply (e.g. "没有用", "不行", "没效果", "didn't work", "still broken") is a defect report stating the previous fix failed — in the same reply also state why the fix failed, then pursue a materially different approach and record it as a new milestone in the task progress list before further tool work. Do not restate old status, do not repeat the failed approach, and do not ask the user to re-confirm the failed approach. A pure question or social remark needs only the conversational reply. Never call attempt_completion merely because earlier work was completed or because the message is short.`
 		// kilocode_change end
 	}
 

@@ -104,7 +104,8 @@ if ! grep -q "taskProgressInstanceId" src/dist/extension.js || \
   exit 1
 fi
 if ! grep -q "<latest_human_message>" src/dist/extension.js || \
-  ! grep -q "Treat the message above as the current instruction and respond to its meaning directly" src/dist/extension.js; then
+  ! grep -q "reply to it the way a person in a normal chat would" src/dist/extension.js || \
+  ! grep -q "is a defect report stating the previous fix failed" src/dist/extension.js; then
   echo "src/dist/extension.js 缺少人类消息优先输入约束" | tee -a "$LOG"
   exit 1
 fi

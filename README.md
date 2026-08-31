@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.1.5</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.1.6</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.1.5** 修复并行对话的提供商/模型记忆污染：在尚未创建 Task 的新对话里手动切换提供商或模型，不再把栈顶旧对话记住的 apiConfigName/apiModelId 和任务历史一并改写，切回旧对话时恢复的是它自己真正的提供商。所有 sticky 持久化、profile 激活、焦点恢复路径统一走同一个焦点感知解析器 `resolveStickyTaskTarget()`：pending 新对话解析为无目标、焦点对话优先、未知焦点对话解析为无目标、仅无焦点管理的 legacy 单任务流才回退栈顶；`activateProviderProfile` 与 `restoreFocusedTaskProviderProfile` 的入口快照与漂移检测同样使用该解析器，pending 期间切换 profile 不再误重建旧后台对话的 API handler。
+> **Deeptask 9.1.6** 修复短负反馈被忽略（"模型不理人"）：用户在修复尝试后回复「没有用」「不行」「didn't work」等极短负反馈时，代理不再重述旧状态、重复失败方案或要求重新确认，而是先给出自然的聊天式回复，在同一回复中说明失败原因并转向实质不同的新方案。续聊引导从死二分改为聊天优先的语义引导——每条用户消息必须先得到自然回复，诊断/新方案/里程碑机制跟随其后而非替代回复；host 端可执行门新增中英裸否定模式（没有用/没用/不行/没效果/还是没/didn't work/still broken 等）触发进度清单扩展，纯确认与闲聊保持非 actionable，语义判断归还模型。
 
 ## 你可以怎样使用 Deeptask
 
@@ -113,17 +113,17 @@ Deeptask 将任务视为可恢复状态机，而不是一次性回答。未完�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.1.5.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.1.6.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.1.5.vsix --force
+    codium --install-extension ./deeptask-9.1.6.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.1.5.vsix --force
+    code --install-extension ./deeptask-9.1.6.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。
