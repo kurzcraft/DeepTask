@@ -82,6 +82,25 @@ describe("ParallelManager conversations", () => {
 		expect(manager.getActiveConversationId()).toBe(created.id)
 	})
 
+	// kilocode_change start: reopening a completed task must clear its stale
+	// completedAt marker so the rail spinner and broadcast backfill treat it as
+	// running again instead of skipping it.
+	test("ensureTaskConversation clears a stale completedAt marker on reopen", async () => {
+		const { manager } = setup()
+		const created = await manager.createConversation("/repo", { sessionId: "hist-2", title: "done once" })
+		await manager.markConversationCompleted("hist-2")
+		expect((await manager.getConversation(created.id))?.completedAt).toBeTruthy()
+		const ensured = await manager.ensureTaskConversation({
+			sessionId: "hist-2",
+			title: "done once",
+			workspacePath: "/repo",
+		})
+		expect(ensured.id).toBe(created.id)
+		expect(ensured.completedAt).toBeUndefined()
+		expect((await manager.getConversation(created.id))?.completedAt).toBeUndefined()
+	})
+	// kilocode_change end
+
 	test("ensureTaskConversation creates a conversation for a history task", async () => {
 		const { manager } = setup()
 		const created = await manager.ensureTaskConversation({

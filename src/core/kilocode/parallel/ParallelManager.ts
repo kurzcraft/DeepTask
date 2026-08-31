@@ -778,6 +778,15 @@ export class ParallelManager {
 				await this.setConversationArchived(existing.id, false)
 			}
 			// kilocode_change end
+			// kilocode_change start: a task that is being reopened/restarted is
+			// running again. A stale completedAt from a previous green completion
+			// made both the rail's running indicator and the broadcast live-task
+			// backfill skip this conversation, so a running conversation showed
+			// no spinner. Clear it whenever the task is ensured (reopened).
+			if (existing.completedAt) {
+				await this.clearConversationCompleted(existing.id)
+			}
+			// kilocode_change end
 			await this.setActiveConversation(existing.id)
 			if (params.title && !existing.title) {
 				await this.bindConversation(existing.id, params.sessionId, params.title)
@@ -824,6 +833,28 @@ export class ParallelManager {
 					}
 				}
 			}
+			this.conversationsDirty = true
+			await this.persistConversations()
+			void this.broadcast()
+		})
+	}
+
+	/**
+	 * Clear a stale completion marker when its task is reopened and runs again.
+	 * Without this, the rail's running spinner and the broadcast live-task
+	 * backfill both skip a running conversation because completedAt is set
+	 * (kilocode_change).
+	 */
+	async clearConversationCompleted(id: string): Promise<void> {
+		await this.enqueueConversationWrite(async () => {
+			await this.loadConversations()
+			const target = (this.conversations ?? []).find((c) => c.id === id)
+			if (!target?.completedAt) {
+				return
+			}
+			this.conversations = (this.conversations ?? []).map((c) =>
+				c.id === id ? { ...c, completedAt: undefined, lastActiveAt: Date.now() } : c,
+			)
 			this.conversationsDirty = true
 			await this.persistConversations()
 			void this.broadcast()
@@ -1009,9 +1040,15 @@ export class ParallelManager {
 				continue
 			}
 			const conversation = this.conversationForSession(task.taskId)
-			if (!conversation || conversation.completedAt) {
+			if (!conversation) {
 				continue
 			}
+			// kilocode_change start: a live task that is actively running again
+			// must show the running spinner even if a stale completedAt marker
+			// from an earlier green completion is still persisted. The reopen
+			// path clears the marker, but a broadcast can race ahead of that
+			// write, so do not skip the backfill here.
+			// kilocode_change end
 			sessions.push({
 				sessionId: task.taskId,
 				taskId: task.taskId,

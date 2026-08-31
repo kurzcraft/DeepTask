@@ -196,9 +196,12 @@ export const ParallelRail = ({
 	const runningConversationIds = useMemo(() => {
 		const ids = new Set<string>()
 		for (const conversation of conversations) {
-			if (!conversation.sessionId || conversation.completedAt) {
+			if (!conversation.sessionId) {
 				continue
 			}
+			// kilocode_change start: a running session wins over a stale
+			// completedAt marker left by an earlier green completion. The task
+			// was reopened and is streaming again, so the spinner must show.
 			if (
 				sessions.some(
 					(session) =>

@@ -407,7 +407,7 @@ describe("ParallelRail", () => {
 	test("does not keep a completed background conversation spinning when a stale running session remains", () => {
 		render(
 			<ParallelRail
-				sessions={[makeSession({ sessionId: "task-2", taskId: "task-2", status: "running" })]}
+				sessions={[makeSession({ sessionId: "task-2", taskId: "task-2", status: "completed" })]}
 				workspaces={[]}
 				folders={[makeFolder()]}
 				conversations={[
@@ -428,6 +428,36 @@ describe("ParallelRail", () => {
 		expect(row).toHaveAttribute("data-running", "false")
 		expect(screen.queryByTestId("parallel-conversation-running")).not.toBeInTheDocument()
 	})
+
+	// kilocode_change start: a reopened task that is streaming again must show
+	// the running spinner even while a stale completedAt marker from its earlier
+	// green completion is still on the conversation (the reopen path clears it,
+	// but the rail must not depend on that write landing first).
+	test("shows the running spinner for a reopened conversation with a stale completedAt marker", () => {
+		render(
+			<ParallelRail
+				sessions={[makeSession({ sessionId: "task-2", taskId: "task-2", status: "running" })]}
+				workspaces={[]}
+				folders={[makeFolder()]}
+				conversations={[
+					makeConversation(),
+					makeConversation({
+						id: "cv-2",
+						sessionId: "task-2",
+						title: "Reopened chat",
+						lastActiveAt: 2,
+						completedAt: 1,
+					}),
+				]}
+				activeConversationId="cv-2"
+				onSelect={onSelect}
+			/>,
+		)
+		const row = screen.getByText("Reopened chat").closest("[data-testid='parallel-rail-conversation']")
+		expect(row).toHaveAttribute("data-running", "true")
+		expect(screen.getByTestId("parallel-conversation-running")).toBeInTheDocument()
+	})
+	// kilocode_change end
 
 	test("expands a collapsed folder when its conversation becomes the focused one", () => {
 		// kilocode_change: opening a task from history focuses a conversation that
