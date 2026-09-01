@@ -472,6 +472,90 @@ describe("ClineProvider flicker-free cancel", () => {
 		expect((provider as any).pendingCancelledTaskContinuation).toBeUndefined()
 	})
 
+	// kilocode_change start
+	it("rescues a parked human message that no code path consumed after the rescue window", async () => {
+		// Simulates the post-completion first-send leak: the rewind chain parks the
+		// payload, then cancelTask's instanceId race-skip (or liveElsewhere display-
+		// only rehydration) returns without consuming it. The orphan-rescue guard
+		// must deliver it on the current task so the user always gets a reply.
+		vi.useFakeTimers()
+		try {
+			;(provider as any).clineStack = [mockTask1]
+			mockTask1.abandoned = false
+			mockTask1.abortReason = undefined
+			mockTask1.isActivelyRunningTaskLoop = vi.fn().mockReturnValue(false)
+			mockTask1.continueTaskFromUserMessage = vi.fn().mockResolvedValue(undefined)
+			provider.postStateToWebview = vi.fn().mockResolvedValue(undefined)
+
+			provider.setPendingCancelledTaskContinuation("first send after completion", undefined, {
+				kind: "continuation",
+			})
+
+			// Nothing consumes the payload; advance past the rescue window.
+			await vi.advanceTimersByTimeAsync(10_500)
+
+			expect(mockTask1.continueTaskFromUserMessage).toHaveBeenCalledWith(
+				"first send after completion",
+				undefined,
+				{ kind: "continuation" },
+			)
+			expect((provider as any).pendingCancelledTaskContinuation).toBeUndefined()
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
+	it("re-parks the rescued payload when the current task is running a live loop", async () => {
+		// A live loop already owns the conversation; rescue must not race a second
+		// loop but re-park so the normal interrupt flow consumes the message.
+		vi.useFakeTimers()
+		try {
+			;(provider as any).clineStack = [mockTask1]
+			mockTask1.abandoned = false
+			mockTask1.abortReason = undefined
+			mockTask1.isActivelyRunningTaskLoop = vi.fn().mockReturnValue(true)
+			mockTask1.continueTaskFromUserMessage = vi.fn().mockResolvedValue(undefined)
+			provider.postStateToWebview = vi.fn().mockResolvedValue(undefined)
+
+			provider.setPendingCancelledTaskContinuation("typed while busy", undefined, { kind: "continuation" })
+
+			await vi.advanceTimersByTimeAsync(10_500)
+
+			expect(mockTask1.continueTaskFromUserMessage).not.toHaveBeenCalled()
+			expect((provider as any).pendingCancelledTaskContinuation).toBeDefined()
+			expect((provider as any).pendingCancelledTaskContinuation?.text).toBe("typed while busy")
+		} finally {
+			vi.useRealTimers()
+			;(provider as any).pendingCancelledTaskContinuation = undefined
+			;(provider as any).pendingCancelledTaskContinuationGuardTimer &&
+				clearTimeout((provider as any).pendingCancelledTaskContinuationGuardTimer)
+			;(provider as any).pendingCancelledTaskContinuationGuardTimer = undefined
+		}
+	})
+
+	it("does not rescue an already-consumed payload", async () => {
+		// Normal consumption disarms the guard: a later timer tick must not
+		// resurrect a delivered message as a duplicate continuation.
+		vi.useFakeTimers()
+		try {
+			;(provider as any).clineStack = [mockTask1]
+			mockTask1.continueTaskFromUserMessage = vi.fn().mockResolvedValue(undefined)
+			provider.postStateToWebview = vi.fn().mockResolvedValue(undefined)
+
+			provider.setPendingCancelledTaskContinuation("delivered normally", undefined)
+			const consumed = (provider as any).consumePendingCancelledTaskContinuation()
+			expect(consumed?.text).toBe("delivered normally")
+
+			await vi.advanceTimersByTimeAsync(10_500)
+
+			expect(mockTask1.continueTaskFromUserMessage).not.toHaveBeenCalled()
+			expect((provider as any).pendingCancelledTaskContinuation).toBeUndefined()
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+	// kilocode_change end
+
 	it("delivers an edited resend through a fresh task when restoration fails", async () => {
 		;(provider as any).clineStack = [mockTask1]
 		;(provider as any).taskEventListeners = new WeakMap()

@@ -235,7 +235,17 @@ export class ClineProvider
 	private pendingOperations: Map<string, PendingEditOperation> = new Map()
 	private pendingCancelledTaskContinuation?: PendingCancelledTaskContinuation // kilocode_change
 	private pendingCancelledTaskContinuationChain: Promise<void> = Promise.resolve() // kilocode_change
+	private pendingCancelledTaskContinuationGuardTimer?: NodeJS.Timeout // kilocode_change - orphan rescue
 	private static readonly PENDING_OPERATION_TIMEOUT_MS = 30000 // 30 seconds
+	// kilocode_change start
+	// A parked human message must never die silently. The rewind→park→cancel chain
+	// has branches (instanceId race skip in cancelTask, liveElsewhere display-only
+	// rehydration) that return without consuming the payload; storage then shows
+	// zero trace and the first send after completion is ignored until a manual
+	// resend. The guard timer re-checks whether the payload was consumed and
+	// delivers it on the current task if it is still parked.
+	private static readonly PENDING_CONTINUATION_RESCUE_TIMEOUT_MS = 10_000
+	// kilocode_change end
 
 	private cloudOrganizationsCache: CloudOrganizationMembership[] | null = null
 	private cloudOrganizationsCacheTimestamp: number | null = null
@@ -533,11 +543,125 @@ export class ClineProvider
 		options?: UserContinuationOptions,
 	): void {
 		this.pendingCancelledTaskContinuation = { text, images, options, createdAt: Date.now() }
+		// kilocode_change start
+		// Arm the orphan-rescue guard: if no code path consumes this payload within
+		// the rescue window (cancelTask race-skip, liveElsewhere display-only
+		// rehydration, any future early return), deliver it directly on the current
+		// task so the first post-completion send always produces a model turn.
+		this.armPendingContinuationRescueGuard()
+		// kilocode_change end
+	}
+
+	private armPendingContinuationRescueGuard(): void {
+		// kilocode_change start
+		if (this.pendingCancelledTaskContinuationGuardTimer) {
+			clearTimeout(this.pendingCancelledTaskContinuationGuardTimer)
+		}
+		const armedAt = Date.now()
+		this.pendingCancelledTaskContinuationGuardTimer = setTimeout(() => {
+			this.pendingCancelledTaskContinuationGuardTimer = undefined
+			const parked = this.pendingCancelledTaskContinuation
+			if (!parked) {
+				return // consumed normally — nothing to rescue
+			}
+			// A newer payload may have replaced the original; rescue the newest one.
+			if (parked.createdAt < armedAt) {
+				return
+			}
+			this.log(
+				`[rescuePendingContinuation] Parked human message was never consumed after ${ClineProvider.PENDING_CONTINUATION_RESCUE_TIMEOUT_MS}ms; delivering on current task`,
+			)
+			void this.rescuePendingContinuation(parked)
+		}, ClineProvider.PENDING_CONTINUATION_RESCUE_TIMEOUT_MS)
+		// Allow the extension host to exit without waiting for the guard timer.
+		this.pendingCancelledTaskContinuationGuardTimer.unref?.()
+		// kilocode_change end
+	}
+
+	private async rescuePendingContinuation(
+		parked: PendingCancelledTaskContinuation,
+	): Promise<void> {
+		// kilocode_change start
+		// Consume atomically: only proceed if the parked payload is still current.
+		if (this.pendingCancelledTaskContinuation !== parked) {
+			return
+		}
+		this.pendingCancelledTaskContinuation = undefined
+
+		const deliverOnTask = async (task: Task | undefined) => {
+			if (!task) {
+				return false
+			}
+			try {
+				if (task.abandoned === true || task.abortReason === "user_cancelled") {
+					// The cancelled instance cannot accept a continuation; a replacement
+					// task must be rebuilt from history first.
+					return false
+				}
+				if (task.isActivelyRunningTaskLoop?.()) {
+					// A live loop already owns the conversation; re-park and let the
+					// normal interrupt flow handle it rather than racing two loops.
+					this.setPendingCancelledTaskContinuation(parked.text, parked.images, parked.options)
+					return true
+				}
+				await task.continueTaskFromUserMessage(parked.text, parked.images, parked.options)
+				return true
+			} catch (error) {
+				this.log(
+					`[rescuePendingContinuation] Direct delivery failed: ${error instanceof Error ? error.message : String(error)}`,
+				)
+				return false
+			}
+		}
+
+		const current = this.getCurrentTask()
+		if (await deliverOnTask(current)) {
+			await this.postStateToWebview()
+			return
+		}
+
+		// No healthy current task: rebuild from history so the human message still
+		// reaches the model with preserved context.
+		try {
+			const { historyItem } = await this.getTaskWithId(current?.taskId ?? "", false).catch(() => ({
+				historyItem: undefined,
+			}))
+			if (historyItem) {
+				this.setPendingCancelledTaskContinuation(parked.text, parked.images, parked.options)
+				await this.createTaskWithHistoryItem(historyItem)
+				await this.postStateToWebview()
+				return
+			}
+		} catch (error) {
+			this.log(
+				`[rescuePendingContinuation] History rebuild failed: ${error instanceof Error ? error.message : String(error)}`,
+			)
+		}
+
+		// Last resort: fresh task with the full payload so the user always gets a
+		// model response instead of silence.
+		try {
+			await this.createTask(parked.text, parked.images)
+			await this.postMessageToWebview({ type: "invoke", invoke: "newChat" })
+		} catch (error) {
+			this.log(
+				`[rescuePendingContinuation] Fresh-task delivery failed: ${error instanceof Error ? error.message : String(error)}`,
+			)
+			await this.postStateToWebview()
+		}
+		// kilocode_change end
 	}
 
 	private consumePendingCancelledTaskContinuation(): PendingCancelledTaskContinuation | undefined {
 		const continuation = this.pendingCancelledTaskContinuation
 		this.pendingCancelledTaskContinuation = undefined
+		// kilocode_change start
+		// Normal consumption disarms the orphan-rescue guard.
+		if (this.pendingCancelledTaskContinuationGuardTimer) {
+			clearTimeout(this.pendingCancelledTaskContinuationGuardTimer)
+			this.pendingCancelledTaskContinuationGuardTimer = undefined
+		}
+		// kilocode_change end
 		return continuation
 	}
 

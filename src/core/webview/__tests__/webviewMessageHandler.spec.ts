@@ -1445,6 +1445,88 @@ describe("webviewMessageHandler - legacy queueMessage anti-stall routing", () =>
 	})
 })
 
+// kilocode_change start
+describe("webviewMessageHandler - focused-conversation edit routing (first post-completion send)", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+	})
+
+	it("rewinds the focused task for a completion-boundary continuation, not the stack-top background task", async () => {
+		// A history reopen pushes a rebuilt task to the stack top while the user
+		// chats in the focused conversation. The first send after a completion
+		// boundary reuses the rewind transaction; it must target the focused task
+		// so the message is not delivered into the background conversation and
+		// silently lost until a manual resend.
+		const focusedRewind = vi.fn().mockResolvedValue(undefined)
+		const focusedOverwrite = vi.fn().mockResolvedValue(undefined)
+		const backgroundRewind = vi.fn().mockResolvedValue(undefined)
+
+		const completionRow = {
+			ts: 500,
+			type: "say",
+			say: "completion_result",
+			text: "done summary",
+			partial: false,
+		}
+		const focusedTask = {
+			taskId: "focused-1",
+			cwd: "/mock/focused",
+			rooIgnoreController: undefined,
+			clineMessages: [
+				{ ts: 100, type: "say", say: "user_feedback", text: "older", partial: false },
+				completionRow,
+			],
+			apiConversationHistory: [],
+			abandoned: false,
+			abortReason: undefined,
+			isStreaming: false,
+			isSoftCompletionBoundaryPending: vi.fn().mockReturnValue(false),
+			getPendingWebviewAskTs: vi.fn().mockReturnValue(undefined),
+			hasPendingWebviewAskResponse: vi.fn().mockReturnValue(false),
+			clearStaleWebviewAskResponse: vi.fn(),
+			messageQueueService: { clear: vi.fn() },
+			messageManager: { rewindToTimestamp: focusedRewind },
+			overwriteClineMessages: focusedOverwrite,
+		}
+		const backgroundTask = {
+			taskId: "background-1",
+			cwd: "/mock/background",
+			rooIgnoreController: undefined,
+			clineMessages: [{ ts: 100, type: "say", say: "text", text: "background row", partial: false }],
+			apiConversationHistory: [],
+			clearStaleWebviewAskResponse: vi.fn(),
+			messageQueueService: { clear: vi.fn() },
+			messageManager: { rewindToTimestamp: backgroundRewind },
+			overwriteClineMessages: vi.fn(),
+		}
+
+		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue(backgroundTask as any)
+		const providerAny = mockClineProvider as any
+		providerAny.getFocusedChatTask = vi.fn().mockReturnValue(focusedTask)
+
+		try {
+			await webviewMessageHandler(mockClineProvider, {
+				type: "askResponse",
+				askResponse: "messageResponse",
+				text: "first post-completion message",
+				images: [],
+				askTs: undefined,
+			})
+
+			expect(focusedRewind).toHaveBeenCalled()
+			expect(backgroundRewind).not.toHaveBeenCalled()
+			expect(mockClineProvider.setPendingCancelledTaskContinuation).toHaveBeenCalledWith(
+				"first post-completion message",
+				["data:image/png;base64,from-mention"],
+				{ kind: "continuation" },
+			)
+		} finally {
+			delete providerAny.getFocusedChatTask
+		}
+	})
+})
+// kilocode_change end
+
 describe("webviewMessageHandler - requestOllamaModels", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()

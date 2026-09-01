@@ -376,7 +376,15 @@ export const webviewMessageHandler = async (
 		// parked payload carries through rehydration.
 		continuationKind: "continuation" | "edited_resend" = "edited_resend",
 	): Promise<void> => {
-		const currentCline = provider.getCurrentTask()
+		// kilocode_change start
+		// Route by the focused chat conversation, not the stack top. A history
+		// reopen can push a rebuilt task onto the stack top while the user is
+		// chatting in another focused conversation; rewinding the stack-top task
+		// would deliver the first post-completion message into the background task
+		// and the focused chat would never see a reply until a manual resend.
+		const focusedTask = provider.getFocusedChatTask?.()
+		const currentCline = focusedTask ?? provider.getCurrentTask()
+		// kilocode_change end
 		if (!currentCline) {
 			console.error("[handleEditMessageConfirm] No current cline available")
 			return
@@ -557,7 +565,13 @@ export const webviewMessageHandler = async (
 	 * inserts an editable user "继续" row. Do not auto-send that prompt.
 	 */
 	const handleAssistantMessageEdit = async (messageTs: number, editedContent: string, images?: string[]) => {
-		const currentCline = provider.getCurrentTask()
+		// kilocode_change start
+		// Same focused-conversation routing as handleEditMessageConfirm: an edit
+		// must never be rewound into a background stack-top task while the user is
+		// working in a focused conversation.
+		const focusedAssistantTask = provider.getFocusedChatTask?.()
+		const currentCline = focusedAssistantTask ?? provider.getCurrentTask()
+		// kilocode_change end
 		if (!currentCline) return
 
 		const { messageIndex, apiConversationHistoryIndex: exactApiIndex } = findMessageIndices(messageTs, currentCline)
