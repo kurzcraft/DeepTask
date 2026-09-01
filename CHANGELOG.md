@@ -1,5 +1,13 @@
 # Deeptask
 
+## 9.1.7
+
+### Patch Changes
+
+- Fix the hard freeze after clicking "Proceed while running" on a live command or after a task hits an API error/retry wall: a blocking ask (resume_task and friends) could lose its webview broadcast during a focus race, the pending-new-conversation window, or while the webview was hidden, leaving the chat with no buttons, and typed messages then carried a stale askTs and were dropped by routing with the queue cleared — dead chat, no recovery. A blocking ask now re-posts the full state to the webview every ~2.5s while still waiting, so buttons reappear and the ask stays answerable.
+- Typed user text that arrives with a stale/mismatched askTs while a blocking ask is pending now answers that pending ask (message response) instead of being silently discarded; empty stale clicks keep the previous protective semantics.
+- ask responses are now routed to the focused conversation's task (`getFocusedChatTask`) with a fallback to the stack-top task, so a history reopen pushing a rebuilt task to the stack top can no longer swallow button clicks and typed text that belong to the conversation the user is actually chatting in.
+
 ## 9.1.6
 
 ### Patch Changes

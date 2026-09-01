@@ -430,6 +430,100 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
 	})
 
+	// kilocode_change start
+	it("answers the pending blocking ask when typed text arrives with a stale askTs", async () => {
+		// A lost ask broadcast (focus race / pending-new-conversation window) leaves the
+		// webview without buttons and without the current askTs. Typed text then arrives
+		// with a stale askTs and must still answer the pending ask instead of being
+		// dropped into a dead queue-clear branch that freezes the chat.
+		const mockHandleWebviewAskResponse = vi.fn()
+		const mockClearStaleWebviewAskResponse = vi.fn()
+		const mockClearQueue = vi.fn()
+		const mockContinueTaskFromUserMessage = vi.fn()
+		const pendingAsk = {
+			ts: 200,
+			type: "ask",
+			ask: "resume_task",
+			partial: false,
+		}
+		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
+			cwd: "/mock/workspace",
+			rooIgnoreController: undefined,
+			getPendingWebviewAskTs: vi.fn().mockReturnValue(200),
+			hasPendingWebviewAskResponse: vi.fn().mockReturnValue(true),
+			findMessageByTimestamp: vi.fn().mockReturnValue(pendingAsk),
+			clineMessages: [pendingAsk],
+			handleWebviewAskResponse: mockHandleWebviewAskResponse,
+			clearStaleWebviewAskResponse: mockClearStaleWebviewAskResponse,
+			messageQueueService: { clear: mockClearQueue },
+			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
+		} as any)
+
+		await webviewMessageHandler(mockClineProvider, {
+			type: "askResponse",
+			askResponse: "messageResponse",
+			text: "please continue the work",
+			images: [],
+			askTs: 100,
+		})
+
+		expect(mockHandleWebviewAskResponse).toHaveBeenCalledWith(
+			"messageResponse",
+			"please continue the work",
+			["data:image/png;base64,from-mention"],
+		)
+		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
+		expect(mockClearStaleWebviewAskResponse).not.toHaveBeenCalled()
+	})
+
+	it("routes ask responses to the focused conversation task, not the stack-top background task", async () => {
+		// A history reopen pushes a rebuilt task to the stack top while the user still
+		// chats in the focused conversation. Button clicks and typed text must reach the
+		// focused task; otherwise the focused chat freezes with no recovery.
+		const mockHandleWebviewAskResponse = vi.fn()
+		const backgroundTask = {
+			cwd: "/mock/background",
+			rooIgnoreController: undefined,
+			handleWebviewAskResponse: vi.fn(),
+			clearStaleWebviewAskResponse: vi.fn(),
+			messageQueueService: { clear: vi.fn() },
+		}
+		const focusedTask = {
+			cwd: "/mock/focused",
+			rooIgnoreController: undefined,
+			getPendingWebviewAskTs: vi.fn().mockReturnValue(200),
+			hasPendingWebviewAskResponse: vi.fn().mockReturnValue(true),
+			handleWebviewAskResponse: mockHandleWebviewAskResponse,
+			clearStaleWebviewAskResponse: vi.fn(),
+			messageQueueService: { clear: vi.fn() },
+		}
+		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue(backgroundTask as any)
+		const providerAny = mockClineProvider as any
+		providerAny.getFocusedChatTask = vi.fn().mockReturnValue(focusedTask)
+
+		try {
+			await webviewMessageHandler(mockClineProvider, {
+				type: "askResponse",
+				askResponse: "messageResponse",
+				text: "resume in the focused conversation",
+				images: [],
+				askTs: 200,
+			})
+
+			expect(mockHandleWebviewAskResponse).toHaveBeenCalledWith(
+				"messageResponse",
+				"resume in the focused conversation",
+				["data:image/png;base64,from-mention"],
+			)
+			expect(backgroundTask.handleWebviewAskResponse).not.toHaveBeenCalled()
+		} finally {
+			// The shared mock provider survives across tests; without this cleanup every
+			// later test would route into this stale focused task and fail.
+			delete providerAny.getFocusedChatTask
+		}
+	})
+	// kilocode_change end
+
 	it("accepts askResponse payloads for the current ask row", async () => {
 		const mockHandleWebviewAskResponse = vi.fn()
 		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({

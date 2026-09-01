@@ -1253,7 +1253,15 @@ export const webviewMessageHandler = async (
 		case "askResponse":
 			{
 				const resolved = await resolveIncomingImages({ text: message.text, images: message.images })
-				const task = provider.getCurrentTask()
+				// kilocode_change start
+				// Route by the focused chat conversation, not the stack-top background task.
+				// A history reopen can push a rebuilt task to the stack top while the user is
+				// still chatting in another focused conversation; getCurrentTask() then
+				// delivers button clicks and typed text into the wrong task, freezing the
+				// focused one. Fall back to getCurrentTask() when focus is unavailable.
+				const focusedTask = provider.getFocusedChatTask?.()
+				const task = focusedTask ?? provider.getCurrentTask()
+				// kilocode_change end
 				// kilocode_change start
 				// A webview response is only safe to consume while a task is actively
 				// blocked on an ask. Resend/busy-send paths can otherwise leave a stale
@@ -1392,6 +1400,23 @@ export const webviewMessageHandler = async (
 				)
 				// kilocode_change end
 			} else if (task && hasPendingAsk && isAskResponseForCurrentAsk) {
+					task.handleWebviewAskResponse(message.askResponse!, resolved.text, resolved.images)
+				} else if (
+				// kilocode_change start
+				// A blocking ask whose broadcast was lost (focus race / pending-new-
+				// conversation window / hidden webview) never updated the webview's
+				// currentAskTsRef, so typed text arrives with a stale askTs and used to
+				// fall through to dead-end branches that cleared the queue and dropped
+				// the payload entirely — chat froze with no buttons and no recovery.
+				// When a blocking ask IS pending and the payload carries real content,
+				// answer that ask instead of discarding the message. Empty clicks keep
+				// the old protective semantics (drop-only-for-auto-approved-tool-ask).
+				task &&
+				hasPendingAsk &&
+				!isAskResponseForCurrentAsk &&
+				hasMessagePayload &&
+				message.askResponse === "messageResponse"
+			) {
 					task.handleWebviewAskResponse(message.askResponse!, resolved.text, resolved.images)
 				} else if (
 					task &&

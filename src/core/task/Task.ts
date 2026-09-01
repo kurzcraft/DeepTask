@@ -2072,6 +2072,18 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// unbounded; external tool watchdogs pause while this flag is true.
 		this.isWaitingForUserApproval = true
 		try {
+			// kilocode_change start
+			// A blocking ask can lose its webview broadcast: the pending-new-conversation
+			// window, a focus race in shouldBroadcastTaskToChat, or a hidden/not-yet-ready
+			// webview all drop postStateToWebview silently. Without a retry the task hangs
+			// on this ask forever with no buttons rendered, and typed messages carrying a
+			// stale askTs get dropped by routing (freeze with no recovery). Periodically
+			// re-post the full state while still blocked so the webview can rebuild the
+			// ask controls from clineMessages. First retry only after a grace period so
+			// normal delivery stays untouched.
+			let lastAskBroadcastRetryAt = Date.now()
+			const askBroadcastRetryInterval = 2_500
+			// kilocode_change end
 			await pWaitFor(
 				() => {
 					if (this.askResponse !== undefined || this.lastMessageTs !== askTs) {
@@ -2084,6 +2096,20 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 					// the real prompt. Clear it so direct message paths can proceed.
 					if (!this.messageQueueService.isEmpty()) {
 						this.messageQueueService.clear()
+					}
+					// kilocode_change end
+
+					// kilocode_change start
+					if (Date.now() - lastAskBroadcastRetryAt >= askBroadcastRetryInterval) {
+						lastAskBroadcastRetryAt = Date.now()
+						try {
+							const retryProvider = this.providerRef.deref()
+							if (retryProvider) {
+								void retryProvider.postStateToWebview()
+							}
+						} catch {
+							// State re-post is best-effort recovery; the ask itself stays valid.
+						}
 					}
 					// kilocode_change end
 
