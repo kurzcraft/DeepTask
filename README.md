@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.1.6</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.1.7</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.1.6** 修复并行会话运行图标缺失与短负反馈被忽略（"模型不理人"）：任务完成后再次续聊重启时，侧边栏并行会话栏不再丢失运行中转圈图标（reopen 清 stale completedAt、broadcast 补录不再跳过活跃运行任务、running session 优先于残留完成标记）；用户在修复尝试后回复「没有用」「不行」「didn't work」等极短负反馈时，代理不再重述旧状态、重复失败方案或要求重新确认，而是先给出自然的聊天式回复，在同一回复中说明失败原因并转向实质不同的新方案。续聊引导从死二分改为聊天优先的语义引导——每条用户消息必须先得到自然回复（纯文本，可与工具调用同响应、回复在前工具在后），诊断/新方案/里程碑机制跟随其后而非替代回复；host 端可执行门新增中英裸否定模式（没有用/没用/不行/没效果/还是没/didn't work/still broken 等）触发进度清单扩展，纯确认与闲聊保持非 actionable，语义判断归还模型。
+> **Deeptask 9.1.7** 修复命令运行中点击"强制继续"后的彻底卡死（无按钮、发消息无响应）：阻塞提问（resume_task 等）的 UI 广播在焦点竞态/新会话待建窗口/webview 隐藏时会静默丢失，导致按钮永不出现；用户随后输入携带过期 askTs 被路由丢弃且队列被清空，聊天死锁无法恢复。现在阻塞提问每 ~2.5 秒自动向 webview 重发完整状态（丢失广播自愈、按钮重现）；有正文的消息在挂起提问存在时直接答复该提问而非丢弃；ask 响应优先路由到焦点会话的任务，历史重开推到栈顶的后台任务不再吞掉当前会话的点击与输入。
 
 ## 你可以怎样使用 Deeptask
 
@@ -113,17 +113,17 @@ Deeptask 将任务视为可恢复状态机，而不是一次性回答。未完�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.1.6.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.1.7.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.1.6.vsix --force
+    codium --install-extension ./deeptask-9.1.7.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.1.6.vsix --force
+    code --install-extension ./deeptask-9.1.7.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

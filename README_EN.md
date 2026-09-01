@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.1.6</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.1.7</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.1.6** fixes the parallel-conversation running spinner disappearing on reopen and short negative feedback being ignored (the "agent doesn't listen" feel): reopening a finished task no longer loses the rail spinner (stale `completedAt` is cleared on reuse, the live-task broadcast no longer skips actively running tasks, and a running session wins over a lingering completion marker); when the user replies with a terse negative like "没有用", "不行", or "didn't work" after a repair attempt, the agent no longer restates old status, repeats the failed approach, or asks the user to re-confirm it — it first gives a natural conversational reply, states why the fix failed in the same reply, and moves to a materially different approach. The continuation guidance drops its rigid two-way split for chat-first semantic guidance: every user message must first get a natural reply (plain text that may share the response with tool calls, reply first, tools after), with diagnosis/new-plan/milestone mechanics following rather than replacing it; the host actionable gate now recognizes bare negative replies in Chinese and English as executable defect feedback, while pure acknowledgements and small talk stay non-actionable.
+> **Deeptask 9.1.7** fixes the hard freeze after clicking "Proceed while running" on a live command (no buttons, dead message sending): a blocking ask's UI broadcast could be silently lost during a focus race, the pending-new-conversation window, or while the webview was hidden, leaving no buttons; typed text then carried a stale askTs and was dropped by routing with the queue cleared — unrecoverable deadlock. Blocking asks now re-post the full chat state every ~2.5s (lost broadcasts self-heal, buttons reappear); typed text with a stale askTs answers the pending ask instead of being dropped; ask responses route to the focused conversation's task first, so a background task pushed to the stack top by a history reopen can no longer swallow the current chat's clicks and input.
 
 ## What you can do with Deeptask
 
@@ -113,17 +113,17 @@ Deeptask treats work as a recoverable state machine rather than a one-shot answe
 
 ## Start in three minutes
 
-1. Download `deeptask-9.1.6.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.1.7.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.1.6.vsix --force
+    codium --install-extension ./deeptask-9.1.7.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.1.6.vsix --force
+    code --install-extension ./deeptask-9.1.7.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.
