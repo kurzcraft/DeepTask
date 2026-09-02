@@ -1658,7 +1658,11 @@ export const webviewMessageHandler = async (
 				// - typed text becomes a real continuation
 				// - empty Continue must also resume the task loop (manual recovery button)
 				// Otherwise the UI shows Continue, the click clears buttons, and nothing runs.
-				const task = provider.getCurrentTask()
+				// Route to the focused conversation's task first (same rule as askResponse):
+				// a history reopen can push a rebuilt task onto the stack top, and the
+				// watchdog continue must not be swallowed by that unrelated task.
+				const focusedTerminalTask = provider.getFocusedChatTask?.()
+				const task = focusedTerminalTask ?? provider.getCurrentTask()
 				const text = message.terminalOperationText
 				const images = message.terminalOperationImages
 				const hasMessagePayload = !!(text?.trim() || images?.length)

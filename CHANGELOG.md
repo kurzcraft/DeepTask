@@ -1,5 +1,13 @@
 # Deeptask
 
+## 9.1.8
+
+### Patch Changes
+
+- Fix the remaining "no buttons at all + typed messages freeze" dead state after clicking Proceed/Resume: the webview now runs a two-layer control watchdog. (1) While a pending ask or a live shell execution exists, a fallback Proceed/Cancel row stays rendered even if button texts were wiped. (2) Any primary/secondary click arms a 4s dead-letter timer; if the host shows no real progress in that window (no resumed streaming, no new ask, no message-list advance, no completion), the fallback Proceed/Cancel row is force-rendered so the user is never stranded without controls. Proceed sends a terminal continue (with any typed text), Cancel cancels the task.
+- The watchdog fallback row is gated on task controls only: the scroll-to-bottom button is navigation, not a task control, and can no longer mask a dead-letter freeze by keeping the action row technically "visible".
+- Terminal continue from the watchdog now routes to the focused conversation's task (`getFocusedChatTask`) first, so a history reopen that pushes a rebuilt task onto the stack top can no longer swallow the recovery continue.
+
 ## 9.1.7
 
 ### Patch Changes

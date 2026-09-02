@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.1.7</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.1.8</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.1.7** 修复命令运行中点击"强制继续"后的彻底卡死（无按钮、发消息无响应）：阻塞提问（resume_task 等）的 UI 广播在焦点竞态/新会话待建窗口/webview 隐藏时会静默丢失，导致按钮永不出现；用户随后输入携带过期 askTs 被路由丢弃且队列被清空，聊天死锁无法恢复。现在阻塞提问每 ~2.5 秒自动向 webview 重发完整状态（丢失广播自愈、按钮重现）；有正文的消息在挂起提问存在时直接答复该提问而非丢弃；ask 响应优先路由到焦点会话的任务，历史重开推到栈顶的后台任务不再吞掉当前会话的点击与输入。
+> **Deeptask 9.1.8** 前端双层控制看门狗，彻底消灭"无按钮卡死"死角：点击"强制继续/恢复"后若宿主在 4 秒宽限窗内无任何真实进展（无新流式输出、无新提问、消息列表未推进），界面强制渲染"继续 + 取消"兜底控制行，用户永远有逃生通道；挂起提问或命令运行中即使按钮文本被清空也保留兜底行；滚动到底按钮不再被误判为任务控制而掩盖卡死；看门狗的终端继续指令优先路由到焦点会话任务，历史重开的后台任务无法吞掉恢复操作。
 
 ## 你可以怎样使用 Deeptask
 
@@ -113,17 +113,17 @@ Deeptask 将任务视为可恢复状态机，而不是一次性回答。未完�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.1.7.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.1.8.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.1.7.vsix --force
+    codium --install-extension ./deeptask-9.1.8.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.1.7.vsix --force
+    code --install-extension ./deeptask-9.1.8.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

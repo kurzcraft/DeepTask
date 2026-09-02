@@ -80,6 +80,13 @@ export interface ChatViewRef {
 
 export const MAX_IMAGES_PER_MESSAGE = 20 // This is the Anthropic limit.
 
+// kilocode_change start
+// Control watchdog dead-letter grace: after the user clicks a primary action
+// (e.g. forced continue), the host should broadcast a fresh ask or resume
+// streaming within this window; if nothing changes we force fallback controls.
+export const DEAD_LETTER_GRACE_MS = 4000
+// kilocode_change end
+
 const platform = navigator.platform.toUpperCase()
 const isMac = platform.includes("MAC")
 const isLinux = platform.includes("LINUX")
@@ -145,6 +152,23 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const messagesRef = useRef(messages)
 	// kilocode_change: reject accidental duplicate submits before host state can round-trip.
 	const lastSubmittedMessageRef = useRef<{ signature: string; timestamp: number }>()
+
+	// kilocode_change start
+	// Dead-letter control watchdog refs/state (declared early so click
+	// handlers below can arm it; resolution logic lives near the render
+	// derivation where hasVisibleControl is computed).
+	const deadLetterArmedAtRef = useRef<number | undefined>(undefined)
+	const deadLetterLastMsgTsRef = useRef<number | undefined>(undefined)
+	const deadLetterArmedAskTsRef = useRef<number | undefined>(undefined)
+	const [deadLetterForceControls, setDeadLetterForceControls] = useState(false)
+	const armDeadLetterWatchdog = useCallback(() => {
+		deadLetterArmedAtRef.current = Date.now()
+		const latest = messagesRef.current.at(-1)
+		deadLetterLastMsgTsRef.current = latest?.ts
+		deadLetterArmedAskTsRef.current = latest?.type === "ask" ? latest.ts : undefined
+		setDeadLetterForceControls(false)
+	}, [])
+	// kilocode_change end
 
 	const [optimisticHomeTask, setOptimisticHomeTask] = useState<ClineMessage | undefined>(undefined)
 
@@ -1078,10 +1102,33 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				}
 				// kilocode_change end
 
-				// When busy, route input directly without creating a local queue/feedback card.
-				// The authoritative host echo appears only after the message is accepted, which
-				// prevents long waiting messages from covering the active conversation.
-				if ((sendingDisabled || isStreaming) && messagesRef.current.length > 0) {
+			// When busy, route input directly without creating a local queue/feedback card.
+			// The authoritative host echo appears only after the message is accepted, which
+			// prevents long waiting messages from covering the active conversation.
+			// kilocode_change start
+			// Dead-letter guard: in the exact window after a primary click (buttons
+			// wiped, no fresh ask/api_req_started yet), an askResponse routed by
+			// askTs can be dropped by the host. The terminalOperation continue
+			// channel works with or without a pending ask, so typed text during
+			// that window always reaches the model as a real continuation.
+			const hasAnyVisibleControl = !!(
+				clineAskRef.current ||
+				primaryButtonText ||
+				isStreaming
+			)
+			if (!hasAnyVisibleControl && (sendingDisabled || isStreaming) && messagesRef.current.length > 0) {
+				vscode.postMessage({
+					type: "terminalOperation",
+					terminalOperation: "continue",
+					terminalOperationText: text,
+					terminalOperationImages: images.length > 0 ? images : undefined,
+				})
+				setInputValue("")
+				setSelectedImages([])
+				return
+			}
+			// kilocode_change end
+			if ((sendingDisabled || isStreaming) && messagesRef.current.length > 0) {
 					try {
 						vscode.postMessage({
 							type: "askResponse",
@@ -1186,7 +1233,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				handleChatReset()
 			}
 		},
-		[handleChatReset, markFollowUpAsAnswered, sendingDisabled, isStreaming], // messagesRef and clineAskRef are stable
+		[handleChatReset, markFollowUpAsAnswered, sendingDisabled, isStreaming, primaryButtonText], // messagesRef and clineAskRef are stable
 	)
 
 	const handleSetChatBoxMessage = useCallback(
@@ -1213,6 +1260,10 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		(text?: string, images?: string[]) => {
 			// Mark that user has responded
 			userRespondedRef.current = true
+			// kilocode_change: arm the dead-letter control watchdog — if the
+			// host never follows up this click with fresh controls/messages,
+			// fallback controls must appear instead of a blank action row.
+			armDeadLetterWatchdog()
 
 			const trimmedInput = text?.trim()
 
@@ -1374,13 +1425,16 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			setPrimaryButtonText(undefined)
 			setSecondaryButtonText(undefined)
 		},
-		[clineAsk, startNewTask, currentTaskItem?.parentTaskId, lastMessage?.text], // kilocode_change: add lastMessage?.text
+		[clineAsk, startNewTask, currentTaskItem?.parentTaskId, lastMessage?.text, armDeadLetterWatchdog], // kilocode_change: add lastMessage?.text + dead-letter watchdog
 	)
 
 	const handleSecondaryButtonClick = useCallback(
 		(text?: string, images?: string[]) => {
 			// Mark that user has responded
 			userRespondedRef.current = true
+			// kilocode_change: arm the dead-letter control watchdog for the
+			// secondary (usually Terminate) path as well.
+			armDeadLetterWatchdog()
 
 			const trimmedInput = text?.trim()
 
@@ -1429,10 +1483,47 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			setClineAsk(undefined)
 			setEnableButtons(false)
 		},
-		[clineAsk, startNewTask, isStreaming],
+		[clineAsk, startNewTask, isStreaming, armDeadLetterWatchdog],
 	)
 
 	const handleTaskCloseButtonClick = useCallback(() => startNewTask(), [startNewTask]) // kilocode_change
+
+	// kilocode_change start
+	// Watchdog fallback handlers: these run only when the regular action row is
+	// gone (dead-letter window after a primary click). They must work without
+	// any pending ask and without relying on clineAsk state.
+	// - Proceed: reuse the terminalOperation continue channel, which the host
+	//   maps to handleTerminalOperation when a shell is live and to a real
+	//   continueTaskFromUserMessage when it is not. Typed input rides along.
+	// - Cancel: cancelTask works from any state, including "nothing running"
+	//   (the host treats it as a UI reset that re-enables the composer).
+	const handleWatchdogProceed = useCallback(() => {
+		const trimmed = inputValueRef.current.trim()
+		const images = selectedImages
+		if (trimmed || images.length > 0) {
+			vscode.postMessage({
+				type: "terminalOperation",
+				terminalOperation: "continue",
+				terminalOperationText: trimmed || undefined,
+				terminalOperationImages: images.length > 0 ? images : undefined,
+			})
+			setInputValue("")
+			setSelectedImages([])
+		} else {
+			vscode.postMessage({ type: "terminalOperation", terminalOperation: "continue" })
+		}
+		// Give the host a moment to broadcast fresh state; keep the row visible
+		// so repeated clicks remain possible if delivery is lost again.
+		setSendingDisabled(true)
+	}, [selectedImages])
+
+	const handleWatchdogCancel = useCallback(() => {
+		vscode.postMessage({ type: "cancelTask" })
+		setDidClickCancel(true)
+		// Keep sendingDisabled true so the composer stays consistent with a
+		// cancel-in-flight; the host's state broadcast will settle it.
+	}, [])
+	// kilocode_change end
 
 	const { info: model } = useSelectedModel(apiConfiguration)
 
@@ -2264,6 +2355,71 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		vscode.postMessage({ type: "condenseTaskContextRequest", text: taskId })
 	}
 
+	// kilocode_change start
+	// Control watchdog: a busy task must never render with zero actionable
+	// controls. Two layers:
+	// 1) Immediate: a pending ask (clineAsk) or a live shell keeps a fallback
+	//    row alive even when ask broadcasts were lost and button texts are
+	//    wiped (the exact "no buttons at all" freeze).
+	// 2) Dead-letter timer: any primary/secondary click arms a timestamp plus
+	//    the last message ts. If, after a grace period, no visible control has
+	//    appeared AND the message list has not advanced, the host continuation
+	//    was lost — force the fallback row so the user is never stranded.
+	const hasVisibleControl = !!(
+		showScrollToBottom ||
+		primaryButtonText ||
+		secondaryButtonText ||
+		isStreaming
+	)
+	const lastMessageIsSettledCompletion =
+		!!lastMessage &&
+		lastMessage.partial !== true &&
+		(lastMessage.say === "completion_result" || lastMessage.ask === "completion_result")
+	// (deadLetter refs/state/armDeadLetterWatchdog are declared at the top of
+	// the component so click handlers can arm them before this derivation.)
+	// Resolve the armed timer. Host progress is defined strictly: streaming
+	// resumed, a NEW ask arrived (ts differs from the one visible at arm
+	// time), or the task settled. A mere re-derivation that refills button
+	// texts from the SAME lingering ask is NOT progress — the ask the user
+	// just answered must not disarm the watchdog; only the grace window
+	// rebasing keeps it honest, and true silence fires the fallback row.
+	useEffect(() => {
+		if (deadLetterArmedAtRef.current === undefined) {
+			return
+		}
+		const latest = messagesRef.current.at(-1)
+		const hostMadeProgress =
+			isStreaming ||
+			lastMessageIsSettledCompletion ||
+			(latest?.type === "ask" && latest.ts !== deadLetterArmedAskTsRef.current)
+		if (hostMadeProgress) {
+			deadLetterArmedAtRef.current = undefined
+			if (deadLetterForceControls) {
+				setDeadLetterForceControls(false)
+			}
+			return
+		}
+		// Rebase: the reference is whatever the list looked like at the last
+		// effect run (click or message advance). Silence from here = dead letter.
+		deadLetterLastMsgTsRef.current = latest?.ts
+		const timer = setTimeout(() => {
+			const nowLatest = messagesRef.current.at(-1)
+			if (
+				nowLatest?.ts === deadLetterLastMsgTsRef.current &&
+				!isStreaming &&
+				!lastMessageIsSettledCompletion
+			) {
+				setDeadLetterForceControls(true)
+			}
+		}, DEAD_LETTER_GRACE_MS)
+		return () => clearTimeout(timer)
+	}, [hasVisibleControl, lastMessage?.ts, deadLetterForceControls, isStreaming, lastMessageIsSettledCompletion])
+	const watchdogControlsVisible =
+		!lastMessageIsSettledCompletion &&
+		(deadLetterForceControls ||
+			(!hasVisibleControl && (clineAsk !== undefined || activeCommandCount > 0)))
+	// kilocode_change end
+
 	const areButtonsVisible = showScrollToBottom || primaryButtonText || secondaryButtonText || isStreaming
 
 	const showTelemetryBanner = telemetrySetting === "unset" // kilocode_change
@@ -2616,6 +2772,35 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 						)}
 					</>
 				)}
+
+				{/* kilocode_change start
+				    Control watchdog fallback row: renders only in the dead-letter
+				    window where the regular action row is gone but the task is
+				    still busy. Guarantees Proceed/Cancel are always available.
+				    Note: gate on hasVisibleControl (NOT areButtonsVisible) —
+				    scroll-to-bottom is navigation, not a task control, and must
+				    not mask a dead-letter freeze. */}
+				{watchdogControlsVisible && (
+					<div className="flex h-9 items-center mb-1 px-[15px]" data-testid="watchdog-controls">
+						<StandardTooltip content={t("chat:proceedWhileRunning.tooltip")}>
+							<Button
+								data-testid="watchdog-proceed"
+								className="flex-1 mr-[6px]"
+								onClick={() => handleWatchdogProceed()}>
+								{t("chat:proceedWhileRunning.title")}
+							</Button>
+						</StandardTooltip>
+						<StandardTooltip content={t("chat:cancel.tooltip")}>
+							<Button
+								data-testid="watchdog-cancel"
+								className="flex-1 ml-0"
+								onClick={() => handleWatchdogCancel()}>
+								{t("chat:cancel.title")}
+							</Button>
+						</StandardTooltip>
+					</div>
+				)}
+				{/* kilocode_change end */}
 
 				{/* kilocode_change: waiting/queued message cards are intentionally absent. */}
 				<ChatTextArea
