@@ -75,6 +75,7 @@ describe("attemptCompletionTool", () => {
 		mockTask = {
 			consecutiveMistakeCount: 0,
 			recordToolError: vi.fn(),
+			recordPrematureCompletionRejection: vi.fn(), // kilocode_change: circuit breaker hook
 			todoList: undefined,
 			getIncompleteTaskProgressItems: vi.fn().mockResolvedValue([]),
 		}
@@ -683,10 +684,58 @@ describe("attemptCompletionTool", () => {
 			expect(mockMarkHandled).not.toHaveBeenCalled()
 			expect(mockTask.consecutiveMistakeCount).toBe(1)
 			expect(mockTask.recordToolError).toHaveBeenCalledWith("attempt_completion")
+			// kilocode_change: every real rejection feeds the circuit breaker
+			expect(mockTask.recordPrematureCompletionRejection).toHaveBeenCalledTimes(1)
 			expect(mockPushToolResult).toHaveBeenCalledWith(
 				expect.stringContaining("Do not claim the continued task is complete yet"),
 			)
 		})
+
+		// kilocode_change start
+		it("stands the rejection gate down after the circuit breaker trips so the turn always finishes", async () => {
+			const block: AttemptCompletionToolUse = {
+				type: "tool_use",
+				name: "attempt_completion",
+				params: {
+					result: "重复收尾，断路器应放行。",
+				},
+				partial: false,
+			}
+
+			const mockSay = vi.fn().mockResolvedValue(undefined)
+			const mockMarkHandled = vi.fn()
+			mockTask.say = mockSay
+			;(mockTask as any).ask = vi.fn().mockResolvedValue({ response: "messageResponse", text: "" })
+			mockTask.emit = vi.fn() as any
+			;(mockTask as any).hasTaskCompletedInCurrentLoop = vi.fn(() => false)
+			;(mockTask as any).markTaskCompletedInCurrentLoop = vi.fn()
+			;(mockTask as any).emitFinalTokenUsageUpdate = vi.fn()
+			;(mockTask as any).getTokenUsage = vi.fn().mockReturnValue(undefined)
+			;(mockTask as any).toolUsage = undefined
+			;(mockTask as any).markActiveResponseCompletionHandled = mockMarkHandled
+			// Gate already tripped: 3 rejections consumed the retry budget.
+			;(mockTask as any).shouldRejectPrematureActiveContinuationCompletion = vi.fn().mockReturnValue(false)
+			;(mockTask as any).shouldDowngradeCompletionToActiveResponse = vi.fn().mockResolvedValue(false)
+
+			const callbacks: AttemptCompletionCallbacks = {
+				askApproval: mockAskApproval,
+				handleError: mockHandleError,
+				pushToolResult: mockPushToolResult,
+				removeClosingTag: mockRemoveClosingTag,
+				askFinishSubTaskApproval: mockAskFinishSubTaskApproval,
+				toolDescription: mockToolDescription,
+				toolProtocol: "xml",
+			}
+
+			await attemptCompletionTool.handle(mockTask as Task, block, callbacks)
+
+			// The completion goes through instead of dead-looping the turn.
+			expect(mockPushToolResult).not.toHaveBeenCalledWith(
+				expect.stringContaining("Do not claim the continued task is complete yet"),
+			)
+			expect(mockTask.recordToolError).not.toHaveBeenCalledWith("attempt_completion")
+		})
+		// kilocode_change end
 
 		it("renders DeepTask attempt_completion as green soft completion even outside continuation", async () => {
 			const block: AttemptCompletionToolUse = {

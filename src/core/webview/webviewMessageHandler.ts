@@ -149,8 +149,22 @@ export const webviewMessageHandler = async (
 	 * cannot lose its cancel or composer controls after an unhandled rejection.
 	 */
 	const cancelTaskAndRestoreUi = async (reason: string): Promise<void> => {
+		// kilocode_change start
+		// Bounded-cancel guarantee: cancelTask() awaits abortTask() and task
+		// rehydration, either of which can hang forever on a half-dead task
+		// (stuck provider stream, locked history I/O). If that happens the
+		// finally-broadcast below never runs, the webview keeps grayed-out
+		// controls, and the user cannot even send a message. Race the cancel
+		// against a hard deadline: win or lose, always publish fresh state so
+		// the composer and cancel button recover.
+		const CANCEL_STATE_BROADCAST_TIMEOUT_MS = 10_000
 		try {
-			await provider.cancelTask()
+			await Promise.race([
+				provider.cancelTask(),
+				new Promise<void>((resolve) =>
+					setTimeout(resolve, CANCEL_STATE_BROADCAST_TIMEOUT_MS).unref?.(),
+				),
+			])
 		} catch (error) {
 			provider.log(
 				`[cancelTaskAndRestoreUi] ${reason} failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -159,6 +173,7 @@ export const webviewMessageHandler = async (
 		} finally {
 			await provider.postStateToWebview()
 		}
+		// kilocode_change end
 	}
 
 	/**

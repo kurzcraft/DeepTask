@@ -160,12 +160,14 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const deadLetterArmedAtRef = useRef<number | undefined>(undefined)
 	const deadLetterLastMsgTsRef = useRef<number | undefined>(undefined)
 	const deadLetterArmedAskTsRef = useRef<number | undefined>(undefined)
+	const deadLetterCancelArmedRef = useRef(false)
 	const [deadLetterForceControls, setDeadLetterForceControls] = useState(false)
-	const armDeadLetterWatchdog = useCallback(() => {
+	const armDeadLetterWatchdog = useCallback((fromCancel = false) => {
 		deadLetterArmedAtRef.current = Date.now()
 		const latest = messagesRef.current.at(-1)
 		deadLetterLastMsgTsRef.current = latest?.ts
 		deadLetterArmedAskTsRef.current = latest?.type === "ask" ? latest.ts : undefined
+		deadLetterCancelArmedRef.current = fromCancel
 		setDeadLetterForceControls(false)
 	}, [])
 	// kilocode_change end
@@ -1441,6 +1443,11 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			if (isStreaming) {
 				vscode.postMessage({ type: "cancelTask" })
 				setDidClickCancel(true)
+				// kilocode_change: cancel-click dead-letter guard. If the host never
+				// ends the stream or broadcasts anything after this cancel, the
+				// still-true isStreaming must NOT count as progress — the watchdog
+				// fires so the user is not stuck with a grayed-out cancel forever.
+				armDeadLetterWatchdog(true)
 				return
 			}
 
@@ -1522,7 +1529,11 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		setDidClickCancel(true)
 		// Keep sendingDisabled true so the composer stays consistent with a
 		// cancel-in-flight; the host's state broadcast will settle it.
-	}, [])
+		// Re-arm the cancel dead-letter guard: if this repeat cancel is also
+		// swallowed (host fully dead), the fallback row must stay rendered so
+		// the user can keep retrying or recover another way.
+		armDeadLetterWatchdog(true)
+	}, [armDeadLetterWatchdog])
 	// kilocode_change end
 
 	const { info: model } = useSelectedModel(apiConfiguration)
@@ -2383,17 +2394,22 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	// texts from the SAME lingering ask is NOT progress — the ask the user
 	// just answered must not disarm the watchdog; only the grace window
 	// rebasing keeps it honest, and true silence fires the fallback row.
+	// The cancel-click path is special: after the user cancels, a still-true
+	// isStreaming is the STUCK state itself, not progress — only streaming
+	// actually ending (or a new message/ask arriving) may disarm it.
 	useEffect(() => {
 		if (deadLetterArmedAtRef.current === undefined) {
 			return
 		}
 		const latest = messagesRef.current.at(-1)
-		const hostMadeProgress =
-			isStreaming ||
-			lastMessageIsSettledCompletion ||
-			(latest?.type === "ask" && latest.ts !== deadLetterArmedAskTsRef.current)
+		const hostMadeProgress = deadLetterCancelArmedRef.current
+			? !isStreaming || lastMessageIsSettledCompletion || latest?.ts !== deadLetterLastMsgTsRef.current
+			: isStreaming ||
+				lastMessageIsSettledCompletion ||
+				(latest?.type === "ask" && latest.ts !== deadLetterArmedAskTsRef.current)
 		if (hostMadeProgress) {
 			deadLetterArmedAtRef.current = undefined
+			deadLetterCancelArmedRef.current = false
 			if (deadLetterForceControls) {
 				setDeadLetterForceControls(false)
 			}
@@ -2406,16 +2422,24 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			const nowLatest = messagesRef.current.at(-1)
 			if (
 				nowLatest?.ts === deadLetterLastMsgTsRef.current &&
-				!isStreaming &&
+				(deadLetterCancelArmedRef.current ? true : !isStreaming) &&
 				!lastMessageIsSettledCompletion
 			) {
 				setDeadLetterForceControls(true)
+				// Self-heal the composer: the host is confirmed silent, so stale
+				// sendingDisabled/didClickCancel from the swallowed click would
+				// otherwise keep the input dead with no broadcast to clear them.
+				setSendingDisabled(false)
+				setDidClickCancel(false)
 			}
 		}, DEAD_LETTER_GRACE_MS)
 		return () => clearTimeout(timer)
 	}, [hasVisibleControl, lastMessage?.ts, deadLetterForceControls, isStreaming, lastMessageIsSettledCompletion])
 	const watchdogControlsVisible =
 		!lastMessageIsSettledCompletion &&
+		// deadLetterForceControls is the watchdog's verdict that the host died:
+		// it must override hasVisibleControl, because a frozen isStreaming=true
+		// (cancel-click stuck) or a wiped-button row IS the dead state itself.
 		(deadLetterForceControls ||
 			(!hasVisibleControl && (clineAsk !== undefined || activeCommandCount > 0)))
 	// kilocode_change end

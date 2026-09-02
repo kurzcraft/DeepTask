@@ -3386,12 +3386,14 @@ describe("Queued message processing after condense", () => {
 		vi.spyOn(task as any, "getSavedApiConversationHistory").mockResolvedValue((task as any).apiConversationHistory)
 		vi.spyOn(task as any, "initiateTaskLoop").mockResolvedValue(undefined)
 
-		await task.continueTaskFromUserMessage("this is a new task after completion")
+		await task.continueTaskFromUserMessage("fix the follow-up issue after completion")
 
 		expect(task.todoList).toEqual([
 			{ id: "1", content: "finished item", status: "completed" },
 			{ id: "2", content: "final summary", status: "completed" },
 		])
+		// kilocode_change: actionable continuation text (explicit fix verb) still
+		// requires concrete work; only non-actionable turns are exempt.
 		expect(task.shouldRejectPrematureActiveContinuationCompletion()).toBe(true)
 		await expect(task.shouldDowngradeCompletionToActiveResponse()).resolves.toBe(false)
 	})
@@ -3751,6 +3753,78 @@ describe("Queued message processing after condense", () => {
 		expect(task.shouldRejectPrematureActiveContinuationCompletion()).toBe(true)
 		await expect(task.shouldDowngradeCompletionToActiveResponse()).resolves.toBe(false)
 	})
+
+	// kilocode_change start
+	it("does not reject completion for non-actionable conversational continuations", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context, // kilocode_change
+		})
+
+		vi.spyOn(task as any, "getSavedApiConversationHistory").mockResolvedValue([])
+		vi.spyOn(task as any, "initiateTaskLoop").mockResolvedValue(undefined)
+
+		// A pure question/acknowledgement continuation must be answerable with a
+		// conversational completion even without any work tool.
+		await task.continueTaskFromUserMessage("有没有固定网址的长期免费方法？")
+
+		expect((task as any).requiresProgressListExpansion).toBe(false)
+		expect(task.shouldRejectPrematureActiveContinuationCompletion()).toBe(false)
+	})
+
+	it("stands the premature-completion gate down after three rejections", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context, // kilocode_change
+		})
+
+		vi.spyOn(task as any, "getSavedApiConversationHistory").mockResolvedValue([])
+		vi.spyOn(task as any, "initiateTaskLoop").mockResolvedValue(undefined)
+
+		await task.continueTaskFromUserMessage("fix the actual new issue")
+
+		// First three attempts in an actionable continuation are rejected...
+		expect(task.shouldRejectPrematureActiveContinuationCompletion()).toBe(true)
+		task.recordPrematureCompletionRejection()
+		expect(task.shouldRejectPrematureActiveContinuationCompletion()).toBe(true)
+		task.recordPrematureCompletionRejection()
+		expect(task.shouldRejectPrematureActiveContinuationCompletion()).toBe(true)
+		task.recordPrematureCompletionRejection()
+		// ...but the circuit breaker stands the gate down so the model can always
+		// finish the turn with a reply instead of dead-looping.
+		expect(task.shouldRejectPrematureActiveContinuationCompletion()).toBe(false)
+	})
+
+	it("resets the rejection circuit breaker when real work tools run", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context, // kilocode_change
+		})
+
+		vi.spyOn(task as any, "getSavedApiConversationHistory").mockResolvedValue([])
+		vi.spyOn(task as any, "initiateTaskLoop").mockResolvedValue(undefined)
+
+		await task.continueTaskFromUserMessage("fix the actual new issue")
+
+		task.recordPrematureCompletionRejection()
+		task.recordPrematureCompletionRejection()
+		task.markActiveContinuationWorkToolUsed("read_file")
+
+		expect((task as any).prematureCompletionRejectionCount).toBe(0)
+	})
+	// kilocode_change end
 
 	it("allows an initial DeepTask response to reach a real task completion boundary", async () => {
 		const provider = createProvider()

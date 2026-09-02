@@ -612,6 +612,15 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	private shouldKeepNextCompletionActive = false
 	private activeContinuationWorkToolUsed = false
 	private endCurrentLoopAfterActiveCompletion = false
+	// kilocode_change start
+	// Circuit breaker for the premature-completion rejection gate: if the model
+	// keeps retrying attempt_completion in an actionable continuation without
+	// ever doing work, unlimited rejections would burn the mistake limit and
+	// dead-loop the conversation. After MAX consecutive rejections, the gate
+	// stands down and lets the (possibly thin) completion through so the user
+	// always gets a reply. Reset on every fresh continuation turn.
+	private prematureCompletionRejectionCount = 0
+	// kilocode_change end
 	// Soft completion stays "pending" until the old initiateTaskLoop finally exits.
 	// Clearing endCurrentLoopAfterActiveCompletion at break is not enough: a user
 	// message can arrive between break and finally while isTaskLoopActive is still
@@ -2425,14 +2434,52 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// DeepTask response must reach a real completed boundary so the next human
 		// message can start with fresh task state. Only concrete work performed in an
 		// explicit same-task continuation remains active for another follow-up turn.
-		return this.shouldKeepNextCompletionActive && this.activeContinuationWorkToolUsed
+		// kilocode_change start
+		// Pure conversational follow-ups (questions, acknowledgements, discussion) do
+		// not use work tools by nature: their answer IS the deliverable. Requiring a
+		// work tool for those leaves the model unable to finish the turn through any
+		// path (attempt_completion is rejected AND downgrade requires a tool), which
+		// dead-loops the conversation with no reply to the user. So: either real
+		// work happened, or the continuation was never actionable in the first place.
+		return this.shouldKeepNextCompletionActive && (this.activeContinuationWorkToolUsed || !this.requiresProgressListExpansion)
+		// kilocode_change end
 	}
 
 	public shouldRejectPrematureActiveContinuationCompletion(): boolean {
 		// kilocode_change: continuation quality gates apply to root sessions, not to
 		// delegated child completion, whose result must always be returned to its parent.
-		return !this.parentTaskId && this.shouldKeepNextCompletionActive && !this.activeContinuationWorkToolUsed
+		// kilocode_change start
+		// Non-actionable continuations (pure questions, acknowledgements, discussion)
+		// have no work tool to demand: their conversational answer is the deliverable,
+		// so the "no work tool yet" rejection would trap the model in an unfinishable
+		// turn. Only actionable work continuations require concrete tools first.
+		// Circuit breaker: after repeated rejections the model may never switch to a
+		// work tool; unlimited rejection would dead-loop the turn with no user reply.
+		// Standing down after MAX retries guarantees the user always gets an answer.
+		// NOTE: this is a pure read — the counter is only incremented at the actual
+		// rejection point (recordPrematureCompletionRejection) because this method
+		// is also called from streaming handlePartial, where side effects would
+		// inflate the count once per streamed block.
+		const MAX_PREMATURE_COMPLETION_REJECTIONS = 3
+		if (this.prematureCompletionRejectionCount >= MAX_PREMATURE_COMPLETION_REJECTIONS) {
+			return false
+		}
+		return (
+			!this.parentTaskId &&
+			this.shouldKeepNextCompletionActive &&
+			this.requiresProgressListExpansion &&
+			!this.activeContinuationWorkToolUsed
+		)
+		// kilocode_change end
 	}
+
+	// kilocode_change start
+	// Called only from the attempt_completion execute rejection branch (one
+	// increment per real rejected completion attempt, never from handlePartial).
+	public recordPrematureCompletionRejection(): void {
+		this.prematureCompletionRejectionCount++
+	}
+	// kilocode_change end
 
 	public markTaskCompletedInCurrentLoop(): void {
 		this.taskCompletedInCurrentLoop = true
@@ -2452,6 +2499,10 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		}
 
 		this.activeContinuationWorkToolUsed = true
+		// kilocode_change: real work resets the rejection circuit breaker — the
+		// model re-engaged with tools, so a later completion attempt is judged
+		// fresh rather than riding a stale rejection streak.
+		this.prematureCompletionRejectionCount = 0
 	}
 
 	public normalizeTodoListForActiveContinuation(todos: TodoItem[]): TodoItem[] {
@@ -2766,6 +2817,9 @@ ${protocolHint}
 		await this.markTaskActiveForUserContinuation()
 		this.shouldKeepNextCompletionActive = true
 		this.activeContinuationWorkToolUsed = false
+		// kilocode_change: fresh continuation turn — reset the premature-completion
+		// rejection circuit breaker so the new turn gets its full retry budget.
+		this.prematureCompletionRejectionCount = 0
 		// The previous soft completion has been consumed by this user turn.
 		this.softCompletionBoundaryPending = false
 		this.endCurrentLoopAfterActiveCompletion = false
@@ -3418,6 +3472,9 @@ ${protocolHint}
 			await this.markTaskActiveForUserContinuation()
 			this.shouldKeepNextCompletionActive = true
 			this.activeContinuationWorkToolUsed = false
+			// kilocode_change: reset the rejection circuit breaker for the injected
+			// continuation turn as well (same budget as a live user turn).
+			this.prematureCompletionRejectionCount = 0
 			// Restored human input has the same priority as live input. Do not gate it on
 			// archived progress state before the model can understand the message.
 			this.requiresProgressListExpansion = false
