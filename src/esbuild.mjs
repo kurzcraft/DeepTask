@@ -86,8 +86,11 @@ async function main() {
 						buildDir,
 					)
 
-					// Copy walkthrough files to dist directory
-					copyPaths([["walkthrough", "walkthrough"]], srcDir, distDir)
+				// Copy walkthrough files to dist directory
+				copyPaths([["walkthrough", "walkthrough"]], srcDir, distDir)
+
+				// kilocode_change: copy built-in git workflows to dist so they ship inside the VSIX
+				copyPaths([["defaults", "defaults"]], srcDir, distDir)
 
 					// Copy tree-sitter files to dist directory
 					copyPaths([["services/continuedev/tree-sitter", "tree-sitter"]], srcDir, distDir)

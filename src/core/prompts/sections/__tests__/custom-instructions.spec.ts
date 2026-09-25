@@ -3,6 +3,23 @@
 // Mock fs/promises
 vi.mock("fs/promises")
 
+// kilocode_change start: mock roo-config directory resolution so tests are
+// hermetic and independent of the unified .deeptask canonical dir migration.
+// The mocked resolvers emulate the legacy behavior the fixtures rely on:
+// global dir -> /fake/cwd/.kilocode, project dir -> cwd/.kilocode, subfolder dirs -> none.
+vi.mock("../../../../services/roo-config", () => ({
+	getGlobalRooDirectory: vi.fn().mockReturnValue("/fake/cwd/.kilocode"),
+	getProjectRooDirectoryForCwd: vi.fn().mockImplementation((cwd: string) => `${cwd}/.kilocode`),
+	getRooDirectoriesForCwd: vi
+		.fn()
+		.mockImplementation((cwd: string) => ["/fake/cwd/.kilocode", `${cwd}/.kilocode`]),
+	getAllRooDirectoriesForCwd: vi
+		.fn()
+		.mockImplementation(async (cwd: string) => ["/fake/cwd/.kilocode", `${cwd}/.kilocode`]),
+	getAgentsDirectoriesForCwd: vi.fn().mockImplementation(async (cwd: string) => [cwd]),
+}))
+// kilocode_change end
+
 // Mock path.resolve and path.join to be predictable in tests
 vi.mock("path", async () => ({
 	...(await vi.importActual("path")),

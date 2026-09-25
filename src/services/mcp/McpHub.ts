@@ -37,6 +37,7 @@ import { GlobalFileNames } from "../../shared/globalFileNames"
 
 import { fileExistsAtPath } from "../../utils/fs"
 import { arePathsEqual, getWorkspacePath } from "../../utils/path"
+import { getProjectRooDirectoryForCwd } from "../../services/roo-config" // kilocode_change: unified config dir
 import { injectVariables } from "../../utils/config"
 import { NotificationService } from "./kilocode/NotificationService"
 import { safeWriteJson } from "../../utils/safeWriteJson"
@@ -808,7 +809,8 @@ export class McpHub {
 		}
 
 		const workspaceFolder = this.providerRef.deref()?.cwd ?? getWorkspacePath()
-		const projectMcpPattern = new vscode.RelativePattern(workspaceFolder, ".kilocode/mcp.json")
+		// kilocode_change: watch unified .deeptask/mcp.json plus legacy paths
+		const projectMcpPattern = new vscode.RelativePattern(workspaceFolder, "{.deeptask,.kilocode}/mcp.json")
 
 		// Create a file system watcher for the project MCP file pattern
 		this.projectMcpWatcher = vscode.workspace.createFileSystemWatcher(projectMcpPattern)
@@ -1046,7 +1048,8 @@ export class McpHub {
 	// Get project-level MCP configuration path
 	private async getProjectMcpPath(): Promise<string | null> {
 		const workspacePath = this.providerRef.deref()?.cwd ?? getWorkspacePath()
-		const projectMcpDir = path.join(workspacePath, ".kilocode")
+		// kilocode_change: unified config dir resolver (.deeptask > .kilocode > .roo)
+		const projectMcpDir = getProjectRooDirectoryForCwd(workspacePath)
 		const projectMcpPath = path.join(projectMcpDir, "mcp.json")
 
 		try {

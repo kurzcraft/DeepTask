@@ -12,7 +12,7 @@ import { GlobalFileNames } from "../../shared/globalFileNames"
 import { ensureSettingsDirectoryExists } from "../../utils/globalContext"
 import { t } from "../../i18n"
 import type { CustomModesManager } from "../../core/config/CustomModesManager"
-import { getGlobalRooDirectory } from "../roo-config" // kilocode_change
+import { getGlobalRooDirectory, getProjectRooDirectoryForCwd } from "../roo-config" // kilocode_change
 
 import { RemoteConfigLoader } from "./RemoteConfigLoader"
 import { SimpleInstaller } from "./SimpleInstaller"
@@ -270,8 +270,11 @@ export class MarketplaceManager {
 				// File doesn't exist or can't be read, skip
 			}
 
-			// Check MCPs in .roo/mcp.json
-			const projectMcpPath = path.join(workspaceFolder.uri.fsPath, ".kilocode", "mcp.json")
+			// Check MCPs in the unified config dir (.deeptask > .kilocode > .roo)
+			const projectMcpPath = path.join(
+				getProjectRooDirectoryForCwd(workspaceFolder.uri.fsPath),
+				"mcp.json",
+			) // kilocode_change: unified config dir
 			try {
 				const content = await fs.readFile(projectMcpPath, "utf-8")
 				const data = JSON.parse(content)
@@ -286,8 +289,11 @@ export class MarketplaceManager {
 				// File doesn't exist or can't be read, skip
 			}
 
-			// kilocode_change start - Check skills in .kilocode/skills/
-			const projectSkillsPath = path.join(workspaceFolder.uri.fsPath, ".kilocode", "skills")
+			// kilocode_change start - Check skills in the unified config dir skills/
+			const projectSkillsPath = path.join(
+				getProjectRooDirectoryForCwd(workspaceFolder.uri.fsPath),
+				"skills",
+			)
 			try {
 				const entries = await fs.readdir(projectSkillsPath, { withFileTypes: true })
 				for (const entry of entries) {

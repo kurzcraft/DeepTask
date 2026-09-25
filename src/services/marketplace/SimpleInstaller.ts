@@ -14,7 +14,7 @@ import type {
 import { GlobalFileNames } from "../../shared/globalFileNames"
 import { ensureSettingsDirectoryExists } from "../../utils/globalContext"
 import type { CustomModesManager } from "../../core/config/CustomModesManager"
-import { getGlobalRooDirectory } from "../roo-config" // kilocode_change
+import { getGlobalRooDirectory, getProjectRooDirectoryForCwd } from "../roo-config" // kilocode_change
 import { extractTarball } from "./tarball-utils" // kilocode_change
 
 export interface InstallOptions extends InstallMarketplaceItemOptions {
@@ -400,7 +400,8 @@ export class SimpleInstaller {
 			if (!workspaceFolder) {
 				throw new Error("No workspace folder found")
 			}
-			return path.join(workspaceFolder.uri.fsPath, ".kilocode", "mcp.json")
+			// kilocode_change: unified config dir resolver (.deeptask > .kilocode > .roo, auto-migrating)
+			return path.join(getProjectRooDirectoryForCwd(workspaceFolder.uri.fsPath), "mcp.json")
 		} else {
 			const globalSettingsPath = await ensureSettingsDirectoryExists(this.context)
 			return path.join(globalSettingsPath, GlobalFileNames.mcpSettings)
@@ -467,7 +468,8 @@ export class SimpleInstaller {
 			if (!workspaceFolder) {
 				throw new Error("No workspace folder found")
 			}
-			return path.join(workspaceFolder.uri.fsPath, ".kilocode", "skills")
+			// kilocode_change: unified config dir resolver (.deeptask > .kilocode > .roo, auto-migrating)
+			return path.join(getProjectRooDirectoryForCwd(workspaceFolder.uri.fsPath), "skills")
 		} else {
 			const globalDir = getGlobalRooDirectory()
 			return path.join(globalDir, "skills")

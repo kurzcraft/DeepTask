@@ -1,5 +1,6 @@
 import * as vscode from "vscode"
 import * as path from "path"
+import * as os from "os" // kilocode_change
 import * as fs from "fs/promises"
 import { constants as fsConstants } from "fs"
 import * as fsSync from "fs" // // kilocode_change
@@ -83,15 +84,56 @@ export async function getTaskDirectoryPath(globalStoragePath: string, taskId: st
 	return taskDir
 }
 
-/**
- * Gets the settings directory path
- */
-export async function getSettingsDirectoryPath(globalStoragePath: string): Promise<string> {
-	const basePath = await getStorageBasePath(globalStoragePath)
-	const settingsDir = path.join(basePath, "settings")
-	await fs.mkdir(settingsDir, { recursive: true })
-	return settingsDir
+// kilocode_change start: unified .deeptask top-level settings files
+// mcp_settings.json and custom_modes.yaml live at the TOP LEVEL of
+// ~/.deeptask (next to skills/, workflows/, rules/) so all user
+// configuration is visible in one place. Two legacy locations are
+// migrated file-by-file without overwrite: the old globalStorage
+// settings dir and the interim ~/.deeptask/settings dir.
+async function migrateLegacySettingsFiles(source: string, target: string): Promise<void> {
+	const entries = await fs.readdir(source, { withFileTypes: true }).catch(() => [])
+	for (const entry of entries) {
+		if (!entry.isFile()) {
+			continue
+		}
+		const from = path.join(source, entry.name)
+		const to = path.join(target, entry.name)
+		const targetExists = await fs.stat(to).then(() => true).catch(() => false)
+		if (!targetExists) {
+			await fs.copyFile(from, to).catch(() => {})
+		}
+	}
 }
+
+export async function getSettingsDirectoryPath(globalStoragePath: string): Promise<string> {
+	// An explicit customStoragePath still wins; its top level holds the files.
+	const customBase = await getStorageBasePath("")
+	if (customBase) {
+		await fs.mkdir(customBase, { recursive: true })
+		try {
+			await migrateLegacySettingsFiles(path.join(customBase, "settings"), customBase)
+		} catch {
+			// best-effort migration
+		}
+		return customBase
+	}
+
+	const unifiedDir = path.join(os.homedir(), ".deeptask")
+	const legacyGlobalStorageDir = path.join(globalStoragePath, "settings")
+	const interimSettingsDir = path.join(unifiedDir, "settings")
+
+	try {
+		await fs.mkdir(unifiedDir, { recursive: true })
+		await migrateLegacySettingsFiles(legacyGlobalStorageDir, unifiedDir)
+		await migrateLegacySettingsFiles(interimSettingsDir, unifiedDir)
+		// Remove the interim settings dir when it is now empty (safe no-op otherwise).
+		await fs.rmdir(interimSettingsDir).catch(() => {})
+	} catch {
+		// best-effort migration; path resolution must never fail because of it
+	}
+	return unifiedDir
+}
+// kilocode_change end
 
 /**
  * Gets the cache directory path

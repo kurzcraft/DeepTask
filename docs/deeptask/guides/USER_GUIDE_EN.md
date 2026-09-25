@@ -10,13 +10,13 @@ Download the latest `deeptask-*.vsix` from
 Install in VSCodium:
 
 ```bash
-codium --install-extension ./deeptask-5.5.9.vsix --force
+codium --install-extension ./deeptask-9.1.9.vsix --force
 ```
 
 Install in VS Code:
 
 ```bash
-code --install-extension ./deeptask-5.5.9.vsix --force
+code --install-extension ./deeptask-9.1.9.vsix --force
 ```
 
 You can also select **Install from VSIX...** from the Extensions panel menu. Reload the editor window after an upgrade and confirm that the Extensions view reports the new version.
@@ -56,8 +56,32 @@ With **YOLO Mode** enabled, the Agent can invoke allowed tools and continue with
 Disable YOLO Mode, or grant only selected read, edit, and command capabilities in Auto-Approve settings. The Agent will wait for approval at tool, command, and final-completion checkpoints. You can approve, reject, and attach revised instructions.
 
 Use incremental approval for unfamiliar repositories, production configuration, data migration, and release work. Expand automation later through tool permissions and command allowlists.
+## 4. Mode management and self-evolution (evolve)
 
-## 4. Control long-running work
+### What a mode is
+
+Each agent mode = a role definition (roleDefinition) + when-to-use + description + custom instructions + tool groups (groups, optionally with file-regex scope limits) + an icon. Built-in modes include Code, Architect, Ask, Debug, and Orchestrator; **evolve is the default since 9.1.9** — a self-improving cognitive agent.
+
+### Managing modes manually
+
+Settings → **Modes** lets you create, edit, and delete custom modes. Built-in modes cannot be modified in place: editing a built-in mode automatically forks a `name-1`/`name-2` suffixed copy (e.g. `evolve-1`); your edits live on the copy while the factory definition stays intact. Each copy's config file lands in `~/.deeptask/modes/<slug>.md` and mode definitions aggregate in `~/.deeptask/custom_modes.yaml`.
+
+### Letting the agent manage modes itself (manage_mode tool)
+
+The agent can call the `manage_mode` tool mid-task:
+
+- **create**: build a brand-new mode from scratch with every parameter (slug/name/role definition/when-to-use/description/custom instructions/tool groups/icon).
+- **copy**: duplicate any existing mode into a `-1`/`-2` suffixed copy and edit it (mandatory path for built-in modes).
+- **update**: update a custom mode in place; built-in modes automatically convert to overriding copies.
+- **switch**: switch the current session's mode — **effective immediately**, the next turn already uses the new prompt.
+
+evolve's self-modifications leave an audit trail: improvement principles go to `~/.deeptask/PROMPT_EVOLUTION_LOG.md`, fork lineage (when/from/why) to `~/.deeptask/MACHINE_LINEAGE.md` — evolution history is auditable and reversible.
+
+### Combining subagents
+
+The main agent dispatches parallel subagents via `dispatch_subagents`, each with **its own mode + provider profile + model**. Example: three subagents use Architect mode + a strong reasoning model for design research, Code mode + a cheap model for bulk code edits, and Ask mode + a fast model for doc checks; the parent agent merges and continues. Multi-model division of labor and proactive-reasoning timing are defined at the prompt level, unconstrained by presets.
+
+## 5. Control long-running work
 
 ### Correct the task while it runs
 
@@ -91,7 +115,7 @@ For commands expected to exceed roughly 30 seconds, contain multiple stages, or 
 
 This preserves live visibility in the integrated terminal while keeping complete evidence available after context condensation, window reload, or cross-session recovery.
 
-## 5. Continue work through EXTRA
+## 6. Continue work through EXTRA
 
 `EXTRA/` is a recoverable workspace for long-running tasks, not a miscellaneous temporary directory:
 
@@ -106,7 +130,7 @@ For non-trivial work, ask the Agent to create a task-specific Markdown checklist
 
 Historical commands remain traceable through four paths: integrated terminals, command blocks in the conversation, scripts in `EXTRA/bash/`, and logs in `EXTRA/output/`. Release and migration work should preserve rerunnable scripts rather than terminal text alone.
 
-## 6. Context condensation and recovery
+## 7. Context condensation and recovery
 
 Deeptask condenses early conversation when approaching the model's context limit and falls back to sliding-window truncation when necessary. Improve recovery quality by:
 
@@ -118,13 +142,13 @@ Deeptask condenses early conversation when approaching the model's context limit
 
 Condensed summaries are committed transactionally, so a failed summary does not replace the original history. When automatic summarization fails, the runtime prioritizes a continuation-safe fallback.
 
-## 7. Complete and extend a task
+## 8. Complete and extend a task
 
 A final result should answer three questions: what changed, how it was verified, and what boundaries remain. The Agent should not declare completion while checklist items remain open or before concrete tool-backed work has occurred.
 
 A requirement sent after completion creates a new work turn instead of repeating the old conclusion. State the acceptance delta explicitly, for example: "Add Windows acceptance to the existing fix; do not rerun tests that already passed."
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 ### A sent message does not execute immediately
 

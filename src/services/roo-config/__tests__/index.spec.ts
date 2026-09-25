@@ -59,42 +59,43 @@ describe("RooConfigService", () => {
 	})
 
 	describe("getGlobalRooDirectory", () => {
-		it("should return correct path for global .roo directory", () => {
+		it("should return the unified .deeptask path as canonical", () => {
 			mockExistsSync.mockReturnValue(false)
 			const result = getGlobalRooDirectory()
-			expect(result).toBe(path.join("/mock/home", ".kilocode"))
+			expect(result).toBe(path.join("/mock/home", ".deeptask"))
 		})
 
-		it("should fallback to legacy .roo when it exists and .kilocode does not", () => {
+		it("should migrate legacy .roo into .deeptask and return .deeptask", () => {
 			mockExistsSync.mockImplementation((p: string) => p === path.join("/mock/home", ".roo"))
 
 			const result = getGlobalRooDirectory()
 
-			expect(result).toBe(path.join("/mock/home", ".roo"))
+			// The unified dir is canonical; legacy dirs are migration sources only.
+			expect(result).toBe(path.join("/mock/home", ".deeptask"))
 		})
 
 		it("should handle different home directories", () => {
 			mockHomedir.mockReturnValue("/different/home")
 			const result = getGlobalRooDirectory()
-			expect(result).toBe(path.join("/different/home", ".kilocode"))
+			expect(result).toBe(path.join("/different/home", ".deeptask"))
 		})
 	})
 
 	describe("getProjectRooDirectoryForCwd", () => {
-		it("should return correct path for given cwd", () => {
+		it("should return the unified .deeptask path for given cwd", () => {
 			mockExistsSync.mockReturnValue(false)
 			const cwd = "/custom/project/path"
 			const result = getProjectRooDirectoryForCwd(cwd)
-			expect(result).toBe(path.join(cwd, ".kilocode"))
+			expect(result).toBe(path.join(cwd, ".deeptask"))
 		})
 
-		it("should fallback to legacy .roo when it exists and .kilocode does not", () => {
+		it("should migrate legacy .roo into .deeptask and return .deeptask", () => {
 			const cwd = "/custom/project/path"
 			mockExistsSync.mockImplementation((p: string) => p === path.join(cwd, ".roo"))
 
 			const result = getProjectRooDirectoryForCwd(cwd)
 
-			expect(result).toBe(path.join(cwd, ".roo"))
+			expect(result).toBe(path.join(cwd, ".deeptask"))
 		})
 	})
 
@@ -248,7 +249,7 @@ describe("RooConfigService", () => {
 
 			const result = getRooDirectoriesForCwd(cwd)
 
-			expect(result).toEqual([path.join("/mock/home", ".kilocode"), path.join(cwd, ".kilocode")])
+			expect(result).toEqual([path.join("/mock/home", ".deeptask"), path.join(cwd, ".deeptask")])
 		})
 	})
 
@@ -338,9 +339,9 @@ describe("RooConfigService", () => {
 
 			await loadConfiguration("rules/rules.md", "/project/path")
 
-			expect(mockReadFile).toHaveBeenCalledWith(path.join("/mock/home", ".kilocode", "rules/rules.md"), "utf-8")
+			expect(mockReadFile).toHaveBeenCalledWith(path.join("/mock/home", ".deeptask", "rules/rules.md"), "utf-8")
 			expect(mockReadFile).toHaveBeenCalledWith(
-				path.join("/project/path", ".kilocode", "rules/rules.md"),
+				path.join("/project/path", ".deeptask", "rules/rules.md"),
 				"utf-8",
 			)
 		})
@@ -474,8 +475,8 @@ describe("RooConfigService", () => {
 			const result = await getAllRooDirectoriesForCwd("/project/path")
 
 			expect(result).toEqual([
-				path.join("/mock/home", ".kilocode"), // global
-				path.join("/project/path", ".kilocode"), // project
+				path.join("/mock/home", ".deeptask"), // global
+				path.join("/project/path", ".deeptask"), // project
 				path.join("/project/path", "subfolder", ".kilocode"), // subfolder
 			])
 		})
@@ -486,7 +487,7 @@ describe("RooConfigService", () => {
 
 			const result = await getAllRooDirectoriesForCwd("/project/path")
 
-			expect(result).toEqual([path.join("/mock/home", ".kilocode"), path.join("/project/path", ".kilocode")])
+			expect(result).toEqual([path.join("/mock/home", ".deeptask"), path.join("/project/path", ".deeptask")])
 		})
 
 		it("should maintain order: global, project, subfolders (alphabetically)", async () => {
@@ -499,8 +500,8 @@ describe("RooConfigService", () => {
 			const result = await getAllRooDirectoriesForCwd("/project/path")
 
 			expect(result).toEqual([
-				path.join("/mock/home", ".kilocode"), // global first
-				path.join("/project/path", ".kilocode"), // project second
+				path.join("/mock/home", ".deeptask"), // global first
+				path.join("/project/path", ".deeptask"), // project second
 				path.join("/project/path", "apple", ".kilocode"), // subfolders alphabetically
 				path.join("/project/path", "zebra", ".kilocode"),
 			])

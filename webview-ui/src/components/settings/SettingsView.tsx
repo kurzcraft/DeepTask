@@ -653,20 +653,13 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props, ref)
 			// kilocode_change end - Auto-purge settings
 			vscode.postMessage({ type: "debugSetting", bool: cachedState.debug })
 
-			// kilocode_change: After saving, sync cachedState to extensionState without clobbering
-			// the editing profile's apiConfiguration when editing a non-active profile.
-			if (editingApiConfigName !== currentApiConfigName) {
-				// Only sync non-apiConfiguration fields from extensionState
-				const { apiConfiguration: _, ...restOfExtensionState } = extensionState
-				setCachedState((prevState) => ({
-					...prevState,
-					...restOfExtensionState,
-				}))
-			} else {
-				// When editing the active profile, sync everything including apiConfiguration
-				setCachedState((prevState) => ({ ...prevState, ...extensionState }))
-			}
-			// kilocode_change end
+			// kilocode_change: After saving, do NOT clobber cachedState with the
+			// stale extensionState snapshot — the backend has not processed the
+			// save yet, so this used to overwrite the just-saved values with old
+			// ones, making "save" appear to do nothing while the button never
+			// re-enabled (isChangeDetected flipped back after the next keystroke).
+			// The dedicated sync effect above already merges fresh extensionState
+			// once it arrives, and only while isChangeDetected is false.
 			setChangeDetected(false)
 		}
 	}

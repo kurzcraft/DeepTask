@@ -28,6 +28,9 @@ import { createSwitchProviderProfileTool, type SwitchProviderProfileToolOptions 
 // kilocode_change start: agent-managed provider profiles
 import { createManageProviderProfileTool } from "./manage_provider_profile"
 // kilocode_change end
+// kilocode_change start: agent-managed modes
+import { createManageModeTool } from "./manage_mode"
+// kilocode_change end
 import updateTodoList from "./update_todo_list"
 import writeToFile from "./write_to_file"
 
@@ -119,6 +122,9 @@ export function getNativeTools(options: NativeToolsOptions = {}): OpenAI.Chat.Ch
 		...(providerProfileSwitchEnabled ? [createSwitchProviderProfileTool({ profiles: providerProfiles })] : []),
 		// kilocode_change start: agent-managed provider profiles
 		createManageProviderProfileTool({ providerProfileSwitchEnabled }),
+		// kilocode_change end
+		// kilocode_change start: agent-managed modes
+		createManageModeTool(),
 		// kilocode_change end
 		updateTodoList,
 		writeToFile,

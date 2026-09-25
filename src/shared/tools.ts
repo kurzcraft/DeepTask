@@ -92,6 +92,15 @@ export const toolParamNames = [
 	"api_key", // manage_provider_profile credential
 	"base_url", // manage_provider_profile endpoint
 	// kilocode_change end
+	// kilocode_change start: agent-managed modes
+	"role_definition", // manage_mode role definition
+	"when_to_use", // manage_mode usage hint
+	"custom_instructions", // manage_mode extra instructions
+	"groups", // manage_mode tool groups JSON
+	"icon_name", // manage_mode icon
+	"copy_from", // manage_mode copy source slug
+	"switch_after", // manage_mode immediate-switch flag
+	// kilocode_change end
 	"files", // Native protocol parameter for read_file
 	"operations", // search_and_replace parameter for multiple operations
 	"patch", // apply_patch parameter
@@ -105,6 +114,9 @@ export const toolParamNames = [
 	"task_description", // workspace_create parameter
 	"delete_after", // workspace_merge parameter
 	"switch_to", // workspace_merge: switch this conversation before/while merging
+	// kilocode_change end
+	// kilocode_change start: agent-managed modes
+	"slug", // manage_mode target slug
 	// kilocode_change end
 ] as const
 
@@ -152,6 +164,22 @@ export type NativeToolArgs = {
 		base_url?: string
 		reasoning_effort?: string
 		settings?: Record<string, unknown>
+		reason?: string
+	}
+	// kilocode_change end
+	// kilocode_change start: agent-managed modes
+	manage_mode: {
+		action: "list" | "create" | "copy" | "update" | "switch"
+		slug?: string
+		name?: string
+		role_definition?: string
+		when_to_use?: string
+		description?: string
+		custom_instructions?: string
+		groups?: string
+		icon_name?: string
+		copy_from?: string
+		switch_after?: string
 		reason?: string
 	}
 	// kilocode_change end
@@ -317,6 +345,29 @@ export interface ManageProviderProfileToolUse extends ToolUse<"manage_provider_p
 }
 // kilocode_change end
 
+// kilocode_change start: agent-managed modes
+export interface ManageModeToolUse extends ToolUse<"manage_mode"> {
+	name: "manage_mode"
+	params: Partial<
+		Pick<
+			Record<ToolParamName, string>,
+			| "action"
+			| "slug"
+			| "name"
+			| "role_definition"
+			| "when_to_use"
+			| "description"
+			| "custom_instructions"
+			| "groups"
+			| "icon_name"
+			| "copy_from"
+			| "switch_after"
+			| "reason"
+		>
+	>
+}
+// kilocode_change end
+
 export interface NewTaskToolUse extends ToolUse<"new_task"> {
 	name: "new_task"
 	params: Partial<Pick<Record<ToolParamName, string>, "mode" | "message" | "todos">>
@@ -378,6 +429,9 @@ export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
 	// kilocode_change start: agent-managed provider profiles
 	manage_provider_profile: "manage provider profiles",
 	// kilocode_change end
+	// kilocode_change start: agent-managed modes
+	manage_mode: "manage modes",
+	// kilocode_change end
 	new_task: "create new task",
 	// kilocode_change start: parallel subagents & workspaces
 	dispatch_subagents: "dispatch parallel subagents",
@@ -428,6 +482,9 @@ export const TOOL_GROUPS: Record<ToolGroup, ToolGroupConfig> = {
 			// kilocode_change start: agent-managed provider profiles
 			"manage_provider_profile",
 			// kilocode_change end
+			// kilocode_change start: agent-managed modes
+			"manage_mode",
+			// kilocode_change end
 			"new_task",
 			// kilocode_change start: parallel subagents & workspaces
 			"dispatch_subagents",
@@ -448,6 +505,9 @@ export const ALWAYS_AVAILABLE_TOOLS: ToolName[] = [
 	"switch_provider_profile",
 	// kilocode_change start: agent-managed provider profiles
 	"manage_provider_profile",
+	// kilocode_change end
+	// kilocode_change start: agent-managed modes
+	"manage_mode",
 	// kilocode_change end
 	"new_task",
 	"report_bug",

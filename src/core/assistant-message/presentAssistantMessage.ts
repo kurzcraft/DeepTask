@@ -36,6 +36,9 @@ import { switchProviderProfileTool } from "../tools/SwitchProviderProfileTool"
 // kilocode_change start: agent-managed provider profiles
 import { manageProviderProfileTool } from "../tools/ManageProviderProfileTool"
 // kilocode_change end
+// kilocode_change start: agent-managed modes
+import { manageModeTool } from "../tools/ManageModeTool"
+// kilocode_change end
 import { attemptCompletionTool, AttemptCompletionCallbacks } from "../tools/AttemptCompletionTool"
 import { newTaskTool } from "../tools/NewTaskTool"
 // kilocode_change start: parallel subagents & workspaces
@@ -1281,6 +1284,17 @@ export async function presentAssistantMessage(cline: Task) {
 									toolProtocol,
 								},
 							)
+							break
+						// kilocode_change end
+						// kilocode_change start: agent-managed modes
+						case "manage_mode":
+							await manageModeTool.handle(cline, block as ToolUse<"manage_mode">, {
+								askApproval,
+								handleError,
+								pushToolResult,
+								removeClosingTag,
+								toolProtocol,
+							})
 							break
 						// kilocode_change end
 							case "new_task":

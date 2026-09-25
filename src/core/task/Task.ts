@@ -94,6 +94,7 @@ import { TerminalRegistry } from "../../integrations/terminal/TerminalRegistry"
 // utils
 import { calculateApiCostAnthropic, calculateApiCostOpenAI } from "../../shared/cost"
 import { getWorkspacePath } from "../../utils/path"
+import { getGlobalRooDirectory } from "../../services/roo-config" // kilocode_change: unified config dir
 import { sanitizeToolUseId } from "../../utils/tool-id"
 
 // prompts
@@ -932,9 +933,8 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	 * Uses KiloCodePaths utility if available, otherwise falls back to home directory.
 	 */
 	private getCliGlobalStoragePath(): string {
-		// Try to use home directory based path for CLI mode
-		const homeDir = process.env.HOME || process.env.USERPROFILE || "/tmp"
-		const cliStoragePath = path.join(homeDir, ".kilocode", "cli", "global")
+		// Use the unified global config dir resolver (.deeptask > .kilocode, auto-migrating)
+		const cliStoragePath = path.join(getGlobalRooDirectory(), "cli", "global") // kilocode_change: unified config dir
 
 		// Ensure directory exists
 		try {
@@ -3839,13 +3839,20 @@ ${protocolHint}
 			console.error(`Error during task ${this.taskId}.${this.instanceId} disposal:`, error)
 			// Don't rethrow - we want abort to always succeed
 		}
-		// Save the countdown message in the automatic retry or other content.
+		// kilocode_change start: bounded persistence during abort.
+		// saveClineMessages can hang on locked history I/O; an abort path must
+		// never block forever on it. Race it against a short deadline and log
+		// the timeout instead of freezing cancellation in a half-aborted state.
+		const ABORT_SAVE_TIMEOUT_MS = 5_000
 		try {
-			// Save the countdown message in the automatic retry or other content.
-			await this.saveClineMessages()
+			await Promise.race([
+				this.saveClineMessages(),
+				new Promise<void>((resolve) => setTimeout(resolve, ABORT_SAVE_TIMEOUT_MS).unref?.()),
+			])
 		} catch (error) {
 			console.error(`Error saving messages during abort for task ${this.taskId}.${this.instanceId}:`, error)
 		}
+		// kilocode_change end
 	}
 
 	public dispose(): void {

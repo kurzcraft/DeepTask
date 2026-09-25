@@ -13,6 +13,10 @@ export class RooProtectedController {
 
 	// Predefined list of protected Roo configuration patterns
 	private static readonly PROTECTED_PATTERNS = [
+		".deeptaskignore", // kilocode_change: unified config dir
+		".deeptaskmodes", // kilocode_change: unified config dir
+		".deeptaskrules", // kilocode_change: unified config dir
+		".deeptask/**", // kilocode_change: unified config dir
 		".kilocodeignore",
 		".kilocodemodes",
 		".kilocoderules",

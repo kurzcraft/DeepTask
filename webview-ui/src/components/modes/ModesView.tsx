@@ -3,10 +3,17 @@ import {
 	VSCodeCheckbox,
 	VSCodeRadioGroup,
 	VSCodeRadio,
-	VSCodeTextArea,
 	VSCodeLink,
 	VSCodeTextField,
 } from "@vscode/webview-ui-toolkit/react"
+// kilocode_change start: native controlled inputs for mode text fields.
+// The deprecated @vscode/webview-ui-toolkit web components rewrite their
+// shadow textarea value on every React re-render, which resets the caret to
+// the end mid-edit ("typing feels stuck, only paste works"). Plain native
+// elements with standard React controlled inputs do not have this problem.
+import { Textarea as NativeTextarea } from "@src/components/ui/textarea"
+import { Input as NativeInput } from "@src/components/ui/input"
+// kilocode_change end
 import { Trans } from "react-i18next"
 import { ChevronDown, X, Upload, Download, MessageSquare } from "lucide-react"
 
@@ -126,6 +133,88 @@ const ModesView = ({ hideHeader = false }: { hideHeader?: boolean }) => {
 	// Display list that overlays optimistic names
 	const displayModes = (modes || []).map((m) => (localRenames[m.slug] ? { ...m, name: localRenames[m.slug] } : m))
 
+	// kilocode_change start: local-first controlled editing for inline mode text
+	// fields (roleDefinition / description / whenToUse).
+	//
+	// Failure postmortem (v9.1.9 first attempt): the previous fix kept a
+	// "reconcile drafts with backend echo" step that dropped a draft as soon as
+	// its trimmed value matched the echo. Typing then produced a value flip
+	// (untyped draft "abc " -> echoed "abc") right after the 400ms debounce
+	// fired, so React rewrote the textarea mid-edit: the caret jumped to the
+	// end and mid-word edits looked like the content could not be changed.
+	//
+	// Structural fix: the draft is the ONLY thing that rewrites the textarea
+	// while a mode is being edited. Backend echoes never touch the displayed
+	// value. Drafts are cleared only when the user switches to another mode
+	// (pending pushes are flushed first, so nothing is lost) or hits reset.
+	// Commits happen on the 400ms idle debounce, on blur, and on unmount.
+	type ModeTextField = "roleDefinition" | "description" | "whenToUse"
+	const [modeDrafts, setModeDrafts] = useState<Record<string, Partial<Record<ModeTextField, string>>>>({})
+	const modeDraftTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+	const pendingModeDraftPushesRef = useRef<Record<string, (() => void) | undefined>>({})
+	const scheduleModeDraftPush = useCallback((slug: string, push: () => void, delay = 400) => {
+		clearTimeout(modeDraftTimersRef.current[slug])
+		pendingModeDraftPushesRef.current[slug] = push
+		modeDraftTimersRef.current[slug] = setTimeout(() => {
+			pendingModeDraftPushesRef.current[slug] = undefined
+			push()
+		}, delay)
+	}, [])
+	const flushModeDraftPush = useCallback((slug: string) => {
+		clearTimeout(modeDraftTimersRef.current[slug])
+		const push = pendingModeDraftPushesRef.current[slug]
+		pendingModeDraftPushesRef.current[slug] = undefined
+		push?.()
+	}, [])
+	// Flush pending pushes on unmount so quick edits are never lost.
+	useEffect(() => {
+		const timers = modeDraftTimersRef.current
+		const pending = pendingModeDraftPushesRef.current
+		return () => {
+			Object.values(timers).forEach((timer) => clearTimeout(timer))
+			Object.values(pending).forEach((push) => push?.())
+		}
+	}, [])
+	// When the user moves to another mode, commit whatever was being typed and
+	// return the previous mode to backend-truth display.
+	const previousVisualModeRef = useRef(visualMode)
+	useEffect(() => {
+		const previous = previousVisualModeRef.current
+		previousVisualModeRef.current = visualMode
+		if (previous === visualMode) return
+		if (previous) {
+			flushModeDraftPush(previous)
+			setModeDrafts((prev) => {
+				if (!prev[previous]) return prev
+				const next = { ...prev }
+				delete next[previous]
+				return next
+			})
+		}
+	}, [visualMode, flushModeDraftPush])
+	const customModePromptsRef = useRef(customModePrompts)
+	useEffect(() => {
+		customModePromptsRef.current = customModePrompts
+	}, [customModePrompts])
+	// Draft-aware value: while a draft exists for this slug+field it is the sole
+	// display source; the backend value only seeds fields never edited here.
+	const modeTextFieldValue = useCallback(
+		(slug: string, field: ModeTextField) => {
+			const customMode = customModesRef.current
+				? findModeBySlug(slug, customModesRef.current)
+				: undefined
+			const prompt = customModePromptsRef.current?.[slug] as PromptComponent | undefined
+			const backendValue =
+				field === "roleDefinition"
+					? customMode?.roleDefinition ?? prompt?.roleDefinition ?? getRoleDefinition(slug as Mode)
+					: field === "description"
+						? customMode?.description ?? prompt?.description ?? getDescription(slug as Mode)
+						: customMode?.whenToUse ?? prompt?.whenToUse ?? getWhenToUse(slug as Mode)
+			const draft = modeDrafts[slug]?.[field]
+			return draft !== undefined ? draft : (backendValue ?? "")
+		},
+		[modeDrafts],
+	)
 	// Direct update functions
 	const updateAgentPrompt = useCallback(
 		(mode: Mode, promptData: PromptComponent) => {
@@ -164,6 +253,42 @@ const ModesView = ({ hideHeader = false }: { hideHeader?: boolean }) => {
 			},
 		})
 	}, [])
+
+	// kilocode_change start: debounced push for draft fields (declared after the
+	// update functions so declaration order stays valid).
+	const updateAgentPromptRef = useRef(updateAgentPrompt)
+	useEffect(() => {
+		updateAgentPromptRef.current = updateAgentPrompt
+	}, [updateAgentPrompt])
+	const updateCustomModeRef = useRef(updateCustomMode)
+	useEffect(() => {
+		updateCustomModeRef.current = updateCustomMode
+	}, [updateCustomMode])
+	const modeTextFieldChange = useCallback(
+		(slug: string, field: ModeTextField) => (value: string) => {
+			setModeDrafts((prev) => ({
+				...prev,
+				[slug]: { ...prev[slug], [field]: value },
+			}))
+			scheduleModeDraftPush(slug, () => {
+				const trimmed = value.trim()
+				const customMode = customModesRef.current ? findModeBySlug(slug, customModesRef.current) : undefined
+				if (customMode) {
+					updateCustomModeRef.current(slug, {
+						...customMode,
+						[field]: trimmed || undefined,
+						source: customMode.source || "global",
+					})
+				} else {
+					updateAgentPromptRef.current(slug as Mode, {
+						[field]: trimmed || undefined,
+					})
+				}
+			})
+		},
+		[scheduleModeDraftPush],
+	)
+	// kilocode_change end
 
 	// Helper function to find a mode by slug
 	const findModeBySlug = useCallback(
@@ -586,6 +711,23 @@ const ModesView = ({ hideHeader = false }: { hideHeader?: boolean }) => {
 		const updatedPrompt = { ...existingPrompt }
 		delete updatedPrompt[type] // Remove the field entirely to ensure it reloads from defaults
 
+		// kilocode_change: drop any pending draft for this field so the textarea
+		// immediately falls back to backend truth instead of showing stale text.
+		if (type === "roleDefinition" || type === "description" || type === "whenToUse") {
+			clearTimeout(modeDraftTimersRef.current[modeSlug])
+			pendingModeDraftPushesRef.current[modeSlug] = undefined
+			setModeDrafts((prev) => {
+				const draft = prev[modeSlug]
+				if (!draft || draft[type] === undefined) return prev
+				const nextDraft = { ...draft }
+				delete nextDraft[type]
+				const next = { ...prev }
+				if (Object.keys(nextDraft).length === 0) delete next[modeSlug]
+				else next[modeSlug] = nextDraft
+				return next
+			})
+		}
+
 		vscode.postMessage({
 			type: "updatePrompt",
 			promptMode: modeSlug,
@@ -972,36 +1114,16 @@ const ModesView = ({ hideHeader = false }: { hideHeader?: boolean }) => {
 					<div className="text-sm text-vscode-descriptionForeground mb-2">
 						{t("prompts:roleDefinition.description")}
 					</div>
-					<VSCodeTextArea
-						resize="vertical"
-						value={(() => {
-							const customMode = findModeBySlug(visualMode, customModes)
-							const prompt = customModePrompts?.[visualMode] as PromptComponent
-							return customMode?.roleDefinition ?? prompt?.roleDefinition ?? getRoleDefinition(visualMode)
-						})()}
-						onChange={(e) => {
-							const value =
-								(e as unknown as CustomEvent)?.detail?.target?.value ??
-								((e as any).target as HTMLTextAreaElement).value
-							const customMode = findModeBySlug(visualMode, customModes)
-							if (customMode) {
-								// For custom modes, update the JSON file
-								updateCustomMode(visualMode, {
-									...customMode,
-									roleDefinition: value.trim() || "",
-									source: customMode.source || "global",
-								})
-							} else {
-								// For built-in modes, update the prompts
-								updateAgentPrompt(visualMode, {
-									roleDefinition: value.trim() || undefined,
-								})
-							}
-						}}
-						className="w-full"
-						rows={5}
-						data-testid={`${getCurrentMode()?.slug || "code"}-prompt-textarea`}
-					/>
+			<NativeTextarea
+				value={modeTextFieldValue(visualMode, "roleDefinition")}
+				onChange={(e) => {
+					modeTextFieldChange(visualMode, "roleDefinition")(e.target.value)
+				}}
+				onBlur={() => flushModeDraftPush(visualMode)}
+				className="w-full font-mono text-xs resize-y"
+				rows={5}
+				data-testid={`${getCurrentMode()?.slug || "code"}-prompt-textarea`}
+			/>
 				</div>
 
 				{/* Description section */}
@@ -1028,34 +1150,16 @@ const ModesView = ({ hideHeader = false }: { hideHeader?: boolean }) => {
 					<div className="text-sm text-vscode-descriptionForeground mb-2">
 						{t("prompts:description.description")}
 					</div>
-					<VSCodeTextField
-						value={(() => {
-							const customMode = findModeBySlug(visualMode, customModes)
-							const prompt = customModePrompts?.[visualMode] as PromptComponent
-							return customMode?.description ?? prompt?.description ?? getDescription(visualMode)
-						})()}
-						onChange={(e) => {
-							const value =
-								(e as unknown as CustomEvent)?.detail?.target?.value ??
-								((e as any).target as HTMLTextAreaElement).value
-							const customMode = findModeBySlug(visualMode, customModes)
-							if (customMode) {
-								// For custom modes, update the JSON file
-								updateCustomMode(visualMode, {
-									...customMode,
-									description: value.trim() || undefined,
-									source: customMode.source || "global",
-								})
-							} else {
-								// For built-in modes, update the prompts
-								updateAgentPrompt(visualMode, {
-									description: value.trim() || undefined,
-								})
-							}
-						}}
-						className="w-full"
-						data-testid={`${getCurrentMode()?.slug || "code"}-description-textfield`}
-					/>
+			<NativeInput
+				type="text"
+				value={modeTextFieldValue(visualMode, "description")}
+				onChange={(e) => {
+					modeTextFieldChange(visualMode, "description")(e.target.value)
+				}}
+				onBlur={() => flushModeDraftPush(visualMode)}
+				className="w-full"
+				data-testid={`${getCurrentMode()?.slug || "code"}-description-textfield`}
+			/>
 				</div>
 
 				{/* When to Use section */}
@@ -1082,36 +1186,16 @@ const ModesView = ({ hideHeader = false }: { hideHeader?: boolean }) => {
 					<div className="text-sm text-vscode-descriptionForeground mb-2">
 						{t("prompts:whenToUse.description")}
 					</div>
-					<VSCodeTextArea
-						resize="vertical"
-						value={(() => {
-							const customMode = findModeBySlug(visualMode, customModes)
-							const prompt = customModePrompts?.[visualMode] as PromptComponent
-							return customMode?.whenToUse ?? prompt?.whenToUse ?? getWhenToUse(visualMode)
-						})()}
-						onChange={(e) => {
-							const value =
-								(e as unknown as CustomEvent)?.detail?.target?.value ??
-								((e as any).target as HTMLTextAreaElement).value
-							const customMode = findModeBySlug(visualMode, customModes)
-							if (customMode) {
-								// For custom modes, update the JSON file
-								updateCustomMode(visualMode, {
-									...customMode,
-									whenToUse: value.trim() || undefined,
-									source: customMode.source || "global",
-								})
-							} else {
-								// For built-in modes, update the prompts
-								updateAgentPrompt(visualMode, {
-									whenToUse: value.trim() || undefined,
-								})
-							}
-						}}
-						className="w-full"
-						rows={4}
-						data-testid={`${getCurrentMode()?.slug || "code"}-when-to-use-textarea`}
-					/>
+			<NativeTextarea
+				value={modeTextFieldValue(visualMode, "whenToUse")}
+				onChange={(e) => {
+					modeTextFieldChange(visualMode, "whenToUse")(e.target.value)
+				}}
+				onBlur={() => flushModeDraftPush(visualMode)}
+				className="w-full font-mono text-xs resize-y"
+				rows={4}
+				data-testid={`${getCurrentMode()?.slug || "code"}-when-to-use-textarea`}
+			/>
 				</div>
 
 				{/* Mode settings */}
@@ -1229,38 +1313,35 @@ const ModesView = ({ hideHeader = false }: { hideHeader?: boolean }) => {
 							modeName: getCurrentMode()?.name || "Code",
 						})}
 					</div>
-					<VSCodeTextArea
-						resize="vertical"
-						value={(() => {
-							const customMode = findModeBySlug(visualMode, customModes)
-							const prompt = customModePrompts?.[visualMode] as PromptComponent
-							return (
-								customMode?.customInstructions ??
-								prompt?.customInstructions ??
-								getCustomInstructions(visualMode, customModes)
-							)
-						})()}
-						onChange={(e) => {
-							const value =
-								(e as unknown as CustomEvent)?.detail?.target?.value ??
-								((e as any).target as HTMLTextAreaElement).value
-							const customMode = findModeBySlug(visualMode, customModes)
-							if (customMode) {
-								// For custom modes, update the JSON file
-								updateCustomMode(visualMode, {
-									...customMode,
-									// Preserve empty string; only treat null/undefined as unset
-									customInstructions: value ?? undefined,
-									source: customMode.source || "global",
-								})
-							} else {
-								// For built-in modes, update the prompts
-								const existingPrompt = customModePrompts?.[visualMode] as PromptComponent
-								updateAgentPrompt(visualMode, {
-									...existingPrompt,
-									customInstructions: value.trim() || undefined,
-								})
-							}
+				<NativeTextarea
+					value={(() => {
+						const customMode = findModeBySlug(visualMode, customModes)
+						const prompt = customModePrompts?.[visualMode] as PromptComponent
+						return (
+							customMode?.customInstructions ??
+							prompt?.customInstructions ??
+							getCustomInstructions(visualMode, customModes)
+						)
+					})()}
+					onChange={(e) => {
+						const value = e.target.value
+						const customMode = findModeBySlug(visualMode, customModes)
+						if (customMode) {
+							// For custom modes, update the JSON file
+							updateCustomMode(visualMode, {
+								...customMode,
+								// Preserve empty string; only treat null/undefined as unset
+								customInstructions: value ?? undefined,
+								source: customMode.source || "global",
+							})
+						} else {
+							// For built-in modes, update the prompts
+							const existingPrompt = customModePrompts?.[visualMode] as PromptComponent
+							updateAgentPrompt(visualMode, {
+								...existingPrompt,
+								customInstructions: value.trim() || undefined,
+							})
+						}
 						}}
 						rows={10}
 						className="w-full"
@@ -1419,23 +1500,20 @@ const ModesView = ({ hideHeader = false }: { hideHeader?: boolean }) => {
 								aria-label="Learn more about global custom instructions"></VSCodeLink>
 						</Trans>
 					</div>
-					<VSCodeTextArea
-						resize="vertical"
-						value={customInstructions || ""}
-						onChange={(e) => {
-							const value =
-								(e as unknown as CustomEvent)?.detail?.target?.value ??
-								((e as any).target as HTMLTextAreaElement).value
-							setCustomInstructions(value ?? undefined)
-							vscode.postMessage({
-								type: "customInstructions",
-								text: value ?? undefined,
-							})
-						}}
-						rows={4}
-						className="w-full"
-						data-testid="global-custom-instructions-textarea"
-					/>
+				<NativeTextarea
+					value={customInstructions || ""}
+					onChange={(e) => {
+						const value = e.target.value
+						setCustomInstructions(value ?? undefined)
+						vscode.postMessage({
+							type: "customInstructions",
+							text: value ?? undefined,
+						})
+					}}
+					rows={4}
+					className="w-full resize-y"
+					data-testid="global-custom-instructions-textarea"
+				/>
 					<div className="text-xs text-vscode-descriptionForeground mt-1.5">
 						<Trans
 							i18nKey="prompts:globalCustomInstructions.loadFromFile"
@@ -1553,14 +1631,13 @@ const ModesView = ({ hideHeader = false }: { hideHeader?: boolean }) => {
 									}}>
 									{t("prompts:createModeDialog.roleDefinition.description")}
 								</div>
-								<VSCodeTextArea
-									resize="vertical"
+								<NativeTextarea
 									value={newModeRoleDefinition}
 									onChange={(e) => {
-										setNewModeRoleDefinition((e.target as HTMLTextAreaElement).value)
+										setNewModeRoleDefinition(e.target.value)
 									}}
 									rows={4}
-									className="w-full"
+									className="w-full resize-y"
 								/>
 								{roleDefinitionError && (
 									<div className="text-xs text-vscode-errorForeground mt-1">
@@ -1574,10 +1651,11 @@ const ModesView = ({ hideHeader = false }: { hideHeader?: boolean }) => {
 								<div className="text-[13px] text-vscode-descriptionForeground mb-2">
 									{t("prompts:createModeDialog.description.description")}
 								</div>
-								<VSCodeTextField
+								<NativeInput
+									type="text"
 									value={newModeDescription}
 									onChange={(e) => {
-										setNewModeDescription((e.target as HTMLInputElement).value)
+										setNewModeDescription(e.target.value)
 									}}
 									className="w-full"
 								/>
@@ -1591,14 +1669,13 @@ const ModesView = ({ hideHeader = false }: { hideHeader?: boolean }) => {
 								<div className="text-[13px] text-vscode-descriptionForeground mb-2">
 									{t("prompts:createModeDialog.whenToUse.description")}
 								</div>
-								<VSCodeTextArea
-									resize="vertical"
+								<NativeTextarea
 									value={newModeWhenToUse}
 									onChange={(e) => {
-										setNewModeWhenToUse((e.target as HTMLTextAreaElement).value)
+										setNewModeWhenToUse(e.target.value)
 									}}
 									rows={3}
-									className="w-full"
+									className="w-full resize-y"
 								/>
 							</div>
 							<div className="mb-4">
@@ -1638,14 +1715,13 @@ const ModesView = ({ hideHeader = false }: { hideHeader?: boolean }) => {
 								<div className="text-[13px] text-vscode-descriptionForeground mb-2">
 									{t("prompts:createModeDialog.customInstructions.description")}
 								</div>
-								<VSCodeTextArea
-									resize="vertical"
+								<NativeTextarea
 									value={newModeCustomInstructions}
 									onChange={(e) => {
-										setNewModeCustomInstructions((e.target as HTMLTextAreaElement).value)
+										setNewModeCustomInstructions(e.target.value)
 									}}
 									rows={4}
-									className="w-full"
+									className="w-full resize-y"
 								/>
 							</div>
 						</div>

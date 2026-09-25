@@ -1,5 +1,18 @@
 # Deeptask
 
+## 9.1.9
+
+### Patch Changes
+
+- New `manage_mode` tool: the agent can now create brand-new modes with the full parameter set (name, role definition, when-to-use, description, custom instructions, tool groups with per-group file-regex, icon), copy any existing mode (built-in or custom) into an edited duplicate with automatic -1/-2/... slug/name suffixes, update an existing custom mode in place (edits to built-in modes are persisted as an overriding copy), list all modes with their full configuration, and switch the running task to any mode. By default every create/copy/update switches the current run to the new/edited mode immediately, so changes take effect in real time.
+- Fix the cancel button graying out and leaving an unstoppable reasoning turn: while a cancel is pending and the host stays silent, the cancel-armed watchdog keeps the control row alive, `hasVisibleControl` no longer treats a frozen `isStreaming` as a visible control, the regular Cancel button stays clickable while cancel-pending-stuck, and the backend abort path bounds its history persistence so a slow `saveClineMessages` can no longer stall cancellation.
+- Fix the chat snapping back to its old scroll position after clicking a history entry and trying to scroll freely: deliberate user scrolling in EITHER direction (wheel, touch, arrow/page/home/end keys) now releases both sticky-follow and the pinned jump target; row-height changes and new content no longer re-pin the viewport, and reaching the bottom is what re-engages auto-follow.
+- Fix the settings save button sometimes not persisting content and not re-disabling: saving no longer overwrites the just-saved form with the stale pre-save state snapshot; the form now waits for the fresh post-save state broadcast, so saved values stick and the change flag clears reliably.
+- Fix mode editor text fields (role definition, description, when-to-use) only accepting paste, reverting typed input, and jumping the cursor to the end: the textarea is now driven by a local draft as its single source of truth while focused (no re-render fights with the backend echo), edits are committed on blur or a 400ms debounce, switching or resetting a mode clears the draft, so typing behaves like a plain textarea.
+- Edit buttons now render on every settled assistant text/completion row: the pencil affordance appears on all non-streaming rows (previously hidden by hover-only opacity and over-broad streaming checks), guaranteeing 100% coverage for editing any assistant message.
+- The `manage_mode` tool is auto-approved by default: mode management joins the shared mode-switch auto-approval (always-on alongside `switch_mode`), so agent-driven mode creation/copy/update/list/switch no longer pops approval prompts mid-task.
+- Fix ghost "running" tasks from another window appearing in a new window's live-tasks list: live-task snapshots now carry a real `isActivelyRunning` flag (frozen false once the task settles), the coordinator removes a task from the shared store when it settles, and readers trust the snapshot value instead of hard-coding running state, so a fresh window never shows stale tasks as actively running.
+
 ## 9.1.8
 
 ### Patch Changes

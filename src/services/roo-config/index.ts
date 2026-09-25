@@ -24,17 +24,56 @@ import fsSync from "fs" // kilocode_change
  * // Returns: "C:\\Users\\john\\.roo" (on Windows)
  * ```
  */
+// kilocode_change start
+/**
+ * Best-effort one-way copy of a legacy config directory into the unified
+ * `.deeptask` directory. Never overwrites existing files (force: false), so
+ * concurrent runs are safe. `excludeWorktrees` skips `worktrees/` subtrees,
+ * which hold live git worktrees that must stay where git recorded them.
+ *
+ * @returns true when the copy succeeded (or partially succeeded), false on failure
+ */
+function migrateLegacyDirSync(source: string, target: string, excludeWorktrees = false): boolean {
+	try {
+		fsSync.cpSync(source, target, {
+			recursive: true,
+			force: false, // never overwrite files already present in the target
+			errorOnExist: false,
+			preserveTimestamps: true,
+			...(excludeWorktrees
+				? {
+						filter: (src: string) => {
+							const segments = src.split(/[\\/]/)
+							return !segments.includes("worktrees")
+						},
+					}
+				: {}),
+		})
+		return true
+	} catch {
+		// Migration is best-effort; a failure must never break path resolution.
+		return false
+	}
+}
+// kilocode_change end
+
 export function getGlobalRooDirectory(): string {
 	const homeDir = os.homedir()
-	const kiloDir = path.join(homeDir, ".kilocode") // kilocode_change
-	const rooDir = path.join(homeDir, ".roo") // kilocode_change
+	const deeptaskDir = path.join(homeDir, ".deeptask") // kilocode_change: unified deeptask config dir
+	const kiloDir = path.join(homeDir, ".kilocode") // kilocode_change (legacy)
+	const rooDir = path.join(homeDir, ".roo") // kilocode_change (legacy)
 
-	// kilocode_change start: Prefer .kilocode; fallback to legacy .roo for backwards compatibility.
-	if (fsSync.existsSync(rooDir) && !fsSync.existsSync(kiloDir)) {
-		return rooDir
+	// kilocode_change start: The unified `.deeptask` dir is the canonical write target.
+	// On first use after upgrade, migrate legacy config (one-way copy, no overwrite)
+	// so existing rules/skills/commands keep working under the new directory.
+	if (fsSync.existsSync(deeptaskDir)) {
+		return deeptaskDir
 	}
-
-	return kiloDir
+	const legacyGlobal = fsSync.existsSync(kiloDir) ? kiloDir : fsSync.existsSync(rooDir) ? rooDir : null
+	if (legacyGlobal) {
+		migrateLegacyDirSync(legacyGlobal, deeptaskDir)
+	}
+	return deeptaskDir
 	// kilocode_change end
 }
 
@@ -69,12 +108,19 @@ export function getGlobalRooDirectory(): string {
  */
 export function getProjectRooDirectoryForCwd(cwd: string): string {
 	// kilocode_change start
+	const deeptaskDir = path.join(cwd, ".deeptask")
 	const kiloDir = path.join(cwd, ".kilocode")
 	const rooDir = path.join(cwd, ".roo")
-	if (fsSync.existsSync(rooDir) && !fsSync.existsSync(kiloDir)) {
-		return rooDir
+	// The unified `.deeptask` dir is the canonical write target. On first use,
+	// migrate legacy project config (one-way copy, no overwrite, skip worktrees/).
+	if (fsSync.existsSync(deeptaskDir)) {
+		return deeptaskDir
 	}
-	return kiloDir
+	const legacyProject = fsSync.existsSync(kiloDir) ? kiloDir : fsSync.existsSync(rooDir) ? rooDir : null
+	if (legacyProject) {
+		migrateLegacyDirSync(legacyProject, deeptaskDir, true)
+	}
+	return deeptaskDir
 	// kilocode_change end
 }
 
@@ -169,14 +215,16 @@ export async function discoverSubfolderRooDirectories(cwd: string): Promise<stri
 		// available in the webview context
 		const { executeRipgrep } = await import("../search/file-search")
 
-		// Use ripgrep to find any file inside any .kilocode or legacy .roo directory.
+		// Use ripgrep to find any file inside any .deeptask, .kilocode or legacy .roo directory.
 		// This efficiently discovers all config folders regardless of their content.
 		const args = [
 			"--files",
 			"--hidden",
 			"--follow",
 			"-g",
-			"**/.kilocode/**", // kilocode_change
+			"**/.deeptask/**", // kilocode_change: unified deeptask config dir
+			"-g",
+			"**/.kilocode/**", // kilocode_change (legacy)
 			"-g",
 			"**/.roo/**", // kilocode_change (legacy)
 			"-g",
@@ -189,25 +237,29 @@ export async function discoverSubfolderRooDirectories(cwd: string): Promise<stri
 		const results = await executeRipgrep({ args, workspacePath: cwd })
 
 		// Extract unique config directory paths.
-		// Prefer .kilocode when both .kilocode and .roo exist for the same parent folder.
+		// Prefer .deeptask > .kilocode > .roo when several exist for the same parent folder.
 		const configDirsByParent = new Map<string, string>() // parentDir -> configDir
+		const rootDeeptaskDir = path.join(cwd, ".deeptask") // kilocode_change
 		const rootKiloDir = path.join(cwd, ".kilocode") // kilocode_change
 		const rootRooDir = path.join(cwd, ".roo")
 
+		// kilocode_change start: ranking for same-parent config dir preference
+		const dirRank: Record<string, number> = { deeptask: 3, kilocode: 2, roo: 1 }
 		for (const result of results) {
 			// Match paths like:
-			// - "subfolder/.kilocode/anything" (preferred)
+			// - "subfolder/.deeptask/anything" (preferred)
+			// - "subfolder/.kilocode/anything" (legacy)
 			// - "subfolder/.roo/anything" (legacy)
 			// Handle both forward slashes (Unix) and backslashes (Windows)
-			const match = result.path.match(/^(.+?)[/\\]\.(kilocode|roo)[/\\]/)
+			const match = result.path.match(/^(.+?)[/\\]\.(deeptask|kilocode|roo)[/\\]/)
 			if (!match?.[1] || !match?.[2]) continue
 
 			const parentRel = match[1]
-			const dirName = match[2] as "kilocode" | "roo"
+			const dirName = match[2] as "deeptask" | "kilocode" | "roo"
 			const configDir = path.join(cwd, parentRel, `.${dirName}`)
 
 			// Exclude the root config dirs (already handled by getProjectRooDirectoryForCwd)
-			if (configDir === rootKiloDir || configDir === rootRooDir) {
+			if (configDir === rootDeeptaskDir || configDir === rootKiloDir || configDir === rootRooDir) {
 				continue
 			}
 
@@ -217,11 +269,14 @@ export async function discoverSubfolderRooDirectories(cwd: string): Promise<stri
 				continue
 			}
 
-			// Prefer .kilocode over legacy .roo for the same parent folder
-			if (existing.endsWith(`${path.sep}.roo`) && dirName === "kilocode") {
+			// Prefer higher-ranked config dir for the same parent folder
+			const existingMatch = existing.match(/\.(deeptask|kilocode|roo)$/)
+			const existingRank = existingMatch ? (dirRank[existingMatch[1]] ?? 0) : 0
+			if ((dirRank[dirName] ?? 0) > existingRank) {
 				configDirsByParent.set(parentRel, configDir)
 			}
 		}
+		// kilocode_change end
 
 		// Return sorted alphabetically
 		return Array.from(configDirsByParent.values()).sort()

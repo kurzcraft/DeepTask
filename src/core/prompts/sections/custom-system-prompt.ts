@@ -2,6 +2,7 @@ import fs from "fs/promises"
 import path from "path"
 import { Mode } from "../../../shared/modes"
 import { fileExistsAtPath } from "../../../utils/fs"
+import { getProjectRooDirectoryForCwd } from "../../../services/roo-config" // kilocode_change: unified config dir
 
 export type PromptVariables = {
 	workspace?: string
@@ -47,7 +48,8 @@ async function safeReadFile(filePath: string): Promise<string> {
  */
 export function getSystemPromptFilePath(cwd: string, mode: Mode): string {
 	// kilocode_change
-	return path.join(cwd, ".kilocode", `system-prompt-${mode}`)
+	// Use the unified config dir resolver (.deeptask > .kilocode > .roo, auto-migrating)
+	return path.join(getProjectRooDirectoryForCwd(cwd), `system-prompt-${mode}`)
 }
 
 /**
@@ -69,7 +71,8 @@ export async function loadSystemPromptFile(cwd: string, mode: Mode, variables: P
  */
 export async function ensureRooDirectory(cwd: string): Promise<void> {
 	// kilocode_change
-	const rooDir = path.join(cwd, ".kilocode")
+	// Use the unified config dir resolver so the .deeptask dir is the canonical target
+	const rooDir = getProjectRooDirectoryForCwd(cwd)
 
 	// Check if directory already exists
 	if (await fileExistsAtPath(rooDir)) {

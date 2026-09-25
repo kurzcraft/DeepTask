@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.1.7</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.1.9</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.1.7** fixes the hard freeze after clicking "Proceed while running" on a live command (no buttons, dead message sending): a blocking ask's UI broadcast could be silently lost during a focus race, the pending-new-conversation window, or while the webview was hidden, leaving no buttons; typed text then carried a stale askTs and was dropped by routing with the queue cleared — unrecoverable deadlock. Blocking asks now re-post the full chat state every ~2.5s (lost broadcasts self-heal, buttons reappear); typed text with a stale askTs answers the pending ask instead of being dropped; ask responses route to the focused conversation's task first, so a background task pushed to the stack top by a history reopen can no longer swallow the current chat's clicks and input.
+> **Deeptask 9.1.9** Agent self-managed modes + evolve-by-default + unified config directory + four interaction fixes: a new `manage_mode` tool lets the agent create brand-new modes with full parameter control (role definition / when-to-use / description / custom instructions / tool groups incl. file-regex / icon), copy any existing mode into a `-1`/`-2` suffixed editable copy, update custom modes in place, and switch immediately so the change takes effect live; a built-in **evolve mode** is now the default — when the agent modifies evolve it automatically forks evolve-1/evolve-2 copies that keep evolving, with improvements logged to `~/.deeptask/PROMPT_EVOLUTION_LOG.md` and the fork lineage to `~/.deeptask/MACHINE_LINEAGE.md`; all global config is unified at the `~/.deeptask/` top level (skills/rules/workflows/mcp_settings.json/custom_modes.yaml sit side by side; legacy locations auto-migrate file-by-file) and 17 git-operation workflows ship inside the VSIX; the cancel button no longer grays out and deadlocks (cancel-armed watchdog + persistent backend abort fencing); history-jump scrolling no longer snaps back; the settings save button always persists; assistant-message edit buttons cover 100% of settled rows.
 
 ## What you can do with Deeptask
 
@@ -57,7 +57,7 @@ Commands run in real VS Code or VSCodium integrated terminals. Development serve
 
 Deeptask retains only the three newest **completed** terminals by default. Running jobs do not count toward that limit and are never pruned. Command completion, shell exit, and fallback finalization all trigger convergence checks so event races cannot keep the completed-terminal count above its setting.
 
-[Learn how to control background terminals and durable commands](./docs/deeptask/guides/USER_GUIDE_EN.md#4-control-long-running-work)
+[Learn how to control background terminals and durable commands](./docs/deeptask/guides/USER_GUIDE_EN.md#5-control-long-running-work)
 
 ### Move between zero-touch automation and deliberate review
 
@@ -65,7 +65,7 @@ Deeptask retains only the three newest **completed** terminals by default. Runni
 - **Human reviewed:** disable YOLO and approve, reject, or revise critical tool calls, commands, and completion claims.
 - **Progressive trust:** begin read-only, then open editing, command allowlists, and final delivery as confidence grows.
 
-[Learn how to configure control modes and permissions](./docs/deeptask/guides/USER_GUIDE_EN.md#3-choose-your-level-of-control)
+[Learn how to configure control modes and permissions](./docs/deeptask/guides/USER_GUIDE_EN.md#4-choose-your-level-of-control)
 
 ### Agent can auto-switch mode, provider, and model
 
@@ -75,6 +75,17 @@ Deeptask lets the Agent switch agent mode, provider profiles, and models mid-tas
 - **Same-profile model changes and cross-provider switches:** switch only the model, or move to another saved profile such as DeepSeek, OpenAI Compatible, or Nvidia.
 - **Atomic preflight:** activation is saved only after the target API responds and the current context fits the destination model window; failures leave the active profile unchanged.
 - **Dedicated auto-approval:** a separate model/provider-switch approval toggle defaults to on and can be turned off for manual confirmation.
+
+### Minecraft for Agents: build-your-own constructibility
+
+Since 9.1.9, **the agent can create its own modes, rewrite its own prompts, orchestrate subagents, and wire everything together with file-based commands** — the capability range and freedom go far beyond "well-configured tools":
+
+- **Agent edits its own modes:** with the `manage_mode` tool the agent creates brand-new modes mid-task (role definition, when-to-use, tool groups, icon — every parameter), or copies any existing mode into a `xxx-1`/`xxx-2` suffix copy and edits it, switching immediately so the change goes live in the current session. Prompts stop being factory settings and become living configuration that evolves with practice.
+- **Agent manages providers and models itself:** the agent switches provider profiles and models directly (atomic connectivity and context-window preflight), orchestrating multi-model division of labor at runtime — heavy reasoning subtasks go to strong models, routine execution to cheap ones.
+- **Combined with subagents:** the main agent dispatches independent subtasks through parallel subagents, each with its own mode, provider, and model; the parent agent merges results and continues. This is prompt-level control over "when the model reasons proactively" and "how subagents divide model strengths."
+- **Auditable evolution:** evolve-mode self-modifications land in `~/.deeptask/PROMPT_EVOLUTION_LOG.md` (principles and rationale) and fork lineage in `~/.deeptask/MACHINE_LINEAGE.md` (when/from/why) — evolution history is auditable and reversible.
+
+In theory, apart from "the model's own conversation handling that commands cannot do" (workspace migration and context condensation), everything else is delegated to the model's command execution, file I/O, and the Git workspace — the model can even rewrite the `~/.deeptask/` config directory itself. **This is Minecraft for the agent world: not a fixed gameplay, but blocks you assemble yourself.**
 
 ### Correct a running task as the real requirement changes
 
@@ -97,7 +108,7 @@ EXTRA/
 
 Long commands do not disappear into transient terminal output. Scripts live in `EXTRA/bash/`, complete stdout and stderr live in `EXTRA/output/`, and cross-session checklists live in `EXTRA/task/`. A new session can reconcile these artifacts with Git state, while historical commands remain traceable through the terminal, conversation, scripts, and logs.
 
-[Learn how to continue work through EXTRA](./docs/deeptask/guides/USER_GUIDE_EN.md#5-continue-work-through-extra)
+[Learn how to continue work through EXTRA](./docs/deeptask/guides/USER_GUIDE_EN.md#6-continue-work-through-extra)
 
 ### Connect broadly through OpenAI-compatible APIs
 
@@ -111,19 +122,41 @@ DeepSeek, Groq, Mistral, and Cerebras also support account-aware model catalog r
 
 Deeptask treats work as a recoverable state machine rather than a one-shot answer. Open checklist items, missing tool-backed work, and absent acceptance evidence constrain final delivery. Tests, builds, installations, logs, and remote release assets can be reported alongside the result. Context summaries commit transactionally and use continuation-safe fallback behavior when condensation fails.
 
+## Design philosophy
+
+### Unlimited wait + conditional-sleep hooks: deterministic pause that other agents dropped
+
+Deeptask keeps the finest part of Kilo Code's design: **command execution has no forced timeout — it can wait indefinitely**. This sounds dangerous but is the cornerstone of deterministic workflows. You can configure hooks inside mode prompts, combining the computer's conditional-sleep primitives (`sleep`, file-lock polling, status-file watching) to wait for a build to finish, a training run to converge, or a user to return and confirm. Other mainstream agents always time out and force-continue; Kilo Code itself abandoned unlimited wait in newer versions because of accidental hangs. Deeptask solves the hang problem with **file-based commands** (long commands are written to script files first, output persisted to logs) while keeping unlimited wait. Wait when you want to wait; stop when you want to stop.
+
+### Intelligence layered on existing GUI software, not "LLM eats everything"
+
+Deeptask deliberately lives inside VSCodium instead of being a standalone app: the mature VS Code ecosystem — Git integration, manual diff review, integrated terminal, multi-server long-command management, on-demand write permission asks — is inherited wholesale. The model reasons and orchestrates; the GUI presents and controls. Each does its own job instead of stuffing everything into a model chat box.
+
+### Never lose full control
+
+Full automation and full manual control are not mutually exclusive:
+
+- **Beginner friendly:** a GUI you converse with — extremely low barrier, usable on day one.
+- **Reviewer friendly:** with write access off, every agent change appears as a diff; a final code reviewer decides what to keep before saving — human-machine collaborative improvement.
+- **Intervene anytime:** correct a running task by chatting, manage background servers in the integrated terminal manually, and git-revert any step.
+
+### Constructibility: in theory you can build anything
+
+Apart from "the model's own conversation handling that commands cannot do" (workspace migration and context condensation), everything else is delegated to the model's command execution, file I/O, and the Git workspace. The model can even rewrite the `~/.deeptask/` config directory itself — skills, workflows, rules, and mode definitions are plain files, and being file-based brings flexibility and memory. Mode prompts define when the model reasons proactively and how subagents divide strengths across models. **The ceiling is your imagination.**
+
 ## Start in three minutes
 
-1. Download `deeptask-9.1.7.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.1.9.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.1.7.vsix --force
+    codium --install-extension ./deeptask-9.1.9.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.1.7.vsix --force
+    code --install-extension ./deeptask-9.1.9.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.
@@ -131,6 +164,24 @@ Deeptask treats work as a recoverable state machine rather than a one-shot answe
 5. Send corrections while work is running and inspect concrete progress in integrated terminals and `EXTRA/`.
 
 See the [complete Deeptask User Guide](./docs/deeptask/guides/USER_GUIDE_EN.md) for detailed steps.
+
+## Unified config directory `~/.deeptask/`
+
+All global configuration lives in one directory, side by side with skills/rules/workflows:
+
+```text
+~/.deeptask/
+├── skills/                 # global skills (SKILL.md structure)
+├── rules/                  # global rules (AGENTS.md etc.)
+├── workflows/              # global workflows (incl. 17 built-in git-operation flows)
+├── modes/                  # per-mode config files (evolve-1.md fork copies, etc.)
+├── mcp_settings.json       # MCP server configuration
+├── custom_modes.yaml       # custom mode definitions
+├── PROMPT_EVOLUTION_LOG.md # evolve improvement log (principles, confidence, rationale)
+└── MACHINE_LINEAGE.md      # per-machine mode fork lineage (when/from/why)
+```
+
+Project-level configuration lives in the workspace `.deeptask/` directory (rules-<mode>/, skills/, mcp.json). Legacy `~/.kilocode/` and `~/.deeptask/settings/` locations migrate automatically file-by-file at startup (existing files are never overwritten).
 
 ## Documentation
 

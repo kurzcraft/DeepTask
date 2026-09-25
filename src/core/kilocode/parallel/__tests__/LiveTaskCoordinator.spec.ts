@@ -66,4 +66,48 @@ describe("LiveTaskCoordinator", () => {
 		await leftover.dispose()
 		await owner.dispose()
 	})
+
+	// kilocode_change start: a settled task snapshot must not leak as "running"
+	// into other windows (ghost spinning folders in newly opened windows).
+	test("a snapshot marked isActivelyRunning=false is not listed as a live remote task", async () => {
+		const owner = new LiveTaskCoordinator({ storageDir, windowId: "win-a", heartbeatMs: 50_000, staleMs: 8_000 })
+		await owner.upsertTask({
+			taskId: "task-settled",
+			cwd: "/repo",
+			abort: false,
+			abandoned: false,
+			isActivelyRunning: false,
+		})
+		await owner.upsertTask({
+			taskId: "task-live",
+			cwd: "/repo",
+			abort: false,
+			abandoned: false,
+			isActivelyRunning: true,
+		})
+
+		const observer = new LiveTaskCoordinator({ storageDir, windowId: "win-b", heartbeatMs: 50_000, staleMs: 8_000 })
+		expect(observer.listRemoteTasks().map((task) => task.taskId)).toEqual(["task-live"])
+		expect(observer.isLiveElsewhere("task-settled")).toBe(false)
+		await observer.dispose()
+		await owner.dispose()
+	})
+
+	test("removing a settled task clears it from the shared file", async () => {
+		const owner = new LiveTaskCoordinator({ storageDir, windowId: "win-a", heartbeatMs: 50_000, staleMs: 8_000 })
+		await owner.upsertTask({
+			taskId: "task-1",
+			cwd: "/repo",
+			abort: false,
+			abandoned: false,
+			isActivelyRunning: true,
+		})
+		await owner.removeTask("task-1")
+
+		const observer = new LiveTaskCoordinator({ storageDir, windowId: "win-b", heartbeatMs: 50_000, staleMs: 8_000 })
+		expect(observer.listRemoteTasks()).toEqual([])
+		await observer.dispose()
+		await owner.dispose()
+	})
+	// kilocode_change end
 })

@@ -21,7 +21,10 @@ import { getKiloUrlFromToken } from "@roo-code/types"
 import { X_KILOCODE_ORGANIZATIONID, X_KILOCODE_TESTER } from "../../shared/kilocode/headers"
 // kilocode_change end
 
-const ROOMODES_FILENAME = ".kilocodemodes"
+// kilocode_change start: unified project modes file .deeptaskmodes, legacy .kilocodemodes kept as fallback
+const ROOMODES_FILENAME = ".deeptaskmodes"
+const LEGACY_ROOMODES_FILENAME = ".kilocodemodes"
+// kilocode_change end
 
 // Type definitions for import/export functionality
 interface RuleFile {
@@ -103,9 +106,16 @@ export class CustomModesManager {
 		}
 
 		const workspaceRoot = getWorkspacePath()
+		// kilocode_change start: prefer .deeptaskmodes, fall back to legacy .kilocodemodes
 		const roomodesPath = path.join(workspaceRoot, ROOMODES_FILENAME)
 		const exists = await fileExistsAtPath(roomodesPath)
-		return exists ? roomodesPath : undefined
+		if (exists) {
+			return roomodesPath
+		}
+		const legacyPath = path.join(workspaceRoot, LEGACY_ROOMODES_FILENAME)
+		const legacyExists = await fileExistsAtPath(legacyPath)
+		return legacyExists ? legacyPath : undefined
+		// kilocode_change end
 	}
 
 	/**
@@ -347,13 +357,20 @@ export class CustomModesManager {
 		const workspaceFolders = vscode.workspace.workspaceFolders
 		if (workspaceFolders && workspaceFolders.length > 0) {
 			const workspaceRoot = getWorkspacePath()
+			// kilocode_change start: watch unified .deeptaskmodes and legacy .kilocodemodes
 			const roomodesPath = path.join(workspaceRoot, ROOMODES_FILENAME)
+			const legacyRoomodesPath = path.join(workspaceRoot, LEGACY_ROOMODES_FILENAME)
 			const roomodesWatcher = vscode.workspace.createFileSystemWatcher(roomodesPath)
+			const legacyRoomodesWatcher = vscode.workspace.createFileSystemWatcher(legacyRoomodesPath)
 
 			const handleRoomodesChange = async () => {
 				try {
 					const settingsModes = await this.loadModesFromFile(settingsPath)
-					const roomodesModes = await this.loadModesFromFile(roomodesPath)
+					// Resolve the active modes file with legacy fallback
+					const activeRoomodesPath = await this.getWorkspaceRoomodes()
+					const roomodesModes = activeRoomodesPath
+						? await this.loadModesFromFile(activeRoomodesPath)
+						: []
 
 					// Get organization modes from global state to preserve them
 					const storedModes = (await this.context.globalState.get<ModeConfig[]>("customModes")) || []
@@ -395,6 +412,11 @@ export class CustomModesManager {
 				}),
 			)
 			this.disposables.push(roomodesWatcher)
+
+			// kilocode_change: legacy .kilocodemodes changes also refresh (same handler)
+			this.disposables.push(legacyRoomodesWatcher.onDidChange(handleRoomodesChange))
+			this.disposables.push(legacyRoomodesWatcher.onDidCreate(handleRoomodesChange))
+			this.disposables.push(legacyRoomodesWatcher)
 		}
 	}
 

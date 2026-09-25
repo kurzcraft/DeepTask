@@ -153,10 +153,31 @@ if ! grep -q "taskkill" src/dist/extension.js; then
   echo "src/dist/extension.js 缺少 Windows 有界进程树终止路径" | tee -a "$LOG"
   exit 1
 fi
-if ! grep -q "taskkill failed for PID" src/dist/extension.js; then
-  echo "src/dist/extension.js 缺少 Windows 终止失败的 fail-soft 诊断" | tee -a "$LOG"
-  exit 1
-fi
+    if ! grep -q "taskkill failed for PID" src/dist/extension.js; then
+        echo "src/dist/extension.js 缺少 Windows 终止失败的 fail-soft 诊断" | tee -a "$LOG"
+        exit 1
+    fi
+    if ! grep -q "seedBuiltinWorkflows" src/dist/extension.js && \
+       ! { grep -q '"defaults"' src/dist/extension.js && grep -q '"workflows"' src/dist/extension.js; }; then
+        echo "src/dist/extension.js 缺少内置 git workflows 播种逻辑" | tee -a "$LOG"
+        exit 1
+    fi
+    if ! grep -q "recordEvolveLineage" src/dist/extension.js && ! grep -q "MACHINE_LINEAGE" src/dist/extension.js; then
+        echo "src/dist/extension.js 缺少 evolve 副本谱系记录" | tee -a "$LOG"
+        exit 1
+    fi
+    if ! grep -q "MACHINE_LINEAGE" src/dist/extension.js; then
+        echo "src/dist/extension.js 缺少本机谱系记录文件名标记" | tee -a "$LOG"
+        exit 1
+    fi
+    if ! grep -q 'evolve(-\\d+)?' src/dist/extension.js; then
+        echo "src/dist/extension.js 缺少 evolve 系列 fork 正则" | tee -a "$LOG"
+        exit 1
+    fi
+    if ! ls src/dist/defaults/workflows/*.md >/dev/null 2>&1; then
+        echo "src/dist/defaults/workflows 缺少内置 git workflows" | tee -a "$LOG"
+        exit 1
+    fi
 ls -lh src/dist/extension.js | tee -a "$LOG"
 if compgen -G 'src/webview-ui/build/assets/*.js' > /dev/null; then
   find src/webview-ui/build/assets -maxdepth 1 -name '*.js' | wc -l | awk '{print "webview js assets=" $1}' | tee -a "$LOG"
@@ -270,6 +291,15 @@ with ZipFile(vsix) as z:
     ]
     missing = [name for name in required if name not in names]
     assert not missing, missing
+    # Built-in git workflows must ship inside the VSIX for fresh installs.
+    workflow_names = sorted(
+        name for name in names
+        if name.startswith('extension/dist/defaults/workflows/') and name.endswith('.md')
+    )
+    assert len(workflow_names) >= 17, f'expected >=17 built-in workflows, found {len(workflow_names)}'
+    extension_js_g = z.read('extension/dist/extension.js').decode(errors='ignore')
+    assert ('seedBuiltinWorkflows' in extension_js_g) or ('"defaults"' in extension_js_g and '"workflows"' in extension_js_g), 'extension bundle missing builtin workflow seeding'
+    assert ('recordEvolveLineage' in extension_js_g) or ('MACHINE_LINEAGE' in extension_js_g), 'extension bundle missing evolve lineage recording'
     locale_names = sorted(
         name for name in names
         if name.startswith('extension/dist/i18n/locales/') and name.endswith('/common.json')

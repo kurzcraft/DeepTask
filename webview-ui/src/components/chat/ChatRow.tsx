@@ -1346,9 +1346,13 @@ export const ChatRowContent = ({
 								<span style={{ fontWeight: "bold" }}>{t("chat:text.rooSaid")}</span>
 								<div style={{ flexGrow: 1 }} />
 								<OpenMarkdownPreviewButton markdown={message.text} />
-								{!isStreaming && !isEditing && (
+								{/* kilocode_change: 100% edit coverage — render the edit
+								    affordance on every settled text row (hide only while THIS
+								    row is actively streaming) and keep it visible instead of
+								    opacity-0, which made it undiscoverable and unhoverable. */}
+								{!(isLast && isStreaming) && !isEditing && (
 									<Edit
-										className="w-4 shrink-0 cursor-pointer opacity-0 group-hover:opacity-100"
+										className="w-4 shrink-0 cursor-pointer opacity-60 group-hover:opacity-100"
 										aria-label={t("chat:edit")}
 										onClick={handleEditClick}
 									/>
@@ -1522,9 +1526,10 @@ export const ChatRowContent = ({
 									{title}
 									{showTimestamps && <ChatTimestamps ts={message.ts} />}
 									<OpenMarkdownPreviewButton markdown={message.text} />
-									{!isStreaming && !isEditing && (
+									{/* kilocode_change: 100% edit coverage — same rule as text rows. */}
+									{!(isLast && isStreaming) && !isEditing && (
 										<Edit
-											className="w-4 shrink-0 cursor-pointer opacity-0 group-hover:opacity-100"
+											className="w-4 shrink-0 cursor-pointer opacity-60 group-hover:opacity-100"
 											aria-label={t("chat:edit")}
 											onClick={handleEditClick}
 										/>

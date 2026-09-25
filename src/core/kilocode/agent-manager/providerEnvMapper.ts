@@ -22,6 +22,11 @@ const getHomeDirFromEnv = (baseEnv: NodeJS.ProcessEnv): string | undefined =>
 
 const getCliConfigPath = (baseEnv: NodeJS.ProcessEnv): string => {
 	const homeDir = getHomeDirFromEnv(baseEnv) || os.homedir()
+	// kilocode_change: unified config dir (.deeptask preferred, legacy .kilocode kept readable)
+	const deeptaskConfig = path.join(homeDir, ".deeptask", "cli", "config.json")
+	if (fs.existsSync(deeptaskConfig)) {
+		return deeptaskConfig
+	}
 	return path.join(homeDir, ".kilocode", "cli", "config.json")
 }
 

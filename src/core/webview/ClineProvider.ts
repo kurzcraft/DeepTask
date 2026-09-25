@@ -95,6 +95,7 @@ import { SessionManager } from "../../shared/kilocode/cli-sessions/core/SessionM
 import { SkillsManager } from "../../services/skills/SkillsManager"
 
 import { fileExistsAtPath } from "../../utils/fs"
+import { getGlobalRooDirectory } from "../../services/roo-config" // kilocode_change: unified config dir
 import { setTtsEnabled, setTtsSpeed } from "../../utils/tts"
 import { getWorkspaceGitInfo } from "../../utils/git"
 import { getWorkspacePath } from "../../utils/path"
@@ -1110,7 +1111,10 @@ export class ClineProvider
 				abandoned: task.abandoned,
 				isStreaming: task.isStreaming,
 				// Command/tool waits keep the task loop active after HTTP streaming ends.
-				isActivelyRunning: task.isActivelyRunningTaskLoop(),
+				isActivelyRunning:
+					typeof task.isActivelyRunningTaskLoop === "function"
+						? task.isActivelyRunningTaskLoop()
+						: task.isStreaming === true,
 			}))
 		const remote = this._liveTaskCoordinator
 			? this._liveTaskCoordinator.listRemoteTasks().map((task) => ({
@@ -1118,8 +1122,11 @@ export class ClineProvider
 					cwd: task.cwd,
 					abort: task.abort,
 					abandoned: task.abandoned,
-					isStreaming: true,
-					isActivelyRunning: true,
+					// kilocode_change: trust the writer's flag instead of assuming
+					// every remote snapshot is actively running (ghost "running"
+					// folders in new windows came from this hard-coded true).
+					isStreaming: task.isActivelyRunning !== false,
+					isActivelyRunning: task.isActivelyRunning !== false,
 				}))
 			: []
 		const byId = new Map(local.map((task) => [task.taskId, task]))
@@ -1143,19 +1150,34 @@ export class ClineProvider
 	}
 
 	public syncLiveTask(task: Task): void {
+		// kilocode_change start: a task whose loop has settled is no longer live.
+		// Previously every message upsert kept the snapshot alive forever, so a
+		// completed conversation in window A kept spinning as "running" in the
+		// folder rail of newly opened windows. Remove settled tasks instead of
+		// upserting them.
+		const isActive =
+			typeof task.isActivelyRunningTaskLoop === "function"
+				? task.isActivelyRunningTaskLoop()
+				: task.isStreaming === true
+		const isActivelyRunning = !task.abort && !task.abandoned && isActive === true
+		if (!isActivelyRunning) {
+			void this.liveTaskCoordinator
+				.removeTask(task.taskId)
+				.then(() => this.parallelManager.broadcast())
+				.catch(() => undefined)
+			return
+		}
+		// kilocode_change end
 		void this.liveTaskCoordinator
 			.upsertTask({
 				taskId: task.taskId,
 				cwd: task.cwd,
 				abort: task.abort,
 				abandoned: task.abandoned,
+				isActivelyRunning: true,
 			})
-			.catch((error) => {
-				console.error("[ClineProvider] live-task upsert failed:", error)
-			})
-		void this.parallelManager.broadcast().catch((error) => {
-			console.error("[ClineProvider] live-task broadcast failed:", error)
-		})
+			.catch(() => undefined)
+		void this.parallelManager.broadcast().catch(() => undefined)
 	}
 
 	/**
@@ -2628,8 +2650,8 @@ export class ClineProvider
 		try {
 			await fs.mkdir(mcpServersDir, { recursive: true })
 		} catch (error) {
-			// Fallback to a relative path if directory creation fails
-			return path.join(os.homedir(), ".kilocode", "mcp")
+			// Fallback to the unified global config dir if directory creation fails
+			return path.join(getGlobalRooDirectory(), "mcp") // kilocode_change: unified config dir
 		}
 		return mcpServersDir
 	}

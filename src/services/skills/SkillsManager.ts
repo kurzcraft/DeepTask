@@ -4,7 +4,7 @@ import * as vscode from "vscode"
 import matter from "gray-matter"
 
 import type { ClineProvider } from "../../core/webview/ClineProvider"
-import { getGlobalRooDirectory } from "../roo-config"
+import { getGlobalRooDirectory, getProjectRooDirectoryForCwd } from "../roo-config"
 import { directoryExists, fileExists } from "../roo-config"
 import { SkillMetadata, SkillContent } from "../../shared/skills"
 import { modes, getAllModes } from "../../shared/modes"
@@ -258,7 +258,8 @@ export class SkillsManager {
 		const dirs: Array<{ dir: string; source: "global" | "project"; mode?: string }> = []
 		const globalRooDir = getGlobalRooDirectory()
 		const provider = this.providerRef.deref()
-		const projectRooDir = provider?.cwd ? path.join(provider.cwd, ".kilocode") : null
+		// kilocode_change: unified config dir resolver (.deeptask > .kilocode > .roo)
+		const projectRooDir = provider?.cwd ? getProjectRooDirectoryForCwd(provider.cwd) : null
 
 		// Get list of modes to check for mode-specific skills
 		const modesList = await this.getAvailableModes()
@@ -315,7 +316,8 @@ export class SkillsManager {
 
 		// Watch for changes in skills directories
 		const globalSkillsDir = path.join(getGlobalRooDirectory(), "skills")
-		const projectSkillsDir = path.join(provider.cwd, ".kilocode", "skills")
+		// kilocode_change: unified project config dir resolver (.deeptask > .kilocode > .roo)
+		const projectSkillsDir = path.join(getProjectRooDirectoryForCwd(provider.cwd), "skills")
 
 		// Watch global skills directory
 		this.watchDirectory(globalSkillsDir)
@@ -325,9 +327,10 @@ export class SkillsManager {
 
 		// Watch mode-specific directories for all available modes
 		const modesList = await this.getAvailableModes()
+		const projectRooDir = getProjectRooDirectoryForCwd(provider.cwd)
 		for (const mode of modesList) {
 			this.watchDirectory(path.join(getGlobalRooDirectory(), `skills-${mode}`))
-			this.watchDirectory(path.join(provider.cwd, ".kilocode", `skills-${mode}`))
+			this.watchDirectory(path.join(projectRooDir, `skills-${mode}`))
 		}
 	}
 

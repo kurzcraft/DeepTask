@@ -35,6 +35,9 @@ export const toolNames = [
 	// kilocode_change start: agent-managed provider profiles
 	"manage_provider_profile",
 	// kilocode_change end
+	// kilocode_change start: agent-managed modes
+	"manage_mode",
+	// kilocode_change end
 	"new_task",
 	"fetch_instructions",
 	"codebase_search",

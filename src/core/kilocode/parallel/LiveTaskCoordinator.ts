@@ -19,6 +19,10 @@ export interface LiveTaskSnapshot {
 	title?: string
 	abort: boolean
 	abandoned: boolean
+	/** kilocode_change: true only while the owning task loop is actively running.
+	 * Absent in snapshots written by older builds; readers treat absent as true
+	 * for backward compatibility, but writers always set it explicitly. */
+	isActivelyRunning?: boolean
 	updatedAt: number
 }
 
@@ -75,9 +79,11 @@ export class LiveTaskCoordinator {
 		if (this.disposed || this.timer) {
 			return
 		}
-		void this.flush()
+		void this.flush().catch(() => undefined)
 		this.timer = setInterval(() => {
-			void this.flush()
+			// kilocode_change: swallow write errors (e.g. read-only storage in
+			// tests) so the heartbeat never leaks unhandled rejections.
+			void this.flush().catch(() => undefined)
 		}, this.heartbeatMs)
 		this.timer.unref?.()
 		this.watch()
@@ -102,7 +108,15 @@ export class LiveTaskCoordinator {
 	listRemoteTasks(): LiveTaskSnapshot[] {
 		return this.readFile()
 			.windows.filter((window) => window.windowId !== this.windowId && !this.isStale(window))
-			.flatMap((window) => window.tasks.filter((task) => !task.abort && !task.abandoned))
+			.flatMap((window) =>
+				window.tasks.filter(
+					// kilocode_change: a completed-but-unremoved snapshot must not
+					// leak as a running task into other windows. Treat snapshots
+					// that explicitly mark isActivelyRunning === false as ended
+					// even while the owning window still heartbeats.
+					(task) => !task.abort && !task.abandoned && task.isActivelyRunning !== false,
+				),
+			)
 	}
 
 	listAllLiveTasks(): LiveTaskSnapshot[] {

@@ -442,6 +442,41 @@ Usage:
 <reason>Complex debugging task benefits from deeper reasoning</reason>
 </manage_provider_profile>
 
+## manage_mode
+Description: Create, copy, update, list, or switch agent modes. Copying a mode duplicates it with a "-1"/"-2" style slug suffix so the original stays untouched. Unless switch_after is "false", the new/updated mode is activated immediately.
+Parameters:
+- action: (required) One of: list | create | copy | update | switch
+- slug: Mode slug (letters/numbers/dashes). Required for create/update/switch; optional base slug for copy (gets -1/-2 suffix automatically)
+- name: Human-readable display name (defaults to slug, or copied name)
+- role_definition: Role definition / system persona (required for create; defaults from copy source)
+- when_to_use: Short guidance on when this mode should be used
+- description: Description shown in the mode picker
+- custom_instructions: Extra custom instructions appended for this mode
+- groups: JSON array of tool groups, e.g. ["read","edit","command"] or [["edit",{"fileRegex":"\\.md$"}]]; valid groups: read, edit, browser, command, mcp, modes
+- icon_name: Optional codicon icon name
+- copy_from: Source mode slug to copy from (required for action=copy)
+- switch_after: Set "false" to skip the immediate switch after create/copy/update (default switches)
+- reason: Why this mode change is needed
+Usage:
+<manage_mode>
+<action>copy</action>
+<copy_from>code</copy_from>
+<name>Reviewer</name>
+<role_definition>You are a strict code reviewer.</role_definition>
+<groups>["read","edit"]</groups>
+<reason>Need a review variant without command execution</reason>
+</manage_mode>
+
+Example: Create a brand-new mode and switch to it immediately
+<manage_mode>
+<action>create</action>
+<slug>doc-writer</slug>
+<name>Doc Writer</name>
+<role_definition>You are a technical documentation writer.</role_definition>
+<groups>["read","edit"]</groups>
+<reason>User asked for a dedicated documentation mode</reason>
+</manage_mode>
+
 ## new_task
 Description: This will let you create a new task instance in the chosen mode using your provided message.
 
@@ -698,6 +733,7 @@ You accomplish a given task iteratively, breaking it down into clear steps and w
 3. Remember, you have extensive capabilities with access to a wide range of tools that can be used in powerful and clever ways as necessary to accomplish each goal. Before calling a tool, do some analysis. First, analyze the file structure provided in environment_details to gain context and insights for proceeding effectively. Next, think about which of the provided tools is the most relevant tool to accomplish the user's task. Go through each of the required parameters of the relevant tool and determine if the user has directly provided or given enough information to infer a value. When deciding if the parameter can be inferred, carefully consider all the context to see if it supports a specific value. If all of the required parameters are present or can be reasonably inferred, proceed with the tool use. BUT, if one of the values for a required parameter is missing, DO NOT invoke the tool (not even with fillers for the missing params) and instead, ask the user to provide the missing parameters using the ask_followup_question tool. DO NOT ask for more information on optional parameters if it is not provided.
 4. Once you've completed the user's task, you must use the attempt_completion tool to present the result of the task to the user.
 5. The user may provide feedback, which you can use to make improvements and try again. But DO NOT continue in pointless back and forth conversations, i.e. don't end your responses with questions or offers for further assistance.
+6. Configuration directories: per-project configuration lives in the .deeptask/ directory at the workspace root (global configuration in ~/.deeptask/). It holds rules (.deeptask/rules-<mode>/), skills (.deeptask/skills/), commands, MCP settings (.deeptask/mcp.json), and project modes (.deeptaskmodes at the workspace root). Legacy .kilocode/ and .roo/ directories remain readable as fallbacks and are migrated automatically on first use; always create new configuration files under .deeptask/.
 
 
 ====

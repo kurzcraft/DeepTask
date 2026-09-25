@@ -8,9 +8,9 @@
 import * as vscode from "vscode"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { getProjectRooDirectoryForCwd } from "../../../services/roo-config" // kilocode_change: unified config dir
 
 const SETUP_SCRIPT_FILENAME = "setup-script"
-const KILOCODE_DIR = ".kilocode"
 
 /**
  * Default template for the setup script with helpful comments
@@ -62,7 +62,8 @@ export class SetupScriptService {
 
 	constructor(projectRoot: string) {
 		this.projectRoot = projectRoot
-		this.scriptPath = path.join(projectRoot, KILOCODE_DIR, SETUP_SCRIPT_FILENAME)
+		// kilocode_change: unified config dir resolver (.deeptask > .kilocode > .roo, auto-migrating)
+		this.scriptPath = path.join(getProjectRooDirectoryForCwd(projectRoot), SETUP_SCRIPT_FILENAME)
 	}
 
 	/**
@@ -99,10 +100,10 @@ export class SetupScriptService {
 	 * Create a default setup script with helpful comments and open it in VS Code
 	 */
 	async createDefaultScript(): Promise<void> {
-		// Ensure .kilocode directory exists
-		const kilocodeDir = path.join(this.projectRoot, KILOCODE_DIR)
-		if (!fs.existsSync(kilocodeDir)) {
-			await fs.promises.mkdir(kilocodeDir, { recursive: true })
+		// Ensure the unified config directory exists
+		const configDir = getProjectRooDirectoryForCwd(this.projectRoot) // kilocode_change: unified config dir
+		if (!fs.existsSync(configDir)) {
+			await fs.promises.mkdir(configDir, { recursive: true })
 		}
 
 		// Write the default template

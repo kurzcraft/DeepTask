@@ -1301,6 +1301,7 @@ export interface ClineSayTool {
 		| "listFilesRecursive"
 		| "searchFiles"
 		| "switchMode"
+		| "manageMode" // kilocode_change: agent-managed modes (create/copy/update/switch)
 		| "switchProviderProfile" // kilocode_change
 		| "manageProviderProfile" // kilocode_change: agent-managed provider profiles
 		| "newTask"

@@ -175,9 +175,13 @@ export async function checkAutoApproval({
 			}
 		}
 
-		if (tool?.tool === "switchMode") {
+		// kilocode_change start - manage_mode mutates mode configs the same way the
+		// UI does; it shares the mode-switch permission (default-enabled) so agents
+		// can create/copy/update/switch modes without a manual approval dialog.
+		if (tool?.tool === "switchMode" || tool?.tool === "manageMode") {
 			return state.alwaysAllowModeSwitch === true ? { decision: "approve" } : { decision: "ask" }
 		}
+		// kilocode_change end
 
 		// kilocode_change start - provider/profile switching has an independent permission.
 		// manageProviderProfile (create/update/set_reasoning/rename) shares the same

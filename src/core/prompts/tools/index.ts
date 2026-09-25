@@ -25,6 +25,9 @@ import { getSwitchProviderProfileDescription } from "./switch-provider-profile"
 // kilocode_change start: agent-managed provider profiles
 import { getManageProviderProfileDescription } from "./manage-provider-profile"
 // kilocode_change end
+// kilocode_change start: agent-managed modes
+import { getManageModeDescription } from "./manage-mode"
+// kilocode_change end
 import { getNewTaskDescription } from "./new-task"
 import { getCodebaseSearchDescription } from "./codebase-search"
 import { getUpdateTodoListDescription } from "./update-todo-list"
@@ -68,6 +71,9 @@ const toolDescriptionMap: Record<string, (args: ToolArgs) => string | undefined>
 		getManageProviderProfileDescription({
 			providerProfileSwitchEnabled: args.providerProfileSwitchEnabled,
 		}),
+	// kilocode_change end
+	// kilocode_change start: agent-managed modes
+	manage_mode: () => getManageModeDescription(),
 	// kilocode_change end
 	new_task: (args) => getNewTaskDescription(args),
 	// kilocode_change start: parallel subagents & workspaces

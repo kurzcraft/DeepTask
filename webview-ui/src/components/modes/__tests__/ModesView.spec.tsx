@@ -104,25 +104,24 @@ describe("PromptsView", () => {
 	it("handles prompt changes correctly", async () => {
 		renderPromptsView()
 
-		// Get the textarea
+		// Get the textarea (native element now, not a web component)
 		const textarea = await waitFor(() => screen.getByTestId("code-prompt-textarea"))
 
-		// Simulate VSCode TextArea change event
-		const changeEvent = new CustomEvent("change", {
-			detail: {
-				target: {
-					value: "New prompt value",
-				},
+		// Simulate a native textarea change event
+		fireEvent.change(textarea, { target: { value: "New prompt value" } })
+
+		// kilocode_change: prompt edits are debounced (400ms) before being
+		// pushed to the backend, so the update arrives asynchronously now.
+		await waitFor(
+			() => {
+				expect(vscode.postMessage).toHaveBeenCalledWith({
+					type: "updatePrompt",
+					promptMode: "code",
+					customPrompt: { roleDefinition: "New prompt value" },
+				})
 			},
-		})
-
-		fireEvent(textarea, changeEvent)
-
-		expect(vscode.postMessage).toHaveBeenCalledWith({
-			type: "updatePrompt",
-			promptMode: "code",
-			customPrompt: { roleDefinition: "New prompt value" },
-		})
+			{ timeout: 2000 },
+		)
 	})
 
 	it("resets role definition only for built-in modes", async () => {

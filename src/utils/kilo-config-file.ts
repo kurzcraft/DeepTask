@@ -90,7 +90,9 @@ export async function getKilocodeConfig(
  * @returns The project configuration or undefined if not found or invalid
  */
 export async function getKilocodeConfigFile(workspaceRoot: string): Promise<KilocodeConfig | null> {
-	const configPath = path.join(workspaceRoot, ".kilocode", "config.json")
+	// kilocode_change: unified config dir resolver (.deeptask > .kilocode > .roo, auto-migrating)
+	const { getProjectRooDirectoryForCwd } = await import("../services/roo-config")
+	const configPath = path.join(getProjectRooDirectoryForCwd(workspaceRoot), "config.json")
 	try {
 		const content = await fs.readFile(configPath, "utf8")
 		const config = KilocodeConfig.parse(JSON.parse(content))

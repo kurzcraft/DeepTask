@@ -1,5 +1,6 @@
 // kilocode_change - new file Support JSON-based launch configurations
 import * as vscode from "vscode"
+import * as path from "path"
 
 interface LaunchConfig {
 	prompt: string
@@ -17,7 +18,11 @@ export async function checkAndRunAutoLaunchingTask(context: vscode.ExtensionCont
 	}
 
 	const workspaceFolderUri = vscode.workspace.workspaceFolders[0].uri
-	const configPath = vscode.Uri.joinPath(workspaceFolderUri, ".kilocode", "launchConfig.json")
+	// kilocode_change: unified config dir resolver (.deeptask > .kilocode > .roo, auto-migrating)
+	const { getProjectRooDirectoryForCwd } = await import("../services/roo-config")
+	const configPath = vscode.Uri.file(
+		path.join(getProjectRooDirectoryForCwd(workspaceFolderUri.fsPath), "launchConfig.json"),
+	)
 
 	try {
 		const configContent = await vscode.workspace.fs.readFile(configPath)

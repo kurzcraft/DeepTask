@@ -162,13 +162,24 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const deadLetterArmedAskTsRef = useRef<number | undefined>(undefined)
 	const deadLetterCancelArmedRef = useRef(false)
 	const [deadLetterForceControls, setDeadLetterForceControls] = useState(false)
+	// kilocode_change: mirror force-controls in a ref so the arm callback can
+	// read the current verdict without re-subscribing handlers.
+	const deadLetterForceControlsRef = useRef(false)
+	useEffect(() => {
+		deadLetterForceControlsRef.current = deadLetterForceControls
+	}, [deadLetterForceControls])
 	const armDeadLetterWatchdog = useCallback((fromCancel = false) => {
 		deadLetterArmedAtRef.current = Date.now()
 		const latest = messagesRef.current.at(-1)
 		deadLetterLastMsgTsRef.current = latest?.ts
 		deadLetterArmedAskTsRef.current = latest?.type === "ask" ? latest.ts : undefined
 		deadLetterCancelArmedRef.current = fromCancel
-		setDeadLetterForceControls(false)
+		// kilocode_change: a repeated cancel while a previous cancel is already
+		// stuck must NOT clear the already-forced fallback row — that made the
+		// row blink away and left a dead UI. Only a fresh non-cancel arm resets.
+		if (!(fromCancel && deadLetterForceControlsRef.current)) {
+			setDeadLetterForceControls(false)
+		}
 	}, [])
 	// kilocode_change end
 
@@ -2089,15 +2100,22 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	}, [task?.ts])
 
 	const releaseOutputFollowing = useCallback((target: EventTarget | null) => {
+		// kilocode_change: any deliberate user scroll inside the chat (wheel in
+		// either direction, touch, keys) releases BOTH sticky-follow AND the
+		// pinned jump target, so the user can freely scroll away from a rail
+		// jump without being snapped back to the pinned message.
 		if (scrollContainerRef.current?.contains(target as Node)) {
 			stickyFollowRef.current = false
 			pinnedJumpTsRef.current = null
+			setShowScrollToBottom((prev) => prev || true)
 		}
 	}, [])
 	const handleWheel = useCallback(
 		(event: Event) => {
 			const wheelEvent = event as WheelEvent
-			if (wheelEvent.deltaY < 0) {
+			// kilocode_change: release on BOTH directions — scrolling down away
+			// from a pinned jump must also unpin, not only scrolling up.
+			if (wheelEvent.deltaY !== 0) {
 				releaseOutputFollowing(wheelEvent.target)
 			}
 		},
@@ -2109,7 +2127,9 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const handleTouchMove = useCallback(
 		(event: Event) => {
 			const touchY = (event as TouchEvent).touches[0]?.clientY
-			if (touchY !== undefined && lastTouchYRef.current !== undefined && touchY > lastTouchYRef.current) {
+			// kilocode_change: release on BOTH touch directions — scrolling down
+			// away from a pinned jump must also unpin.
+			if (touchY !== undefined && lastTouchYRef.current !== undefined && touchY !== lastTouchYRef.current) {
 				releaseOutputFollowing(event.target)
 			}
 			lastTouchYRef.current = touchY
@@ -2129,7 +2149,11 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const handleScrollKey = useCallback(
 		(event: Event) => {
 			const keyboardEvent = event as KeyboardEvent
-			if (["ArrowUp", "PageUp", "Home"].includes(keyboardEvent.key)) {
+			// kilocode_change: any arrow/page/home/end key releases a pinned jump,
+			// not only upward ones.
+			if (
+				["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(keyboardEvent.key)
+			) {
 				releaseOutputFollowing(keyboardEvent.target)
 			}
 		},
@@ -2380,7 +2404,10 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		showScrollToBottom ||
 		primaryButtonText ||
 		secondaryButtonText ||
-		isStreaming
+		// kilocode_change: while a cancel is armed, a still-true isStreaming is
+		// the stuck state itself — it must not count as an actionable control,
+		// otherwise the fallback (repeat-cancel) row never renders.
+		(deadLetterCancelArmedRef.current && !deadLetterForceControls ? false : isStreaming)
 	)
 	const lastMessageIsSettledCompletion =
 		!!lastMessage &&
@@ -2442,6 +2469,17 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		// (cancel-click stuck) or a wiped-button row IS the dead state itself.
 		(deadLetterForceControls ||
 			(!hasVisibleControl && (clineAsk !== undefined || activeCommandCount > 0)))
+	// kilocode_change end
+
+	// kilocode_change start: cancel-stuck hard recovery.
+	// After a cancel click, if streaming never ends the action row shows a
+	// permanently grayed Cancel. Even without any pending ask or live command,
+	// a cancel-armed watchdog verdict must surface an always-enabled fallback
+	// row (the timer sets deadLetterForceControls). Additionally, while a
+	// cancel is pending, the regular Cancel button must stay clickable for a
+	// repeat attempt instead of disabling on didClickCancel.
+	const cancelPendingStuck =
+		deadLetterCancelArmedRef.current && !lastMessageIsSettledCompletion && !deadLetterForceControls
 	// kilocode_change end
 
 	const areButtonsVisible = showScrollToBottom || primaryButtonText || secondaryButtonText || isStreaming
@@ -2778,7 +2816,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 																: undefined
 										}>
 										<Button
-											disabled={!enableButtons && !(isStreaming && !didClickCancel)}
+											disabled={!enableButtons && !(isStreaming && !didClickCancel) && !cancelPendingStuck}
 											className={
 												isStreaming
 													? showScrollToBottom
