@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.1.9</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.2.0</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.1.9** Agent self-managed modes + evolve-by-default + unified config directory + four interaction fixes: a new `manage_mode` tool lets the agent create brand-new modes with full parameter control (role definition / when-to-use / description / custom instructions / tool groups incl. file-regex / icon), copy any existing mode into a `-1`/`-2` suffixed editable copy, update custom modes in place, and switch immediately so the change takes effect live; a built-in **evolve mode** is now the default — when the agent modifies evolve it automatically forks evolve-1/evolve-2 copies that keep evolving, with improvements logged to `~/.deeptask/PROMPT_EVOLUTION_LOG.md` and the fork lineage to `~/.deeptask/MACHINE_LINEAGE.md`; all global config is unified at the `~/.deeptask/` top level (skills/rules/workflows/mcp_settings.json/custom_modes.yaml sit side by side; legacy locations auto-migrate file-by-file) and 17 git-operation workflows ship inside the VSIX; the cancel button no longer grays out and deadlocks (cancel-armed watchdog + persistent backend abort fencing); history-jump scrolling no longer snaps back; the settings save button always persists; assistant-message edit buttons cover 100% of settled rows.
+> **Deeptask 9.2.0** Subagent completion-gate fix + evolve auto-continuation + transactional mode-file governance: `dispatch_subagents` / `new_task` subagents are no longer trapped by the completion gate (five exemption points let subagents finish cleanly while the gate still guards top-level work); updating an evolve-series mode automatically forks the next copy (evolve-2 → Evolve-3), switches immediately, and records lineage in `~/.deeptask/MACHINE_LINEAGE.md`, so self-evolution never dead-ends; mode-file writes are fully transactional (corrupt/schema-invalid input aborts the write protecting current modes, re-validation, `.bak` backup, tmp + atomic rename, rollback on failure), so a bad write can never destroy the mode store; a new single-source `MODE_FILE_GOVERNANCE_RULE` makes mode config files modifiable only through the `manage_mode` tool, with the same constant injected into the evolve prompt and both XML/native tool descriptions so rules and behavior cannot drift; bottom-left popups no longer close during streaming re-renders; the settings save button is guarded by a submit fingerprint and always persists + re-disables; the consecutive-mistake limit now defaults to unlimited (old default of 3 is migrated away) so autonomous runs keep going; the agent-behavior popup opens on the Modes tab by default.
 
 ## What you can do with Deeptask
 
@@ -78,7 +78,7 @@ Deeptask lets the Agent switch agent mode, provider profiles, and models mid-tas
 
 ### Minecraft for Agents: build-your-own constructibility
 
-Since 9.1.9, **the agent can create its own modes, rewrite its own prompts, orchestrate subagents, and wire everything together with file-based commands** — the capability range and freedom go far beyond "well-configured tools":
+Since 9.2.0, **the agent can create its own modes, rewrite its own prompts, orchestrate subagents, and wire everything together with file-based commands** — the capability range and freedom go far beyond "well-configured tools":
 
 - **Agent edits its own modes:** with the `manage_mode` tool the agent creates brand-new modes mid-task (role definition, when-to-use, tool groups, icon — every parameter), or copies any existing mode into a `xxx-1`/`xxx-2` suffix copy and edits it, switching immediately so the change goes live in the current session. Prompts stop being factory settings and become living configuration that evolves with practice.
 - **Agent manages providers and models itself:** the agent switches provider profiles and models directly (atomic connectivity and context-window preflight), orchestrating multi-model division of labor at runtime — heavy reasoning subtasks go to strong models, routine execution to cheap ones.
@@ -146,17 +146,17 @@ Apart from "the model's own conversation handling that commands cannot do" (work
 
 ## Start in three minutes
 
-1. Download `deeptask-9.1.9.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.2.0.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.1.9.vsix --force
+    codium --install-extension ./deeptask-9.2.0.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.1.9.vsix --force
+    code --install-extension ./deeptask-9.2.0.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

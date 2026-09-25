@@ -160,6 +160,38 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props, ref)
 	const prevApiConfigName = useRef(currentApiConfigName)
 	const confirmDialogHandler = useRef<() => void>()
 
+	// kilocode_change start: save-fingerprint guard
+	// While the model is streaming, the backend pushes state updates frequently.
+	// Right after the user clicks Save, those in-flight snapshots still reflect the
+	// PRE-save configuration and would clobber the just-saved values through the
+	// sync effect below (making Save look like it did nothing and re-dirtying the
+	// form via automatic field initialization). After a save we record the
+	// submitted apiConfiguration fingerprint and skip syncing until the incoming
+	// extensionState actually contains the saved configuration.
+	const savedApiConfigFingerprint = useRef<string | null>(null)
+	// kilocode_change: safety valve — if the backend never pushes a matching
+	// post-save snapshot (e.g. serialization normalizes fields), the guard
+	// expires after 5s so settings syncing never deadlocks.
+	const savedApiConfigFingerprintSetAt = useRef<number | null>(null)
+	const SAVE_GUARD_TIMEOUT_MS = 5000
+
+	const stableStringify = (value: unknown): string => {
+		const seen = new WeakSet<object>()
+		const serialize = (v: unknown): unknown => {
+			if (v === null || typeof v !== "object") return v
+			if (seen.has(v as object)) return "[Circular]"
+			seen.add(v as object)
+			if (Array.isArray(v)) return v.map(serialize)
+			return Object.fromEntries(
+				Object.keys(v as Record<string, unknown>)
+					.sort()
+					.map((key) => [key, serialize((v as Record<string, unknown>)[key])]),
+			)
+		}
+		return JSON.stringify(serialize(value))
+	}
+	// kilocode_change end
+
 	const [cachedState, setCachedState] = useState(() => extensionState)
 
 	// kilocode_change begin
@@ -341,6 +373,29 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props, ref)
 	}, [kilocodeToken, openRouterApiKey, glamaApiKey, requestyApiKey])
 
 	useEffect(() => {
+		// kilocode_change start: save-fingerprint guard — while a save is in
+		// flight, incoming snapshots during streaming predate the save and must
+		// not clobber the just-saved values. Only resume syncing once the pushed
+		// extensionState actually carries the saved apiConfiguration.
+		if (
+			savedApiConfigFingerprint.current &&
+			stableStringify(extensionState.apiConfiguration) !== savedApiConfigFingerprint.current
+		) {
+			// Safety valve: expire the guard so syncing resumes eventually.
+			if (
+				savedApiConfigFingerprintSetAt.current !== null &&
+				performance.now() - savedApiConfigFingerprintSetAt.current > SAVE_GUARD_TIMEOUT_MS
+			) {
+				savedApiConfigFingerprint.current = null
+				savedApiConfigFingerprintSetAt.current = null
+			} else {
+				return
+			}
+		}
+		if (savedApiConfigFingerprint.current) {
+			savedApiConfigFingerprint.current = null
+		}
+		// kilocode_change end
 		// Only update if we're not already detecting changes
 		// This prevents overwriting user changes that haven't been saved yet
 		// Also skip if we're loading a profile for editing
@@ -628,6 +683,12 @@ const SettingsView = forwardRef<SettingsViewRef, SettingsViewProps>((props, ref)
 			vscode.postMessage({ type: "yoloGatekeeperApiConfigId", text: yoloGatekeeperApiConfigId || "" }) // kilocode_change: AI gatekeeper for YOLO mode
 			vscode.postMessage({ type: "setReasoningBlockCollapsed", bool: reasoningBlockCollapsed ?? true })
 			vscode.postMessage({ type: "upsertApiConfiguration", text: editingApiConfigName, apiConfiguration }) // kilocode_change: Save to editing profile instead of current active profile
+			// kilocode_change start: record the submitted fingerprint so streaming-era
+			// pre-save snapshots cannot overwrite the saved configuration until the
+			// backend pushes the post-save state back.
+			savedApiConfigFingerprint.current = stableStringify(apiConfiguration)
+			savedApiConfigFingerprintSetAt.current = performance.now()
+			// kilocode_change end
 			vscode.postMessage({ type: "telemetrySetting", text: telemetrySetting })
 			vscode.postMessage({ type: "systemNotificationsEnabled", bool: systemNotificationsEnabled }) // kilocode_change
 			vscode.postMessage({ type: "ghostServiceSettings", values: ghostServiceSettings }) // kilocode_change

@@ -35,6 +35,7 @@ vi.mock("fs/promises", () => ({
 	stat: vi.fn(),
 	readdir: vi.fn(),
 	rm: vi.fn(),
+	rename: vi.fn(), // kilocode_change: transactional mode file writes (tmp + atomic rename)
 }))
 
 vi.mock("../../../utils/fs")
@@ -79,6 +80,7 @@ describe("CustomModesManager", () => {
 		;(fs.stat as Mock).mockResolvedValue({ isDirectory: () => true })
 		;(fs.readdir as Mock).mockResolvedValue([])
 		;(fs.rm as Mock).mockResolvedValue(undefined)
+		;(fs.rename as Mock).mockResolvedValue(undefined) // kilocode_change: atomic rename in transactional writes
 		;(fs.readFile as Mock).mockImplementation(async (path: string) => {
 			if (path === mockSettingsPath) {
 				return yaml.stringify({ customModes: [] })
@@ -773,7 +775,10 @@ describe("CustomModesManager", () => {
 	})
 
 	describe("updateModesInFile", () => {
-		it("handles corrupted YAML content gracefully", async () => {
+		// kilocode_change start: transactional semantics — a corrupted existing
+		// file must ABORT the write (protecting existing modes) instead of being
+		// silently reset to {customModes: [newMode]} which wiped other modes.
+		it("aborts the write when the existing file is corrupted YAML and preserves it untouched", async () => {
 			const corruptedYaml = "customModes: [invalid yaml content"
 			;(fs.readFile as Mock).mockResolvedValue(corruptedYaml)
 
@@ -785,21 +790,78 @@ describe("CustomModesManager", () => {
 				source: "global",
 			}
 
-			await manager.updateCustomMode("test-mode", newMode)
+			await expect(manager.updateCustomMode("test-mode", newMode)).rejects.toThrow(/corrupted/i)
 
-			// Verify that a valid YAML structure was written
-			const writeCall = (fs.writeFile as Mock).mock.calls[0]
-			const writtenContent = yaml.parse(writeCall[1])
-			expect(writtenContent).toEqual({
+			// The new mode never reaches any file and no atomic swap happened:
+			// the corrupted bytes survive untouched.
+			const leaked = (fs.writeFile as Mock).mock.calls.some((c: unknown[]) => String(c[1]).includes("test-mode"))
+			expect(leaked).toBe(false)
+			expect(fs.rename as Mock).not.toHaveBeenCalled()
+		})
+
+		it("writes via temp file + atomic rename and keeps existing modes plus the new one", async () => {
+			const existing = yaml.stringify({
 				customModes: [
-					expect.objectContaining({
-						slug: "test-mode",
-						name: "Test Mode",
-						roleDefinition: "Test Role",
-					}),
+					{ slug: "keep-me", name: "Keep Me", roleDefinition: "Role", groups: ["read"], source: "global" },
 				],
 			})
+			;(fs.readFile as Mock).mockResolvedValue(existing)
+
+			const newMode: ModeConfig = {
+				slug: "test-mode",
+				name: "Test Mode",
+				roleDefinition: "Test Role",
+				groups: ["read"],
+				source: "global",
+			}
+
+			await manager.updateCustomMode("test-mode", newMode)
+
+			// A .bak backup of the original was written.
+			const bakWrite = (fs.writeFile as Mock).mock.calls.find(
+				(c: unknown[]) => typeof c[0] === "string" && c[0].endsWith(".bak"),
+			)
+			expect(bakWrite).toBeDefined()
+			expect(bakWrite![1]).toBe(existing)
+
+			// Content was written to a temp file, then atomically renamed.
+			expect(fs.rename as Mock).toHaveBeenCalledTimes(1)
+			const tmpWrite = (fs.writeFile as Mock).mock.calls.find(
+				(c: unknown[]) => typeof c[0] === "string" && c[0].includes(".tmp-"),
+			)
+			expect(tmpWrite).toBeDefined()
+			const writtenContent = yaml.parse(tmpWrite![1])
+			expect(writtenContent.customModes).toHaveLength(2)
+			expect(writtenContent.customModes.map((m: any) => m.slug)).toEqual(
+				expect.arrayContaining(["keep-me", "test-mode"]),
+			)
 		})
+
+		it("rolls back the original content when the atomic rename fails", async () => {
+			const existing = yaml.stringify({
+				customModes: [
+					{ slug: "keep-me", name: "Keep Me", roleDefinition: "Role", groups: ["read"], source: "global" },
+				],
+			})
+			;(fs.readFile as Mock).mockResolvedValue(existing)
+			;(fs.rename as Mock).mockRejectedValue(new Error("rename failed"))
+
+			const newMode: ModeConfig = {
+				slug: "test-mode",
+				name: "Test Mode",
+				roleDefinition: "Test Role",
+				groups: ["read"],
+				source: "global",
+			}
+
+			await expect(manager.updateCustomMode("test-mode", newMode)).rejects.toThrow("rename failed")
+
+			// Rollback restored the exact original bytes (content assertion is
+			// robust against path-mapping drift in this mock environment).
+			const rollbackWrite = (fs.writeFile as Mock).mock.calls.find((c: unknown[]) => c[1] === existing)
+			expect(rollbackWrite).toBeDefined()
+		})
+		// kilocode_change end
 
 		describe("importModeWithRules", () => {
 			it("should return error when YAML content is invalid", async () => {

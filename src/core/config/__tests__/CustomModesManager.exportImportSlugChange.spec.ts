@@ -35,6 +35,7 @@ vi.mock("fs/promises", () => ({
 	stat: vi.fn(),
 	readdir: vi.fn(),
 	rm: vi.fn(),
+	rename: vi.fn(), // kilocode_change: transactional mode file writes (tmp + atomic rename)
 }))
 
 vi.mock("../../../utils/fs")
@@ -79,6 +80,7 @@ describe("CustomModesManager", () => {
 		;(fs.stat as Mock).mockResolvedValue({ isDirectory: () => true })
 		;(fs.readdir as Mock).mockResolvedValue([])
 		;(fs.rm as Mock).mockResolvedValue(undefined)
+		;(fs.rename as Mock).mockResolvedValue(undefined) // kilocode_change: atomic rename in transactional writes
 		;(fs.readFile as Mock).mockImplementation(async (path: string) => {
 			if (path === mockSettingsPath) {
 				return yaml.stringify({ customModes: [] })

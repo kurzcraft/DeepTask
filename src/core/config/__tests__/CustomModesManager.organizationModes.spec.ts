@@ -43,6 +43,7 @@ vi.mock("fs/promises", () => ({
 		stat: vi.fn(),
 		readdir: vi.fn(),
 		rm: vi.fn(),
+		rename: vi.fn(), // kilocode_change: transactional mode file writes
 	},
 	mkdir: vi.fn(),
 	readFile: vi.fn(),
@@ -50,6 +51,7 @@ vi.mock("fs/promises", () => ({
 	stat: vi.fn(),
 	readdir: vi.fn(),
 	rm: vi.fn(),
+	rename: vi.fn(), // kilocode_change: transactional mode file writes
 }))
 
 vi.mock("axios", () => ({

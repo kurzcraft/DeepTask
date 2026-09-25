@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.1.9</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.2.0</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.1.9** Agent 模式自管理 + 进化默认 + 统一配置目录 + 四项交互修复：新增 manage_mode 工具，agent 可自建全新模式并配置全部参数（角色定义/何时使用/描述/自定义指令/工具组含 file-regex/图标），可复制任意现有模式为 -1/-2 后缀的编辑副本，可在原位更新自定义模式，且默认写完立即切换使当前运行实时生效；内置 **evolve 自进化模式**并设为默认——agent 修改 evolve 时自动 fork 出 evolve-1/evolve-2 副本持续进化，改进记录写入 `~/.deeptask/PROMPT_EVOLUTION_LOG.md`，副本谱系写入 `~/.deeptask/MACHINE_LINEAGE.md`；全局配置统一到 `~/.deeptask/` 顶层（skills/rules/workflows/mcp_settings.json/custom_modes.yaml 与 skills 平级，旧目录自动迁移），17 个 git 操作 workflows 内置进 VSIX；取消按钮不再灰死卡住（cancel-armed 看门狗 + 后端 abort 持久化加界）；点击历史条目跳转后可自由滚动不再回弹；设置保存按钮必生效；助手消息编辑按钮 100% 覆盖。
+> **Deeptask 9.2.0** 子任务门禁修复 + evolve 自动接续 + 模式文件事务化治理：dispatch_subagents / new_task 子代理不再被完成门禁卡死（五处豁免让子代理正常结束，门禁仍守护顶层工作）；更新 evolve 系列模式自动 fork 下一个副本（evolve-2 → Evolve-3）并立即切换、谱系记录到 `~/.deeptask/MACHINE_LINEAGE.md`，自进化永不死锁；模式文件写入全面事务化（损坏/schema 失败中止写保护现存模式、重校验、.bak 备份、tmp+原子 rename、失败回滚），坏写入不再摧毁模式库；新增单一事实源 `MODE_FILE_GOVERNANCE_RULE`——模式配置文件只能经 manage_mode 工具修改，规则同时注入 evolve 提示词与 XML/native 两版工具描述，物理上不可漂移；左下角弹窗（模式/Profile 选择器）流式重渲染不再自关；设置保存加提交指纹守卫，保存必生效按钮必变灰；连续工具错误默认不限次（存量旧默认 3 自动迁移为不限），自主运行不再被错误次数冻结；代理行为弹窗默认打开"模式"标签。
 
 ## 你可以怎样使用 Deeptask
 
@@ -78,7 +78,7 @@ Deeptask 支持 Agent 在任务中直接切换 Agent 模式、提供商配置和
 
 ### Agent 版 Minecraft：自己搭积木的可构建性
 
-Deeptask 9.1.9 之后，**Agent 能自己创建新模式、自己改写提示词、自己调配子代理，并用文件化命令衔接一切**——能力范围与自由度远超“预设好用的工具”：
+Deeptask 9.2.0 之后，**Agent 能自己创建新模式、自己改写提示词、自己调配子代理，并用文件化命令衔接一切**——能力范围与自由度远超“预设好用的工具”：
 
 - **模型自改模式：** 通过 `manage_mode` 工具，Agent 在任务中按需 create 全新模式（角色定义、何时使用、工具组、图标一应俱全），或 copy 现有模式为 `xxx-1`/`xxx-2` 副本后修改，改完立即切换、当前会话实时生效。提示词不再是一成不变的出厂设置，而是随实践进化的活配置。
 - **模型自管提供商与模型：** Agent 可直接切换 provider profile 与模型（连通与上下文容量原子预检），多模型分工——推理重的子任务交给强模型，常规执行交给便宜模型——由 Agent 在运行时自行编排。
@@ -146,17 +146,17 @@ Deeptask 选择寄生在 VSCodium 里而不是做成独立软件，是刻意为�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.1.9.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.2.0.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.1.9.vsix --force
+    codium --install-extension ./deeptask-9.2.0.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.1.9.vsix --force
+    code --install-extension ./deeptask-9.2.0.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

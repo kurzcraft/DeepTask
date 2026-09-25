@@ -36,7 +36,10 @@ import {
  * constants
  */
 
-export const DEFAULT_CONSECUTIVE_MISTAKE_LIMIT = 3
+// kilocode_change: default to unlimited (0) — pausing the task loop behind a
+// blocking ask dialog on repeated tool errors traps long-running autonomous
+// sessions. Users who want a hard cap can still set one via settings.
+export const DEFAULT_CONSECUTIVE_MISTAKE_LIMIT = 0
 
 /**
  * DynamicProvider

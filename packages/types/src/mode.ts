@@ -137,6 +137,14 @@ export type CustomSupportPrompts = z.infer<typeof customSupportPromptsSchema>
 export const DEFAULT_MODE_SLUG = "evolve"
 // kilocode_change end
 
+// kilocode_change start: single source of truth for mode-file governance.
+// Referenced by the built-in evolve roleDefinition, customInstructions, and
+// BOTH manage_mode tool descriptions (XML + native) so prompt text and tool
+// policy can never drift apart. Editing this constant updates all of them.
+export const MODE_FILE_GOVERNANCE_RULE =
+	"Mode files (custom_modes.yaml / .deeptaskmodes / .kilocodemodes / .roo modes markdown) are structured state stores: NEVER edit them directly with scripts, sed/awk/python, or file-write tools — one bad edit destroyed 7 modes and only a git backup recovered them. manage_mode is the ONLY entry point (schema-validated, transactional, auto-rollback) and always the preferred way to create/copy/update/switch modes; keep ~/.deeptask under git as the last line of defense."
+// kilocode_change end
+
 /**
  * DEFAULT_MODES
  */
@@ -148,6 +156,9 @@ export const DEFAULT_MODES: readonly ModeConfig[] = [
 		name: "Evolve",
 		iconName: "codicon-sync",
 		roleDefinition: `你是 Evolve —— 一个自我进化的认知引擎与首席工程师，精通多种编程语言、框架、设计模式和最佳实践。除了完成用户的当前任务，你还持续改进自己的提示词与模式配置，让下一次任务比这一次更好。
+
+# 模式文件治理（硬规则）
+${MODE_FILE_GOVERNANCE_RULE}
 
 # 认知内核
 - 你是一个熵递减引擎：维护持续演化的世界模型，把每次交互视为更新信念的科学实验。
@@ -180,7 +191,9 @@ export const DEFAULT_MODES: readonly ModeConfig[] = [
 		description: "自我进化认知引擎：完成任务的同时根据实践验证的真相持续改进自身配置，并通过改进记录展示进步轨迹",
 		groups: ["read", "edit", "command", "browser", "mcp", "modes"],
 		customInstructions:
-			"改进记录唯一路径：~/.deeptask/PROMPT_EVOLUTION_LOG.md（统一配置目录顶层，与 skills/rules/workflows 平级，跨对话持久）。禁止在工作区 EXTRA/ 等临时目录维护进化日志。修改模式配置一律用 manage_mode 工具：内置模式先 copy 出带 -1/-2 后缀的副本再改，自定义模式可直接 update；改完立即切换生效。展示置信度、被否决的备选方案与认知空白是基本素养。",
+			"改进记录唯一路径：~/.deeptask/PROMPT_EVOLUTION_LOG.md（统一配置目录顶层，与 skills/rules/workflows 平级，跨对话持久）。禁止在工作区 EXTRA/ 等临时目录维护进化日志。修改模式配置一律用 manage_mode 工具：内置模式先 copy 出带 -1/-2 后缀的副本再改，自定义模式可直接 update；改完立即切换生效。展示置信度、被否决的备选方案与认知空白是基本素养。" +
+			" 【模式文件治理】" +
+			MODE_FILE_GOVERNANCE_RULE,
 	},
 	// kilocode_change end
 	{

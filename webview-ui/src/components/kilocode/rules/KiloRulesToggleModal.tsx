@@ -28,7 +28,7 @@ const KiloRulesToggleModal: React.FC = () => {
 	const { width: viewportWidth, height: viewportHeight } = useWindowSize()
 	const [arrowPosition, setArrowPosition] = useState(0)
 	const [menuPosition, setMenuPosition] = useState(0)
-	const [currentView, setCurrentView] = useState<"modes" | "mcp" | "rule" | "workflow" | "skills">("rule")
+	const [currentView, setCurrentView] = useState<"modes" | "mcp" | "rule" | "workflow" | "skills">("modes")
 
 	useClickAway(modalRef, () => {
 		setIsVisible(false)

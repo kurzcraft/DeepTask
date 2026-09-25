@@ -1,6 +1,12 @@
+// kilocode_change: import shared governance constant so tool description and
+// built-in evolve prompt can never drift apart (single source of truth).
+import { MODE_FILE_GOVERNANCE_RULE } from "@roo-code/types"
+
 export function getManageModeDescription(): string {
 	return `## manage_mode
 Description: Create, copy, update, list, or switch agent modes. Copying a mode duplicates it with a "-1"/"-2" style slug suffix so the original stays untouched. Unless switch_after is "false", the new/updated mode is activated immediately.
+
+IMPORTANT — this is the ONLY sanctioned way to change modes. ${MODE_FILE_GOVERNANCE_RULE}
 Parameters:
 - action: (required) One of: list | create | copy | update | switch
 - slug: Mode slug (letters/numbers/dashes). Required for create/update/switch; optional base slug for copy (gets -1/-2 suffix automatically)

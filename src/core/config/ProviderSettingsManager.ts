@@ -64,6 +64,8 @@ export const providerProfilesSchema = z.object({
 			diffSettingsMigrated: z.boolean().optional(),
 			openAiHeadersMigrated: z.boolean().optional(),
 			consecutiveMistakeLimitMigrated: z.boolean().optional(),
+			// kilocode_change: migrate legacy default limit (3) to unlimited (0)
+			consecutiveMistakeLimitUnlimitedMigrated: z.boolean().optional(),
 			todoListEnabledMigrated: z.boolean().optional(),
 			morphApiKeyMigrated: z.boolean().optional(), // kilocode_change: Morph API key migration
 			claudeCodeLegacySettingsMigrated: z.boolean().optional(),
@@ -106,6 +108,7 @@ export class ProviderSettingsManager {
 			diffSettingsMigrated: true, // Mark as migrated on fresh installs
 			openAiHeadersMigrated: true, // Mark as migrated on fresh installs
 			consecutiveMistakeLimitMigrated: true, // Mark as migrated on fresh installs
+			consecutiveMistakeLimitUnlimitedMigrated: true, // kilocode_change: fresh installs already use 0
 			todoListEnabledMigrated: true, // Mark as migrated on fresh installs
 			claudeCodeLegacySettingsMigrated: true, // Mark as migrated on fresh installs
 		},
@@ -325,6 +328,7 @@ export class ProviderSettingsManager {
 						diffSettingsMigrated: false,
 						openAiHeadersMigrated: false,
 						consecutiveMistakeLimitMigrated: false,
+						consecutiveMistakeLimitUnlimitedMigrated: false, // kilocode_change
 						todoListEnabledMigrated: false,
 						morphApiKeyMigrated: false, // kilocode_change: Morph API key migration
 						claudeCodeLegacySettingsMigrated: false,
@@ -355,6 +359,14 @@ export class ProviderSettingsManager {
 					providerProfiles.migrations.consecutiveMistakeLimitMigrated = true
 					isDirty = true
 				}
+
+				// kilocode_change start: legacy default limit (3) → unlimited (0)
+				if (!providerProfiles.migrations.consecutiveMistakeLimitUnlimitedMigrated) {
+					await this.migrateConsecutiveMistakeLimitUnlimited(providerProfiles)
+					providerProfiles.migrations.consecutiveMistakeLimitUnlimitedMigrated = true
+					isDirty = true
+				}
+				// kilocode_change end
 
 				if (!providerProfiles.migrations.todoListEnabledMigrated) {
 					await this.migrateTodoListEnabled(providerProfiles)
@@ -493,6 +505,25 @@ export class ProviderSettingsManager {
 			console.error(`[MigrateConsecutiveMistakeLimit] Failed to migrate consecutive mistake limit:`, error)
 		}
 	}
+
+	// kilocode_change start: legacy default limit (3) → unlimited (0)
+	private async migrateConsecutiveMistakeLimitUnlimited(providerProfiles: ProviderProfiles) {
+		try {
+			for (const [name, apiConfig] of Object.entries(providerProfiles.apiConfigs)) {
+				// Only rewrite the OLD default (3). Values the user explicitly chose
+				// (including 0 or a custom cap like 5) are preserved as-is.
+				if (apiConfig.consecutiveMistakeLimit === 3) {
+					apiConfig.consecutiveMistakeLimit = 0
+				}
+			}
+		} catch (error) {
+			console.error(
+				`[MigrateConsecutiveMistakeLimitUnlimited] Failed to migrate consecutive mistake limit to unlimited:`,
+				error,
+			)
+		}
+	}
+	// kilocode_change end
 
 	private async migrateTodoListEnabled(providerProfiles: ProviderProfiles) {
 		try {

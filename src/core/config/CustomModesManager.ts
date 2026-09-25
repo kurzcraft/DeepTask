@@ -514,36 +514,140 @@ export class CustomModesManager {
 		}
 	}
 
+	// kilocode_change start: transactional, corruption-safe mode file writes.
+	// A line-based script edit previously injected orphaned YAML fragments into
+	// custom_modes.yaml and silently wiped unrelated modes on the next write.
+	// All mode file mutations now go through this transactional gate:
+	//   1. Read the current file; remember the original bytes as the rollback image.
+	//   2. If the file EXISTS but fails to parse or pass the schema, ABORT the
+	//      write and throw — never silently continue from {customModes: []},
+	//      which is what destroyed data before. (A genuinely missing file is a
+	//      legitimate fresh start.)
+	//   3. Apply the caller's operation, then re-validate the new document with
+	//      customModesSettingsSchema so the format is enforced by code, not by
+	//      the caller's discipline (maximum content freedom inside a fixed frame).
+	//   4. Serialize, re-parse the serialized output (belt and braces), write a
+	//      .bak backup, write a temp file, and atomically rename it into place.
+	//   5. On any failure after the original was modified, restore the backup.
 	private async updateModesInFile(filePath: string, operation: (modes: ModeConfig[]) => ModeConfig[]): Promise<void> {
-		let content = "{}"
+		let originalContent: string | null = null
 
 		try {
-			content = await fs.readFile(filePath, "utf-8")
-		} catch (error) {
-			// File might not exist yet.
-			content = yaml.stringify({ customModes: [] }, { lineWidth: 0 })
+			originalContent = await fs.readFile(filePath, "utf-8")
+		} catch {
+			// File does not exist yet — a fresh start is allowed.
+			originalContent = null
 		}
 
-		let settings
+		let settings: { customModes?: unknown }
 
-		try {
-			settings = this.parseYamlSafely(content, filePath)
-		} catch (error) {
-			// Error already logged in parseYamlSafely
+		if (originalContent !== null) {
+			const trimmed = originalContent.trim()
+			if (trimmed.length > 0) {
+				let parsed: any
+				try {
+					parsed = yaml.parse(stripBom(trimmed))
+				} catch (error) {
+					const reason = error instanceof Error ? error.message : String(error)
+					logger.error(`[CustomModesManager] Refusing to write ${filePath}: existing file is corrupted`, {
+						reason,
+					})
+					vscode.window.showErrorMessage(
+						t("common:customModes.errors.updateFailed", {
+							error: `existing ${path.basename(filePath)} is corrupted (YAML parse failed); write aborted to protect existing modes — restore from backup/git or fix the file manually`,
+						}),
+					)
+					throw new Error(
+						`Mode file ${filePath} is corrupted; transaction aborted to protect existing modes. Restore from a backup (git) before retrying.`,
+					)
+				}
+
+				const validation = customModesSettingsSchema.safeParse(parsed ?? {})
+				if (!validation.success) {
+					const reason = validation.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ")
+					logger.error(`[CustomModesManager] Refusing to write ${filePath}: existing file fails schema`, {
+						reason,
+					})
+					vscode.window.showErrorMessage(
+						t("common:customModes.errors.updateFailed", {
+							error: `existing ${path.basename(filePath)} fails schema validation; write aborted to protect existing modes`,
+						}),
+					)
+					throw new Error(
+						`Mode file ${filePath} fails schema validation; transaction aborted to protect existing modes.`,
+					)
+				}
+
+				settings = validation.data
+			} else {
+				settings = { customModes: [] }
+			}
+		} else {
 			settings = { customModes: [] }
 		}
 
-		// Ensure settings is an object and has customModes property
-		if (!settings || typeof settings !== "object") {
-			settings = { customModes: [] }
-		}
-		if (!settings.customModes) {
+		if (!Array.isArray(settings.customModes)) {
 			settings.customModes = []
 		}
 
-		settings.customModes = operation(settings.customModes)
-		await fs.writeFile(filePath, yaml.stringify(settings, { lineWidth: 0 }), "utf-8")
+		settings.customModes = operation(settings.customModes as ModeConfig[])
+
+		// The frame is fixed by code: whatever the operation produced must still
+		// satisfy the full settings schema before it can reach the disk.
+		const updatedValidation = customModesSettingsSchema.safeParse(settings)
+		if (!updatedValidation.success) {
+			const reason = updatedValidation.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ")
+			throw new Error(`Updated mode configuration is invalid; transaction aborted: ${reason}`)
+		}
+
+		const serialized = yaml.stringify(updatedValidation.data, { lineWidth: 0 })
+
+		// Re-parse the serialized output so a broken serializer can never put
+		// unparseable YAML on disk.
+		try {
+			yaml.parse(serialized)
+		} catch (error) {
+			const reason = error instanceof Error ? error.message : String(error)
+			throw new Error(`Serialized modes YAML failed round-trip parse; transaction aborted: ${reason}`)
+		}
+
+		// Best-effort on-disk backup before touching the real file.
+		if (originalContent !== null) {
+			try {
+				await fs.writeFile(`${filePath}.bak`, originalContent, "utf-8")
+			} catch (error) {
+				logger.warn(`[CustomModesManager] Failed to write backup for ${filePath}`, {
+					error: error instanceof Error ? error.message : String(error),
+				})
+			}
+		}
+
+		// Write to a temp file in the same directory, then atomically rename.
+		const tmpPath = `${filePath}.tmp-${Date.now()}`
+		await fs.writeFile(tmpPath, serialized, "utf-8")
+
+		try {
+			await fs.rename(tmpPath, filePath)
+		} catch (error) {
+			// Rollback: restore the original bytes if we have them.
+			if (originalContent !== null) {
+				try {
+					await fs.writeFile(filePath, originalContent, "utf-8")
+				} catch (rollbackError) {
+					logger.error(`[CustomModesManager] CRITICAL: rollback failed for ${filePath}`, {
+						error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+					})
+				}
+			}
+			try {
+				await fs.rm(tmpPath, { force: true })
+			} catch {
+				// Temp file cleanup is best-effort.
+			}
+			throw error
+		}
 	}
+	// kilocode_change end
 
 	private async refreshMergedState(): Promise<void> {
 		const settingsPath = await this.getCustomModesFilePath()

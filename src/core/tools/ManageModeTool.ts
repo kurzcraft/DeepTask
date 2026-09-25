@@ -275,7 +275,11 @@ export class ManageModeTool extends BaseTool<"manage_mode"> {
 						}
 						// Copy semantics: everything defaults from the source, explicit params override.
 						roleDefinition = roleDefinition || source.roleDefinition
-						name = name || (source.name.match(/-\d+$/) ? source.name : `${source.name}`)
+						// kilocode_change: default copy name is the source name with any old
+						// -N suffix stripped; the new slug's suffix is appended below so the
+						// displayed label always matches the new slug number (evolve-1 copied
+						// to evolve-2 must display "Evolve-2", never stay "Evolve-1").
+						name = name || source.name.replace(/-\d+$/, "")
 						whenToUse = params.when_to_use?.trim() ? params.when_to_use.trim() : source.whenToUse
 						description = params.description?.trim() ? params.description.trim() : source.description
 						customInstructions = params.custom_instructions?.trim()

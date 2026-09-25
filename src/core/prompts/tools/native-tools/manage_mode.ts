@@ -1,13 +1,19 @@
 // kilocode_change - new file: agent-managed modes (native tool definition)
 import type OpenAI from "openai"
 
+// kilocode_change: shared governance constant (single source of truth with the
+// built-in evolve prompt and the XML tool description).
+import { MODE_FILE_GOVERNANCE_RULE } from "@roo-code/types"
+
 export function createManageModeTool(): OpenAI.Chat.ChatCompletionTool {
 	return {
 		type: "function",
 		function: {
 			name: "manage_mode",
 			description:
-				"Create, copy, update, list, or switch agent modes. " +
+				"Create, copy, update, list, or switch agent modes — the ONLY sanctioned way to change modes. " +
+				MODE_FILE_GOVERNANCE_RULE +
+				" " +
 				'list: all modes with slug/name/groups/source. ' +
 				'create: brand-new mode from scratch (requires slug+role_definition; name/groups/when_to_use/description/custom_instructions/icon_name optional). ' +
 				'copy: duplicate an existing mode with edits (copy_from required); the new slug automatically gets a "-1"/"-2" style suffix so the original stays untouched; every provided field overrides the copied value. ' +

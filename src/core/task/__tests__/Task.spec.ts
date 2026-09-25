@@ -379,7 +379,8 @@ describe("Cline", () => {
 				context: mockExtensionContext, // kilocode_change
 			})
 
-			expect(cline.consecutiveMistakeLimit).toBe(3)
+			// kilocode_change: default is now unlimited (0)
+			expect(cline.consecutiveMistakeLimit).toBe(0)
 		})
 
 		it("should respect provided consecutiveMistakeLimit", () => {

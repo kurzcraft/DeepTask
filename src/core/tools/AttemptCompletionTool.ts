@@ -94,7 +94,17 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 			// no active item, including a host-generated current-task item, may be
 			// silently excluded. Completed task archives in EXTRA/task/finished are
 			// intentionally outside this gate.
-			const incompleteTaskProgressItems = (await task.getIncompleteTaskProgressItems?.()) ?? []
+			// Delegated child tasks (new_task / dispatch_subagents) share the parent's
+			// workspace, so the parent's active checklist inevitably appears "incomplete"
+			// here. Children must never be blocked by the parent's progress file: their
+			// result is always returned to the parent, which owns the durable checklist.
+			// isChildAgent covers metadata-delegated children (parentTaskId), forked
+			// agent-runtime child processes (isDelegatedChildProcess), and in-process
+			// parallel subagents (subagent).
+			const isDelegatedChild = !!task.isChildAgent
+			const incompleteTaskProgressItems = isDelegatedChild
+				? []
+				: ((await task.getIncompleteTaskProgressItems?.()) ?? [])
 			if (incompleteTaskProgressItems.length > 0) {
 				task.consecutiveMistakeCount++
 				task.recordToolError("attempt_completion")
@@ -287,7 +297,13 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 		// empty green completion row for a rejected completion attempt. Use the same
 		// active task-file gate (excluding finished archives) as the final execution
 		// path.
-		const incompleteTaskProgressItems = (await task.getIncompleteTaskProgressItems?.()) ?? []
+		// Delegated children share the parent workspace and are exempt from the
+		// parent's active checklist gate (same exemption as the execute path).
+		// isChildAgent covers all three delegation paths (see execute path).
+		const isDelegatedChild = !!task.isChildAgent
+		const incompleteTaskProgressItems = isDelegatedChild
+			? []
+			: ((await task.getIncompleteTaskProgressItems?.()) ?? [])
 		if (incompleteTaskProgressItems.length > 0 || task.shouldRejectPrematureActiveContinuationCompletion()) {
 			return
 		}

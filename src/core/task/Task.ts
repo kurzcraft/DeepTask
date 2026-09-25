@@ -268,6 +268,13 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	private taskIsFavorited?: boolean // kilocode_change
 	readonly rootTaskId?: string
 	readonly parentTaskId?: string
+	/**
+	 * kilocode_change: true when this Task runs inside a forked agent-runtime
+	 * child process (dispatch_subagents). Such agents share the parent's
+	 * workspace but have no parentTaskId (they live in a separate process), so
+	 * every parent-checklist gate must exempt them via this flag as well.
+	 */
+	readonly isDelegatedChildProcess: boolean = !!process.env.AGENT_CONFIG
 	childTaskId?: string
 	pendingNewTaskToolCallId?: string
 
@@ -276,6 +283,19 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	// kilocode_change start: parallel subagent routing
 	readonly subagent?: { sessionId: string; depth: number; manager: SubagentMessageSink }
 	// kilocode_change end
+
+	/**
+	 * kilocode_change: unified predicate for every child-agent exemption.
+	 * Three delegation paths must all bypass the parent-owned EXTRA/task
+	 * checklist gate (they share the parent's workspace but never own the
+	 * durable progress file):
+	 *  1. metadata-delegated children (new_task) -> parentTaskId
+	 *  2. forked agent-runtime child processes -> isDelegatedChildProcess
+	 *  3. in-process parallel subagents (dispatch_subagents) -> subagent
+	 */
+	get isChildAgent(): boolean {
+		return !!this.parentTaskId || this.isDelegatedChildProcess || !!this.subagent
+	}
 
 	todoList?: TodoItem[]
 
@@ -2526,7 +2546,11 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// A provider can return a final-looking answer without calling
 		// attempt_completion. That fallback must obey the same durable task-progress
 		// barrier as the tool path; otherwise it silently bypasses EXTRA/task.
-		if ((await this.getIncompleteTaskProgressItems()).length > 0) {
+		// kilocode_change: child agents (delegated children, forked child processes,
+		// and in-process parallel subagents) share the parent workspace and must not
+		// be gated by the parent's active progress file (same exemption as the
+		// attempt_completion tool path); their deliverable returns to the parent.
+		if (!this.isChildAgent && (await this.getIncompleteTaskProgressItems()).length > 0) {
 			return false
 		}
 
@@ -6793,6 +6817,16 @@ ${protocolHint}
 	 * bypassing the model's write-and-verify-before-sync protocol.
 	 */
 	public async syncTaskProgressWithTodoList(todos: TodoItem[] = this.todoList ?? []): Promise<TodoItem[]> {
+		// kilocode_change: child agents (delegated children, forked child
+		// processes, and in-process parallel subagents) share the parent's
+		// workspace, so file discovery would bind them to the parent's active
+		// checklist — swallowing the child's own todos and, via the file watcher,
+		// projecting the child's edits back into the parent's native state.
+		// Children keep an in-memory todo list only; the parent owns the durable
+		// EXTRA/task checklist.
+		if (this.isChildAgent) {
+			return todos
+		}
 		const progressPath = await this.findOwnedTaskProgressFilePath()
 		if (!progressPath) {
 			throw new Error(
@@ -6843,6 +6877,11 @@ ${protocolHint}
 	}
 
 	public async refreshNativeTodoListFromTaskProgressFile(): Promise<void> {
+		// kilocode_change: child agents (delegated children, forked child
+		// processes, and in-process parallel subagents) never bind to the shared
+		// workspace's parent-owned checklist; the watcher must not project the
+		// parent's file into the child's native todo state.
+		if (this.isChildAgent) return
 		const progressPath = await this.findOwnedTaskProgressFilePath()
 		if (!progressPath) return
 		const content = await fsp.readFile(progressPath, "utf8")

@@ -1,5 +1,18 @@
 # Deeptask
 
+## 9.2.0
+
+### Minor Changes
+
+- Subagents (`dispatch_subagents` / `new_task` child agents) no longer get trapped by the completion gate: the workspace-wide incomplete-checklist scan used to block a subagent's `attempt_completion` forever (subagents share the workspace cwd and never own the outer task file). A unified `Task.isChildAgent` predicate now covers all three delegation paths — metadata-delegated children (`parentTaskId`), forked agent-runtime child processes (`AGENT_CONFIG` env), and in-process parallel subagents (`subagent` field, the path that was still stuck in real-world testing) — and all five exemption points use it, letting subagents finish cleanly while the gate still guards real top-level work.
+- Updating an `evolve`-series mode now automatically forks the next copy (`evolve-2` → `Evolve-3`), records the lineage in `~/.deeptask/MACHINE_LINEAGE.md`, and switches the running task to the new copy immediately, so self-evolution never dead-ends and never overwrites the current live mode. Copying a mode also strips the old `-N` suffix from the default display name so fork labels stay sequential.
+- Mode-file writes are now fully transactional in `CustomModesManager.updateModesInFile`: a corrupted or schema-invalid existing file aborts the write (protecting current modes), the mutated config is re-validated and round-trip serialized before touching disk, a `.bak` backup is written, the new content lands via tmp-file + atomic rename, and a failed rename restores the original bytes. A bad write can no longer destroy the mode store.
+- New single-source governance rule `MODE_FILE_GOVERNANCE_RULE` (exported from `@kilocode/types`): mode config files (custom_modes.yaml / .deeptaskmodes / .kilocodemodes / .roo modes) must only be modified through the `manage_mode` tool — never by scripts/sed/awk/python or file-write tools. The same constant is injected into the built-in evolve prompt and both (XML + native) `manage_mode` tool descriptions, so agent-facing rules and tool behavior cannot drift apart.
+- Bottom-left popups (mode selector, profile selector, all shared SelectDropdown surfaces) no longer close spontaneously during streaming re-renders: the shared popover wrapper now gates BOTH outside-close channels (focus + interact) on a recent real pointer press, so synthetic focus changes are ignored while genuine clicks outside still close the popover.
+- Settings save is guarded by a submit fingerprint: the post-save state sync no longer overwrites a just-saved form with a stale pre-save snapshot, so saved values always stick and the save button re-disables reliably (with a 5s fallback).
+- The consecutive-mistake limit now defaults to unlimited (0) and existing installs that still carry the old default of 3 are migrated to unlimited: repeated tool errors no longer freeze the task loop behind a blocking "Deeptask hit a problem" ask, and autonomous runs keep going. Users can still set an explicit cap in settings.
+- The agent-behavior popup (bottom-right "law" icon) now opens on the Modes tab by default instead of Rules.
+
 ## 9.1.9
 
 ### Patch Changes
