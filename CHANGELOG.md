@@ -1,5 +1,11 @@
 # Deeptask
 
+## 9.2.1
+
+### Patch Changes
+
+- Popovers (mode selector, profile selector, all shared SelectDropdown surfaces) now close reliably when clicking outside: the shared popover wrapper abandons Radix dismissableLayer close channels entirely (they proved unreliable in the real webview — synthetic focus events during streaming dismissed popovers, and once gated, real clicks stopped closing them) and adopts the bottom-right modal's proven native design: a document-level pointerdown listener closes the popover when the press lands outside both the content and its trigger. Escape still closes; trigger clicks still toggle.
+
 ## 9.2.0
 
 ### Minor Changes
