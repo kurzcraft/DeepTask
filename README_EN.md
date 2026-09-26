@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.2.0</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.2.2</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -38,7 +38,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.2.0** Subagent completion-gate fix + evolve auto-continuation + transactional mode-file governance: `dispatch_subagents` / `new_task` subagents are no longer trapped by the completion gate (five exemption points let subagents finish cleanly while the gate still guards top-level work); updating an evolve-series mode automatically forks the next copy (evolve-2 → Evolve-3), switches immediately, and records lineage in `~/.deeptask/MACHINE_LINEAGE.md`, so self-evolution never dead-ends; mode-file writes are fully transactional (corrupt/schema-invalid input aborts the write protecting current modes, re-validation, `.bak` backup, tmp + atomic rename, rollback on failure), so a bad write can never destroy the mode store; a new single-source `MODE_FILE_GOVERNANCE_RULE` makes mode config files modifiable only through the `manage_mode` tool, with the same constant injected into the evolve prompt and both XML/native tool descriptions so rules and behavior cannot drift; bottom-left popups no longer close during streaming re-renders; the settings save button is guarded by a submit fingerprint and always persists + re-disables; the consecutive-mistake limit now defaults to unlimited (old default of 3 is migrated away) so autonomous runs keep going; the agent-behavior popup opens on the Modes tab by default.
+> **Deeptask 9.2.2** Subagent long-result truncation fix + todo format fail-fast + native popover outside-close: the `dispatch_subagents` result cap is raised from 4,000 to 20,000 characters (ParallelManager fallback widened in step), so long subtask outputs are no longer clipped; an invalid todo payload now fails fast with a correct-format example instead of falling into the misleading "expansion required" loop; the bottom-left popover (mode/profile selector) outside-close is rewritten as a native document pointerdown listener and no longer closes itself during streaming re-renders; the parallel-session unread green-dot race is eliminated (the seen set is kept until the completed state is confirmed, and resets on reopen); the conversation list gets deterministic ordering; evolve-series fork numbering is pinned (evolve-2 → Evolve-3 lineage never drifts); the mode dropdown pins the current mode.
 
 ## What you can do with Deeptask
 
@@ -149,17 +149,17 @@ Apart from "the model's own conversation handling that commands cannot do" (work
 
 ## Start in three minutes
 
-1. Download `deeptask-9.2.0.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.2.2.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.2.0.vsix --force
+    codium --install-extension ./deeptask-9.2.2.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.2.0.vsix --force
+    code --install-extension ./deeptask-9.2.2.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.2.0</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.2.2</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -38,7 +38,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.2.0** 子任务门禁修复 + evolve 自动接续 + 模式文件事务化治理：dispatch_subagents / new_task 子代理不再被完成门禁卡死（五处豁免让子代理正常结束，门禁仍守护顶层工作）；更新 evolve 系列模式自动 fork 下一个副本（evolve-2 → Evolve-3）并立即切换、谱系记录到 `~/.deeptask/MACHINE_LINEAGE.md`，自进化永不死锁；模式文件写入全面事务化（损坏/schema 失败中止写保护现存模式、重校验、.bak 备份、tmp+原子 rename、失败回滚），坏写入不再摧毁模式库；新增单一事实源 `MODE_FILE_GOVERNANCE_RULE`——模式配置文件只能经 manage_mode 工具修改，规则同时注入 evolve 提示词与 XML/native 两版工具描述，物理上不可漂移；左下角弹窗（模式/Profile 选择器）流式重渲染不再自关；设置保存加提交指纹守卫，保存必生效按钮必变灰；连续工具错误默认不限次（存量旧默认 3 自动迁移为不限），自主运行不再被错误次数冻结；代理行为弹窗默认打开"模式"标签。
+> **Deeptask 9.2.2** 子代理长结果截断修复 + todo 格式快速失败 + 弹窗点击外部关闭原生重写：dispatch_subagents 子代理结果回传上限 4000 → 20000 字符（ParallelManager 兜底同步放宽），长输出子任务不再丢尾；模型传入非法 todo 格式时立即报错并给出正确格式示例，不再落入"expansion required"误导循环；左下角弹窗（模式/Profile 选择器）点击外部关闭改为原生 document pointerdown 监听，流式重渲染不再自关；并行会话未读绿点竞态消除（seen 集合保留到确认完成态才消费，reopened 重置）；会话列表顺序确定性排序；evolve 系列副本编号固定（evolve-2 → Evolve-3 谱系不漂移）；模式下拉列表钉住当前模式。
 
 ## 你可以怎样使用 Deeptask
 
@@ -149,17 +149,17 @@ Deeptask 选择寄生在 VSCodium 里而不是做成独立软件，是刻意为�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.2.0.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.2.2.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.2.0.vsix --force
+    codium --install-extension ./deeptask-9.2.2.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.2.0.vsix --force
+    code --install-extension ./deeptask-9.2.2.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。
