@@ -343,7 +343,15 @@ with ZipFile(vsix) as z:
     hero_match = re.search(r'<img\s+src="([^"]*assets/deeptask-logo-v2\.png)"', readme)
     assert hero_match, 'Marketplace README missing packaged hero image reference'
     hero_url = hero_match.group(1)
-    assert hero_url.startswith('./') or 'github.com/kurzcraft/DeepTask' in hero_url, hero_url
+    # Accept: packaged relative asset, GitHub repo URL, or the jsDelivr gh/
+    # mirror of THIS repository (CN-visible CDN form of the same asset,
+    # introduced in c10234de). Everything else (other sites, old repo,
+    # ../logo.png legacy) still fails.
+    assert (
+        hero_url.startswith('./')
+        or 'github.com/kurzcraft/DeepTask' in hero_url
+        or 'cdn.jsdelivr.net/gh/kurzcraft/DeepTask' in hero_url
+    ), hero_url
     assert 'https://github.com/kurzcraft/DeepTask' in readme, 'Marketplace README missing current GitHub repository'
     assert 'style=for-the-badge&logo=github' in readme, 'Marketplace README missing prominent GitHub action'
     assert '把跨小时、跨会话、持续变化的软件任务真正做完' in readme, 'Marketplace README missing long-task value proposition'

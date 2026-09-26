@@ -70,7 +70,13 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 		const { handleError, pushToolResult, askFinishSubTaskApproval } = callbacks
 
 		// Prevent attempt_completion if any tool failed in the current turn
-		if (task.didToolFailInCurrentTurn) {
+		// kilocode_change: delegated children (new_task subtasks, forked child
+		// processes, in-process parallel subagents) must ALWAYS be able to return
+		// their result to the parent. A failed tool earlier in the child's turn
+		// previously rejected attempt_completion outright, so the child could never
+		// settle and dispatch_subagents' allSettled waited forever. The parent
+		// still sees the failed tool in the child transcript and can react.
+		if (task.didToolFailInCurrentTurn && !task.isChildAgent) {
 			const errorMsg = t("common:errors.attempt_completion_tool_failed")
 
 			await task.say("error", errorMsg)

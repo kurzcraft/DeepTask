@@ -992,7 +992,40 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	private async initializeTaskMode(provider: ClineProvider): Promise<void> {
 		try {
 			const state = await provider.getState()
-			this._taskMode = state?.mode || defaultModeSlug
+			let mode = state?.mode || defaultModeSlug
+			// kilocode_change start: evolve-N auto-upgrade at conversation start
+			// A new root conversation starting in an older evolve-N custom mode is
+			// transparently upgraded to the highest installed evolve-M mode, so the
+			// latest evolved prompt is always active from the first message. Runs
+			// exactly once per new task (initializeTaskMode is only invoked for new
+			// tasks; resumed history tasks keep their recorded mode). Child agents
+			// (subtasks / subagents / delegated child processes) are excluded: their
+			// mode is dictated by the dispatcher.
+			if (!this.subagent && !this.parentTaskId && !this.isDelegatedChildProcess) {
+				const currentMatch = /^evolve-(\d+)$/.exec(mode)
+				if (currentMatch) {
+					try {
+						const customModes = (await provider.customModesManager?.getCustomModes?.()) ?? []
+						let latest = Number(currentMatch[1])
+						for (const candidate of customModes) {
+							const candidateMatch = /^evolve-(\d+)$/.exec(candidate.slug)
+							if (candidateMatch) latest = Math.max(latest, Number(candidateMatch[1]))
+						}
+						if (latest > Number(currentMatch[1])) {
+							const upgraded = `evolve-${latest}`
+							await provider.setMode?.(upgraded)
+							mode = upgraded
+						}
+					} catch (upgradeError) {
+						// Non-fatal: keep the persisted mode when the upgrade check fails.
+						provider.log?.(
+							`Failed to auto-upgrade evolve mode: ${upgradeError instanceof Error ? upgradeError.message : String(upgradeError)}`,
+						)
+					}
+				}
+			}
+			// kilocode_change end
+			this._taskMode = mode
 		} catch (error) {
 			// If there's an error getting state, use the default mode
 			this._taskMode = defaultModeSlug
@@ -1965,8 +1998,21 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			await this.addToClineMessages({ ts: askTs, type: "ask", ask: type, text, isProtected })
 		}
 
-		// kilocode_change start: YOLO mode auto-answer for follow-up questions
-		// Check if this is a follow-up question with suggestions in YOLO mode
+		// kilocode_change start: auto-answer for asks that can never reach a human
+		// (1) Subagents: a resume_task / resume_completed_task ask issued during a
+		// delegated child's history restoration has no user to answer it — the child
+		// would hang forever, blocking dispatch_subagents' allSettled. Self-answer
+		// so the child proceeds autonomously with its original task text.
+		// (2) YOLO mode follow-up questions: auto-select the first suggestion.
+		if (this.subagent && (type === "resume_task" || type === "resume_completed_task")) {
+			const autoAnswer = this.metadata?.task?.slice(0, 200) || "Continue the assigned subagent task."
+			this.handleWebviewAskResponse("messageResponse", autoAnswer, undefined)
+			const result = { response: this.askResponse!, text: autoAnswer, images: undefined }
+			this.askResponse = undefined
+			this.askResponseText = undefined
+			this.askResponseImages = undefined
+			return result
+		}
 		if (type === "followup" && text && !partial) {
 			try {
 				const state = await this.providerRef.deref()?.getState()
@@ -2445,7 +2491,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// restoration transaction. Soft completion would return before
 		// reopenParentFromDelegation(), leaving the child focused indefinitely after a
 		// continuation, model switch, or context condensation marked it active.
-		if (this.parentTaskId) {
+		// Uses the unified isChildAgent predicate: in-process parallel subagents
+		// (task.subagent) must hard-complete the same way as metadata children.
+		if (this.isChildAgent) {
 			return false
 		}
 		// kilocode_change end
@@ -2468,6 +2516,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	public shouldRejectPrematureActiveContinuationCompletion(): boolean {
 		// kilocode_change: continuation quality gates apply to root sessions, not to
 		// delegated child completion, whose result must always be returned to its parent.
+		// Uses the unified isChildAgent predicate (parentTaskId / isDelegatedChildProcess /
+		// subagent): in-process parallel subagents carry no parentTaskId and were
+		// previously misjudged as root sessions, trapping them in an unfinishable turn.
 		// kilocode_change start
 		// Non-actionable continuations (pure questions, acknowledgements, discussion)
 		// have no work tool to demand: their conversational answer is the deliverable,
@@ -2485,7 +2536,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			return false
 		}
 		return (
-			!this.parentTaskId &&
+			!this.isChildAgent &&
 			this.shouldKeepNextCompletionActive &&
 			this.requiresProgressListExpansion &&
 			!this.activeContinuationWorkToolUsed

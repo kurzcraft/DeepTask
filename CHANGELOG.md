@@ -1,5 +1,15 @@
 # Deeptask
 
+## 9.2.3
+
+### Patch Changes
+
+- Parallel subagents can no longer get trapped mid-run by root-session quality gates: `shouldDowngradeCompletionToActiveResponse` / `shouldRejectPrematureActiveContinuationCompletion` previously keyed on `parentTaskId` only, so in-process parallel subagents (no `parentTaskId`) were misjudged as root sessions and their `attempt_completion` was rejected in a dead loop. Both gates now use the unified `Task.isChildAgent` predicate.
+- A failed tool earlier in a subagent's turn no longer vetoes its `attempt_completion`: the `didToolFailInCurrentTurn` rejection is skipped for child agents (`new_task` subtasks, forked child processes, parallel subagents) so the child can always return its result to the parent, which still sees the failed tool in the transcript.
+- Subagents that reach a `resume_task` / `resume_completed_task` ask no longer hang forever waiting for a human reply that can never arrive in a sandboxed session: the ask is auto-answered with the subagent's own task summary and the run continues to completion. (Empirically confirmed: four recent stuck sessions all ended on a hanging `resume_task` ask.)
+- New root conversations starting in an older `evolve-N` custom mode are auto-upgraded once at conversation start to the highest installed `evolve-M` mode, so the latest evolved prompt is always active without manual switching. Resumed history tasks keep their recorded mode; child agents are excluded.
+- Tool descriptions for `new_task` and `dispatch_subagents` (both XML and native protocols) now draw an explicit boundary: "subtask" (子任务) / single clean-context task → `new_task` (the default); `dispatch_subagents` strictly for 2+ parallel tasks. This stops the misrouting where a single independent review was dispatched as a parallel subagent, causing workspace-occupancy confusion.
+
 ## 9.2.2
 
 ### Patch Changes

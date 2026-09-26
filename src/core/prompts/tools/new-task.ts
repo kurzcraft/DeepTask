@@ -4,7 +4,7 @@ import { ToolArgs } from "./types"
  * Prompt when todos are NOT required (default)
  */
 const PROMPT_WITHOUT_TODOS = `## new_task
-Description: This will let you create a new task instance in the chosen mode using your provided message.
+Description: This will let you create a new task instance in the chosen mode using your provided message. When the user asks for a "subtask" (子任务), or you need a single clean-context task (e.g., one independent review, one isolated analysis), this new_task tool is the DEFAULT choice. Reserve dispatch_subagents strictly for MULTIPLE tasks that can run in parallel; never use it for a single task.
 
 Parameters:
 - mode: (required) The slug of the mode to start the new task in (e.g., "code", "debug", "architect").
@@ -27,7 +27,7 @@ Example:
  * Prompt when todos ARE required
  */
 const PROMPT_WITH_TODOS = `## new_task
-Description: This will let you create a new task instance in the chosen mode using your provided message and initial todo list.
+Description: This will let you create a new task instance in the chosen mode using your provided message and initial todo list. When the user asks for a "subtask" (子任务), or you need a single clean-context task (e.g., one independent review, one isolated analysis), this new_task tool is the DEFAULT choice. Reserve dispatch_subagents strictly for MULTIPLE tasks that can run in parallel; never use it for a single task.
 
 Parameters:
 - mode: (required) The slug of the mode to start the new task in (e.g., "code", "debug", "architect").

@@ -1,6 +1,6 @@
 import type OpenAI from "openai"
 
-const DESCRIPTION = `Run several self-contained subtasks in PARALLEL as isolated subagents. Each subagent is a full agent with its own conversation, integrated terminal, and file access. The main task BLOCKS until every subagent finishes, then receives all of their results. Set needs_workspace=true for subagents that write files (they get an isolated git worktree branch). If workspace:"<name>" is already occupied, a sibling worktree is created automatically. Afterwards merge workspace branches into the main branch with workspace_merge.`
+const DESCRIPTION = `Run SEVERAL (2+) self-contained subtasks in PARALLEL as isolated subagents. Each subagent is a full agent with its own conversation, integrated terminal, and file access. The main task BLOCKS until every subagent finishes, then receives all of their results. Use ONLY when MULTIPLE independent tasks can run simultaneously. For a SINGLE clean-context task (including when the user says "subtask"/子任务) use new_task instead — misusing this tool for a single task causes workspace-occupancy confusion. Set needs_workspace=true for subagents that write files (they get an isolated git worktree branch). If workspace:"<name>" is already occupied, a sibling worktree is created automatically. Afterwards merge workspace branches into the main branch with workspace_merge.`
 
 export default {
 	type: "function",

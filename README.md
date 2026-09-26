@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.2.2</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.2.3</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.2.2** 子代理长结果截断修复 + todo 格式快速失败 + 弹窗点击外部关闭原生重写：dispatch_subagents 子代理结果回传上限 4000 → 20000 字符（ParallelManager 兜底同步放宽），长输出子任务不再丢尾；模型传入非法 todo 格式时立即报错并给出正确格式示例，不再落入"expansion required"误导循环；左下角弹窗（模式/Profile 选择器）点击外部关闭改为原生 document pointerdown 监听，流式重渲染不再自关；并行会话未读绿点竞态消除（seen 集合保留到确认完成态才消费，reopened 重置）；会话列表顺序确定性排序；evolve 系列副本编号固定（evolve-2 → Evolve-3 谱系不漂移）；模式下拉列表钉住当前模式。
+> **Deeptask 9.2.3** 并行子代理结束被门禁阻断修复 + 子任务/子代理工具边界明确 + evolve-N 自动升级：shouldDowngrade/shouldRejectPremature 完成门禁与 didToolFailInCurrentTurn 拒绝全部改用统一 isChildAgent 判定，并行子代理（无 parentTaskId 的进程内子代理）不再被误判为根会话而陷入 attempt_completion 死循环；子代理走到 resume_task ask 时自动以自身任务摘要应答，不再永久悬挂等待人类回复（4 个近期卡死会话实证均止于此）；新对话开始时处于旧 evolve-N 模式自动一次性升级到最高已安装 evolve-M（续接历史任务保留原模式）；new_task 与 dispatch_subagents 工具描述（XML+native 双协议）明确边界——"子任务/单个干净上下文任务默认用 new_task，仅 2+ 并行才用 dispatch_subagents"，消除单个独立审稿被误派为并行子代理导致的工作区占用混乱。
 
 ## 你可以怎样使用 Deeptask
 
@@ -146,17 +146,17 @@ Deeptask 选择寄生在 VSCodium 里而不是做成独立软件，是刻意为�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.2.2.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.2.3.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.2.2.vsix --force
+    codium --install-extension ./deeptask-9.2.3.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.2.2.vsix --force
+    code --install-extension ./deeptask-9.2.3.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

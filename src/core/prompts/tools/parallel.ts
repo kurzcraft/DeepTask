@@ -7,7 +7,7 @@ export function getDispatchSubagentsDescription(enabled: boolean | undefined): s
 		return undefined
 	}
 	return `## dispatch_subagents
-Description: Run several self-contained subtasks in PARALLEL as isolated subagents. Each subagent is a full agent with its own conversation, integrated terminal, and file access. The main task BLOCKS until every subagent finishes, then receives all of their results at once. Use this for independent chunks of work (e.g., "implement feature A" + "write tests for B" + "investigate C") that do not need to coordinate with each other.
+Description: Run SEVERAL (2+) self-contained subtasks in PARALLEL as isolated subagents. Each subagent is a full agent with its own conversation, integrated terminal, and file access. The main task BLOCKS until every subagent finishes, then receives all of their results at once. Use this ONLY when you have MULTIPLE independent chunks of work (e.g., "implement feature A" + "write tests for B" + "investigate C") that can run simultaneously and do not need to coordinate with each other. For a SINGLE task needing a clean context (including when the user says "subtask"/子任务), use new_task instead — misusing dispatch_subagents for a single task causes workspace-occupancy confusion.
 
 Workspace rules (write-conflict prevention):
 - A subagent that WRITES files should get its own isolated git workspace: set "needs_workspace": true. It then works on its own branch in a git worktree — no conflicts with other agents or the main checkout.

@@ -1,6 +1,6 @@
 import type OpenAI from "openai"
 
-const NEW_TASK_DESCRIPTION = `This will let you create a new task instance in the chosen mode using your provided message and initial todo list (if required).`
+const NEW_TASK_DESCRIPTION = `This will let you create a new task instance in the chosen mode using your provided message and initial todo list (if required). When the user asks for a "subtask" (子任务), or you need a single clean-context task (e.g., one independent review, one isolated analysis), this new_task tool is the DEFAULT choice. Reserve dispatch_subagents strictly for MULTIPLE tasks that can run in parallel; never use it for a single task.`
 
 const MODE_PARAMETER_DESCRIPTION = `Slug of the mode to begin the new task in (e.g., code, debug, architect)`
 
