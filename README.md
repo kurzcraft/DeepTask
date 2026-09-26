@@ -13,17 +13,14 @@
   长时间运行不失控，随时补充意见不中断，自动执行与人工审查自由切换。
 </p>
 
-<!-- 徽章用纯文本链接：不依赖任何图片请求，任何网络环境下的访客都可见 -->
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask"><strong>⭐ GitHub 源码仓库</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask"><img src="https://img.shields.io/badge/GitHub-访问%20DeepTask%20源码仓库-181717?style=for-the-badge&logo=github&logoColor=white" alt="访问 Deeptask GitHub 源码仓库" /></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/stargazers">⭐ Stars</a>
-  ·
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest">📦 Latest Release</a>
-  ·
-  <a href="https://github.com/kurzcraft/DeepTask/issues">🐞 Issues</a>
+  <a href="https://github.com/kurzcraft/DeepTask/stargazers"><img src="https://img.shields.io/github/stars/kurzcraft/DeepTask?style=flat-square&logo=github&label=Star" alt="GitHub Stars" /></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><img src="https://img.shields.io/github/v/release/kurzcraft/DeepTask?style=flat-square&label=Latest%20Release" alt="Latest GitHub Release" /></a>
+  <a href="https://github.com/kurzcraft/DeepTask/issues"><img src="https://img.shields.io/github/issues/kurzcraft/DeepTask?style=flat-square&logo=github&label=Issues" alt="GitHub Issues" /></a>
 </p>
 
 <p align="center">
