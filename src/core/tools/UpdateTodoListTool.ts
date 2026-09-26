@@ -35,7 +35,23 @@ export class UpdateTodoListTool extends BaseTool<"update_todo_list"> {
 				task.consecutiveMistakeCount++
 				task.recordToolError("update_todo_list")
 				task.didToolFailInCurrentTurn = true
-				pushToolResult(formatResponse.toolError("The todos parameter is not valid markdown checklist or JSON"))
+				pushToolResult(formatResponse.toolError(`${MARKDOWN_FORMAT_HINT} (parse error)`))
+				return
+			}
+
+			// kilocode_change: non-empty input that yields zero checklist items is
+			// almost always a wrong format (plain text array, JSON objects, prose).
+			// Failing fast with the exact expected format makes the retry succeed
+			// on the next attempt instead of silently projecting an empty list.
+			if (todosRaw.trim().length > 0 && todos.length === 0) {
+				task.consecutiveMistakeCount++
+				task.recordToolError("update_todo_list")
+				task.didToolFailInCurrentTurn = true
+				pushToolResult(
+					formatResponse.toolError(
+						`The todos parameter contained no parseable checklist items. ${MARKDOWN_FORMAT_HINT}`,
+					),
+				)
 				return
 			}
 
@@ -64,7 +80,7 @@ export class UpdateTodoListTool extends BaseTool<"update_todo_list"> {
 			if (requiresActionableExpansion && requestedAllCompleted) {
 				pushToolResult(
 					formatResponse.toolError(
-						"This is a new user work turn. An all-completed checklist is not a new task. Replace the old checklist with concrete unfinished milestones for the latest instruction and mark the first new milestone in_progress.",
+						`This is a new user work turn. An all-completed checklist is not a new task. Replace the old checklist with concrete unfinished milestones for the latest instruction and mark the first new milestone in_progress. ${MARKDOWN_FORMAT_HINT}`,
 					),
 				)
 				return
@@ -124,7 +140,7 @@ export class UpdateTodoListTool extends BaseTool<"update_todo_list"> {
 				// Keep the gate closed and force a real new milestone list.
 				pushToolResult(
 					formatResponse.toolError(
-						"Progress list expansion is still required. Do not add summary/recap items about previously completed work. Replace the list with concrete unfinished milestones for the user's latest instruction and mark the first new actionable item in_progress.",
+						`Progress list expansion is still required. Do not add summary/recap items about previously completed work. Replace the list with concrete unfinished milestones for the user's latest instruction and mark the first new actionable item in_progress. ${MARKDOWN_FORMAT_HINT}`,
 					),
 				)
 			} else {
@@ -272,6 +288,11 @@ export function parseMarkdownChecklist(md: string): TodoItem[] {
 export function setPendingTodoList(todos: TodoItem[]) {
 	approvedTodoList = todos
 }
+
+// kilocode_change: shared format hint appended to every update_todo_list rejection
+// so the exact expected input shape is visible at the point of failure.
+const MARKDOWN_FORMAT_HINT =
+	"The todos parameter must be ONE string containing a markdown checklist, one item per line, each line formatted exactly like `- [ ] pending text`, `- [-] in-progress text`, or `- [x] completed text`. Do NOT pass an array of objects, plain text lines, or JSON."
 
 function validateTodos(todos: any[]): { valid: boolean; error?: string } {
 	if (!Array.isArray(todos)) return { valid: false, error: "todos must be an array" }

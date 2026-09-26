@@ -177,7 +177,11 @@ export const ParallelRail = ({
 	const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(new Set())
 	const [unreadConversationIds, setUnreadConversationIds] = useState<Set<string>>(new Set())
 	const didStartupCollapse = useRef(false)
+	// kilocode_change: conversations stay "seen as running" until their completedAt
+	// marker actually arrives (possibly in a later broadcast frame), so the
+	// running→completed transition can never be lost between two prop updates.
 	const seenRunningRef = useRef<Set<string>>(new Set())
+	const notifiedCompletedRef = useRef<Set<string>>(new Set())
 	const [railWidth, setRailWidth] = useState(() => {
 		try {
 			const stored = Number(window.localStorage.getItem(RAIL_WIDTH_KEY))
@@ -345,17 +349,23 @@ export const ParallelRail = ({
 				const wasRunning = seenRunningRef.current.has(conversation.id)
 				const isRunning = runningConversationIds.has(conversation.id)
 				if (isRunning) {
+					// Remember the conversation as having run; do not drop this
+					// marker when the running session disappears — completedAt may
+					// arrive in a later broadcast frame.
 					seenRunningRef.current.add(conversation.id)
-				} else {
-					seenRunningRef.current.delete(conversation.id)
+					notifiedCompletedRef.current.delete(conversation.id)
 				}
 				if (
 					wasRunning &&
 					!isRunning &&
 					conversation.completedAt &&
-					conversation.id !== activeConversationId
+					conversation.id !== activeConversationId &&
+					// Consume the transition exactly once per completion run.
+					!notifiedCompletedRef.current.has(conversation.id)
 				) {
+					notifiedCompletedRef.current.add(conversation.id)
 					next.add(conversation.id)
+					seenRunningRef.current.delete(conversation.id)
 				}
 			}
 			if (activeConversationId) {

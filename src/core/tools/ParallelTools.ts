@@ -232,7 +232,9 @@ export class DispatchSubagentsTool extends BaseTool<"dispatch_subagents"> {
 						: info.status === "cancelled"
 							? `cancelled`
 							: `error: ${info.error ?? "unknown"}`
-				const result = info.result ? `\nResult:\n${truncate(info.result, 4000)}` : "\nResult: (none)"
+				// kilocode_change: 4000 chars cut off real subagent reports; raise to
+				// 20000 per subagent — full result flows back to the parent model.
+				const result = info.result ? `\nResult:\n${truncate(info.result, 20000)}` : "\nResult: (none)"
 				lines.push(`## ${info.label} — ${outcome}${ws}${result}`)
 			}
 			if (mergeNotes.length > 0) {

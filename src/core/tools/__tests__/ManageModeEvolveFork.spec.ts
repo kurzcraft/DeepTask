@@ -145,4 +145,36 @@ describe("manage_mode evolve-series fork-on-update chain", () => {
 		expect(updated[0].slug).toBe("evolve-1")
 		expect(switched).toEqual(["evolve-1"])
 	})
+
+	// kilocode_change: copying a numbered series member continues the series
+	// (evolve-3 -> evolve-4), never double-suffixes (evolve-3-1), and records
+	// the delta description for the mode dropdown subtitle.
+	it("copying evolve-3 forks evolve-4 with a delta description and switches to it", async () => {
+		const fork = (n: number): ModeConfig => ({
+			...evolveBuiltIn,
+			slug: `evolve-${n}`,
+			name: `Evolve-${n}`,
+			source: "global",
+		})
+		const { provider, updated, switched } = makeProvider([fork(1), fork(2), fork(3)])
+		const callbacks = makeCallbacks()
+
+		await manageModeTool.execute(
+			{
+				action: "copy",
+				copy_from: "evolve-3",
+				role_definition: evolveBuiltIn.roleDefinition,
+				reason: "popover ordering + evolve subtitle",
+			},
+			makeTask(provider),
+			callbacks as unknown as ToolCallbacks,
+		)
+
+		expect(updated).toHaveLength(1)
+		expect(updated[0].slug).toBe("evolve-4")
+		expect(updated[0].config.name).toBe("Evolve-4")
+		expect(updated[0].config.description).toContain("相比 evolve-3 的更新")
+		expect(updated[0].config.description).toContain("popover ordering + evolve subtitle")
+		expect(switched).toEqual(["evolve-4"])
+	})
 })

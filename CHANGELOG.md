@@ -1,5 +1,16 @@
 # Deeptask
 
+## 9.2.2
+
+### Patch Changes
+
+- Subagent results are no longer double-truncated: the per-subagent result cap in `dispatch_subagents` rose from 4 000 to 20 000 characters and the ParallelManager fallback extraction tail from 2 000 to 8 000, so long structured results (file lists, diffs, analysis) survive intact instead of being silently cut to a tail snippet.
+- `update_todo_list` fails fast with an explicit format hint when a non-empty payload parses to zero checklist items (plain-text arrays, JSON objects, prose). Both expansion gates now append the exact expected markdown checklist format, so a wrong-format retry succeeds instead of looping on "expansion required".
+- Background conversations reliably show the green unread dot when they finish: the rail now remembers a conversation as "seen running" until its `completedAt` marker actually arrives (possibly in a later broadcast frame) and consumes the transition exactly once per run, fixing the two-frame race where the dot never appeared.
+- Conversation list ordering is deterministic: new conversations use a monotonic in-process clock (same-millisecond creations no longer tie), and both sort paths fall back to `createdAt` then `id` so equal `lastActiveAt` rows can never swap between renders.
+- `manage_mode` copy/update on a numbered series now numbers the fork as the next sibling (`evolve-3` → `evolve-4`, not `evolve-3-1`), writes a delta description ("相比 evolve-3 的更新: …") that outranks the inherited source blurb, and switches the current task to the new copy immediately.
+- The bottom-left mode dropdown pins the current mode as the first row and shows each mode's description as subtitle text, making numbered evolve variants distinguishable at a glance.
+
 ## 9.2.1
 
 ### Patch Changes

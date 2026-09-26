@@ -101,6 +101,41 @@ describe("ParallelManager conversations", () => {
 	})
 	// kilocode_change end
 
+	// kilocode_change start: the no-attempt_completion fallback must keep the
+	// tail of a long final answer (8000 chars, not 2000) so the parent model
+	// receives the actual conclusion instead of a mid-sentence cut.
+	test("extractResult fallback keeps an 8000-char tail of the final text", async () => {
+		const { manager } = setup()
+		const sessionId = "sa-fallback"
+		// Register a session state with messages via the internal map, then call
+		// the private extractor through a spawned-less path.
+		const longTail = "TAIL".repeat(2500) // 10000 chars, conclusion at the end
+		const finalAnswer = `${"HEAD".repeat(2500)}\n结论：${longTail.slice(-4000)}`
+		const state = {
+			info: {
+				sessionId,
+				taskId: sessionId,
+				parentTaskId: "parent",
+				label: "probe",
+				task: "probe",
+				status: "completed",
+				startedAt: 1,
+			},
+			messages: [
+				{ type: "say", say: "text", partial: false, ts: 1, text: finalAnswer } as never,
+			],
+		}
+		;(manager as unknown as { sessions: Map<string, unknown> }).sessions.set(sessionId, state)
+		const extracted = (
+			manager as unknown as { extractResult: (s: unknown) => string | undefined }
+		).extractResult(state)
+		expect(extracted).toBeDefined()
+		expect(extracted!.length).toBeLessThanOrEqual(8000)
+		expect(extracted!.length).toBeGreaterThan(2000)
+		expect(extracted!.endsWith(finalAnswer.slice(-8000))).toBe(true)
+	})
+	// kilocode_change end
+
 	test("ensureTaskConversation creates a conversation for a history task", async () => {
 		const { manager } = setup()
 		const created = await manager.ensureTaskConversation({

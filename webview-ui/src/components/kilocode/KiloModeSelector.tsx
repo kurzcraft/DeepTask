@@ -32,11 +32,30 @@ export const KiloModeSelector = ({
 	const allModes = React.useMemo(() => getAllModes(customModes), [customModes])
 
 	// Group modes by source
+	// kilocode_change: the current mode is pinned to the top of the list so the
+	// user immediately sees what is active without scanning the whole list.
 	const { organizationModes, otherModes } = React.useMemo(() => {
-		const orgModes = allModes.filter((mode) => mode.source === "organization")
-		const other = allModes.filter((mode) => mode.source !== "organization")
+		const orgModes = allModes.filter((mode) => mode.source === "organization" && mode.slug !== value)
+		const other = allModes
+			.filter((mode) => mode.source !== "organization" && mode.slug !== value)
+			.slice()
+			.sort((a, b) => {
+				// Evolve series: higher numbers first so the newest fork shows above its predecessors.
+				const num = (slug: string) => {
+					const m = slug.match(/^evolve-(\d+)$/)
+					return m ? Number(m[1]) : -1
+				}
+				const na = num(a.slug)
+				const nb = num(b.slug)
+				if (na >= 0 && nb >= 0) return nb - na
+				if (na >= 0) return -1
+				if (nb >= 0) return 1
+				return 0
+			})
 		return { organizationModes: orgModes, otherModes: other }
-	}, [allModes])
+	}, [allModes, value])
+
+	const currentMode = React.useMemo(() => allModes.find((mode) => mode.slug === value), [allModes, value])
 
 	const handleChange = React.useCallback(
 		(selectedValue: string) => {
@@ -57,6 +76,22 @@ export const KiloModeSelector = ({
 				type: DropdownOptionType.SHORTCUT,
 			},
 		]
+
+		// kilocode_change: pin the current mode as the very first selectable row.
+		if (currentMode) {
+			opts.push({
+				value: currentMode.slug,
+				label: currentMode.name,
+				codicon: currentMode.iconName,
+				description: currentMode.description,
+				type: DropdownOptionType.ITEM,
+			})
+			opts.push({
+				value: "sep-current",
+				label: t("chat:separator"),
+				type: DropdownOptionType.SEPARATOR,
+			})
+		}
 
 		// Add organization modes section if any exist
 		if (organizationModes.length > 0) {

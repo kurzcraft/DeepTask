@@ -168,7 +168,9 @@ export class ParallelManager {
 		const lastText = [...state.messages]
 			.reverse()
 			.find((m) => m.type === "say" && m.say === "text" && m.partial !== true && m.text)
-		return lastText?.text ? lastText.text.slice(-2000) : undefined
+		// kilocode_change: 2000 chars discarded most of a long final answer when
+		// no attempt_completion was used; keep the tail up to 8000 chars.
+		return lastText?.text ? lastText.text.slice(-8000) : undefined
 	}
 
 	recordMessageCreated(sessionId: string, message: ClineMessage): void {
@@ -428,6 +430,19 @@ export class ParallelManager {
 	private conversationWrite: Promise<void> = Promise.resolve()
 	private conversationsDirty = false
 
+	// kilocode_change start: monotonic conversation clock.
+	// Two conversations created in the same millisecond get identical
+	// lastActiveAt values, making the newest-first sort unstable (test flake,
+	// rail rows swapping on reload). This clock guarantees strictly
+	// increasing timestamps within this process; the sort tie-breaker below
+	// covers cross-process data restored from the shared state file.
+	// kilocode_change end
+	private lastConversationTick = 0
+	private conversationNow(): number {
+		this.lastConversationTick = Math.max(Date.now(), this.lastConversationTick + 1)
+		return this.lastConversationTick
+	}
+
 	private enqueueConversationWrite<T>(fn: () => Promise<T>): Promise<T> {
 		const run = this.conversationWrite.then(fn, fn)
 		this.conversationWrite = run.then(
@@ -505,7 +520,13 @@ export class ParallelManager {
 			byId.set(merged.id, merged)
 			bySession.set(merged.sessionId!, merged.id)
 		}
-		return Array.from(byId.values()).sort((left, right) => right.lastActiveAt - left.lastActiveAt)
+		// kilocode_change: deterministic order for equal lastActiveAt (legacy
+		// same-millisecond rows) — newer createdAt first, then id as the final
+		// stable tie-breaker so the list never swaps between renders.
+		return Array.from(byId.values()).sort(
+			(left, right) =>
+				right.lastActiveAt - left.lastActiveAt || right.createdAt - left.createdAt || (left.id < right.id ? 1 : -1),
+		)
 	}
 
 	private async loadConversations(force = false): Promise<ParallelConversation[]> {
@@ -603,7 +624,7 @@ export class ParallelManager {
 					return existing
 				}
 			}
-			const now = Date.now()
+			const now = this.conversationNow() // kilocode_change: monotonic, same-ms safe
 			const resolvedFolder = this.folderPathForPath(folderPath)
 			const workspacePath = init?.workspacePath ?? resolvedFolder
 			const conversation: ParallelConversation = {
@@ -1018,7 +1039,14 @@ export class ParallelManager {
 	async listConversations(includeArchived = false): Promise<ParallelConversation[]> {
 		await this.conversationWrite
 		const list = await this.loadConversations()
-		return [...list].filter((c) => includeArchived || !c.archivedAt).sort((a, b) => b.lastActiveAt - a.lastActiveAt)
+		// kilocode_change: deterministic order for equal lastActiveAt (legacy
+		// same-millisecond rows) — matches dedupeConversations ordering.
+		return [...list]
+			.filter((c) => includeArchived || !c.archivedAt)
+			.sort(
+				(a, b) =>
+					b.lastActiveAt - a.lastActiveAt || b.createdAt - a.createdAt || (a.id < b.id ? 1 : -1),
+			)
 	}
 
 	async broadcast(): Promise<void> {

@@ -157,6 +157,32 @@ function sanitizeSlug(raw: string): string {
  * Find the next free copy slug: base-1, base-2, ... (case-insensitive collision check).
  */
 function nextCopySlug(baseSlug: string, existingSlugs: Set<string>): string {
+	// kilocode_change start: numbered series continue the series instead of
+	// appending a second suffix. Copying/forking "evolve-3" must produce
+	// "evolve-4" (the next number of the SAME series), never "evolve-3-1".
+	const seriesMatch = baseSlug.match(/^(.*)-(\d+)$/)
+	if (seriesMatch) {
+		const seriesBase = seriesMatch[1]
+		const existingLower = new Set([...existingSlugs].map((s) => s.toLowerCase()))
+		const prefix = `${seriesBase.toLowerCase()}-`
+		let max = 0
+		for (const slug of existingLower) {
+			if (!slug.startsWith(prefix)) {
+				continue
+			}
+			const tail = slug.slice(prefix.length)
+			if (/^\d+$/.test(tail)) {
+				max = Math.max(max, Number(tail))
+			}
+		}
+		// Next number = max(existing series numbers, source number) + 1.
+		const next = Math.max(max, Number(seriesMatch[2])) + 1
+		const candidate = `${seriesBase}-${next}`
+		if (!existingLower.has(candidate.toLowerCase())) {
+			return candidate
+		}
+	}
+	// kilocode_change end
 	let n = 1
 	let candidate = `${baseSlug}-${n}`
 	const taken = (s: string) => existingSlugs.has(s) || [...existingSlugs].some((x) => x.toLowerCase() === s.toLowerCase())
@@ -240,10 +266,10 @@ export class ManageModeTool extends BaseTool<"manage_mode"> {
 						iconName: m.iconName,
 					}))
 					const current = state.mode ?? defaultModeSlug
-					pushToolResult(
-						`Modes (${lines.length}, current: ${current}):\n${JSON.stringify(lines, null, 2)}\n` +
-							`Use action "create" for a brand-new mode, "copy" to duplicate an existing mode (auto -1/-2 suffix) with edits, "update" to modify an existing custom mode by value (creates a -N copy when it targets a built-in), or "switch" to activate a mode.`,
-					)
+				pushToolResult(
+					`Modes (${lines.length}, current: ${current}):\n${JSON.stringify(lines, null, 2)}\n` +
+						`Use action "create" for a brand-new mode, "copy" to duplicate an existing mode (numbered series continue: evolve-3 -> evolve-4) with edits, "update" to modify an existing custom mode by value (evolve-series updates fork the next number and switch to it immediately), or "switch" to activate a mode.`,
+				)
 					task.consecutiveMistakeCount = 0
 					return
 				}
@@ -316,6 +342,20 @@ export class ManageModeTool extends BaseTool<"manage_mode"> {
 						if (!params.name?.trim() && name && !name.match(/-\d+$/)) {
 							name = `${name}-${finalSlug.split("-").pop()}`
 						}
+					// kilocode_change: copying a numbered series member records the
+					// delta vs its source in the description (mode dropdown subtitle).
+					// The delta wins over the inherited source description — otherwise
+					// copying evolve-3 (which already has its own description) keeps
+					// the stale predecessor blurb and the subtitle never shows the delta.
+					{
+						const sourceSlugRaw = params.copy_from?.trim() || base
+						const seriesSource = sourceSlugRaw.match(/^evolve(-\d+)?$/)
+							? sourceSlugRaw
+							: undefined
+						if (seriesSource && seriesSource !== finalSlug && !params.description?.trim()) {
+							description = `相比 ${seriesSource} 的更新: ${params.reason || "(未说明)"}`
+						}
+					}
 					} else {
 						if (!slugRaw) {
 							task.consecutiveMistakeCount++
@@ -444,13 +484,19 @@ export class ManageModeTool extends BaseTool<"manage_mode"> {
 				if (isEvolveSeries) {
 					const existingSlugs = new Set([...customModes.map((m) => m.slug), ...allModes.map((m) => m.slug)])
 					const forkSlug = nextCopySlug("evolve", existingSlugs)
-					const forkNumber = forkSlug.split("-").pop()
-					const forked: ModeConfig = {
-						...merged,
-						slug: forkSlug,
-						name: params.name?.trim() || `Evolve-${forkNumber}`,
-						source: "global",
-					}
+				const forkNumber = forkSlug.split("-").pop()
+				const forked: ModeConfig = {
+					...merged,
+					slug: forkSlug,
+					name: params.name?.trim() || `Evolve-${forkNumber}`,
+					// kilocode_change: the fork's description records what changed
+					// vs its predecessor so the mode dropdown subtitle shows the
+					// delta ("相比 evolve-3 的更新: ...") instead of a generic blurb.
+					description:
+						params.description?.trim() ||
+						`相比 ${targetSlug} 的更新: ${params.reason || "(未说明)"}`,
+					source: "global",
+				}
 
 					if (
 						!(await this.approve(callbacks, {

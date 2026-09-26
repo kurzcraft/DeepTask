@@ -133,6 +133,61 @@ describe("ParallelRail", () => {
 		expect(screen.queryByText("orphan-ws")).not.toBeInTheDocument()
 	})
 
+	// kilocode_change start: the running→completed transition spans two
+	// broadcasts (sessions first, completedAt later). The green unread dot must
+	// still appear, and exactly once even if the completed frame re-arrives.
+	test("green unread dot survives the two-frame running→completed transition", async () => {
+		const conversation = makeConversation({ id: "cv-race", sessionId: "task-race" })
+		const view = render(
+			<ParallelRail
+				sessions={[makeSession({ sessionId: "task-race", taskId: "task-race", status: "running" })]}
+				workspaces={[]}
+				folders={[makeFolder()]}
+				conversations={[conversation]}
+				onSelect={onSelect}
+			/>,
+		)
+		expect(screen.getByTestId("parallel-rail-conversation")).toHaveAttribute("data-running", "true")
+
+		// Frame 2a: the running session disappears BEFORE completedAt is written.
+		view.rerender(
+			<ParallelRail
+				sessions={[]}
+				workspaces={[]}
+				folders={[makeFolder()]}
+				conversations={[conversation]}
+				onSelect={onSelect}
+			/>,
+		)
+		expect(screen.getByTestId("parallel-rail-conversation")).toHaveAttribute("data-running", "false")
+
+		// Frame 2b: completedAt arrives in a later broadcast.
+		view.rerender(
+			<ParallelRail
+				sessions={[]}
+				workspaces={[]}
+				folders={[makeFolder()]}
+				conversations={[{ ...conversation, completedAt: 12345 }]}
+				onSelect={onSelect}
+			/>,
+		)
+		expect(screen.getByTestId("parallel-conversation-unread")).toBeInTheDocument()
+
+		// Frame 2c: a duplicate completed frame must not double-notify, but the
+		// dot stays until the conversation is opened.
+		view.rerender(
+			<ParallelRail
+				sessions={[]}
+				workspaces={[]}
+				folders={[makeFolder()]}
+				conversations={[{ ...conversation, completedAt: 12345 }]}
+				onSelect={onSelect}
+			/>,
+		)
+		expect(screen.getAllByTestId("parallel-conversation-unread")).toHaveLength(1)
+	})
+	// kilocode_change end
+
 	test("folder chevron collapses workspaces; folder name starts a main-workspace conversation", () => {
 		render(
 			<ParallelRail

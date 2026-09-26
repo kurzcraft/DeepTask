@@ -28,6 +28,38 @@ describe("updateTodoListTool", () => {
 		expect(task.normalizeTodoListForActiveContinuation).not.toHaveBeenCalled()
 		expect(task.markProgressListExpandedForContinuation).not.toHaveBeenCalled()
 		expect(pushToolResult).toHaveBeenCalledWith(expect.stringContaining("new user work turn"))
+		expect(pushToolResult).toHaveBeenCalledWith(expect.stringContaining("The todos parameter must be ONE string"))
+	})
+
+	// kilocode_change: wrong-format payloads (plain text array / JSON objects)
+	// must fail fast with the exact expected format instead of an empty projection.
+	it("rejects non-empty input that parses to zero checklist items with a format hint", async () => {
+		const pushToolResult = vi.fn()
+		const task = {
+			consecutiveMistakeCount: 0,
+			recordToolError: vi.fn(),
+			didToolFailInCurrentTurn: false,
+			syncTaskProgressWithTodoList: vi.fn(),
+		} as unknown as Task
+
+		await updateTodoListTool.execute(
+			{ todos: '["诊断①：子代理输出截断", "修复①：子代理结果完整回传"]' },
+			task,
+			{
+				askApproval: vi.fn().mockResolvedValue(true),
+				handleError: vi.fn(),
+				pushToolResult,
+				removeClosingTag: vi.fn(),
+				toolProtocol: "xml",
+			},
+		)
+
+		expect(pushToolResult).toHaveBeenCalledWith(
+			expect.stringContaining("The todos parameter contained no parseable checklist items"),
+		)
+		expect(pushToolResult).toHaveBeenCalledWith(expect.stringContaining("- [ ] pending text"))
+		expect(task.recordToolError).toHaveBeenCalledWith("update_todo_list")
+		expect(task.syncTaskProgressWithTodoList).not.toHaveBeenCalled()
 	})
 
 	it("returns a model-visible synchronization error without updating native state", async () => {
