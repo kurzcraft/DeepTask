@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/deeptask-logo-v2.png" alt="Deeptask compass logo" width="512" />
+  <img src="https://cdn.jsdelivr.net/gh/kurzcraft/DeepTask@main/assets/deeptask-logo-v2.png" alt="Deeptask compass logo" width="512" />
 </p>
 
 <h1 align="center">Deeptask</h1>
@@ -13,14 +13,17 @@
   Long-running execution stays visible, feedback stays actionable, and automation never removes your control.
 </p>
 
+<!-- Badges as plain-text links: no image requests, visible on any network -->
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask"><img src="https://img.shields.io/badge/GitHub-Explore%20DeepTask%20Source-181717?style=for-the-badge&logo=github&logoColor=white" alt="Explore the Deeptask GitHub repository" /></a>
+  <a href="https://github.com/kurzcraft/DeepTask"><strong>⭐ GitHub Repository</strong></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/stargazers"><img src="https://img.shields.io/github/stars/kurzcraft/DeepTask?style=flat-square&logo=github&label=Star" alt="GitHub Stars" /></a>
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><img src="https://img.shields.io/github/v/release/kurzcraft/DeepTask?style=flat-square&label=Latest%20Release" alt="Latest GitHub Release" /></a>
-  <a href="https://github.com/kurzcraft/DeepTask/issues"><img src="https://img.shields.io/github/issues/kurzcraft/DeepTask?style=flat-square&logo=github&label=Issues" alt="GitHub Issues" /></a>
+  <a href="https://github.com/kurzcraft/DeepTask/stargazers">⭐ Stars</a>
+  ·
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest">📦 Latest Release</a>
+  ·
+  <a href="https://github.com/kurzcraft/DeepTask/issues">🐞 Issues</a>
 </p>
 
 <p align="center">
