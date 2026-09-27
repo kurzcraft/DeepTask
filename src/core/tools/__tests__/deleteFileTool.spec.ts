@@ -163,32 +163,50 @@ describe("deleteFileTool", () => {
 			expect(mockedFsUnlink).toHaveBeenCalled()
 		})
 
-		it("should reject files in .kilocodeignore", async () => {
+		// kilocode_change: blocked deletions now PAUSE on the unified approval
+		// dialog (blockedReason shown) instead of erroring back to the model.
+		it("should pause on approval dialog for files in .kilocodeignore", async () => {
 			await executeDeleteFileTool({}, { accessAllowed: false })
 
-			// Normalize path for cross-platform compatibility
-			const normalizedPath = path.normalize(testFilePath)
-			expect(mockCline.say).toHaveBeenCalledWith("error", `Access denied: ${normalizedPath}`)
-			expect(mockPushToolResult).toHaveBeenCalled()
-			expect(mockedFsUnlink).not.toHaveBeenCalled()
+			expect(mockAskApproval).toHaveBeenCalledWith(
+				"tool",
+				expect.stringContaining("blocked by .kilocodeignore"),
+			)
+			// User approved → deletion proceeds
+			expect(mockedFsUnlink).toHaveBeenCalled()
 		})
 
-		it("should reject write-protected files", async () => {
+		it("should pause on approval dialog for write-protected files", async () => {
 			await executeDeleteFileTool({}, { isWriteProtected: true })
 
-			expect(mockCline.say).toHaveBeenCalledWith("error", expect.stringContaining("write-protected"))
-			expect(mockCline.recordToolError).toHaveBeenCalledWith("delete_file")
+			expect(mockAskApproval).toHaveBeenCalledWith(
+				"tool",
+				expect.stringContaining("write-protected"),
+			)
+			expect(mockedFsUnlink).toHaveBeenCalled()
+		})
+
+		it("should cancel blocked deletion when user rejects approval", async () => {
+			mockAskApproval.mockResolvedValue(false)
+			await executeDeleteFileTool({}, { isWriteProtected: true })
+
+			expect(mockAskApproval).toHaveBeenCalled()
+			expect(mockPushToolResult).toHaveBeenCalledWith(
+				expect.stringContaining("rejected by the user"),
+			)
 			expect(mockedFsUnlink).not.toHaveBeenCalled()
 		})
 	})
 
 	describe("workspace boundary", () => {
-		it("should reject files outside workspace", async () => {
+		it("should pause on approval dialog for files outside workspace", async () => {
 			await executeDeleteFileTool({}, { isOutsideWorkspace: true })
 
-			expect(mockCline.say).toHaveBeenCalledWith("error", expect.stringContaining("outside workspace"))
-			expect(mockCline.recordToolError).toHaveBeenCalledWith("delete_file")
-			expect(mockedFsUnlink).not.toHaveBeenCalled()
+			expect(mockAskApproval).toHaveBeenCalledWith(
+				"tool",
+				expect.stringContaining("outside the workspace"),
+			)
+			expect(mockedFsUnlink).toHaveBeenCalled()
 		})
 	})
 
@@ -246,7 +264,7 @@ describe("deleteFileTool", () => {
 			expect(mockPushToolResult).toHaveBeenCalledWith(expect.stringContaining("Deleted directory"))
 		})
 
-		it("should reject directory with protected files", async () => {
+		it("should pause on approval dialog for directory with protected files", async () => {
 			const testDirPath = "test/dir"
 
 			// Mock directory with a protected file
@@ -290,12 +308,20 @@ describe("deleteFileTool", () => {
 				mockRemoveClosingTag,
 			)
 
-			expect(mockCline.say).toHaveBeenCalledWith("error", expect.stringContaining("protected file"))
-			expect(mockCline.recordToolError).toHaveBeenCalledWith("delete_file")
-			expect(mockedFsRm).not.toHaveBeenCalled()
+			// kilocode_change: blocked directory deletion pauses on the unified
+			// approval dialog with the reason shown; approving force-deletes.
+			expect(mockAskApproval).toHaveBeenCalledWith(
+				"tool",
+				expect.stringContaining("protected"),
+			)
+			expect(mockCline.recordToolError).not.toHaveBeenCalled()
+			expect(mockedFsRm).toHaveBeenCalledWith(
+				expect.stringMatching(new RegExp(testDirPath.replace(/\\/g, "\\\\"))),
+				{ recursive: true, force: true },
+			)
 		})
 
-		it("should reject .git directory (protected by RooProtectedController)", async () => {
+		it("should pause on approval dialog for .git directory (protected by RooProtectedController)", async () => {
 			// Mock .git directory with typical Git files
 			mockedFsReaddir.mockResolvedValue([
 				{ name: "HEAD", isFile: () => true, isDirectory: () => false, isSymbolicLink: () => false } as any,
@@ -327,9 +353,17 @@ describe("deleteFileTool", () => {
 				mockRemoveClosingTag,
 			)
 
-			expect(mockCline.say).toHaveBeenCalledWith("error", expect.stringContaining("protected file"))
-			expect(mockCline.recordToolError).toHaveBeenCalledWith("delete_file")
-			expect(mockedFsRm).not.toHaveBeenCalled()
+			// kilocode_change: blocked .git deletion pauses on the unified
+			// approval dialog; approving force-deletes via the override path.
+			expect(mockAskApproval).toHaveBeenCalledWith(
+				"tool",
+				expect.stringContaining("protected"),
+			)
+			expect(mockCline.recordToolError).not.toHaveBeenCalled()
+			expect(mockedFsRm).toHaveBeenCalledWith(
+				expect.stringMatching(/\.git/),
+				{ recursive: true, force: true },
+			)
 		})
 
 		it("should handle non-existent files", async () => {

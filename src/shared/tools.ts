@@ -485,7 +485,7 @@ export const TOOL_GROUPS: Record<ToolGroup, ToolGroupConfig> = {
 			// kilocode_change start: agent-managed modes
 			"manage_mode",
 			// kilocode_change end
-			"new_task",
+			// kilocode_change: new_task removed in 9.2.4 — merged into dispatch_subagents
 			// kilocode_change start: parallel subagents & workspaces
 			"dispatch_subagents",
 			"workspace_status",
@@ -509,7 +509,7 @@ export const ALWAYS_AVAILABLE_TOOLS: ToolName[] = [
 	// kilocode_change start: agent-managed modes
 	"manage_mode",
 	// kilocode_change end
-	"new_task",
+	// kilocode_change: new_task removed in 9.2.4 — merged into dispatch_subagents
 	"report_bug",
 	"condense", // kilocode_Change
 	"update_todo_list",

@@ -4,7 +4,6 @@ import { ClineRulesToggles } from "../../shared/cline-rules"
 import fs from "fs/promises"
 import path from "path"
 import {
-	newTaskToolResponse,
 	newRuleToolResponse,
 	reportBugToolResponse,
 	condenseToolResponse,
@@ -30,8 +29,8 @@ export async function parseKiloSlashCommands(
 ): Promise<{ processedText: string; needsRulesFileCheck: boolean }> {
 	const condenseAliases = condenseToolResponse
 
+	// kilocode_change: /newtask removed in 9.2.4 — new_task tool merged into dispatch_subagents
 	const commandReplacements: Record<string, ((userInput: string) => string) | undefined> = {
-		newtask: newTaskToolResponse,
 		newrule: newRuleToolResponse,
 		reportbug: reportBugToolResponse,
 		smol: condenseAliases,
@@ -47,7 +46,11 @@ export async function parseKiloSlashCommands(
 	if (match?.indices) {
 		// remove the slash command
 		const commandName = match[3]
-		const [slashCommandStartIndex, slashCommandEndIndex] = match.indices[2]
+		const indices = match.indices[2]
+		if (!indices) {
+			return { processedText: text, needsRulesFileCheck: false }
+		}
+		const [slashCommandStartIndex, slashCommandEndIndex] = indices
 		const textWithoutSlashCommand = text.slice(0, slashCommandStartIndex) + text.slice(slashCommandEndIndex)
 
 		const command = commandReplacements[commandName]

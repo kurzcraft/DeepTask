@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.2.2</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.2.4</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.2.2** Subagent long-result truncation fix + todo format fail-fast + native popover outside-close: the `dispatch_subagents` result cap is raised from 4,000 to 20,000 characters (ParallelManager fallback widened in step), so long subtask outputs are no longer clipped; an invalid todo payload now fails fast with a correct-format example instead of falling into the misleading "expansion required" loop; the bottom-left popover (mode/profile selector) outside-close is rewritten as a native document pointerdown listener and no longer closes itself during streaming re-renders; the parallel-session unread green-dot race is eliminated (the seen set is kept until the completed state is confirmed, and resets on reopen); the conversation list gets deterministic ordering; evolve-series fork numbering is pinned (evolve-2 → Evolve-3 lineage never drifts); the mode dropdown pins the current mode.
+> **Deeptask 9.2.4** new_task merged into dispatch_subagents + per-task mode/provider overrides + multi-level agent identity injection + unified delete_file approvals: the `new_task` tool and `/newtask` slash command are removed; `dispatch_subagents` is now the single subtask tool (single clean-context task = one-element `tasks` array, multi-parallel = multi-element) and inherits the full new_task UX (task-prompt window display, auto-jump into the subagent view, auto-advance on each child completion, auto-return to the parent when all done); each task entry may specify `mode` / `provider_profile` / `model_id` (unspecified fields inherit the parent agent); parent and child system prompts inject live identity info (mode / provider / model / depth) with the depth chain propagating level by level; every blocked delete_file path (outside workspace / protection rules / .kilocodeignore / directories containing protected files) now pauses on a single approval dialog showing the blocking reason instead of erroring straight back; fixes evolve-N auto-upgrade not taking effect in new conversations and the archived all-completed update_todo_list sync being blocked by "No verified task progress file"; fixes the "Resume task" button swallowing typed input (button path now sends messageResponse, same as Enter); the built-in evolve prompt embeds the project GitHub repo and a hard evolution-log discipline; subagent identity banners are actually injected (spawn fills parentIdentity + system prompt prepends the Agent Identity section); environment_details "Current Mode" uses the task's own locked mode; dispatch_subagents / workspace_* tools get icon cards and EN/zh-CN labels; each subagent prompt renders as a numbered card and results return as per-agent cards; the auto-approve "Subtasks" toggle is relabeled "Subagents".
 
 ## What you can do with Deeptask
 
@@ -146,17 +146,17 @@ Apart from "the model's own conversation handling that commands cannot do" (work
 
 ## Start in three minutes
 
-1. Download `deeptask-9.2.2.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.2.4.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.2.2.vsix --force
+    codium --install-extension ./deeptask-9.2.4.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.2.2.vsix --force
+    code --install-extension ./deeptask-9.2.4.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

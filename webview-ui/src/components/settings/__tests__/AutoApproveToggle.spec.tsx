@@ -24,7 +24,6 @@ describe("AutoApproveToggle", () => {
 		alwaysAllowMcp: false,
 		alwaysAllowModeSwitch: true,
 		alwaysAllowProviderProfileSwitch: true, // kilocode_change
-		alwaysAllowSubtasks: false,
 		alwaysAllowExecute: true,
 		alwaysAllowFollowupQuestions: false,
 		agentSubagentDispatchEnabled: true, // kilocode_change: parallel subagents

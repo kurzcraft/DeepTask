@@ -684,6 +684,15 @@ export const ChatRowContent = ({
 									: t("chat:fileOperations.wantsToDelete")}
 							</span>
 						</div>
+						{/* kilocode_change start: blocked deletions show their blocking reason */}
+						{(tool as { blockedReason?: string }).blockedReason && (
+							<div
+								className="pl-6 py-1 text-xs text-vscode-errorForeground"
+								data-testid="delete-file-blocked-reason">
+								⚠ {(tool as { blockedReason?: string }).blockedReason}
+							</div>
+						)}
+						{/* kilocode_change end */}
 						<div className="pl-6">
 							<ToolUseBlock>
 								<ToolUseBlockHeader className="group">
@@ -934,6 +943,133 @@ export const ChatRowContent = ({
 						</div>
 					</>
 				)
+			// kilocode_change start: parallel subagent tools rendering. Without
+			// these cases the approval card / transcript row for dispatch_subagents
+			// and the workspace tools never rendered (no icon, no header).
+			case "dispatchSubagents": {
+				// ask/say payload: { tool, count, content, tasks? }
+				const dispatchInfo = tool as {
+					count?: number
+					content?: string
+					tasks?: Array<{
+						index: number
+						label?: string
+						mode?: string
+						provider_profile?: string
+						model_id?: string
+						needs_workspace?: boolean
+						workspace?: string
+						task?: string
+					}>
+				}
+
+				// Numbered per-subagent prompt mini-windows (new_task-style cards).
+				const tasks = dispatchInfo.tasks ?? []
+				return (
+					<>
+						<div style={headerStyle}>
+							{toolIcon("hub")}
+							<span style={{ fontWeight: "bold" }}>
+								{message.type === "ask"
+									? t("chat:subtasks.wantsToDispatch", {
+											count: dispatchInfo.count ?? tasks.length ?? 1,
+										})
+									: t("chat:subtasks.didDispatch", {
+											count: dispatchInfo.count ?? tasks.length ?? 1,
+										})}
+							</span>
+						</div>
+						{tasks.length > 0
+							? tasks.map((sub) => (
+									<div
+										key={sub.index}
+										style={{
+											marginTop: "4px",
+											backgroundColor: "var(--vscode-badge-background)",
+											border: "1px solid var(--vscode-badge-background)",
+											borderRadius: "4px 4px 0 0",
+											overflow: "hidden",
+											marginBottom: "2px",
+										}}>
+										<div
+											style={{
+												padding: "9px 10px 9px 14px",
+												backgroundColor: "var(--vscode-badge-background)",
+												borderBottom: "1px solid var(--vscode-editorGroup-border)",
+												fontWeight: "bold",
+												fontSize: "var(--vscode-font-size)",
+												color: "var(--vscode-badge-foreground)",
+												display: "flex",
+												alignItems: "center",
+												gap: "6px",
+											}}>
+											<span className="codicon codicon-arrow-right"></span>#{sub.index}{" "}
+											{sub.label || sub.task?.slice(0, 60) || ""}
+											{sub.mode ? ` · ${sub.mode}` : ""}
+											{sub.model_id ? ` · ${sub.model_id}` : ""}
+											{sub.needs_workspace || sub.workspace ? " · workspace" : ""}
+										</div>
+										<div
+											style={{
+												padding: "12px 16px",
+												backgroundColor: "var(--vscode-editor-background)",
+											}}>
+											<MarkdownBlock markdown={sub.task || ""} />
+										</div>
+									</div>
+								))
+							: dispatchInfo.content && (
+									<div className="pl-6">
+										<ToolUseBlock>
+											<div className="p-2 text-xs whitespace-pre-wrap">
+												{dispatchInfo.content}
+											</div>
+										</ToolUseBlock>
+									</div>
+								)}
+					</>
+				)
+			}
+			case "workspaceStatus":
+				return (
+					<div style={headerStyle}>
+						{toolIcon("repo")}
+						<span style={{ fontWeight: "bold" }}>{t("chat:subtasks.workspaceStatus")}</span>
+					</div>
+				)
+			case "workspaceCreate":
+				return (
+					<>
+						<div style={headerStyle}>
+							{toolIcon("repo-create")}
+							<span style={{ fontWeight: "bold" }}>{t("chat:subtasks.workspaceCreate")}</span>
+						</div>
+						{tool.content && (
+							<div className="pl-6">
+								<ToolUseBlock>
+									<div className="p-2 text-xs whitespace-pre-wrap">{tool.content}</div>
+								</ToolUseBlock>
+							</div>
+						)}
+					</>
+				)
+			case "workspaceMerge":
+				return (
+					<>
+						<div style={headerStyle}>
+							{toolIcon("git-merge")}
+							<span style={{ fontWeight: "bold" }}>{t("chat:subtasks.workspaceMerge")}</span>
+						</div>
+						{tool.content && (
+							<div className="pl-6">
+								<ToolUseBlock>
+									<div className="p-2 text-xs whitespace-pre-wrap">{tool.content}</div>
+								</ToolUseBlock>
+							</div>
+						)}
+					</>
+				)
+			// kilocode_change end
 			case "newTask":
 				return (
 					<>
@@ -1138,7 +1274,61 @@ export const ChatRowContent = ({
 							showCopyButton={true}
 						/>
 					)
-				case "subtask_result":
+				case "subtask_result": {
+					// kilocode_change start: dispatch_subagents per-subagent
+					// results arrive as subtask_result say messages carrying a
+					// JSON payload ({ tool: "dispatchSubagents", phase: "result", ... }).
+					// Detect that payload and render a numbered per-subagent
+					// completion card; plain text keeps the legacy rendering.
+					const dispatchResult = safeJsonParse<{
+						tool?: string
+						phase?: string
+						index?: number
+						label?: string
+						status?: string
+						workspace?: string
+						content?: string
+					}>(message.text ?? "")
+					if (dispatchResult?.tool === "dispatchSubagents" && dispatchResult.phase === "result") {
+						return (
+							<div>
+								<div
+									style={{
+										marginTop: "0px",
+										backgroundColor: "var(--vscode-badge-background)",
+										border: "1px solid var(--vscode-badge-background)",
+										borderRadius: "0 0 4px 4px",
+										overflow: "hidden",
+										marginBottom: "8px",
+									}}>
+									<div
+										style={{
+											padding: "9px 10px 9px 14px",
+											backgroundColor: "var(--vscode-badge-background)",
+											borderBottom: "1px solid var(--vscode-editorGroup-border)",
+											fontWeight: "bold",
+											fontSize: "var(--vscode-font-size)",
+											color: "var(--vscode-badge-foreground)",
+											display: "flex",
+											alignItems: "center",
+											gap: "6px",
+										}}>
+										<span className="codicon codicon-check"></span>#{dispatchResult.index ?? 1}{" "}
+										{dispatchResult.label ?? ""} — {dispatchResult.status ?? "completed"}
+										{dispatchResult.workspace ? ` · ${dispatchResult.workspace}` : ""}
+									</div>
+									<div
+										style={{
+											padding: "12px 16px",
+											backgroundColor: "var(--vscode-editor-background)",
+										}}>
+										<MarkdownBlock markdown={dispatchResult.content || ""} />
+									</div>
+								</div>
+							</div>
+						)
+					}
+					// kilocode_change end
 					return (
 						<div>
 							<div
@@ -1175,6 +1365,7 @@ export const ChatRowContent = ({
 							</div>
 						</div>
 					)
+				}
 				case "reasoning":
 					return (
 						<ReasoningBlock

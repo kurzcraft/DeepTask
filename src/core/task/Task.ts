@@ -226,7 +226,18 @@ export interface TaskOptions extends CreateTaskOptions {
 	/** When set, this task runs as a parallel subagent: its webview messages are
 	 * routed to the parallel session sink instead of the main chat stream, and
 	 * its approval asks are auto-resolved. */
-	subagent?: { sessionId: string; depth: number; manager: SubagentMessageSink }
+	subagent?: {
+		sessionId: string
+		depth: number
+		manager: SubagentMessageSink
+		/** Optional mode override for the subagent; undefined inherits the parent's mode. */
+		mode?: string
+		/** Human-readable parent identity (mode/provider/model) for the subagent's system prompt banner. */
+		parentIdentity?: string
+		/** Dispatch-time provider profile override; seeds the child's sticky
+		 * identity so async global-state backfill cannot clobber it. */
+		providerProfileName?: string
+	}
 	// kilocode_change end
 }
 
@@ -281,7 +292,18 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	readonly instanceId: string
 	readonly metadata: TaskMetadata
 	// kilocode_change start: parallel subagent routing
-	readonly subagent?: { sessionId: string; depth: number; manager: SubagentMessageSink }
+	readonly subagent?: {
+		sessionId: string
+		depth: number
+		manager: SubagentMessageSink
+		/** Optional mode override for the subagent; undefined inherits the parent's mode. */
+		mode?: string
+		/** Human-readable parent identity (mode/provider/model) for the subagent's system prompt banner. */
+		parentIdentity?: string
+		/** Dispatch-time provider profile override; seeds the child's sticky
+		 * identity so async global-state backfill cannot clobber it. */
+		providerProfileName?: string
+	}
 	// kilocode_change end
 
 	/**
@@ -832,6 +854,16 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			this._taskMode = undefined
 			this._taskApiConfigName = undefined
 			this._taskApiModelId = undefined // kilocode_change
+			// kilocode_change start: a parallel subagent with a dispatch-time
+			// provider override must lock its identity BEFORE the async
+			// global-state backfill runs; otherwise initializeTaskApiConfigName
+			// overwrites the banner/sticky fields with the parent conversation's
+			// profile name and model (silent override loss).
+			if (subagent?.providerProfileName) {
+				this._taskApiConfigName = subagent.providerProfileName
+				this._taskApiModelId = this.api?.getModel?.().id
+			}
+			// kilocode_change end
 			this.taskModeReady = this.initializeTaskMode(provider)
 			this.taskApiConfigReady = this.initializeTaskApiConfigName(provider)
 			TelemetryService.instance.captureTaskCreated(this.taskId)
@@ -991,6 +1023,13 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	 */
 	private async initializeTaskMode(provider: ClineProvider): Promise<void> {
 		try {
+			// kilocode_change start: a subagent's explicit mode override wins;
+			// otherwise the task mode falls back to provider state as before.
+			if (this.subagent?.mode) {
+				this._taskMode = this.subagent.mode
+				return
+			}
+			// kilocode_change end
 			const state = await provider.getState()
 			let mode = state?.mode || defaultModeSlug
 			// kilocode_change start: evolve-N auto-upgrade at conversation start
@@ -1722,6 +1761,13 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// kilocode_change start: parallel subagents route messages to their session sink
 		if (this.subagent) {
 			this.subagent.manager.recordMessageCreated(this.subagent.sessionId, message)
+			// kilocode_change: when the subagent is the FOCUSED conversation
+			// (auto-jump after dispatch), also stream into the main chat view so
+			// the user watching the child session sees live output.
+			const provider = this.providerRef.deref()
+			if (provider?.shouldBroadcastTaskToChat?.(this) === true) {
+				await provider?.postStateToWebview()
+			}
 		} else {
 			const provider = this.providerRef.deref()
 			provider?.syncLiveTask?.(this)
@@ -1772,6 +1818,11 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// kilocode_change start: parallel subagents route message updates to their session sink
 		if (this.subagent) {
 			this.subagent.manager.recordMessageUpdated(this.subagent.sessionId, message)
+			// kilocode_change: focused subagents also stream updates into the chat view.
+			const provider = this.providerRef.deref()
+			if (provider?.shouldBroadcastTaskToChat?.(this) === true) {
+				await provider?.postMessageToWebview({ type: "messageUpdated", clineMessage: message })
+			}
 		} else {
 			const provider = this.providerRef.deref()
 			provider?.syncLiveTask?.(this)
@@ -5704,7 +5755,6 @@ ${protocolHint}
 
 		const {
 			browserViewportSize,
-			mode,
 			customModes,
 			customModePrompts,
 			customInstructions,
@@ -5725,6 +5775,11 @@ ${protocolHint}
 				throw new Error("Provider not available")
 			}
 
+			// kilocode_change start: use the task's own resolved mode (_taskMode) instead
+			// of provider state's mode. state.mode is a race for new tasks — the evolve-N
+			// auto-upgrade writes the provider state AFTER initializeTaskMode resolves,
+			// so reading state.mode here can resurrect the stale pre-upgrade mode.
+			const mode = this._taskMode ?? (await this.getTaskMode())
 			// Align browser tool enablement with generateSystemPrompt: require model image support,
 			// mode to include the browser group, and the user setting to be enabled.
 			const modeConfig = getModeBySlug(mode ?? defaultModeSlug, customModes)
@@ -5755,7 +5810,14 @@ ${protocolHint}
 				mode ?? defaultModeSlug,
 				customModePrompts,
 				customModes,
-				customInstructions,
+				// kilocode_change start: subagent identity banner. Prepend the runtime
+				// identity (mode / provider profile / model / subagent depth + lineage)
+				// so every child agent knows exactly what configuration it runs with,
+				// without having to self-report in its prompts.
+				this.subagent
+					? `${this.buildSubagentIdentityBanner(mode ?? defaultModeSlug)}\n\n${customInstructions ?? ""}`
+					: customInstructions,
+				// kilocode_change end
 				this.diffEnabled,
 				experiments,
 				enableMcpServerCreation,
@@ -5790,6 +5852,27 @@ ${protocolHint}
 			"default"
 		)
 	}
+
+	// kilocode_change start: subagent identity banner. Runtime identity injected
+	// into the subagent's system prompt so the child knows its mode / provider
+	// profile / model / depth without self-reporting.
+	private buildSubagentIdentityBanner(mode: string): string {
+		const depth = this.subagent?.depth ?? 0
+		const profile = this.taskApiConfigName ?? this.apiConfiguration?.apiProvider ?? "default"
+		const model = this.api?.getModel?.().id ?? "unknown"
+		const lineage = this.subagent?.parentIdentity ? `\nParent agent: ${this.subagent.parentIdentity}` : ""
+		return [
+			`# Agent Identity (runtime-injected)`,
+			`- Role: parallel subagent (dispatch_subagents child)`,
+			`- Mode: ${mode}`,
+			`- Provider profile: ${profile}`,
+			`- Model: ${model}`,
+			`- Subagent depth: ${depth}${lineage}`,
+			``,
+			`This identity is injected by the host at runtime; do not restate it in your replies.`,
+		].join("\n")
+	}
+	// kilocode_change end
 
 	private async handleContextWindowExceededError(): Promise<void> {
 		const state = await this.providerRef.deref()?.getState()
@@ -6880,11 +6963,25 @@ ${protocolHint}
 		}
 		const progressPath = await this.findOwnedTaskProgressFilePath()
 		if (!progressPath) {
+			// kilocode_change start: archived-checklist grace. After the model moves
+			// its fully-completed checklist into EXTRA/task/finished/, there is no
+			// active file left to discover. A subsequent native TODO sync with an
+			// all-completed payload is the legitimate end-of-task projection; it must
+			// not throw "No verified task progress file" and break attempt_completion's
+			// final state push. A payload with any non-completed item still fails hard —
+			// unfinished work can never hide behind the archive grace.
+			const archivedOk =
+				this.taskProgressFilePath === undefined &&
+				(todos.length === 0 || todos.every((todo) => todo.status === "completed"))
+			if (archivedOk) {
+				return todos
+			}
 			throw new Error(
 				`No verified task progress file for host task ${this.taskId}. ` +
 					"Write the authoritative EXTRA/task Markdown checklist first, read it back to verify its marker and items, then retry update_todo_list.",
 			)
 		}
+		// kilocode_change end
 
 		const content = await fsp.readFile(progressPath, "utf8")
 		const fileTodos = parseMarkdownChecklist(content)
@@ -7100,7 +7197,15 @@ ${protocolHint}
 	 * file tools, terminals, and environment details use the new cwd.
 	 */
 	public async switchWorkspace(nextWorkspacePath: string): Promise<void> {
-		if (!nextWorkspacePath || nextWorkspacePath === this.workspacePath) {
+		// kilocode_change: defect K - refuse literal "null"/"undefined" or
+		// non-absolute junk so a stray stringified JSON null can never become
+		// this task's cwd (it once exiled a conversation into /home/kurz/null).
+		if (
+			!nextWorkspacePath ||
+			nextWorkspacePath === this.workspacePath ||
+			!path.isAbsolute(nextWorkspacePath) ||
+			["null", "undefined"].includes(nextWorkspacePath)
+		) {
 			return
 		}
 		this.workspacePath = nextWorkspacePath

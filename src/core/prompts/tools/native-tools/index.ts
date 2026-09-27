@@ -10,7 +10,6 @@ import executeCommand from "./execute_command"
 import fetchInstructions from "./fetch_instructions"
 import generateImage from "./generate_image"
 import listFiles from "./list_files"
-import newTask from "./new_task"
 // kilocode_change start: parallel subagents & workspaces
 import dispatchSubagents from "./dispatch-subagents"
 import workspaceStatus from "./workspace-status"
@@ -105,7 +104,7 @@ export function getNativeTools(options: NativeToolsOptions = {}): OpenAI.Chat.Ch
 		fetchInstructions,
 		generateImage,
 		listFiles,
-		newTask,
+		// kilocode_change: new_task removed in 9.2.4 — merged into dispatch_subagents
 		// kilocode_change start: parallel subagents & workspaces
 		dispatchSubagents,
 		workspaceStatus,

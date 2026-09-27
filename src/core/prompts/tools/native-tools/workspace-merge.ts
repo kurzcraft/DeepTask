@@ -20,7 +20,7 @@ export default {
 				switch_to: {
 					type: ["string", "null"],
 					description:
-						'Optional destination for this conversation before merge. Use "main" for the parent repo, or another workspace name/path.',
+						'Optional destination for this conversation before merge. Use "main" for the parent repo, or another workspace name/path. Valid targets ONLY: "main", a registered workspace name, or an existing absolute path. Never pass literal "null"; omit the parameter instead.',
 				},
 			},
 			required: ["name"],

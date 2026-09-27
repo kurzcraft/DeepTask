@@ -1115,33 +1115,29 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				}
 				// kilocode_change end
 
-			// When busy, route input directly without creating a local queue/feedback card.
-			// The authoritative host echo appears only after the message is accepted, which
-			// prevents long waiting messages from covering the active conversation.
-			// kilocode_change start
-			// Dead-letter guard: in the exact window after a primary click (buttons
-			// wiped, no fresh ask/api_req_started yet), an askResponse routed by
-			// askTs can be dropped by the host. The terminalOperation continue
-			// channel works with or without a pending ask, so typed text during
-			// that window always reaches the model as a real continuation.
-			const hasAnyVisibleControl = !!(
-				clineAskRef.current ||
-				primaryButtonText ||
-				isStreaming
-			)
-			if (!hasAnyVisibleControl && (sendingDisabled || isStreaming) && messagesRef.current.length > 0) {
-				vscode.postMessage({
-					type: "terminalOperation",
-					terminalOperation: "continue",
-					terminalOperationText: text,
-					terminalOperationImages: images.length > 0 ? images : undefined,
-				})
-				setInputValue("")
-				setSelectedImages([])
-				return
-			}
-			// kilocode_change end
-			if ((sendingDisabled || isStreaming) && messagesRef.current.length > 0) {
+				// When busy, route input directly without creating a local queue/feedback card.
+				// The authoritative host echo appears only after the message is accepted, which
+				// prevents long waiting messages from covering the active conversation.
+				// kilocode_change start
+				// Dead-letter guard: in the exact window after a primary click (buttons
+				// wiped, no fresh ask/api_req_started yet), an askResponse routed by
+				// askTs can be dropped by the host. The terminalOperation continue
+				// channel works with or without a pending ask, so typed text during
+				// that window always reaches the model as a real continuation.
+				const hasAnyVisibleControl = !!(clineAskRef.current || primaryButtonText || isStreaming)
+				if (!hasAnyVisibleControl && (sendingDisabled || isStreaming) && messagesRef.current.length > 0) {
+					vscode.postMessage({
+						type: "terminalOperation",
+						terminalOperation: "continue",
+						terminalOperationText: text,
+						terminalOperationImages: images.length > 0 ? images : undefined,
+					})
+					setInputValue("")
+					setSelectedImages([])
+					return
+				}
+				// kilocode_change end
+				if ((sendingDisabled || isStreaming) && messagesRef.current.length > 0) {
 					try {
 						vscode.postMessage({
 							type: "askResponse",
@@ -1362,13 +1358,21 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 					} else {
 						// Only send text/images if they exist
 						if (trimmedInput || (images && images.length > 0)) {
+							// kilocode_change start
+							// The resume ask's continuation path (resumeTaskFromHistory)
+							// only consumes text from messageResponse responses; a
+							// yesButtonClicked carrying typed text dropped the payload
+							// and the input was silently swallowed. Send the typed text
+							// exactly like pressing Enter would (messageResponse) so
+							// "Resume Task" with input == resume + send the message.
 							vscode.postMessage({
 								type: "askResponse",
-								askResponse: "yesButtonClicked",
+								askResponse: "messageResponse",
 								text: trimmedInput,
 								images: images,
 								askTs: currentAskTsRef.current,
 							})
+							// kilocode_change end
 							// Clear input state after sending
 							setInputValue("")
 							setSelectedImages([])
@@ -2010,12 +2014,15 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const parallelWorkspaceList = useMemo(() => parallelWorkspaces ?? [], [parallelWorkspaces])
 	const parallelFolderList = useMemo(() => parallelFolders ?? [], [parallelFolders])
 	const parallelConversationList = useMemo(() => parallelConversations ?? [], [parallelConversations])
-	const handleParallelSelect = useCallback((id: string) => {
-		const resolved = resolveParallelSelectTarget(id, parallelConversationList, parallelSessionList)
-		if (resolved.kind === "conversation") {
-			vscode.postMessage({ type: "parallel.selectConversation", text: resolved.targetId })
-		}
-	}, [parallelConversationList, parallelSessionList])
+	const handleParallelSelect = useCallback(
+		(id: string) => {
+			const resolved = resolveParallelSelectTarget(id, parallelConversationList, parallelSessionList)
+			if (resolved.kind === "conversation") {
+				vscode.postMessage({ type: "parallel.selectConversation", text: resolved.targetId })
+			}
+		},
+		[parallelConversationList, parallelSessionList],
+	)
 	// kilocode_change end
 
 	const handleMessageClick = useCallback(
@@ -2151,9 +2158,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			const keyboardEvent = event as KeyboardEvent
 			// kilocode_change: any arrow/page/home/end key releases a pinned jump,
 			// not only upward ones.
-			if (
-				["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(keyboardEvent.key)
-			) {
+			if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(keyboardEvent.key)) {
 				releaseOutputFollowing(keyboardEvent.target)
 			}
 		},
@@ -2467,8 +2472,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		// deadLetterForceControls is the watchdog's verdict that the host died:
 		// it must override hasVisibleControl, because a frozen isStreaming=true
 		// (cancel-click stuck) or a wiped-button row IS the dead state itself.
-		(deadLetterForceControls ||
-			(!hasVisibleControl && (clineAsk !== undefined || activeCommandCount > 0)))
+		(deadLetterForceControls || (!hasVisibleControl && (clineAsk !== undefined || activeCommandCount > 0)))
 	// kilocode_change end
 
 	// kilocode_change start: cancel-stuck hard recovery.
@@ -2816,7 +2820,11 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 																: undefined
 										}>
 										<Button
-											disabled={!enableButtons && !(isStreaming && !didClickCancel) && !cancelPendingStuck}
+											disabled={
+												!enableButtons &&
+												!(isStreaming && !didClickCancel) &&
+												!cancelPendingStuck
+											}
 											className={
 												isStreaming
 													? showScrollToBottom

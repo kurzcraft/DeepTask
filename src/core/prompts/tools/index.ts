@@ -28,7 +28,6 @@ import { getManageProviderProfileDescription } from "./manage-provider-profile"
 // kilocode_change start: agent-managed modes
 import { getManageModeDescription } from "./manage-mode"
 // kilocode_change end
-import { getNewTaskDescription } from "./new-task"
 import { getCodebaseSearchDescription } from "./codebase-search"
 import { getUpdateTodoListDescription } from "./update-todo-list"
 import { getRunSlashCommandDescription } from "./run-slash-command"
@@ -75,7 +74,6 @@ const toolDescriptionMap: Record<string, (args: ToolArgs) => string | undefined>
 	// kilocode_change start: agent-managed modes
 	manage_mode: () => getManageModeDescription(),
 	// kilocode_change end
-	new_task: (args) => getNewTaskDescription(args),
 	// kilocode_change start: parallel subagents & workspaces
 	dispatch_subagents: (args) => getDispatchSubagentsDescription(args.settings?.agentSubagentDispatchEnabled),
 	workspace_status: (args) => getWorkspaceStatusDescription(args.settings?.agentWorkspaceManagementEnabled),

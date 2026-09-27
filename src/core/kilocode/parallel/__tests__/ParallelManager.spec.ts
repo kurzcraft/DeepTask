@@ -644,4 +644,108 @@ describe("ParallelManager conversations", () => {
 		expect(conversation?.folderPath).toBe("/repo")
 		createSpy.mockRestore()
 	})
+
+	// kilocode_change start: re-key regression for defect H — everything the
+	// user touches (spawn return, info.sessionId, map key, sink sessionId)
+	// must live under the child's real taskId so conversationForSession /
+	// focusTask / rail clicks / parallelSessionMessages all resolve.
+	test("spawn re-keys the session under the child's real taskId", async () => {
+		const { manager, posted } = setup()
+		await manager.registerMainFolder("/repo")
+		let sinkRef: { sessionId: string } | undefined
+		const createSpy = vi.spyOn(Task, "create").mockImplementation((options) => {
+			// Keep the live sink object reference the manager handed to the child.
+			const subagent = (options as { subagent?: { sessionId: string } }).subagent
+			sinkRef = subagent
+			// Mirror the real Task constructor: this.subagent = subagent.
+			const child = { taskId: "child-task", subagent } as Task
+			return [child, Promise.resolve()]
+		})
+		const parent = {
+			taskId: "parent-task",
+			cwd: "/repo",
+			apiConfiguration: { apiProvider: "openai" },
+			enableCheckpoints: false,
+			diffEnabled: false,
+			checkpointTimeout: 42,
+			subagent: undefined,
+		} as unknown as Task
+
+		const spawned = manager.spawn(parent, { label: "rekey", task: "verify public key" })
+
+		// The public key must be the child's taskId, never the internal sa- key.
+		expect(spawned.sessionId).toBe("child-task")
+		// info.sessionId must match the public key (rail rows + focus chain).
+		expect(manager.getSession("child-task")?.info.sessionId).toBe("child-task")
+		// The map holds exactly one entry, keyed by the public taskId.
+		const sessionsMap = (manager as unknown as { sessions: Map<string, unknown> }).sessions
+		expect([...sessionsMap.keys()]).toEqual(["child-task"])
+		// The child Task's sink object was re-keyed in place to the public key.
+		expect(sinkRef?.sessionId).toBe("child-task")
+		// Messages broadcast under the public key so the webview store matches.
+		manager.recordMessageCreated("child-task", { ts: 1, say: "text", text: "hello" } as never)
+		const last = posted.at(-1)
+		expect(last?.type).toBe("parallelSessionMessage")
+		expect(last?.parallelSessionId).toBe("child-task")
+		createSpy.mockRestore()
+	})
+	// kilocode_change end
+
+	// kilocode_change start: inheritance seed regression for defect I — when a
+	// spec has NO explicit provider_profile, the child's sticky identity must
+	// be seeded with the PARENT TASK's profile name (not left undefined, which
+	// lets async global-state backfill pollute the banner with a sibling
+	// subagent's provider override, e.g. after auto-jump focus switches).
+	test("spawn seeds inherited provider profile from the parent task when the spec omits one", async () => {
+		const { manager } = setup()
+		await manager.registerMainFolder("/repo")
+		let handedSubagent: { providerProfileName?: string } | undefined
+		const createSpy = vi.spyOn(Task, "create").mockImplementation((options) => {
+			handedSubagent = (options as { subagent?: { providerProfileName?: string } }).subagent
+			const child = { taskId: "child-task" } as Task
+			return [child, Promise.resolve()]
+		})
+		const parent = {
+			taskId: "parent-task",
+			cwd: "/repo",
+			apiConfiguration: { apiProvider: "openai" },
+			taskApiConfigName: "AIHUBMIX",
+			enableCheckpoints: false,
+			diffEnabled: false,
+			checkpointTimeout: 42,
+			subagent: undefined,
+		} as unknown as Task
+
+		manager.spawn(parent, { label: "inherit", task: "no explicit profile" })
+
+		expect(handedSubagent?.providerProfileName).toBe("AIHUBMIX")
+		createSpy.mockRestore()
+	})
+
+	test("spawn keeps the explicit dispatch-time provider profile over inheritance", async () => {
+		const { manager } = setup()
+		await manager.registerMainFolder("/repo")
+		let handedSubagent: { providerProfileName?: string } | undefined
+		const createSpy = vi.spyOn(Task, "create").mockImplementation((options) => {
+			handedSubagent = (options as { subagent?: { providerProfileName?: string } }).subagent
+			const child = { taskId: "child-task" } as Task
+			return [child, Promise.resolve()]
+		})
+		const parent = {
+			taskId: "parent-task",
+			cwd: "/repo",
+			apiConfiguration: { apiProvider: "openai" },
+			taskApiConfigName: "AIHUBMIX",
+			enableCheckpoints: false,
+			diffEnabled: false,
+			checkpointTimeout: 42,
+			subagent: undefined,
+		} as unknown as Task
+
+		manager.spawn(parent, { label: "override", task: "explicit profile", providerProfileName: "AIHUBMIX-VL" })
+
+		expect(handedSubagent?.providerProfileName).toBe("AIHUBMIX-VL")
+		createSpy.mockRestore()
+	})
+	// kilocode_change end
 })

@@ -26,30 +26,32 @@ describe("parseKiloSlashCommands", () => {
 	})
 
 	describe("built-in commands", () => {
-		describe("/newtask command", () => {
-			it("should process /newtask in <task> tags", async () => {
+		// kilocode_change: /newtask removed in 9.2.4 — new_task tool merged
+		// into dispatch_subagents. The slash command no longer expands.
+		describe("/newtask command (removed in 9.2.4)", () => {
+			it("should not expand /newtask in <task> tags", async () => {
 				const text = "<task>/newtask</task>"
 				const result = await parseKiloSlashCommands(text, emptyToggles, emptyToggles)
 
-				expect(result.processedText).toContain('<explicit_instructions type="new_task">')
-				expect(result.processedText).not.toContain("/newtask")
+				expect(result.processedText).not.toContain('<explicit_instructions type="new_task">')
+				expect(result.processedText).toContain("/newtask")
 				expect(result.needsRulesFileCheck).toBe(false)
 			})
 
-			it("should process /newtask with additional content", async () => {
+			it("should not expand /newtask with additional content", async () => {
 				const text = "<task>/newtask Create a new feature</task>"
 				const result = await parseKiloSlashCommands(text, emptyToggles, emptyToggles)
 
-				expect(result.processedText).toContain('<explicit_instructions type="new_task">')
+				expect(result.processedText).not.toContain('<explicit_instructions type="new_task">')
 				expect(result.processedText).toContain("Create a new feature")
 				expect(result.needsRulesFileCheck).toBe(false)
 			})
 
-			it("should process /newtask with leading whitespace", async () => {
+			it("should not expand /newtask with leading whitespace", async () => {
 				const text = "<task>  /newtask</task>"
 				const result = await parseKiloSlashCommands(text, emptyToggles, emptyToggles)
 
-				expect(result.processedText).toContain('<explicit_instructions type="new_task">')
+				expect(result.processedText).not.toContain('<explicit_instructions type="new_task">')
 				expect(result.needsRulesFileCheck).toBe(false)
 			})
 		})
@@ -142,32 +144,33 @@ describe("parseKiloSlashCommands", () => {
 	})
 
 	describe("tag patterns", () => {
-		it("should process commands in <task> tags", async () => {
+		// kilocode_change: /newtask removed in 9.2.4 — no expansion in any tag.
+		it("should not expand /newtask in <task> tags", async () => {
 			const text = "<task>/newtask</task>"
 			const result = await parseKiloSlashCommands(text, emptyToggles, emptyToggles)
 
-			expect(result.processedText).toContain('<explicit_instructions type="new_task">')
+			expect(result.processedText).not.toContain('<explicit_instructions type="new_task">')
 		})
 
-		it("should process commands in <feedback> tags", async () => {
+		it("should not expand /newtask in <feedback> tags", async () => {
 			const text = "<feedback>/newtask</feedback>"
 			const result = await parseKiloSlashCommands(text, emptyToggles, emptyToggles)
 
-			expect(result.processedText).toContain('<explicit_instructions type="new_task">')
+			expect(result.processedText).not.toContain('<explicit_instructions type="new_task">')
 		})
 
-		it("should process commands in <answer> tags", async () => {
+		it("should not expand /newtask in <answer> tags", async () => {
 			const text = "<answer>/newtask</answer>"
 			const result = await parseKiloSlashCommands(text, emptyToggles, emptyToggles)
 
-			expect(result.processedText).toContain('<explicit_instructions type="new_task">')
+			expect(result.processedText).not.toContain('<explicit_instructions type="new_task">')
 		})
 
-		it("should process commands in <user_message> tags", async () => {
+		it("should not expand /newtask in <user_message> tags", async () => {
 			const text = "<user_message>/newtask</user_message>"
 			const result = await parseKiloSlashCommands(text, emptyToggles, emptyToggles)
 
-			expect(result.processedText).toContain('<explicit_instructions type="new_task">')
+			expect(result.processedText).not.toContain('<explicit_instructions type="new_task">')
 		})
 
 		it("should not process commands outside of recognized tags", async () => {
@@ -313,12 +316,13 @@ describe("parseKiloSlashCommands", () => {
 			expect(result.needsRulesFileCheck).toBe(false)
 		})
 
-		it("should preserve content after the command", async () => {
+		// kilocode_change: /newtask removed in 9.2.4 — content preserved as-is.
+		it("should preserve content after the (removed) command", async () => {
 			const text = "<task>/newtask and some content after</task>"
 			const result = await parseKiloSlashCommands(text, emptyToggles, emptyToggles)
 
 			expect(result.processedText).toContain("and some content after")
-			expect(result.processedText).toContain('<explicit_instructions type="new_task">')
+			expect(result.processedText).not.toContain('<explicit_instructions type="new_task">')
 		})
 
 		it("should preserve content outside the tags", async () => {
@@ -349,7 +353,8 @@ describe("parseKiloSlashCommands", () => {
 	})
 
 	describe("multiline content", () => {
-		it("should handle multiline content in tags", async () => {
+		// kilocode_change: /newtask removed in 9.2.4 — multiline content stays as-is.
+		it("should keep multiline content in tags unchanged", async () => {
 			const text = `<task>
 /newtask
 Create a new feature
@@ -357,7 +362,7 @@ with multiple lines
 </task>`
 			const result = await parseKiloSlashCommands(text, emptyToggles, emptyToggles)
 
-			expect(result.processedText).toContain('<explicit_instructions type="new_task">')
+			expect(result.processedText).not.toContain('<explicit_instructions type="new_task">')
 			expect(result.processedText).toContain("Create a new feature")
 			expect(result.processedText).toContain("with multiple lines")
 		})

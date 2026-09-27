@@ -248,8 +248,8 @@
 			"description": "Automatically switch provider profiles and models after compatibility checks"
 		},
 		"subtasks": {
-			"label": "Subtasks",
-			"description": "Allow creation and completion of subtasks without requiring approval"
+			"label": "Subagents",
+			"description": "Allow dispatching subagents via dispatch_subagents (single or parallel subtasks) without requiring approval"
 		},
 		"followupQuestions": {
 			"label": "Question",

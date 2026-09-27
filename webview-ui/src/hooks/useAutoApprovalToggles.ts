@@ -15,12 +15,13 @@ export function useAutoApprovalToggles() {
 		alwaysAllowMcp,
 		alwaysAllowModeSwitch,
 		alwaysAllowProviderProfileSwitch, // kilocode_change
-		alwaysAllowSubtasks,
 		alwaysAllowFollowupQuestions,
 		agentSubagentDispatchEnabled, // kilocode_change: parallel subagents
 		agentWorkspaceManagementEnabled, // kilocode_change: parallel workspaces
 	} = useExtensionState()
 
+	// kilocode_change: 9.2.4 removed alwaysAllowSubtasks from the panel toggles
+	// (duplicate of the agentSubagentDispatchEnabled capability toggle).
 	const toggles = useMemo(
 		() => ({
 			alwaysAllowReadOnly,
@@ -31,7 +32,6 @@ export function useAutoApprovalToggles() {
 			alwaysAllowMcp,
 			alwaysAllowModeSwitch,
 			alwaysAllowProviderProfileSwitch, // kilocode_change
-			alwaysAllowSubtasks,
 			alwaysAllowFollowupQuestions,
 			agentSubagentDispatchEnabled, // kilocode_change: parallel subagents
 			agentWorkspaceManagementEnabled, // kilocode_change: parallel workspaces
@@ -45,7 +45,6 @@ export function useAutoApprovalToggles() {
 			alwaysAllowMcp,
 			alwaysAllowModeSwitch,
 			alwaysAllowProviderProfileSwitch, // kilocode_change
-			alwaysAllowSubtasks,
 			alwaysAllowFollowupQuestions,
 			agentSubagentDispatchEnabled, // kilocode_change: parallel subagents
 			agentWorkspaceManagementEnabled, // kilocode_change: parallel workspaces

@@ -240,8 +240,8 @@
 			"description": "通过兼容性检查后自动切换提供商配置和模型"
 		},
 		"subtasks": {
-			"label": "子任务",
-			"description": "允许创建和完成子任务而无需批准"
+			"label": "子代理",
+			"description": "允许通过 dispatch_subagents 派出子代理（单个或并行子任务）而无需批准"
 		},
 		"followupQuestions": {
 			"label": "问题",

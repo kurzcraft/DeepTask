@@ -118,6 +118,11 @@ describe("getEnvironmentDetails", () => {
 				createMessage: vi.fn(),
 				countTokens: vi.fn(),
 			} as unknown as ApiHandler,
+			// kilocode_change: getEnvironmentDetails prefers the task's own locked
+			// mode (subagent override) over provider state's global mode.
+			getTaskMode: vi.fn().mockResolvedValue("code"),
+			taskMode: "code",
+			taskApiConfigName: "default",
 			diffEnabled: true,
 			providerRef: {
 				deref: vi.fn().mockReturnValue(mockProvider),

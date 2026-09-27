@@ -243,8 +243,8 @@
 			"description": "通過相容性檢查後自動切換提供商設定與模型"
 		},
 		"subtasks": {
-			"label": "子任務",
-			"description": "無需核准即可建立與完成子任務"
+			"label": "子代理",
+			"description": "允許透過 dispatch_subagents 派出子代理（單個或平行子任務）而無需核准"
 		},
 		"followupQuestions": {
 			"label": "後續提問",

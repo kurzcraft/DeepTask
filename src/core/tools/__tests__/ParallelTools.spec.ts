@@ -79,12 +79,31 @@ describe("DispatchSubagentsTool", () => {
 		expect(JSON.stringify(callbacks.pushToolResult.mock.calls[0][0])).toContain("disabled in settings")
 	})
 
-	test("execute rejects nested dispatch from a subagent", async () => {
+	test("execute allows nested dispatch from a subagent (no depth gate)", async () => {
 		const callbacks = makeCallbacks()
-		const task = makeTask(makeProvider({}))
+		const provider = makeProvider({ agentSubagentDispatchEnabled: true })
+		provider.parallelManager = {
+			folderPathForPath: (cwd: string) => cwd,
+			spawn: vi.fn(() => ({ sessionId: "sa-grandchild", done: Promise.resolve() })),
+			getSession: () => ({
+				info: {
+					label: "grandchild",
+					status: "completed",
+					result: "nested ok",
+				},
+			}),
+			cancelChildrenOf: vi.fn(),
+			broadcast: vi.fn(async () => undefined),
+		}
+		const task = makeTask(provider)
+		// A depth-1 subagent (i.e. a child spawned by another subagent's parent)
+		// must be allowed to dispatch its own subagents — nesting is unbounded.
 		task.subagent = { sessionId: "sa-1", depth: 1, manager: {} }
-		await dispatchSubagentsTool.execute({ tasks: [{ task: "do" }] }, task, callbacks)
-		expect(JSON.stringify(callbacks.pushToolResult.mock.calls[0][0])).toContain("depth limit")
+		await dispatchSubagentsTool.execute({ tasks: [{ task: "grandchild work" }] }, task, callbacks)
+		expect(provider.parallelManager.spawn).toHaveBeenCalledTimes(1)
+		const result = JSON.stringify(callbacks.pushToolResult.mock.calls[0][0])
+		expect(result).toContain("nested ok")
+		expect(result).not.toContain("depth limit")
 	})
 
 	test("a busy named workspace is forked into a sibling worktree", async () => {
@@ -131,6 +150,73 @@ describe("DispatchSubagentsTool", () => {
 			expect.anything(),
 			expect.objectContaining({ workspaceName: created.name, workspacePath: created.path }),
 		)
+	})
+
+	test("subagents get a workspace by default (needs_workspace defaults to true)", async () => {
+		const callbacks = makeCallbacks()
+		const created = {
+			name: "default-ws",
+			path: "/repo/.kilocode/worktrees/default-ws",
+			branch: "deeptask/default-ws",
+		}
+		const provider = makeProvider({
+			agentSubagentDispatchEnabled: true,
+			agentWorkspaceManagementEnabled: true,
+		})
+		provider.workspaceService = {
+			create: vi.fn(async () => created),
+			claim: vi.fn(async () => created),
+			summaries: vi.fn(async () => [{ name: created.name, dirtyFiles: 0, aheadOfBase: 0 }]),
+		}
+		provider.parallelManager = {
+			folderPathForPath: (cwd: string) => cwd,
+			spawn: vi.fn(() => ({ sessionId: "sa-default", done: Promise.resolve() })),
+			getSession: () => ({
+				info: { label: "default-ws", status: "completed", workspaceName: created.name, result: "ok" },
+			}),
+			cancelChildrenOf: vi.fn(),
+			broadcast: vi.fn(async () => undefined),
+		}
+		// NOTE: no needs_workspace field at all — must still create a workspace.
+		await dispatchSubagentsTool.execute({ tasks: [{ task: "maybe writes", label: "default-ws" }] }, makeTask(provider), callbacks)
+		expect(provider.workspaceService.create).toHaveBeenCalledWith({
+			name: "default-ws",
+			description: "maybe writes",
+			folderPath: "/repo",
+		})
+		expect(provider.parallelManager.spawn).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ workspaceName: created.name, workspacePath: created.path }),
+		)
+	})
+
+	test("needs_workspace:false opts out of workspace creation for read-only tasks", async () => {
+		const callbacks = makeCallbacks()
+		const provider = makeProvider({
+			agentSubagentDispatchEnabled: true,
+			agentWorkspaceManagementEnabled: true,
+		})
+		provider.workspaceService = {
+			create: vi.fn(async () => { throw new Error("must not create") }),
+			claim: vi.fn(async () => { throw new Error("must not claim") }),
+		}
+		provider.parallelManager = {
+			folderPathForPath: (cwd: string) => cwd,
+			spawn: vi.fn(() => ({ sessionId: "sa-readonly", done: Promise.resolve() })),
+			getSession: () => ({
+				info: { label: "reader", status: "completed", result: "read ok" },
+			}),
+			cancelChildrenOf: vi.fn(),
+			broadcast: vi.fn(async () => undefined),
+		}
+		await dispatchSubagentsTool.execute(
+			{ tasks: [{ task: "read only", label: "reader", needs_workspace: false }] },
+			makeTask(provider),
+			callbacks,
+		)
+		expect(provider.workspaceService.create).not.toHaveBeenCalled()
+		const spec = (provider.parallelManager.spawn as ReturnType<typeof vi.fn>).mock.calls[0][1]
+		expect(spec.workspaceName).toBeUndefined()
 	})
 
 	test("completed write-bearing workspaces auto-merge into the parent workspace", async () => {
@@ -323,6 +409,65 @@ describe("Workspace tools execute guards", () => {
 		})
 		expect(provider.parallelManager.moveConversationsToWorkspace).toHaveBeenCalledWith(source.path, "/repo")
 		expect(JSON.stringify(callbacks.pushToolResult.mock.calls[0][0])).toContain("This conversation is now in /repo")
+	})
+
+	// kilocode_change: defect K - literal "null" switch_to must be rejected, never
+	// turned into a real path (host bridges stringify JSON null into "null").
+	test("workspace_merge refuses a literal null switch_to without merging", async () => {
+		const callbacks = makeCallbacks()
+		const provider = makeProvider({ agentWorkspaceManagementEnabled: true })
+		const source = { name: "workspace-old", path: "/repo/.kilocode/worktrees/workspace-old" }
+		provider.workspaceService = {
+			findByNameOrPath: vi.fn(async () => source),
+			merge: vi.fn(async () => ({ ok: true, reason: "merged" })),
+		}
+		provider.parallelManager = {
+			folderPathForPath: () => "/repo",
+			syncSessionWorkspace: vi.fn(async () => undefined),
+			broadcast: vi.fn(async () => undefined),
+		}
+		const task = makeTask(provider)
+		task.cwd = source.path
+		task.switchWorkspace = vi.fn(async () => undefined)
+		await workspaceMergeTool.execute({ name: source.name, switch_to: "null" as unknown as undefined }, task, callbacks)
+		expect(task.switchWorkspace).not.toHaveBeenCalled()
+		expect(provider.workspaceService.merge).not.toHaveBeenCalled()
+		expect(JSON.stringify(callbacks.pushToolResult.mock.calls[0][0])).toContain("Ignoring invalid switch_to")
+	})
+
+	test("workspace_merge refuses a non-absolute unregistered switch_to target", async () => {
+		const callbacks = makeCallbacks()
+		const provider = makeProvider({ agentWorkspaceManagementEnabled: true })
+		const source = { name: "workspace-old", path: "/repo/.kilocode/worktrees/workspace-old" }
+		provider.workspaceService = {
+			findByNameOrPath: vi.fn(async (value: string) => (value === source.name || value === source.path ? source : undefined)),
+			merge: vi.fn(async () => ({ ok: true, reason: "merged" })),
+		}
+		provider.parallelManager = {
+			folderPathForPath: () => "/repo",
+			syncSessionWorkspace: vi.fn(async () => undefined),
+			broadcast: vi.fn(async () => undefined),
+		}
+		const task = makeTask(provider)
+		task.cwd = source.path
+		task.switchWorkspace = vi.fn(async () => undefined)
+		await workspaceMergeTool.execute({ name: source.name, switch_to: "junk-relative-name" }, task, callbacks)
+		expect(task.switchWorkspace).not.toHaveBeenCalled()
+		expect(provider.workspaceService.merge).not.toHaveBeenCalled()
+		expect(JSON.stringify(callbacks.pushToolResult.mock.calls[0][0])).toContain("Refusing to switch")
+	})
+
+	test("workspace_create refuses a non-absolute junk cwd without creating", async () => {
+		const callbacks = makeCallbacks()
+		const provider = makeProvider({ agentWorkspaceManagementEnabled: true })
+		provider.workspaceService = { create: vi.fn(async () => ({})), claim: vi.fn(async () => undefined) }
+		const task = makeTask(provider)
+		task.cwd = "null"
+		await workspaceCreateTool.execute({ name: "bad-root" }, task, callbacks)
+		expect(provider.workspaceService.create).not.toHaveBeenCalled()
+		expect(JSON.stringify(callbacks.pushToolResult.mock.calls[0][0])).toContain(
+			"not a valid absolute repository path",
+		)
 	})
 })
 

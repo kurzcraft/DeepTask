@@ -40,7 +40,6 @@ import { manageProviderProfileTool } from "../tools/ManageProviderProfileTool"
 import { manageModeTool } from "../tools/ManageModeTool"
 // kilocode_change end
 import { attemptCompletionTool, AttemptCompletionCallbacks } from "../tools/AttemptCompletionTool"
-import { newTaskTool } from "../tools/NewTaskTool"
 // kilocode_change start: parallel subagents & workspaces
 import {
 	dispatchSubagentsTool,
@@ -513,12 +512,8 @@ export async function presentAssistantMessage(cline: Task) {
 							return `[${block.name} for '${block.params.query}']`
 						case "update_todo_list":
 							return `[${block.name}]`
-						case "new_task": {
-							const mode = block.params.mode ?? defaultModeSlug
-							const message = block.params.message ?? "(no message)"
-							const modeName = getModeBySlug(mode, customModes)?.name ?? mode
-							return `[${block.name} in ${modeName} mode: '${message}']`
-						}
+						// kilocode_change: new_task tool removed in 9.2.4 — merged into
+						// dispatch_subagents (single subtask = 1-element tasks array)
 						// kilocode_change start: parallel subagents & workspaces
 						case "dispatch_subagents": {
 							const tasks = block.params.tasks
@@ -1297,15 +1292,15 @@ export async function presentAssistantMessage(cline: Task) {
 							})
 							break
 						// kilocode_change end
+							// kilocode_change: new_task tool removed in 9.2.4 — dispatch_subagents
+							// is now the single default subtask tool (1..N tasks). Historical
+							// transcripts replaying a new_task tool_use get an explicit error.
 							case "new_task":
-								await newTaskTool.handle(cline, block as ToolUse<"new_task">, {
-									askApproval,
-									handleError,
-									pushToolResult,
-									removeClosingTag,
-									toolProtocol,
-									toolCallId: block.id,
-								})
+								pushToolResult(
+									formatResponse.toolError(
+										"The new_task tool was removed in 9.2.4. Use dispatch_subagents instead — pass a single-element tasks array for one subtask.",
+									),
+								)
 								break
 							// kilocode_change start: parallel subagents & workspaces
 							case "dispatch_subagents":

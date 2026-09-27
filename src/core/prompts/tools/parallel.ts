@@ -7,19 +7,23 @@ export function getDispatchSubagentsDescription(enabled: boolean | undefined): s
 		return undefined
 	}
 	return `## dispatch_subagents
-Description: Run SEVERAL (2+) self-contained subtasks in PARALLEL as isolated subagents. Each subagent is a full agent with its own conversation, integrated terminal, and file access. The main task BLOCKS until every subagent finishes, then receives all of their results at once. Use this ONLY when you have MULTIPLE independent chunks of work (e.g., "implement feature A" + "write tests for B" + "investigate C") that can run simultaneously and do not need to coordinate with each other. For a SINGLE task needing a clean context (including when the user says "subtask"/子任务), use new_task instead — misusing dispatch_subagents for a single task causes workspace-occupancy confusion.
+Description: Dispatch self-contained subtasks as isolated subagents — this is THE default subtask tool (the new_task tool was removed in 9.2.4). Each subagent is a full agent with its own conversation, integrated terminal, and file access; the parent task BLOCKS until every dispatched subagent finishes, then receives all of their results at once. When the user says "subtask"/子任务 or wants a SINGLE clean-context task (one independent review, one isolated analysis), pass a single-element tasks array — that is the default path. Use a multi-element array (2+) only for genuinely independent chunks of work (e.g., "implement feature A" + "write tests for B" + "investigate C") that can run simultaneously. A subagent may itself dispatch further subagents with dispatch_subagents (nesting is unbounded) when its own work decomposes into independent pieces.
 
 Workspace rules (write-conflict prevention):
-- A subagent that WRITES files should get its own isolated git workspace: set "needs_workspace": true. It then works on its own branch in a git worktree — no conflicts with other agents or the main checkout.
-- A subagent that only reads/analyzes should run without a workspace (omit the flag) to keep things light.
+- Every subagent gets its own isolated git workspace by DEFAULT (a fresh git worktree branch) — you do NOT need to set anything when the subagent writes files.
+- Only for pure READ-ONLY tasks (analysis, review, search) set "needs_workspace": false — the subagent then runs in the parent workspace with no worktree. This is how parallel read tasks stay light.
+- Decide by whether the subagent will WRITE files: writes → default (workspace); pure reads → needs_workspace:false.
 	- To reuse an existing workspace by name, set "workspace": "<name>". If that workspace is already occupied, a sibling git worktree is created automatically so two writers never share a directory.
 - After all subagents finish, merge their workspace branches into the main branch yourself with workspace_merge (resolve reported conflicts in the workspace worktree first, then retry the merge).
 
 Parameters:
-- tasks: (required) JSON array of subagent specs, each object:
+- tasks: (required) JSON array of subagent specs (single-element array for one subtask — the default), each object:
   - task: (required) Complete, self-contained instructions for the subagent. Include all needed context — subagents cannot see this conversation.
   - label: (optional) Short display name.
-  - needs_workspace: (optional, default false) Set true when the subagent will write files; it gets a fresh isolated git workspace.
+  - mode: (optional) Mode slug for the subagent (e.g. "code", "ask", "architect"); defaults to the parent's mode.
+  - provider_profile: (optional) Provider profile name for the subagent; defaults to the parent's provider configuration.
+  - model_id: (optional) Model ID within provider_profile; defaults to the profile's saved model.
+  - needs_workspace: (optional, default TRUE) Every subagent gets a fresh isolated git workspace by default. Set FALSE only for pure read-only tasks (analysis/review/search) so parallel reads stay light.
 	  - workspace: (optional) Name of an existing workspace to run in; a busy workspace is forked automatically.
 
 Usage:
@@ -75,7 +79,7 @@ Description: The only workspace change tool. Merge a parallel workspace's branch
 Parameters:
 - name: (required) Workspace name or path to merge.
 - delete_after: (optional, default false) Remove the workspace worktree after a successful merge (the branch is kept).
-- switch_to: (optional) Move this conversation first. Use "main" for the parent repo, or another workspace name/path.
+- switch_to: (optional) Move this conversation first. Use "main" for the parent repo, or another workspace name/path. Valid targets ONLY: "main", a registered workspace name, or an existing absolute path. Never pass literal "null"; omit the parameter instead.
 
 Usage:
 <workspace_merge>

@@ -38,7 +38,6 @@ export const AutoApproveDropdown = ({ disabled = false, triggerClassName = "" }:
 		setAlwaysAllowMcp,
 		setAlwaysAllowModeSwitch,
 		setAlwaysAllowProviderProfileSwitch, // kilocode_change
-		setAlwaysAllowSubtasks,
 		setAlwaysAllowFollowupQuestions,
 	} = useExtensionState()
 
@@ -70,9 +69,6 @@ export const AutoApproveDropdown = ({ disabled = false, triggerClassName = "" }:
 				case "alwaysAllowProviderProfileSwitch":
 					setAlwaysAllowProviderProfileSwitch(value)
 					break
-				case "alwaysAllowSubtasks":
-					setAlwaysAllowSubtasks(value)
-					break
 				case "alwaysAllowFollowupQuestions":
 					setAlwaysAllowFollowupQuestions(value)
 					break
@@ -93,7 +89,6 @@ export const AutoApproveDropdown = ({ disabled = false, triggerClassName = "" }:
 			setAlwaysAllowMcp,
 			setAlwaysAllowModeSwitch,
 			setAlwaysAllowProviderProfileSwitch,
-			setAlwaysAllowSubtasks,
 			setAlwaysAllowFollowupQuestions,
 			setAutoApprovalEnabled,
 		],
@@ -215,7 +210,7 @@ export const AutoApproveDropdown = ({ disabled = false, triggerClassName = "" }:
 						</p>
 					</div>
 					<div className="grid grid-cols-1 min-[340px]:grid-cols-2 gap-x-2 gap-y-2 p-3">
-						{settingsArray.map(({ key, labelKey, descriptionKey, icon }) => {
+						{settingsArray.map(({ key, labelKey, descriptionKey, icon: Icon }) => {
 							const isEnabled = toggles[key]
 							return (
 								<StandardTooltip key={key} content={t(descriptionKey)}>
@@ -230,9 +225,9 @@ export const AutoApproveDropdown = ({ disabled = false, triggerClassName = "" }:
 											!isEnabled && "bg-vscode-button-background/15",
 										)}
 										disabled={!effectiveAutoApprovalEnabled}
-										data-testid={`auto-approve-${key}`}>
-										<span className={`codicon codicon-${icon} text-sm flex-shrink-0`} />
-										<span className="flex-1 truncate">{t(labelKey)}</span>
+									data-testid={`auto-approve-${key}`}>
+									<Icon className="size-3.5 flex-shrink-0" />
+									<span className="flex-1 truncate">{t(labelKey)}</span>
 									</Button>
 								</StandardTooltip>
 							)

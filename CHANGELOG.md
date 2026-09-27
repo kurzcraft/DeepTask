@@ -1,5 +1,22 @@
 # Deeptask
 
+## 9.2.4
+
+### Patch Changes
+
+- `new_task` tool removed; `dispatch_subagents` is now the single subtask tool for both single clean-context tasks (one-element `tasks` array) and multi-parallel dispatch. Tool descriptions (XML + native) teach the boundary explicitly; the `/newtask` slash command no longer expands. The new_task UX (task-prompt window display, auto-jump into the child view, auto-advance on each child completion, auto-return to the parent when all done) is inherited by dispatch_subagents via webview focus flow.
+- Parallel subagents support per-task overrides: each task entry may specify `mode`, `provider_profile`, and `model_id` (unspecified fields inherit the parent agent). Both parent and child prompts now inject live identity info (mode / provider / model / depth) each run, and the depth chain propagates so every level's system prompt knows its own hierarchy level and parent configuration.
+- Subagent identity is now actually injected: `ParallelManager.spawn` fills `parentIdentity` (parent's mode/provider/model) and `Task.getSystemPrompt` prepends an `# Agent Identity (runtime-injected)` banner to every subagent's system prompt (own mode, provider profile, model, depth, and parent lineage), so child agents no longer have to guess their runtime configuration.
+- `environment_details` "Current Mode" now reflects the task's own locked mode (`Task.getTaskMode()`) instead of the provider global state: a subagent spawned with a `mode` override previously saw the parent session's mode in every environment block, contradicting its system prompt.
+- Parallel-tool UI completeness: `dispatch_subagents` / `workspace_status` / `workspace_create` / `workspace_merge` now render real transcript cards with icons (hub / repo / repo-create / git-merge) and localized titles (EN + zh-CN) instead of silently vanishing rows; the auto-approve "Subtasks" toggle is relabeled "Subagents" (dispatch_subagents semantics) across en / zh-CN / zh-TW, and the duplicate `alwaysAllowSubtasks` card is removed from the approval panel (the capability-layer `agentSubagentDispatchEnabled` switch remains), with panel icons unified to lucide-react components.
+- dispatch_subagents numbered prompt windows and result cards: each dispatched task's prompt is rendered as its own numbered card (newTask ask-card style) in the parent transcript, and each subagent's final result arrives back as a per-agent result card via `subtask_result` payloads instead of a silent blob.
+- Fixed the "Resume task" button swallowing typed input: with text in the composer, clicking the resume button used to send `yesButtonClicked` + text, which the resume flow discarded — it now sends `messageResponse` (same path as pressing Enter), so the text is delivered along with the resume.
+- `delete_file` approval behavior unified: every blocked-deletion path (outside workspace, write-protection rules, `.kilocodeignore`, directories containing protected/ignored files) now pauses on a single approval dialog showing the blocking reason instead of sometimes erroring straight back to the model; approving proceeds (force-delete where needed), rejecting cancels.
+- Fixed evolve-N auto-upgrade not taking effect in new conversations: `getSystemPrompt` now resolves the mode through the task's `_taskMode` (which awaits `taskModeReady`) instead of reading `state.mode` in a race window.
+- Fixed `update_todo_list` vs archive ordering conflict: after the checklist file is moved to `EXTRA/task/finished/`, a native TODO sync whose payload is all-completed (or empty) now passes through an archive grace instead of throwing "No verified task progress file" and blocking `attempt_completion`'s final state push.
+- Built-in evolve mode prompt now embeds the project GitHub repo (https://github.com/kurzcraft/DeepTask) for on-demand mechanism lookups, and a hard discipline rule: the evolution log (`PROMPT_EVOLUTION_LOG.md`) is written only when a real mode evolution is committed via `manage_mode` — never for ordinary task retrospectives, memory storage, bug fixes, or release pipelines.
+- `ask_followup_question` is enabled by default (default permission on, still controllable from the panel).
+
 ## 9.2.3
 
 ### Patch Changes

@@ -139,40 +139,68 @@ export async function deleteFileTool(
 		} satisfies ClineSayTool)
 		await cline.ask("tool", partialMessage, true).catch(() => {})
 
-		// Validate access
-		const accessAllowed = cline.rooIgnoreController?.validateAccess(relativePath)
+	// kilocode_change start: blocked-deletion paths must PAUSE on the approval
+	// dialog (with the blocking reason shown) instead of silently erroring back
+	// to the model. Inconsistent behavior (sometimes stuck on approval,
+	// sometimes an immediate error bypassing it) let the model "route around"
+	// the user. Now every blocked deletion surfaces one unified approval ask;
+	// approving proceeds with the deletion, rejecting cancels it.
+	const askBlockedDeletionApproval = async (reason: string, extra?: Record<string, unknown>) => {
+		const approvalMessage = JSON.stringify({
+			tool: "deleteFile",
+			path: getReadablePath(cline.cwd, relPath ?? ""),
+			isOutsideWorkspace: true,
+			blockedReason: reason,
+			...(extra ?? {}),
+		} satisfies Record<string, unknown>)
+		const didApprove = await askApproval("tool", approvalMessage)
+		return didApprove
+	}
+	// kilocode_change end
 
-		if (!accessAllowed) {
-			cline.consecutiveMistakeCount++
-			cline.recordToolError("delete_file")
-			const errorMsg = formatResponse.rooIgnoreError(relativePath)
-			await cline.say("error", errorMsg)
-			pushToolResult(formatResponse.toolError(errorMsg))
+	// Validate access
+	const accessAllowed = cline.rooIgnoreController?.validateAccess(relativePath)
+
+	if (!accessAllowed) {
+		// kilocode_change: .kilocodeignore-blocked deletions now pause on the
+		// unified approval dialog with the reason shown instead of erroring out.
+		const didApprove = await askBlockedDeletionApproval(
+			`Path is blocked by .kilocodeignore: ${relativePath}`,
+		)
+		if (!didApprove) {
+			pushToolResult(formatResponse.toolError(`Deletion of ${relativePath} was rejected by the user.`))
 			return
 		}
+	}
 
-		// Check if file is write-protected
-		const isWriteProtected = cline.rooProtectedController?.isWriteProtected(relativePath) || false
+	// Check if file is write-protected
+	const isWriteProtected = cline.rooProtectedController?.isWriteProtected(relativePath) || false
 
-		if (isWriteProtected) {
-			cline.consecutiveMistakeCount++
-			cline.recordToolError("delete_file")
-			const errorMsg = `Cannot delete write-protected file: ${relativePath}`
-			await cline.say("error", errorMsg)
-			pushToolResult(formatResponse.toolError(errorMsg))
+	if (isWriteProtected) {
+		// kilocode_change: write-protected deletions pause on the unified
+		// approval dialog with the reason shown; approving force-deletes.
+		const didApprove = await askBlockedDeletionApproval(
+			`File is write-protected by protection rules: ${relativePath}`,
+		)
+		if (!didApprove) {
+			pushToolResult(formatResponse.toolError(`Deletion of ${relativePath} was rejected by the user.`))
 			return
 		}
+	}
 
-		// Check workspace boundary
-		const isOutsideWorkspace = isPathOutsideWorkspace(absolutePath)
-		if (isOutsideWorkspace) {
-			cline.consecutiveMistakeCount++
-			cline.recordToolError("delete_file")
-			const errorMsg = `Cannot delete files outside workspace. Path: ${relativePath}`
-			await cline.say("error", errorMsg)
-			pushToolResult(formatResponse.toolError(errorMsg))
+	// Check workspace boundary
+	const isOutsideWorkspace = isPathOutsideWorkspace(absolutePath)
+	if (isOutsideWorkspace) {
+		// kilocode_change: outside-workspace deletions pause on the unified
+		// approval dialog with the reason shown; approving deletes the path.
+		const didApprove = await askBlockedDeletionApproval(
+			`Path is outside the workspace: ${relativePath}`,
+		)
+		if (!didApprove) {
+			pushToolResult(formatResponse.toolError(`Deletion of ${relativePath} was rejected by the user.`))
 			return
 		}
+	}
 
 		// Directory deletion
 		if (stats.isDirectory()) {
@@ -210,10 +238,21 @@ export async function deleteFileTool(
 			} catch (error) {
 				// Handle our custom blocking error
 				if (error instanceof DirectoryDeletionBlockedError) {
-					cline.consecutiveMistakeCount++
-					cline.recordToolError("delete_file")
-					await cline.say("error", error.reason)
-					pushToolResult(formatResponse.toolError(error.reason))
+					// kilocode_change: directories containing protected/ignored files
+					// pause on the unified approval dialog with the reason shown
+					// instead of erroring back to the model.
+					const didApprove = await askBlockedDeletionApproval(error.reason)
+					if (!didApprove) {
+						pushToolResult(
+							formatResponse.toolError(`Deletion of ${relativePath} was rejected by the user.`),
+						)
+						return
+					}
+					// User explicitly approved deleting the blocked directory.
+					await fs.rm(absolutePath, { recursive: true, force: true })
+					pushToolResult(
+						formatResponse.toolResult(`Deleted directory (override): ${relativePath} — ${error.reason}`),
+					)
 					return
 				}
 				// Re-throw other errors to be handled by outer catch

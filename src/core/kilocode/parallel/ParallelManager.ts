@@ -31,12 +31,24 @@ export interface SubagentSpec {
 	workspaceName?: string
 	workspacePath?: string
 	branch?: string
+	/** Mode slug for the subagent; undefined inherits the parent's mode. */
+	mode?: string
+	/** Resolved provider configuration for the subagent; undefined inherits the parent's. */
+	apiConfiguration?: unknown
+	/** Provider profile name the apiConfiguration was resolved from; used to seed
+	 * the child's sticky profile identity so async global-state backfill cannot
+	 * silently overwrite a dispatch-time provider override. */
+	providerProfileName?: string
+	/** Human-readable parent identity injected into the subagent's system context. */
+	parentIdentity?: string
 }
 
 export interface SubagentContext {
 	sessionId: string
 	depth: number
 	manager: ParallelManager
+	/** Mode override for this subagent; undefined inherits the parent's mode. */
+	mode?: string
 }
 
 interface SessionState {
@@ -48,7 +60,8 @@ interface SessionState {
 export type { SessionState as ParallelSessionState }
 
 export const MAX_PARALLEL_SUBAGENTS = 5
-export const MAX_SUBAGENT_DEPTH = 1
+// kilocode_change: subagent nesting is intentionally UNBOUNDED — any depth
+// may dispatch further subagents, so no MAX_SUBAGENT_DEPTH is enforced here.
 
 const FOLDERS_STORAGE_KEY = "parallelFolders"
 const CONVERSATIONS_STORAGE_KEY = "parallelConversations"
@@ -81,7 +94,19 @@ export class ParallelManager {
 	}
 
 	getSession(sessionId: string): SessionState | undefined {
-		return this.sessions.get(sessionId)
+		// kilocode_change: accept either the public session key (child.taskId,
+		// used by conversations / focusTask / jumpToSession) or the internal
+		// `sa-` key so older callers keep working.
+		return this.sessions.get(sessionId) ?? this.findByTaskId(sessionId)
+	}
+
+	private findByTaskId(taskId: string): SessionState | undefined {
+		for (const state of this.sessions.values()) {
+			if (state.task?.taskId === taskId) {
+				return state
+			}
+		}
+		return undefined
 	}
 
 	sessionsForParent(parentTaskId: string): SessionState[] {
@@ -109,22 +134,59 @@ export class ParallelManager {
 			startedAt: Date.now(),
 		}
 		const state: SessionState = { info, messages: [] }
+		// kilocode_change: temporarily registered under the internal `sa-` key —
+		// Task.create() needs a sessionId before the child's taskId exists.
+		// The synchronous block after create() re-keys everything to
+		// child.taskId (the single public key used by conversations, the rail,
+		// focusTask, and the message sink) before any message can flow.
 		this.sessions.set(sessionId, state)
 
 		const provider = this.provider
 
+		// kilocode_change start: subagents may override mode / provider config.
+		// Unspecified fields inherit the parent's values. The mode is applied via
+		// the subagent override before the child's initializeTaskMode reads state.
+		const childApiConfig = (spec.apiConfiguration as typeof parentTask.apiConfiguration | undefined) ??
+			parentTask.apiConfiguration
+		const depth = (parentTask.subagent?.depth ?? 0) + 1
+		// Human-readable parent identity for the child's system prompt banner:
+		// the parent's mode, provider profile, and model. The child prompt shows
+		// its own identity plus this lineage so nested agents know their chain.
+		const parentIdentity = [
+			`mode=${parentTask.taskMode}`,
+			`provider=${parentTask.taskApiConfigName ?? "default"}`,
+			`model=${parentTask.api?.getModel?.().id ?? "unknown"}`,
+		].join(" ")
 		const [child, runPromise] = Task.create({
 			context: this.provider.context, // kilocode_change: Task.context is private
 			provider,
-			apiConfiguration: parentTask.apiConfiguration,
+			apiConfiguration: childApiConfig,
 			task: spec.task,
 			workspacePath,
 			enableDiff: parentTask.diffEnabled,
 			enableCheckpoints: parentTask.enableCheckpoints,
 			checkpointTimeout: parentTask.checkpointTimeout,
-			subagent: { sessionId, depth: (parentTask.subagent?.depth ?? 0) + 1, manager: this },
+			subagent: {
+				sessionId,
+				depth,
+				manager: this,
+				mode: spec.mode,
+				parentIdentity,
+				// kilocode_change: seed the child's sticky identity with the
+				// dispatch-time override so async global-state backfill
+				// (initializeTaskApiConfigName) cannot clobber it with the
+				// parent conversation's profile name/model. When the spec has
+				// NO explicit provider_profile, seed with the PARENT TASK's
+				// sticky profile name instead of leaving it undefined — the
+				// global currentApiConfigName may point at a *sibling*
+				// subagent's provider override (e.g. after auto-jump focus
+				// switches to a sibling running AIHUBMIX-VL), which previously
+				// produced a mixed banner (sibling profile + parent model).
+				providerProfileName: spec.providerProfileName ?? parentTask.taskApiConfigName,
+			},
 			startTask: true,
 		})
+		// kilocode_change end
 		state.task = child
 		state.info.taskId = child.taskId
 		if (typeof this.provider.addBackgroundClineToStack === "function") {
@@ -132,6 +194,22 @@ export class ParallelManager {
 		}
 		this.attachSubagentConversation(parentTask, spec, child.taskId, workspacePath)
 		const registered = this.registerSubagentConversation(parentTask, spec, child.taskId, workspacePath)
+		// kilocode_change start: normalize EVERYTHING under the child's real
+		// taskId — the single public key. Previously info.sessionId kept the
+		// internal `sa-` key while conversations/focusTask were keyed by
+		// child.taskId, so every taskId-keyed lookup silently failed (no
+		// auto-jump, rail click missed, message store mismatch) and the rail's
+		// parallelSessionMessages[sa-…] store never matched the focused view.
+		state.info.sessionId = child.taskId
+		this.sessions.delete(sessionId)
+		this.sessions.set(child.taskId, state)
+		// The child Task routes sink messages through subagent.sessionId —
+		// rewrite it in place (same object reference) so recordMessage*
+		// resolves under the public key without a map alias.
+		if (child.subagent) {
+			child.subagent.sessionId = child.taskId
+		}
+		// kilocode_change end
 
 		const done = runPromise
 			.then(() => {
@@ -155,7 +233,11 @@ export class ParallelManager {
 		void registered.finally(() => {
 			void this.broadcast()
 		})
-		return { sessionId, done }
+		// kilocode_change: expose the child's real taskId as the public session
+		// id — conversations, focusTask, and jumpToSession are all keyed by
+		// child.taskId, while the internal `sa-` key stays for message routing.
+		// getSession() resolves both, so no duplicate map entries are needed.
+		return { sessionId: child.taskId, done }
 	}
 
 	private extractResult(state: SessionState): string | undefined {
@@ -174,7 +256,11 @@ export class ParallelManager {
 	}
 
 	recordMessageCreated(sessionId: string, message: ClineMessage): void {
-		const state = this.sessions.get(sessionId)
+		// kilocode_change: resolve via getSession (accepts both the public
+		// child.taskId key and the internal `sa-` key) and ALWAYS broadcast
+		// under the public key so the webview's parallelSessionMessages store
+		// matches the rail rows (session.sessionId === child.taskId).
+		const state = this.getSession(sessionId)
 		if (!state) {
 			return
 		}
@@ -182,14 +268,14 @@ export class ParallelManager {
 		void this.provider
 			.postMessageToWebview({
 				type: "parallelSessionMessage",
-				parallelSessionId: sessionId,
+				parallelSessionId: state.info.sessionId,
 				clineMessage: message,
 			})
 			.catch(() => undefined)
 	}
 
 	recordMessageUpdated(sessionId: string, message: ClineMessage): void {
-		const state = this.sessions.get(sessionId)
+		const state = this.getSession(sessionId)
 		if (!state) {
 			return
 		}
@@ -202,7 +288,7 @@ export class ParallelManager {
 		void this.provider
 			.postMessageToWebview({
 				type: "parallelSessionMessageUpdated",
-				parallelSessionId: sessionId,
+				parallelSessionId: state.info.sessionId,
 				clineMessage: message,
 			})
 			.catch(() => undefined)
@@ -399,6 +485,12 @@ export class ParallelManager {
 
 	/** Registers a main workspace folder (idempotent by path). Returns true when newly added. */
 	async registerMainFolder(folderPath: string): Promise<boolean> {
+		// kilocode_change: defect K - never register literal "null"/"undefined"
+		// or non-absolute junk as a main folder; those came from stringified
+		// JSON null leaking through tool params and polluted parallelFolders.
+		if (!folderPath || !path.isAbsolute(folderPath) || ["null", "undefined"].includes(folderPath)) {
+			return false
+		}
 		await this.getFolders()
 		const folders = this.mainFolders ?? []
 		const existing = folders.find((folder) => folder.path === folderPath)

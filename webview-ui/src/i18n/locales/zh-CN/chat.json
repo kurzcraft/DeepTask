@@ -274,7 +274,12 @@
 		"completionContent": "子任务已完成",
 		"resultContent": "子任务结果",
 		"defaultResult": "请继续下一个任务。",
-		"completionInstructions": "子任务已完成！您可以查看结果并提出修改或下一步建议。如果一切正常，请确认以将结果返回给主任务。"
+		"completionInstructions": "子任务已完成！您可以查看结果并提出修改或下一步建议。如果一切正常，请确认以将结果返回给主任务。",
+		"wantsToDispatch": "Deeptask 想派出 {{count}} 个子代理",
+		"didDispatch": "Deeptask 已派出 {{count}} 个子代理",
+		"workspaceStatus": "并行工作区",
+		"workspaceCreate": "创建并行工作区",
+		"workspaceMerge": "合并并行工作区"
 	},
 	"questions": {
 		"hasQuestion": "Deeptask 有一个问题"

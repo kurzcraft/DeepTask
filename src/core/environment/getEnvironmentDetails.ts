@@ -275,13 +275,21 @@ export async function getEnvironmentDetails(cline: Task, includeFileDetails: boo
 		language,
 	} = state ?? {}
 
-	const modeDetails = await getFullModeDetails(mode ?? defaultModeSlug, customModes, customModePrompts, {
+	// kilocode_change start: prefer the task's own locked mode over the provider
+	// state's global mode. Subagents spawned with a mode override previously saw
+	// the parent session's mode here (state.mode is a shared global), which made
+	// environment_details contradict the child's actual system prompt.
+	const taskMode = await cline.getTaskMode().catch(() => undefined)
+	const effectiveMode = taskMode ?? mode
+	// kilocode_change end
+
+	const modeDetails = await getFullModeDetails(effectiveMode ?? defaultModeSlug, customModes, customModePrompts, {
 		cwd: cline.cwd,
 		globalCustomInstructions,
 		language: language ?? formatLanguage(vscode.env.language),
 	})
 
-	const currentMode = modeDetails.slug ?? mode // kilocode_change: don't try to use non-existent modes
+	const currentMode = modeDetails.slug ?? effectiveMode // kilocode_change: don't try to use non-existent modes
 	// Use the task's locked tool protocol for consistent environment details.
 	// This ensures the model sees the same tool format it was started with,
 	// even if user settings have changed. Fall back to resolving fresh if

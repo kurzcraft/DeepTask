@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.2.3</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.2.4</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.2.3** 并行子代理结束被门禁阻断修复 + 子任务/子代理工具边界明确 + evolve-N 自动升级：shouldDowngrade/shouldRejectPremature 完成门禁与 didToolFailInCurrentTurn 拒绝全部改用统一 isChildAgent 判定，并行子代理（无 parentTaskId 的进程内子代理）不再被误判为根会话而陷入 attempt_completion 死循环；子代理走到 resume_task ask 时自动以自身任务摘要应答，不再永久悬挂等待人类回复（4 个近期卡死会话实证均止于此）；新对话开始时处于旧 evolve-N 模式自动一次性升级到最高已安装 evolve-M（续接历史任务保留原模式）；new_task 与 dispatch_subagents 工具描述（XML+native 双协议）明确边界——"子任务/单个干净上下文任务默认用 new_task，仅 2+ 并行才用 dispatch_subagents"，消除单个独立审稿被误派为并行子代理导致的工作区占用混乱。
+> **Deeptask 9.2.4** new_task 并入 dispatch_subagents + 子代理 mode/provider 覆写 + 多级代理身份注入 + delete_file 统一批准：new_task 工具与 /newtask slash 移除，dispatch_subagents 成为唯一子任务工具（单任务=单元素 tasks 数组，多并行=多元素），并继承 new_task 全部体验（任务提示词窗口展示、自动跳转子代理界面、单个完成自动跳下一个、全部完成自动回主任务）；每个子代理任务可指定 mode / provider_profile / model_id（不指定继承父代理），父与子代理系统提示词实时注入自身身份信息（模式/provider/模型/depth），depth 链逐级传递；delete_file 所有被阻断路径（工作区外/保护规则/.kilocodeignore/目录含保护文件）统一走批准询问卡住等待用户（展示 blockedReason），批准即强制删除、拒绝即取消，禁止直接报错绕过批准；修复 evolve-N 自动升级未生效（getSystemPrompt 改用 _taskMode 并等待 taskModeReady）与归档后全 completed 的 update_todo_list 同步被 "No verified task progress file" 阻断（归档宽限）；修复"恢复任务"按钮吞输入框文本（有文本时按钮路径改走 messageResponse，与回车一致）；内置 evolve 模式提示词写入项目 GitHub 地址并规定进化日志只在 manage_mode 固化修正时写入；子代理身份 banner 真正落地注入（spawn 填充 parentIdentity + 系统提示词前置 Agent Identity 段），environment_details 的 Current Mode 改用任务自身锁定模式（子代理覆写后不再显示父会话模式），dispatch_subagents / workspace_* 四个工具补全图标卡片与中英文文案，各子代理提示词以带编号卡片展示、结果逐代理回卡到主任务，自动批准面板"子任务"开关更名为"子代理"。
 
 ## 你可以怎样使用 Deeptask
 
@@ -146,17 +146,17 @@ Deeptask 选择寄生在 VSCodium 里而不是做成独立软件，是刻意为�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.2.3.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.2.4.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.2.3.vsix --force
+    codium --install-extension ./deeptask-9.2.4.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.2.3.vsix --force
+    code --install-extension ./deeptask-9.2.4.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。
