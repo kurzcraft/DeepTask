@@ -1920,6 +1920,77 @@ describe("ChatView - Command Execution Status", () => {
 		})
 	})
 
+	// kilocode_change start: 9.2.5 regression — entering a conversation wiped
+	// its Continue/Cancel controls. The reset effect must run BEFORE the
+	// lastMessage restore effect, never after it.
+	it("shows Continue/Cancel controls immediately when entering a conversation whose last message is an ask", async () => {
+		const { getByText } = renderChatView()
+		const baseTs = Date.now() - 3000
+
+		mockPostMessage({
+			clineMessages: [
+				{ type: "say", say: "task", ts: baseTs, text: "Task A" },
+				{
+					type: "ask",
+					ask: "command",
+					ts: baseTs + 1000,
+					text: "npm test",
+					partial: false,
+					isAnswered: false,
+				},
+			],
+		})
+
+		// Same-commit ordering: reset runs first, restore runs second — the
+		// pending command's run/reject controls must appear and stay (no
+		// post-restore wipe).
+		await waitFor(() => {
+			expect(getByText("chat:runCommand.title")).toBeInTheDocument()
+			expect(getByText("chat:reject.title")).toBeInTheDocument()
+		})
+	})
+
+	it("replaces one conversation's controls with the next conversation's controls on switch", async () => {
+		const { getByText, queryByText } = renderChatView()
+		const baseTs = Date.now() - 3000
+
+		// Conversation A ends on an unanswered tool ask → approve/reject shown.
+		mockPostMessage({
+			clineMessages: [
+				{ type: "say", say: "task", ts: baseTs, text: "Task A" },
+				{
+					type: "ask",
+					ask: "tool",
+					ts: baseTs + 1000,
+					text: JSON.stringify({ tool: "writeToFile", path: "/tmp/a.txt" }),
+					partial: false,
+					isAnswered: false,
+				},
+			],
+		})
+
+		await waitFor(() => {
+			expect(getByText("chat:approve.title")).toBeInTheDocument()
+		})
+
+		// Switch to conversation B (different task ts) ending on an error row →
+		// resume controls replace approve/reject; old controls must not linger.
+		const taskBTs = baseTs + 5000
+		mockPostMessage({
+			clineMessages: [
+				{ type: "say", say: "task", ts: taskBTs, text: "Task B" },
+				{ type: "say", say: "error", ts: taskBTs + 1000, text: "boom", partial: false },
+			],
+		})
+
+		await waitFor(() => {
+			expect(getByText("chat:resumeTask.title")).toBeInTheDocument()
+			expect(getByText("chat:startNewTask.title")).toBeInTheDocument()
+		})
+		expect(queryByText("chat:approve.title")).not.toBeInTheDocument()
+	})
+	// kilocode_change end
+
 	it("keeps the composer interactive after soft completion while typed feedback continues the task", async () => {
 		const { getByTestId, queryByText } = renderChatView()
 

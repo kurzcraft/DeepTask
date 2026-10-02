@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.2.5</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.2.6</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.2.5** 多对话独立性大修 + 工作区挤出策略精细化 + 消息投递可靠性：新对话自动升级到最新 evolve-N 模式（正则同时匹配无后缀 evolve 别名），每个对话保存并恢复自己的模式（focusTask 重建即恢复、子代理继承父任务模式而非全局模式），多对话各自独立运行互不污染；模式/askResponse/终端 continue/待续投递全部路由到当前聚焦对话（栈顶后台任务不再抢消息、pending 主页不再污染其他任务）；切换对话不再吞输入框草稿文本，也修复既有对话的运行/终止按钮闪现到其他对话开始界面的问题；工作区多进程占用只把写型子代理（needs_workspace 未指定或 true）挤到新工作区，只读子代理（false）直接共享父目录不再把父代理挤出原工作区，工具描述注明 false=只读轻量；修复手动停止子代理后发送消息形成后台幽灵对话（先 focusTask 重建再投递、对话一定显示在文件夹栏、父进度不丢）；修复命令运行中等待审批时切换对话再切回 Run/Kill/Continue 控制按钮消失（每任务活跃命令注册表 + focusTask 重放 + 事件携带 taskId 防串扰）；修复归档工具调用后发送消息首次投递不可见问题（rescue 路由跟随聚焦对话，确保任何时刻首次发送即被模型看见）。
+> **Deeptask 9.2.6** 修复 9.2.5 引入的"进入对话后继续/取消按钮永久消失"回归：9.2.5 把清按钮逻辑放在 lastMessage 恢复 effect 之后定义的 task 切换 effect 里，同一 React commit 先恢复后清除，刚恢复的按钮被擦掉且不再重跑。9.2.6 新增前置 reset effect（仅依赖 task?.ts、定义在恢复 effect 之前），同一 commit 先清上一个对话按钮、再恢复当前对话按钮，"不闪现"与"进入即显示"同时成立；面板隐藏/显示不再误清按钮。
 
 ## 你可以怎样使用 Deeptask
 
@@ -146,17 +146,17 @@ Deeptask 选择寄生在 VSCodium 里而不是做成独立软件，是刻意为�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.2.5.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.2.6.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.2.5.vsix --force
+    codium --install-extension ./deeptask-9.2.6.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.2.5.vsix --force
+    code --install-extension ./deeptask-9.2.6.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

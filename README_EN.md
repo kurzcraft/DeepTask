@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.2.5</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.2.6</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.2.5** multi-conversation independence overhaul + fine-grained workspace eviction + reliable message delivery: new conversations now auto-upgrade to the latest evolve-N mode (the alias regex also matches the bare `evolve` slug); every conversation saves and restores its own mode (focusTask rebuild restores it; subagents inherit the parent task's mode instead of the global mode), so multiple conversations run independently without cross-pollution; mode switches, askResponse, terminal continue, and pending-continuation rescue are all routed to the focused conversation (the stack-top background task no longer steals messages, and a pending home page no longer pollutes other tasks); switching conversations no longer swallows the draft text in the input box, and Run/approval buttons from an existing conversation no longer flash on another conversation's start screen; workspace occupancy now evicts only write subagents (needs_workspace unspecified or true) to a new worktree while read-only subagents (false) share the parent directory without evicting the parent agent — the dispatch_subagents description documents "false = read-only/light, omit or true = write"; fixed ghost conversations created by sending a message after manually stopping a subagent (focusTask rebuilds the focused conversation in the sidebar first, then delivers — parent progress is never lost); restored Run/Kill/Continue controls when switching back to a conversation while a command awaits approval (per-task live-command registry + focusTask replay + taskId tagging to prevent cross-talk); and fixed first-send messages after tool calls (especially archiving) being invisible to the model (rescue routing follows the focused conversation so the first send is always visible).
+> **Deeptask 9.2.6** fixes the 9.2.5 regression where Continue/Cancel (and pending-approval) buttons permanently disappeared the moment you entered a conversation: 9.2.5 placed the button-clearing logic in a task-switch effect defined AFTER the lastMessage restore effect, so within one React commit the freshly restored buttons were wiped (restore-first/clear-second) and the deep-compare never re-ran to bring them back. A new reset effect (deps: `task?.ts` only) is now defined BEFORE the restore effect — the same commit runs clear-first/restore-second — so buttons never flash across conversations AND are always present when entering one. Deps deliberately exclude `isHidden` (panel hide/show must not clear buttons that have no restore source).
 
 ## What you can do with Deeptask
 
@@ -146,17 +146,17 @@ Apart from "the model's own conversation handling that commands cannot do" (work
 
 ## Start in three minutes
 
-1. Download `deeptask-9.2.5.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.2.6.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.2.5.vsix --force
+    codium --install-extension ./deeptask-9.2.6.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.2.5.vsix --force
+    code --install-extension ./deeptask-9.2.6.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

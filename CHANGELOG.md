@@ -1,5 +1,11 @@
 # Deeptask
 
+## 9.2.6
+
+### Patch Changes
+
+- Fixed the 9.2.5 regression where Continue/Cancel (and pending-approval) buttons permanently disappeared the moment you entered a conversation: 9.2.5 placed the button-clearing logic in a task-switch effect defined AFTER the lastMessage restore effect, so within one React commit the freshly restored buttons were wiped (restore-first/clear-second), and the deep-compare never re-ran to bring them back. A new reset effect (deps: `task?.ts` only) is now defined BEFORE the restore effect — same commit runs clear-first/restore-second — so buttons never flash across conversations AND are always present when entering one. Deps deliberately exclude `isHidden` (panel hide/show must not clear buttons with no restore source).
+
 ## 9.2.5
 
 ### Patch Changes

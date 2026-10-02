@@ -412,6 +412,28 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		vscode.postMessage({ type: "playTts", text })
 	}
 
+	// kilocode_change start: drop the PREVIOUS task's ask/buttons BEFORE the
+	// lastMessage restore effect below runs. React executes effects in
+	// definition order within one commit, so this reset-then-restore sequence
+	// keeps the newly focused conversation's own controls while never flashing
+	// the old conversation's buttons on another conversation's start screen.
+	// CRITICAL: this effect MUST stay defined BEFORE the useDeepCompareEffect
+	// below. 9.2.5 originally put this reset inside the task-switch effect that
+	// is defined AFTER the restore effect — the same commit then ran
+	// restore-first/clear-second, wiping freshly restored buttons so
+	// Continue/Cancel were permanently missing after entering a conversation.
+	// Deps intentionally exclude isHidden: panel hide/show must not clear
+	// buttons (the restore effect does not re-run when messages are unchanged).
+	useEffect(() => {
+		setClineAsk(undefined)
+		setEnableButtons(false)
+		setPrimaryButtonText(undefined)
+		setSecondaryButtonText(undefined)
+		setSendingDisabled(false)
+		currentAskTsRef.current = undefined
+	}, [task?.ts])
+	// kilocode_change end
+
 	useDeepCompareEffect(() => {
 		// if last message is an ask, show user ask UI
 		// if user finished a task, then start a new task with a new conversation history since in this moment that the extension is waiting for user response, the user could close the extension and the conversation history would be lost.
@@ -760,16 +782,12 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		everVisibleMessagesTsRef.current.clear() // Clear for new task
 		setCurrentFollowUpTs(null) // Clear follow-up answered state for new task
 		setIsCondensing(false) // Reset condensing state when switching tasks
-		// kilocode_change start: task switches must drop the PREVIOUS task's ask
-		// state immediately. Buttons (Resume/Run/Approve) from the old
-		// conversation used to survive until the new task's messages effect ran,
-		// flashing stale controls on other conversations' start screens.
-		setClineAsk(undefined)
-		setEnableButtons(false)
-		setPrimaryButtonText(undefined)
-		setSecondaryButtonText(undefined)
-		setSendingDisabled(false)
-		currentAskTsRef.current = undefined
+		// kilocode_change start: ask/button state for a task switch is reset by
+		// the effect defined BEFORE the lastMessage restore effect (reset must
+		// run first, restore second). Do NOT clear button state here — this
+		// effect is defined AFTER the restore effect, so clearing here wiped
+		// freshly restored buttons and left Continue/Cancel permanently missing
+		// after entering a conversation (9.2.5 regression).
 		// kilocode_change end
 		// Note: sendingDisabled is not reset here as it's managed by message effects
 		// kilocode_change start
