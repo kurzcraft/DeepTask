@@ -1,5 +1,19 @@
 # Deeptask
 
+## 9.2.5
+
+### Patch Changes
+
+- Restored Run/Kill/Continue controls after switching conversations and back: `commandExecutionStatus` events are now tracked in a per-task live-command registry on the provider, `focusTask` replays them to the webview, and every event carries a `taskId` so background conversations can no longer light up controls in the focused chat.
+- Mode switches now target the focused conversation (`resolveStickyTaskTarget`) instead of the stack top; picking a mode on a pending new conversation's home screen no longer rewrites another conversation's task mode.
+- Conversation switches are faster: `focusTask` no longer awaits a second `parallelManager.broadcast()` that `postStateToWebview()` already schedules (the worktree-prune + git-scan ran twice per switch).
+- Fixed evolve auto-upgrade missing the base `evolve` mode: the upgrade regex is now `^evolve(?:-(\d+))?$`, so a new conversation starting in plain `evolve` (no suffix) also upgrades to the highest installed `evolve-M`, not just older `evolve-N` variants.
+- Per-conversation mode independence fully closed: subagents without an explicit `mode` override now inherit the PARENT TASK's locked mode (not the global state mode another conversation last selected), and `focusTask` restores the focused conversation's saved mode on BOTH the in-stack path and the history-rebuild path, so switching conversations no longer leaks modes across sessions.
+- Stale run/continue buttons no longer flash on another conversation's start screen: the webview task-switch effect clears `primaryButtonText` synchronously, and switching conversations (`invoke:newChat`) preserves the composer draft (text + images) instead of swallowing it.
+- Workspace ejection fixed: a `needs_workspace:false` (read-only) subagent no longer counts as a workspace occupant — the parent (and later conversations in the same workspace) can no longer be ejected into a fresh worktree by their own read-only children. Subagents dispatched with `needs_workspace:true` (or unspecified, which defaults to a worktree) still claim their own workspace. The dispatch tool description now documents: read-only subagents use `false`, write subagents use `true` or omit.
+- Ghost-conversation fix after manually stopping a subagent: when the focused conversation's task is no longer on the stack, `askResponse` rebuilds it via `focusTask` BEFORE delivering the message, so typed text lands in the conversation the user is looking at instead of silently creating a background reply in the stack-top task (which could also cancel the running parent).
+- First-send reliability during tool calls: `askResponse`, terminal-operation continue, queued-message fallback, and the parked-continuation rescue timer now all route by the FOCUSED conversation's task rather than the stack-top background task, so a message sent while an archive tool is executing is delivered on the first attempt without needing a manual resend.
+
 ## 9.2.4
 
 ### Patch Changes

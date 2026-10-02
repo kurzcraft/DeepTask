@@ -8,6 +8,7 @@ import { CommandExecutionStatus, DEFAULT_TERMINAL_OUTPUT_CHARACTER_LIMIT } from 
 import { TelemetryService } from "@roo-code/telemetry"
 
 import { Task } from "../task/Task"
+import type { ClineProvider } from "../webview/ClineProvider" // kilocode_change: command status registry
 
 import { ToolUse, ToolResponse } from "../../shared/tools"
 import { formatResponse } from "../prompts/responses"
@@ -119,8 +120,11 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 				// loses visible terminal state, and makes commands appear to run in a
 				// different environment. Surface the failure and keep the integrated
 				// terminal as the only execution path when it is selected.
-				const status: CommandExecutionStatus = { executionId, status: "fallback" }
-				provider?.postMessageToWebview({ type: "commandExecutionStatus", text: JSON.stringify(status) })
+				postCommandStatusToWebview(provider, {
+					executionId,
+					status: "fallback",
+					taskId: task.taskId,
+				})
 				await task.say("shell_integration_warning")
 				task.supersedePendingAsk()
 
@@ -142,6 +146,20 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 			.catch(() => {})
 	}
 }
+
+// kilocode_change start: single choke point for commandExecutionStatus events.
+// Posts to the webview AND mirrors the live/terminal state into the provider's
+// per-task registry so focusTask can restore Continue/Terminate controls after
+// the user switches conversations and back (transient events are otherwise lost
+// to the task-switch reset with no replay source).
+function postCommandStatusToWebview(
+	provider: (ClineProvider | undefined) | null,
+	status: CommandExecutionStatus,
+): void {
+	provider?.postMessageToWebview({ type: "commandExecutionStatus", text: JSON.stringify(status) })
+	provider?.trackCommandExecutionStatus?.(status.taskId, status.executionId, status.status)
+}
+// kilocode_change end
 
 export type ExecuteCommandOptions = {
 	executionId: string
@@ -217,8 +235,12 @@ export async function executeCommandInTerminal(
 				terminalOutputLineLimit,
 				terminalOutputCharacterLimit,
 			)
-			const status: CommandExecutionStatus = { executionId, status: "output", output: compressedOutput }
-			provider?.postMessageToWebview({ type: "commandExecutionStatus", text: JSON.stringify(status) })
+			postCommandStatusToWebview(provider, {
+				executionId,
+				status: "output",
+				output: compressedOutput,
+				taskId: task.taskId,
+			})
 
 			if (runInBackground || hasAskedForCommandOutput) {
 				return
@@ -251,12 +273,12 @@ export async function executeCommandInTerminal(
 			// the webview clears its live command set and cannot leave stale Continue /
 			// Terminate controls after the tool has already returned.
 			if (!finalStatusPosted) {
-				const status: CommandExecutionStatus = {
+				postCommandStatusToWebview(provider, {
 					executionId,
 					status: "exited",
 					exitCode: exitDetails?.exitCode,
-				}
-				provider?.postMessageToWebview({ type: "commandExecutionStatus", text: JSON.stringify(status) })
+					taskId: task.taskId,
+				})
 				finalStatusPosted = true
 			}
 
@@ -292,13 +314,22 @@ export async function executeCommandInTerminal(
 			resolveProcessCompleted?.()
 		},
 		onShellExecutionStarted: (pid: number | undefined) => {
-			const status: CommandExecutionStatus = { executionId, status: "started", pid, command }
-			provider?.postMessageToWebview({ type: "commandExecutionStatus", text: JSON.stringify(status) })
+			postCommandStatusToWebview(provider, {
+				executionId,
+				status: "started",
+				pid,
+				command,
+				taskId: task.taskId,
+			})
 		},
 		onShellExecutionComplete: (details: ExitCodeDetails) => {
 			if (!finalStatusPosted) {
-				const status: CommandExecutionStatus = { executionId, status: "exited", exitCode: details.exitCode }
-				provider?.postMessageToWebview({ type: "commandExecutionStatus", text: JSON.stringify(status) })
+				postCommandStatusToWebview(provider, {
+					executionId,
+					status: "exited",
+					exitCode: details.exitCode,
+					taskId: task.taskId,
+				})
 				finalStatusPosted = true
 			}
 			exitDetails = details
@@ -352,12 +383,12 @@ export async function executeCommandInTerminal(
 			})
 		completed = true
 		if (!finalStatusPosted) {
-			const status: CommandExecutionStatus = {
+			postCommandStatusToWebview(provider, {
 				executionId,
 				status: "exited",
 				exitCode: exitDetails?.exitCode,
-			}
-			provider?.postMessageToWebview({ type: "commandExecutionStatus", text: JSON.stringify(status) })
+				taskId: task.taskId,
+			})
 			finalStatusPosted = true
 		}
 		resolveProcessCompleted?.()
@@ -380,8 +411,7 @@ export async function executeCommandInTerminal(
 			await Promise.race([process, shellExitCompletionFallback, processCompleted, timeoutPromise])
 		} catch (error) {
 			if (isTimedOut) {
-				const status: CommandExecutionStatus = { executionId, status: "timeout" }
-				provider?.postMessageToWebview({ type: "commandExecutionStatus", text: JSON.stringify(status) })
+				postCommandStatusToWebview(provider, { executionId, status: "timeout", taskId: task.taskId })
 				finalStatusPosted = true
 				await task.say("error", t("common:errors:command_timeout", { seconds: commandExecutionTimeoutSeconds }))
 				task.didToolFailInCurrentTurn = true

@@ -294,6 +294,10 @@ export class DispatchSubagentsTool extends BaseTool<"dispatch_subagents"> {
 						workspaceName: created.name,
 					})
 				} else {
+					// kilocode_change: needs_workspace:false — read-only subagent
+					// shares the parent workspace and must be flagged so it never
+					// occupies it (occupancy ejection would otherwise kick the
+					// PARENT out of its own workspace).
 					prepared.push({
 						spec: {
 							label,
@@ -301,6 +305,7 @@ export class DispatchSubagentsTool extends BaseTool<"dispatch_subagents"> {
 							mode: modeOverride,
 							apiConfiguration: apiConfigOverride,
 							providerProfileName,
+							sharedWorkspace: true,
 						},
 					})
 				}

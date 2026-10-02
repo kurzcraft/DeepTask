@@ -1144,6 +1144,13 @@ describe("ClineProvider - Sticky Mode", () => {
 			// Mock getCurrentTask to return different tasks
 			const getCurrentTaskSpy = vi.spyOn(provider, "getCurrentTask")
 
+			// kilocode_change: handleModeSwitch now routes through the sticky
+			// resolver (focused conversation, not stack top). Point it at the
+			// rotating getCurrentTask mock so each switch targets its own task.
+			const resolveStickySpy = vi
+				.spyOn(provider as any, "resolveStickyTaskTarget")
+				.mockImplementation(() => provider.getCurrentTask())
+
 			// Simulate simultaneous mode switches for different tasks
 			getCurrentTaskSpy.mockReturnValue(task1 as any)
 			const switch1 = provider.handleModeSwitch("architect")
@@ -1155,6 +1162,8 @@ describe("ClineProvider - Sticky Mode", () => {
 			const switch3 = provider.handleModeSwitch("code")
 
 			await Promise.all([switch1, switch2, switch3])
+
+			resolveStickySpy.mockRestore()
 
 			// Verify each task was updated with its new mode
 			expect(task1._taskMode).toBe("architect")

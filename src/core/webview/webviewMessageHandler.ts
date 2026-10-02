@@ -1292,6 +1292,32 @@ export const webviewMessageHandler = async (
 				// still chatting in another focused conversation; getCurrentTask() then
 				// delivers button clicks and typed text into the wrong task, freezing the
 				// focused one. Fall back to getCurrentTask() when focus is unavailable.
+				//
+				// When the FOCUSED conversation exists but its Task is no longer on the
+				// stack (e.g. the user manually stopped a subagent conversation), rebuild
+				// that task from history FIRST (focusTask semantics) so the message lands
+				// in the conversation the user is looking at. The old fallback delivered
+				// the text to the stack-top background task — the message became a ghost
+				// reply the user never saw and could cancel the running parent.
+				if (!provider.pendingNewConversation && provider.parallelManager?.focusedConversationId) {
+					const focusedConversationId = provider.parallelManager.focusedConversationId
+					const focusedConversation = provider.parallelManager.getConversationById(focusedConversationId)
+					if (
+						focusedConversation?.sessionId &&
+						provider.getFocusedChatTask?.() === undefined &&
+						provider.getCurrentTask()?.taskId !== focusedConversation.sessionId
+					) {
+						try {
+							await provider.focusTask(focusedConversation.sessionId)
+						} catch (focusError) {
+							provider.log?.(
+								`[askResponse] Failed to rebuild focused conversation task: ${
+									focusError instanceof Error ? focusError.message : String(focusError)
+								}`,
+							)
+						}
+					}
+				}
 				const focusedTask = provider.getFocusedChatTask?.()
 				const task = focusedTask ?? provider.getCurrentTask()
 				// kilocode_change end

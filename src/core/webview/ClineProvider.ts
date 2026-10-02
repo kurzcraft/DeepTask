@@ -71,6 +71,7 @@ import { checkExistKey } from "../../shared/checkExistApiConfig"
 
 import { Terminal } from "../../integrations/terminal/Terminal"
 import { TerminalRegistry } from "../../integrations/terminal/TerminalRegistry" // kilocode_change
+import type { CommandExecutionStatus } from "@roo-code/types" // kilocode_change: live-command replay on focusTask
 import { downloadTask } from "../../integrations/misc/export-markdown"
 import { getTheme } from "../../integrations/theme/getTheme"
 import WorkspaceTracker from "../../integrations/workspace/WorkspaceTracker"
@@ -615,13 +616,18 @@ export class ClineProvider
 			}
 		}
 
-		const current = this.getCurrentTask()
+		// kilocode_change start: deliver on the conversation the user is LOOKING
+		// at. getCurrentTask() is the stack top, which can be an unrelated
+		// background task (parent blocked in dispatch_subagents, history reopen
+		// pushed a rebuilt task). A rescue delivered there becomes a ghost
+		// conversation whose replies never render where the user typed.
+		const current = this.getFocusedChatTask() ?? this.getCurrentTask()
 		if (await deliverOnTask(current)) {
 			await this.postStateToWebview()
 			return
 		}
 
-		// No healthy current task: rebuild from history so the human message still
+		// No healthy focused task: rebuild from history so the human message still
 		// reaches the model with preserved context.
 		try {
 			const { historyItem } = await this.getTaskWithId(current?.taskId ?? "", false).catch(() => ({
@@ -2151,7 +2157,14 @@ export class ClineProvider
 	 * @param newMode The mode to switch to
 	 */
 	public async handleModeSwitch(newMode: Mode) {
-		const task = this.getCurrentTask()
+		// kilocode_change start: route the mode switch at the conversation the
+		// user is looking at. getCurrentTask() is the STACK TOP, which can be a
+		// background task; worse, on a pending new conversation's home screen
+		// there is no task for THIS conversation yet, so the old code wrote the
+		// new mode into another conversation's task (cross-conversation mode
+		// pollution: pick a mode in chat B, return to chat A and see B's mode).
+		const task = this.resolveStickyTaskTarget()
+		// kilocode_change end
 
 		if (task) {
 			TelemetryService.instance.captureModeSwitch(task.taskId, newMode)
@@ -4142,6 +4155,75 @@ export class ClineProvider
 		return this.clineStack.find((task) => task.taskId === sessionId || task.subagent?.sessionId === sessionId)
 	}
 
+	// kilocode_change start: active command tracking for webview restore
+	// Tracks live (started/output, not yet exited) command executions per task so
+	// focusTask can replay the live-command state to the webview. Without this,
+	// switching away from a conversation running a command and back loses the
+	// Run/Kill/Continue controls: commandExecutionStatus events are transient
+	// webview messages and the task-switch reset clears them (correctly), but
+	// nothing re-posts "this command is still live" when the user returns.
+	private activeCommandExecutionsByTask = new Map<string, { executionId: string; command?: string }[]>()
+
+	/**
+	 * Records the live state of a command execution for the owning task.
+	 * Called from the webview message handler when commandExecutionStatus events
+	 * arrive. Terminal statuses (exited/fallback/timeout) remove the entry.
+	 */
+	public trackCommandExecutionStatus(taskId: string | undefined, executionId: string, status: string): void {
+		if (!taskId) {
+			return
+		}
+		// Defensive: prototype-borrowed mocks and older test harnesses may not
+		// have the class field initialized.
+		if (!this.activeCommandExecutionsByTask) {
+			this.activeCommandExecutionsByTask = new Map()
+		}
+		const list = this.activeCommandExecutionsByTask.get(taskId) ?? []
+		if (status === "started" || status === "output") {
+			if (!list.some((entry) => entry.executionId === executionId)) {
+				list.push({ executionId })
+			}
+			this.activeCommandExecutionsByTask.set(taskId, list)
+		} else {
+			const next = list.filter((entry) => entry.executionId !== executionId)
+			if (next.length > 0) {
+				this.activeCommandExecutionsByTask.set(taskId, next)
+			} else {
+				this.activeCommandExecutionsByTask.delete(taskId)
+			}
+		}
+	}
+
+	/**
+	 * Replays the focused task's live command state to the webview so returning
+	 * to a conversation with a running command restores the Continue/Terminate
+	 * controls. Safe to call on every focusTask: empty lists post nothing.
+	 */
+	private replayFocusedTaskLiveCommands(): void {
+		const focused = this.getFocusedChatTask()
+		if (!focused) {
+			return
+		}
+		// Defensive: prototype-borrowed mocks may not have the field (see above).
+		const live = this.activeCommandExecutionsByTask?.get(focused.taskId)
+		if (!live || live.length === 0) {
+			return
+		}
+		for (const entry of live) {
+			const status: CommandExecutionStatus = {
+				executionId: entry.executionId,
+				status: "started",
+				command: entry.command ?? "",
+				taskId: focused.taskId,
+			}
+			void this.postMessageToWebview({
+				type: "commandExecutionStatus",
+				text: JSON.stringify(status),
+			}).catch(() => undefined)
+		}
+	}
+	// kilocode_change end
+
 	// kilocode_change start: parallel conversations
 	public async focusTask(taskId: string): Promise<void> {
 		const index = this.clineStack.findIndex(
@@ -4157,10 +4239,21 @@ export class ClineProvider
 			// kilocode_change start: per-session profile stickiness
 			// A task rebuilt from history adopts its own saved provider profile.
 			await this.restoreFocusedTaskProviderProfile()
+			// kilocode_change: per-session MODE stickiness on the rebuild path too —
+			// without this the mode selector kept the previous conversation's mode
+			// after reopening a stopped subagent conversation from history.
+			await this.restoreFocusedTaskMode()
 			// kilocode_change end
 			await this.postStateToWebview()
+			// kilocode_change: restore the focused conversation's live-command
+			// controls (Continue/Terminate) after the task-switch reset cleared
+			// them; without the replay the user cannot control a still-running
+			// command after switching conversations and back.
+			this.replayFocusedTaskLiveCommands()
 			await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
-			await this.parallelManager.broadcast()
+			// kilocode_change: postStateToWebview() already schedules exactly one
+			// parallelManager.broadcast(); awaiting a second one here doubled the
+			// worktree-prune + git-scan cost on every conversation switch.
 			return
 		}
 		if (index !== this.clineStack.length - 1) {
@@ -4175,10 +4268,20 @@ export class ClineProvider
 		// Re-activate the focused conversation's saved provider profile so
 		// switching conversations keeps independent provider configurations.
 		await this.restoreFocusedTaskProviderProfile()
+		// kilocode_change: per-session MODE stickiness — the focused task keeps
+		// its own locked mode; without this the webview mode selector showed
+		// the global state.mode (whatever another conversation last picked),
+		// so different conversations could not run in independent modes.
+		await this.restoreFocusedTaskMode()
 		// kilocode_change end
 		await this.postStateToWebview()
+		// kilocode_change: restore live-command controls on the in-stack path
+		// too (see rebuild path above).
+		this.replayFocusedTaskLiveCommands()
 		await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
-		await this.parallelManager.broadcast()
+		// kilocode_change: drop the duplicate broadcast — postStateToWebview()
+		// already schedules one (conversation switches were visibly slow because
+		// every switch ran the worktree prune + git scan twice).
 	}
 
 	/**
@@ -4269,6 +4372,48 @@ export class ClineProvider
 				}. Continuing with current configuration.`,
 			)
 		}
+	}
+	// kilocode_change end
+
+	/**
+	 * kilocode_change start: per-session mode stickiness
+	 *
+	 * Mirrors restoreFocusedTaskProviderProfile: when the focused task's locked
+	 * mode differs from the global state.mode (another conversation switched
+	 * modes meanwhile), repoint ONLY the global UI state at the focused
+	 * conversation's mode. The task itself never lost its mode (_taskMode);
+	 * this keeps the mode selector and environment_details honest so parallel
+	 * conversations can run in independent modes.
+	 *
+	 * Uses the same non-persisting pattern as profile restoration: no mode
+	 * config rewrite, no task-history rewrite, no handleModeSwitch side effects.
+	 */
+	private async restoreFocusedTaskMode(): Promise<void> {
+		const taskAtEntry = this.getFocusedChatTask()
+		if (!taskAtEntry) {
+			return
+		}
+		let taskMode: string | undefined
+		try {
+			taskMode = await taskAtEntry.getTaskMode()
+		} catch {
+			return
+		}
+		if (!taskMode) {
+			return
+		}
+		// Re-check focus after the await: the user may have switched again.
+		if (this.getFocusedChatTask() !== taskAtEntry) {
+			return
+		}
+		const globalMode = this.getGlobalState("mode")
+		if (globalMode === taskMode) {
+			return
+		}
+		// Non-persisting global-state repoint: webview selector follows the
+		// focused conversation; the other conversation's task mode is untouched.
+		await this.updateGlobalState("mode", taskMode as Mode)
+		this.emit(RooCodeEventName.ModeChanged, taskMode as Mode)
 	}
 	// kilocode_change end
 
@@ -4507,7 +4652,12 @@ export class ClineProvider
 	}
 
 	public async cancelTask(): Promise<void> {
-		const task = this.getCurrentTask()
+		// kilocode_change start: cancel the conversation the user is LOOKING at.
+		// The stack top can be a background task (e.g. the parent blocked inside
+		// dispatch_subagents while the user focuses a subagent): cancelling it
+		// destroyed the parent's progress and parked follow-up messages into the
+		// wrong conversation (ghost conversations + invisible messages).
+		const task = this.getFocusedChatTask() ?? this.getCurrentTask()
 
 		if (!task) {
 			return
@@ -4566,15 +4716,20 @@ export class ClineProvider
 		const rootTask = task.rootTask
 		const parentTask = task.parentTask
 
+		// kilocode_change start: the cancelled task may NOT be the stack top (the
+		// user can focus and cancel a subagent while the parent sits on the
+		// stack top blocked inside dispatch_subagents). Wait on and compare the
+		// CANCELLED task's own instance, not getCurrentTask().
 		await pWaitFor(
 			() =>
-				this.getCurrentTask()! === undefined ||
-				this.getCurrentTask()!.isStreaming === false ||
-				this.getCurrentTask()!.didFinishAbortingStream ||
+				this.clineStack.length === 0 ||
+				!this.clineStack.some((stacked) => stacked.taskId === task.taskId) ||
+				this.clineStack.find((stacked) => stacked.taskId === task.taskId)!.isStreaming === false ||
+				this.clineStack.find((stacked) => stacked.taskId === task.taskId)!.didFinishAbortingStream ||
 				// If only the first chunk is processed, then there's no
 				// need to wait for graceful abort (closes edits, browser,
 				// etc).
-				this.getCurrentTask()!.isWaitingForFirstChunk,
+				this.clineStack.find((stacked) => stacked.taskId === task.taskId)!.isWaitingForFirstChunk,
 			{
 				timeout: 3_000,
 			},
@@ -4582,25 +4737,27 @@ export class ClineProvider
 			console.error("Failed to abort task")
 		})
 
-		// Defensive safeguard: if current instance already changed, skip rehydrate
-		const current = this.getCurrentTask()
-		if (current && current.instanceId !== originalInstanceId) {
+		// Defensive safeguard: if the cancelled instance was already replaced on
+		// the stack (duplicate rehydration elsewhere), skip.
+		const stillInStack = this.clineStack.find((stacked) => stacked.taskId === task.taskId)
+		if (stillInStack && stillInStack.instanceId !== originalInstanceId) {
 			this.log(
-				`[cancelTask] Skipping rehydrate: current instance ${current.instanceId} != original ${originalInstanceId}`,
+				`[cancelTask] Skipping rehydrate: stack instance ${stillInStack.instanceId} != original ${originalInstanceId}`,
 			)
 			return
 		}
 
 		// Final race check before rehydrate to avoid duplicate rehydration
 		{
-			const currentAfterCheck = this.getCurrentTask()
-			if (currentAfterCheck && currentAfterCheck.instanceId !== originalInstanceId) {
+			const stillInStackAfterCheck = this.clineStack.find((stacked) => stacked.taskId === task.taskId)
+			if (stillInStackAfterCheck && stillInStackAfterCheck.instanceId !== originalInstanceId) {
 				this.log(
-					`[cancelTask] Skipping rehydrate after final check: current instance ${currentAfterCheck.instanceId} != original ${originalInstanceId}`,
+					`[cancelTask] Skipping rehydrate after final check: stack instance ${stillInStackAfterCheck.instanceId} != original ${originalInstanceId}`,
 				)
 				return
 			}
 		}
+		// kilocode_change end
 
 		// Clears task again, so we need to abortTask manually above.
 		await this.createTaskWithHistoryItem({ ...historyItem, rootTask, parentTask })

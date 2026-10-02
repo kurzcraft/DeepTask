@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.2.4</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.2.5</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.2.4** new_task merged into dispatch_subagents + per-task mode/provider overrides + multi-level agent identity injection + unified delete_file approvals: the `new_task` tool and `/newtask` slash command are removed; `dispatch_subagents` is now the single subtask tool (single clean-context task = one-element `tasks` array, multi-parallel = multi-element) and inherits the full new_task UX (task-prompt window display, auto-jump into the subagent view, auto-advance on each child completion, auto-return to the parent when all done); each task entry may specify `mode` / `provider_profile` / `model_id` (unspecified fields inherit the parent agent); parent and child system prompts inject live identity info (mode / provider / model / depth) with the depth chain propagating level by level; every blocked delete_file path (outside workspace / protection rules / .kilocodeignore / directories containing protected files) now pauses on a single approval dialog showing the blocking reason instead of erroring straight back; fixes evolve-N auto-upgrade not taking effect in new conversations and the archived all-completed update_todo_list sync being blocked by "No verified task progress file"; fixes the "Resume task" button swallowing typed input (button path now sends messageResponse, same as Enter); the built-in evolve prompt embeds the project GitHub repo and a hard evolution-log discipline; subagent identity banners are actually injected (spawn fills parentIdentity + system prompt prepends the Agent Identity section); environment_details "Current Mode" uses the task's own locked mode; dispatch_subagents / workspace_* tools get icon cards and EN/zh-CN labels; each subagent prompt renders as a numbered card and results return as per-agent cards; the auto-approve "Subtasks" toggle is relabeled "Subagents".
+> **Deeptask 9.2.5** multi-conversation independence overhaul + fine-grained workspace eviction + reliable message delivery: new conversations now auto-upgrade to the latest evolve-N mode (the alias regex also matches the bare `evolve` slug); every conversation saves and restores its own mode (focusTask rebuild restores it; subagents inherit the parent task's mode instead of the global mode), so multiple conversations run independently without cross-pollution; mode switches, askResponse, terminal continue, and pending-continuation rescue are all routed to the focused conversation (the stack-top background task no longer steals messages, and a pending home page no longer pollutes other tasks); switching conversations no longer swallows the draft text in the input box, and Run/approval buttons from an existing conversation no longer flash on another conversation's start screen; workspace occupancy now evicts only write subagents (needs_workspace unspecified or true) to a new worktree while read-only subagents (false) share the parent directory without evicting the parent agent — the dispatch_subagents description documents "false = read-only/light, omit or true = write"; fixed ghost conversations created by sending a message after manually stopping a subagent (focusTask rebuilds the focused conversation in the sidebar first, then delivers — parent progress is never lost); restored Run/Kill/Continue controls when switching back to a conversation while a command awaits approval (per-task live-command registry + focusTask replay + taskId tagging to prevent cross-talk); and fixed first-send messages after tool calls (especially archiving) being invisible to the model (rescue routing follows the focused conversation so the first send is always visible).
 
 ## What you can do with Deeptask
 
@@ -146,17 +146,17 @@ Apart from "the model's own conversation handling that commands cannot do" (work
 
 ## Start in three minutes
 
-1. Download `deeptask-9.2.4.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.2.5.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.2.4.vsix --force
+    codium --install-extension ./deeptask-9.2.5.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.2.4.vsix --force
+    code --install-extension ./deeptask-9.2.5.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

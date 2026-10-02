@@ -227,3 +227,115 @@ describe("webviewMessageHandler - select live subagent conversation", () => {
 		expect(broadcast).toHaveBeenCalled()
 	})
 })
+
+describe("webviewMessageHandler - askResponse focused-conversation rebuild", () => {
+	test("rebuilds the focused stopped conversation before delivering a typed message", async () => {
+		const focusTask = vi.fn().mockResolvedValue(undefined)
+		const stoppedSubagentTask = {
+			taskId: "task-stopped-sa",
+			clineMessages: [],
+			hasPendingWebviewAskResponse: vi.fn().mockReturnValue(false),
+			getPendingWebviewAskTs: vi.fn().mockReturnValue(undefined),
+			findMessageByTimestamp: vi.fn().mockReturnValue(undefined),
+			isSoftCompletionBoundaryPending: vi.fn().mockReturnValue(false),
+			clearStaleWebviewAskResponse: vi.fn(),
+			messageQueueService: { clear: vi.fn(), queue: [] },
+			continueTaskFromUserMessage: vi.fn().mockResolvedValue(undefined),
+			handleWebviewAskResponse: vi.fn(),
+			isStreaming: false,
+			isTaskLoopActive: false,
+		}
+		// After focusTask rebuilds the focused conversation's task, the focused
+		// lookup returns it and the message is delivered there (not the stack top).
+		let focusedTask: unknown = undefined
+		const backgroundParentTask = {
+			taskId: "task-parent-bg",
+			clineMessages: [],
+			hasPendingWebviewAskResponse: vi.fn().mockReturnValue(false),
+			getPendingWebviewAskTs: vi.fn().mockReturnValue(undefined),
+			findMessageByTimestamp: vi.fn().mockReturnValue(undefined),
+			isStreaming: true,
+		}
+		const provider = {
+			pendingNewConversation: undefined,
+			focusTask,
+			getState: vi.fn().mockResolvedValue({}),
+			postStateToWebview: vi.fn().mockResolvedValue(undefined),
+			postMessageToWebview: vi.fn().mockResolvedValue(undefined),
+			cancelTask: vi.fn().mockResolvedValue(undefined),
+			setPendingCancelledTaskContinuation: vi.fn(),
+			getFocusedChatTask: vi.fn(() => focusedTask as never),
+			getCurrentTask: vi.fn(() => backgroundParentTask as never),
+			// The focused conversation points at the stopped subagent's session.
+			parallelManager: {
+				focusedConversationId: "cv-stopped-sa",
+				getConversationById: vi.fn().mockReturnValue({
+					id: "cv-stopped-sa",
+					sessionId: "task-stopped-sa",
+					folderPath: "/repo",
+					workspacePath: "/repo",
+				}),
+			},
+		} as unknown as ClineProvider
+		focusTask.mockImplementation(async () => {
+			focusedTask = stoppedSubagentTask
+		})
+
+		await webviewMessageHandler(provider, {
+			type: "askResponse",
+			askResponse: "messageResponse",
+			text: "hello after stop",
+		})
+
+		expect(focusTask).toHaveBeenCalledWith("task-stopped-sa")
+		// No ghost: the message must not create a brand-new top-level task.
+		const createTask = vi.fn()
+		;(provider as unknown as { createTask?: unknown }).createTask = createTask
+		expect(createTask).not.toHaveBeenCalled()
+	})
+
+	test("does not rebuild when the focused conversation's task is already current", async () => {
+		const focusTask = vi.fn().mockResolvedValue(undefined)
+		const liveTask = {
+			taskId: "task-focused",
+			clineMessages: [],
+			hasPendingWebviewAskResponse: vi.fn().mockReturnValue(true),
+			getPendingWebviewAskTs: vi.fn().mockReturnValue(undefined),
+			findMessageByTimestamp: vi.fn().mockReturnValue(undefined),
+			isSoftCompletionBoundaryPending: vi.fn().mockReturnValue(false),
+			clearStaleWebviewAskResponse: vi.fn(),
+			messageQueueService: { clear: vi.fn(), queue: [] },
+			continueTaskFromUserMessage: vi.fn().mockResolvedValue(undefined),
+			handleWebviewAskResponse: vi.fn(),
+			isStreaming: true,
+		}
+		const provider = {
+			pendingNewConversation: undefined,
+			focusTask,
+			getState: vi.fn().mockResolvedValue({}),
+			postStateToWebview: vi.fn().mockResolvedValue(undefined),
+			postMessageToWebview: vi.fn().mockResolvedValue(undefined),
+			cancelTask: vi.fn().mockResolvedValue(undefined),
+			setPendingCancelledTaskContinuation: vi.fn(),
+			getFocusedChatTask: vi.fn().mockReturnValue(liveTask as never),
+			getCurrentTask: vi.fn().mockReturnValue(liveTask as never),
+			parallelManager: {
+				focusedConversationId: "cv-focused",
+				getConversationById: vi.fn().mockReturnValue({
+					id: "cv-focused",
+					sessionId: "task-focused",
+					folderPath: "/repo",
+					workspacePath: "/repo",
+				}),
+			},
+		} as unknown as ClineProvider
+
+		await webviewMessageHandler(provider, {
+			type: "askResponse",
+			askResponse: "messageResponse",
+			text: "normal send",
+		})
+
+		expect(focusTask).not.toHaveBeenCalled()
+	})
+})

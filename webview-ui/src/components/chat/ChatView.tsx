@@ -240,6 +240,8 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const textAreaRef = useRef<HTMLTextAreaElement>(null)
 	const [sendingDisabled, setSendingDisabled] = useState(false)
 	const [selectedImages, setSelectedImages] = useState<string[]>([])
+	// kilocode_change: draft-preservation ref for conversation switches (newChat)
+	const selectedImagesRef = useRef(selectedImages)
 
 	// We need to hold on to the ask because useEffect > lastMessage will always
 	// let us know when an ask comes in and handle it, but by the time
@@ -330,6 +332,11 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	useEffect(() => {
 		inputValueRef.current = inputValue
 	}, [inputValue])
+
+	// kilocode_change: keep the images draft ref in sync for conversation switches
+	useEffect(() => {
+		selectedImagesRef.current = selectedImages
+	}, [selectedImages])
 
 	// Compute whether auto-approval is paused (user is typing in a followup)
 	const isFollowUpAutoApprovalPaused = useMemo(() => {
@@ -753,6 +760,17 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		everVisibleMessagesTsRef.current.clear() // Clear for new task
 		setCurrentFollowUpTs(null) // Clear follow-up answered state for new task
 		setIsCondensing(false) // Reset condensing state when switching tasks
+		// kilocode_change start: task switches must drop the PREVIOUS task's ask
+		// state immediately. Buttons (Resume/Run/Approve) from the old
+		// conversation used to survive until the new task's messages effect ran,
+		// flashing stale controls on other conversations' start screens.
+		setClineAsk(undefined)
+		setEnableButtons(false)
+		setPrimaryButtonText(undefined)
+		setSecondaryButtonText(undefined)
+		setSendingDisabled(false)
+		currentAskTsRef.current = undefined
+		// kilocode_change end
 		// Note: sendingDisabled is not reset here as it's managed by message effects
 		// kilocode_change start
 		// Active command IDs belong to the previous task's shell lifecycle. Keep them
@@ -1585,9 +1603,18 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 					break
 				case "invoke":
 					switch (message.invoke!) {
-						case "newChat":
+						case "newChat": {
+							// kilocode_change: switching conversations / opening a new chat
+							// must not swallow an unsent draft. Preserve the composer's
+							// current text across the reset; it is cleared only after a
+							// real send.
+							const draftText = inputValueRef.current
+							const draftImages = selectedImagesRef.current
 							handleChatReset()
+							setInputValue(draftText)
+							setSelectedImages(draftImages)
 							break
+						}
 						case "sendMessage":
 							handleSendMessage(message.text ?? "", message.images ?? [])
 							break
@@ -1605,7 +1632,15 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				case "commandExecutionStatus": {
 					const result = commandExecutionStatusSchema.safeParse(safeJsonParse(message.text, {}))
 					if (result.success) {
-						const { executionId, status } = result.data
+						const { executionId, status, taskId } = result.data
+						// kilocode_change start: cross-conversation guard. Events from
+						// background conversations must not light up Run/Kill/Continue
+						// in the conversation the user is looking at. Legacy events
+						// without taskId (older hosts) keep the old behavior.
+						if (taskId && currentTaskItem?.id && taskId !== currentTaskItem.id) {
+							break
+						}
+						// kilocode_change end
 						// kilocode_change start
 						// A shell exit can precede the final drained output. Once an execution
 						// reaches any terminal status, ignore all later live-looking events for

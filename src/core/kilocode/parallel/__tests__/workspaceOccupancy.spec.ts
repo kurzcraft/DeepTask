@@ -93,6 +93,40 @@ describe("collectWorkspaceOccupants", () => {
 		expect(occupants.some((occupant) => occupant.kind === "subagent" && occupant.id === "sa-1")).toBe(true)
 	})
 
+	test("a needs_workspace:false (sharedWorkspace) subagent never occupies the parent workspace", () => {
+		const occupants = collectWorkspaceOccupants({
+			workspacePath: "/repo",
+			conversations: [],
+			runningTasks: [],
+			runningSubagents: [
+				{
+					sessionId: "sa-ro-1",
+					workspacePath: "/repo",
+					workspaceName: undefined,
+					label: "reader-1",
+					sharedWorkspace: true,
+				},
+			],
+			workspaces: [],
+		})
+		expect(occupants).toEqual([])
+	})
+
+	test("the parent conversation stays in its workspace despite multiple read-only children", () => {
+		const occupants = collectWorkspaceOccupants({
+			workspacePath: "/repo",
+			conversations: [conversation()],
+			runningTasks: [{ taskId: "task-1", cwd: "/repo", isStreaming: true }],
+			runningSubagents: [
+				{ sessionId: "sa-ro-1", workspacePath: "/repo", label: "reader-1", sharedWorkspace: true },
+				{ sessionId: "sa-ro-2", workspacePath: "/repo", label: "reader-2", sharedWorkspace: true },
+			],
+			workspaces: [],
+			except: { taskId: "task-1", conversationId: "cv-1" },
+		})
+		expect(occupants).toEqual([])
+	})
+
 	test("a leftover busy registry claim does not occupy without a live streaming task", () => {
 		const occupants = collectWorkspaceOccupants({
 			workspacePath: "/repo/.kilocode/worktrees/feature-x",

@@ -39,6 +39,11 @@ export interface OccupancyInputs {
 		workspacePath?: string
 		workspaceName?: string
 		label?: string
+		/** kilocode_change: true when the subagent was dispatched with
+		 * needs_workspace:false — it runs in the PARENT's workspace read-only
+		 * and must never occupy it, otherwise the parent gets ejected from its
+		 * own workspace by its own read-only children. */
+		sharedWorkspace?: boolean
 	}>
 	workspaces: ParallelWorkspace[]
 	except?: { taskId?: string; conversationId?: string }
@@ -98,6 +103,13 @@ export function collectWorkspaceOccupants(params: OccupancyInputs): WorkspaceOcc
 	}
 
 	for (const subagent of params.runningSubagents) {
+		// kilocode_change: a needs_workspace:false subagent runs read-only in the
+		// parent workspace — it must not appear as an occupant, or every later
+		// conversation in that workspace (including the parent itself) gets
+		// ejected into a fresh worktree by its own read-only children.
+		if (subagent.sharedWorkspace) {
+			continue
+		}
 		const named = subagent.workspaceName
 			? params.workspaces.find((workspace) => workspace.name === subagent.workspaceName)
 			: undefined

@@ -1033,24 +1033,25 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			const state = await provider.getState()
 			let mode = state?.mode || defaultModeSlug
 			// kilocode_change start: evolve-N auto-upgrade at conversation start
-			// A new root conversation starting in an older evolve-N custom mode is
-			// transparently upgraded to the highest installed evolve-M mode, so the
-			// latest evolved prompt is always active from the first message. Runs
-			// exactly once per new task (initializeTaskMode is only invoked for new
-			// tasks; resumed history tasks keep their recorded mode). Child agents
-			// (subtasks / subagents / delegated child processes) are excluded: their
-			// mode is dictated by the dispatcher.
+			// A new root conversation starting in an older evolve-N custom mode (or
+			// the base "evolve" mode, which the old ^evolve-(\d+)$ regex never
+			// matched) is transparently upgraded to the highest installed evolve-M
+			// mode, so the latest evolved prompt is always active from the first
+			// message. Runs exactly once per new task (initializeTaskMode is only
+			// invoked for new tasks; resumed history tasks keep their recorded
+			// mode). Child agents (subtasks / subagents / delegated child
+			// processes) are excluded: their mode is dictated by the dispatcher.
 			if (!this.subagent && !this.parentTaskId && !this.isDelegatedChildProcess) {
-				const currentMatch = /^evolve-(\d+)$/.exec(mode)
+				const currentMatch = /^evolve(?:-(\d+))?$/.exec(mode)
 				if (currentMatch) {
 					try {
 						const customModes = (await provider.customModesManager?.getCustomModes?.()) ?? []
-						let latest = Number(currentMatch[1])
+						let latest = Number(currentMatch[1] ?? 0)
 						for (const candidate of customModes) {
 							const candidateMatch = /^evolve-(\d+)$/.exec(candidate.slug)
 							if (candidateMatch) latest = Math.max(latest, Number(candidateMatch[1]))
 						}
-						if (latest > Number(currentMatch[1])) {
+						if (latest > Number(currentMatch[1] ?? 0)) {
 							const upgraded = `evolve-${latest}`
 							await provider.setMode?.(upgraded)
 							mode = upgraded

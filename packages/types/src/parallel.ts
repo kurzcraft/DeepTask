@@ -27,6 +27,10 @@ export const parallelSessionSchema = z.object({
 	workspaceName: z.string().optional(),
 	workspacePath: z.string().optional(),
 	branch: z.string().optional(),
+	/** kilocode_change: true when the subagent was dispatched with
+	 * needs_workspace:false — it runs read-only in the parent workspace and
+	 * never counts as a workspace occupant. */
+	sharedWorkspace: z.boolean().optional(),
 	startedAt: z.number(),
 	endedAt: z.number().optional(),
 	result: z.string().optional(),

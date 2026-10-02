@@ -31,6 +31,9 @@ export interface SubagentSpec {
 	workspaceName?: string
 	workspacePath?: string
 	branch?: string
+	/** kilocode_change: true when dispatched with needs_workspace:false — the
+	 * subagent shares the parent workspace read-only and never occupies it. */
+	sharedWorkspace?: boolean
 	/** Mode slug for the subagent; undefined inherits the parent's mode. */
 	mode?: string
 	/** Resolved provider configuration for the subagent; undefined inherits the parent's. */
@@ -131,6 +134,7 @@ export class ParallelManager {
 			workspaceName: spec.workspaceName,
 			workspacePath,
 			branch: spec.branch,
+			sharedWorkspace: spec.sharedWorkspace === true,
 			startedAt: Date.now(),
 		}
 		const state: SessionState = { info, messages: [] }
@@ -149,6 +153,23 @@ export class ParallelManager {
 		const childApiConfig = (spec.apiConfiguration as typeof parentTask.apiConfiguration | undefined) ??
 			parentTask.apiConfiguration
 		const depth = (parentTask.subagent?.depth ?? 0) + 1
+		// kilocode_change start: mode inheritance — a subagent with NO explicit
+		// mode override used to fall back to the GLOBAL state.mode in
+		// initializeTaskMode, so conversations leaked whichever mode another
+		// conversation last selected (breaks per-conversation mode
+		// independence). Seed the subagent override with the PARENT TASK's
+		// locked mode so children inherit the dispatcher's mode, not the
+		// global one. The parent's mode getter throws before initialization;
+		// resolve defensively.
+		let inheritedMode = spec.mode
+		if (!inheritedMode) {
+			try {
+				inheritedMode = parentTask.taskMode
+			} catch {
+				inheritedMode = undefined
+			}
+		}
+		// kilocode_change end
 		// Human-readable parent identity for the child's system prompt banner:
 		// the parent's mode, provider profile, and model. The child prompt shows
 		// its own identity plus this lineage so nested agents know their chain.
@@ -170,7 +191,7 @@ export class ParallelManager {
 				sessionId,
 				depth,
 				manager: this,
-				mode: spec.mode,
+				mode: inheritedMode,
 				parentIdentity,
 				// kilocode_change: seed the child's sticky identity with the
 				// dispatch-time override so async global-state backfill
@@ -1031,6 +1052,7 @@ export class ParallelManager {
 				workspacePath: session.info.workspacePath,
 				workspaceName: session.info.workspaceName,
 				label: session.info.label,
+				sharedWorkspace: session.info.sharedWorkspace,
 			})),
 			workspaces: this.annotatedWorkspaces(),
 			except,
