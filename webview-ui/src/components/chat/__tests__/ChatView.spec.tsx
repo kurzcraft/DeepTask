@@ -2366,4 +2366,63 @@ describe("ChatView - Context Condensing Indicator Tests", () => {
 			{ timeout: 2000 },
 		)
 	})
+
+	// kilocode_change start: cross-conversation condense leak regression (9.2.7
+	// defect D). A background conversation's condenseTaskContextStarted must
+	// NOT light the condensing indicator in the focused conversation, and its
+	// condenseTaskContextResponse must not clear it either.
+	it("ignores condense events from a different conversation's task id", async () => {
+		const { container } = renderChatView()
+
+		// Hydrate state with an active task the view is focused on.
+		mockPostMessage({
+			currentTaskItem: { id: "focused-task-id", number: 1, ts: Date.now() - 2000 },
+			clineMessages: [
+				{
+					type: "say",
+					say: "task",
+					ts: Date.now() - 2000,
+					text: "Focused task",
+				},
+				{
+					type: "say",
+					say: "api_req_started",
+					ts: Date.now() - 1000,
+					text: JSON.stringify({ apiProtocol: "anthropic" }),
+				},
+			],
+		})
+
+		await waitFor(() => {
+			expect(container.querySelector('[data-testid="chat-view"]')).toBeTruthy()
+		})
+
+		await act(async () => {
+			await new Promise((resolve) => setTimeout(resolve, 10))
+		})
+
+		// A background conversation (different task id) starts condensing.
+		await act(async () => {
+			const event = new MessageEvent("message", {
+				data: {
+					type: "condenseTaskContextStarted",
+					text: "other-conversation-task-id",
+				},
+			})
+			window.dispatchEvent(event)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+		})
+
+		// The focused view must NOT show the condensing indicator.
+		await act(async () => {
+			await new Promise((resolve) => setTimeout(resolve, 50))
+		})
+		const rows = container.querySelectorAll('[data-testid="chat-row"]')
+		const condensingRow = Array.from(rows).find((row) => {
+			const text = row.textContent || ""
+			return text.includes('"say":"condense_context"') && text.includes('"partial":true')
+		})
+		expect(condensingRow).toBeUndefined()
+	})
+	// kilocode_change end
 })

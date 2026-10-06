@@ -894,11 +894,29 @@ export async function presentAssistantMessage(cline: Task) {
 					const rawIncludedTools = modelInfo?.info?.includedTools
 					const { resolveToolAlias } = await import("../prompts/tools/filter-tools-for-mode")
 					const includedTools = rawIncludedTools?.map((tool) => resolveToolAlias(tool))
-
+	
+					// kilocode_change start: validate against THIS task's locked mode,
+					// not the provider's global state.mode. All Tasks in a window
+					// share one ClineProvider, and focusing a conversation (e.g. the
+					// auto-jump to a freshly dispatched subagent with mode:"ask")
+					// repoints global mode via restoreFocusedTaskMode(). Using the
+					// global value here then rejected the PARENT's edit tools with
+					// "not allowed in ask mode" while the parent never switched.
+					// The task's own _taskMode (seeded from subagent.mode override or
+					// the conversation's selection) is the authoritative gate.
+					let taskModeForGate = mode
+					try {
+						taskModeForGate = cline.taskMode
+					} catch {
+						// taskMode getter throws before initialization — keep the
+						// global-state fallback for that early window only.
+					}
+					// kilocode_change end
+	
 					try {
 						validateToolUse(
 							block.name as ToolName,
-							mode ?? defaultModeSlug,
+							taskModeForGate ?? mode ?? defaultModeSlug,
 							customModes ?? [],
 							{ apply_diff: cline.diffEnabled },
 							block.params,

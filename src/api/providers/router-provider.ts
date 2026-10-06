@@ -2,7 +2,7 @@ import OpenAI from "openai"
 
 import { type ModelInfo, type ModelRecord, NATIVE_TOOL_DEFAULTS } from "@roo-code/types"
 
-import { ApiHandlerOptions, RouterName } from "../../shared/api"
+import { ApiHandlerOptions, GetModelsOptions, RouterName } from "../../shared/api"
 
 import { BaseProvider } from "./base-provider"
 import { getModels, getModelsFromCache } from "./fetchers/modelCache"
@@ -60,7 +60,13 @@ export abstract class RouterProvider extends BaseProvider {
 	}
 
 	public async fetchModel() {
-		this.models = await getModels({ provider: this.name, apiKey: this.client.apiKey, baseUrl: this.client.baseURL })
+		// kilocode_change: cast — this.name is a RouterName and the union
+		// distribution in GetModelsOptions cannot accept it structurally.
+		this.models = await getModels({
+			provider: this.name,
+			apiKey: this.client.apiKey,
+			baseUrl: this.client.baseURL,
+		} as GetModelsOptions)
 		return this.getModel()
 	}
 

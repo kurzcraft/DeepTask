@@ -840,7 +840,11 @@ const ApiOptions = ({
 			)}
 
 			{selectedProvider === "xai" && (
-				<XAI apiConfiguration={apiConfiguration} setApiConfigurationField={setApiConfigurationField} />
+				<XAI
+					apiConfiguration={apiConfiguration}
+					setApiConfigurationField={setApiConfigurationField}
+					routerModels={routerModels}
+				/>
 			)}
 
 			{selectedProvider === "groq" && (
@@ -980,7 +984,7 @@ const ApiOptions = ({
 
 			{/* kilocode_change start: providers with dedicated editable model controls must not render twice */}
 			{selectedProviderModels.length > 0 &&
-				!["claude-code", "openai-codex", "deepseek", "groq", "mistral", "cerebras", "zai"].includes(
+				!["claude-code", "openai-codex", "deepseek", "groq", "mistral", "cerebras", "zai", "xai"].includes(
 					selectedProvider,
 				) && (
 					<>

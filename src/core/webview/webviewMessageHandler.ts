@@ -1897,11 +1897,12 @@ export const webviewMessageHandler = async (
 						kilocode: {},
 						gemini: {},
 						deepseek: {},
-						groq: {},
-						mistral: {},
-						cerebras: {},
-						zai: {},
-						// kilocode_change end
+					groq: {},
+					mistral: {},
+					cerebras: {},
+					zai: {},
+					xai: {}, // kilocode_change: xAI discoverable vendor
+					// kilocode_change end
 						openrouter: {},
 						"vercel-ai-gateway": {},
 						huggingface: {},
@@ -2027,40 +2028,38 @@ export const webviewMessageHandler = async (
 			// Request values represent the currently edited form and must win over saved state.
 			const requestedApiKey = message?.values?.apiKey
 			const requestedBaseUrl = message?.values?.baseUrl
+			// kilocode_change (defect T, 9.2.8): anonymous discovery — the vendor
+			// /models endpoints answer without auth, so these candidates are
+			// ALWAYS pushed. A present key upgrades the call to authenticated
+			// discovery (may reveal account-specific availability), but its
+			// absence no longer hides the whole model list (grok-4.7 etc. now
+			// auto-detect before any key is typed).
 			const deepSeekApiKey = requestedApiKey ?? apiConfiguration.deepSeekApiKey
-			if (deepSeekApiKey) {
-				candidates.push({
-					key: "deepseek",
-					options: {
-						provider: "deepseek",
-						apiKey: deepSeekApiKey,
-						baseUrl: requestedBaseUrl ?? apiConfiguration.deepSeekBaseUrl,
-					},
-				})
-			}
+			candidates.push({
+				key: "deepseek",
+				options: {
+					provider: "deepseek",
+					apiKey: deepSeekApiKey,
+					baseUrl: requestedBaseUrl ?? apiConfiguration.deepSeekBaseUrl,
+				},
+			})
 			const groqApiKey = requestedApiKey ?? apiConfiguration.groqApiKey
-			if (groqApiKey) {
-				candidates.push({
-					key: "groq",
-					options: { provider: "groq", apiKey: groqApiKey, baseUrl: requestedBaseUrl },
-				})
-			}
+			candidates.push({
+				key: "groq",
+				options: { provider: "groq", apiKey: groqApiKey, baseUrl: requestedBaseUrl },
+			})
 			const mistralApiKey = requestedApiKey ?? apiConfiguration.mistralApiKey
-			if (mistralApiKey) {
-				candidates.push({
-					key: "mistral",
-					options: { provider: "mistral", apiKey: mistralApiKey, baseUrl: requestedBaseUrl },
-				})
-			}
+			candidates.push({
+				key: "mistral",
+				options: { provider: "mistral", apiKey: mistralApiKey, baseUrl: requestedBaseUrl },
+			})
 			const cerebrasApiKey = requestedApiKey ?? apiConfiguration.cerebrasApiKey
-			if (cerebrasApiKey) {
-				candidates.push({
-					key: "cerebras",
-					options: { provider: "cerebras", apiKey: cerebrasApiKey, baseUrl: requestedBaseUrl },
-				})
-			}
+			candidates.push({
+				key: "cerebras",
+				options: { provider: "cerebras", apiKey: cerebrasApiKey, baseUrl: requestedBaseUrl },
+			})
 			const zaiApiKey = requestedApiKey ?? apiConfiguration.zaiApiKey
-			if (zaiApiKey) {
+			{
 				const zaiLine = apiConfiguration.zaiApiLine ?? "international_coding"
 				candidates.push({
 					key: "zai",
@@ -2071,6 +2070,13 @@ export const webviewMessageHandler = async (
 					},
 				})
 			}
+			// kilocode_change: xAI joined the discoverable-vendor pipeline —
+			// models auto-detect (with or without an API key).
+			const xaiApiKey = requestedApiKey ?? apiConfiguration.xaiApiKey
+			candidates.push({
+				key: "xai",
+				options: { provider: "xai", apiKey: xaiApiKey, baseUrl: requestedBaseUrl },
+			})
 			// kilocode_change end
 
 			// IO Intelligence is conditional on api key

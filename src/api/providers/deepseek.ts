@@ -4,6 +4,7 @@ import OpenAI from "openai"
 import {
 	deepSeekModels,
 	deepSeekDefaultModelId,
+	deepSeekSupportsImagesDynamic,
 	DEEP_SEEK_DEFAULT_TEMPERATURE,
 	OPENAI_AZURE_AI_INFERENCE_PATH,
 } from "@roo-code/types"
@@ -23,6 +24,10 @@ type DeepSeekChatCompletionParams = OpenAI.Chat.ChatCompletionCreateParamsStream
 }
 
 export class DeepSeekHandler extends OpenAiHandler {
+	// kilocode_change: the real model name the last stream served (from
+	// chunk.model), surfaced through processUsageMetrics' inferenceProvider.
+	private lastServedModel: string | undefined
+
 	constructor(options: ApiHandlerOptions) {
 		super({
 			...options,
@@ -39,7 +44,16 @@ export class DeepSeekHandler extends OpenAiHandler {
 		const knownInfo = deepSeekModels[id as keyof typeof deepSeekModels]
 		const staticInfo = knownInfo ?? { ...deepSeekModels[deepSeekDefaultModelId], contextWindow: 256_000 }
 		const userInfo = this.options.apiModelInfoModelId === id ? this.options.apiModelInfo : undefined
-		const info = { ...staticInfo, ...userInfo }
+		// kilocode_change: custom/dynamic model ids (v4.1+, -vl, -vision) infer
+		// vision support when neither the static catalog nor user info says so.
+		const visionByDyn =
+			userInfo?.supportsImages ??
+			(knownInfo ? knownInfo.supportsImages : deepSeekSupportsImagesDynamic(id) ? true : undefined)
+		const info = {
+			...staticInfo,
+			...(visionByDyn !== undefined ? { supportsImages: visionByDyn } : {}),
+			...userInfo,
+		}
 		const params = getModelParams({ format: "openai", modelId: id, model: info, settings: this.options })
 		return { id, info, ...params }
 	}
@@ -112,8 +126,19 @@ export class DeepSeekHandler extends OpenAiHandler {
 		}
 
 		let lastUsage
+		// kilocode_change start: capture the SERVED model name from the stream.
+		// DeepSeek's chat aliases (deepseek-chat / deepseek-reasoner) resolve to
+		// a concrete backend model (e.g. deepseek-v3.2, deepseek-v4); the
+		// response chunk's `model` field carries that real name. Report it via
+		// the usage chunk's inferenceProvider channel so the request row can
+		// show which model actually served the request.
+		// kilocode_change end
 
 		for await (const chunk of stream) {
+			// kilocode_change: remember the served model name
+			if (chunk.model) {
+				this.lastServedModel = chunk.model
+			}
 			const delta = chunk.choices?.[0]?.delta ?? {}
 
 			// Handle regular text content
@@ -164,6 +189,9 @@ export class DeepSeekHandler extends OpenAiHandler {
 			outputTokens: usage?.completion_tokens || 0,
 			cacheWriteTokens: usage?.prompt_tokens_details?.cache_miss_tokens,
 			cacheReadTokens: usage?.prompt_tokens_details?.cached_tokens,
+			// kilocode_change: surface the real served model (e.g. deepseek-v4)
+			// resolved from the deepseek-chat / deepseek-reasoner aliases.
+			inferenceProvider: this.lastServedModel,
 		}
 	}
 }

@@ -76,6 +76,7 @@ type RouterModelsQueryKey = {
 	nanoGptApiKey?: string
 	nanoGptModelList?: "all" | "personalized" | "subscription"
 	syntheticApiKey?: string
+	xaiApiKey?: string // kilocode_change: xAI anonymous discovery (defect T)
 	// Requesty, Unbound, etc should perhaps also be here, but they already have their own hacks for reloading
 }
 const getProviderRequestOptions = (provider: string, queryKey: RouterModelsQueryKey) => {
@@ -98,6 +99,11 @@ const getProviderRequestOptions = (provider: string, queryKey: RouterModelsQuery
 		case "zai":
 			values.apiKey = queryKey.zaiApiKey
 			values.baseUrl = queryKey.zaiBaseUrl
+			break
+		case "xai":
+			// kilocode_change (defect T): xAI — send the key when present
+			// (authenticated discovery); anonymous discovery is fine without.
+			values.apiKey = queryKey.xaiApiKey
 			break
 	}
 

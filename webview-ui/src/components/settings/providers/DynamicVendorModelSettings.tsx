@@ -1,20 +1,54 @@
 // kilocode_change - new file
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react"
-import { RefreshCw } from "lucide-react"
 import { VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
 
-import type { ModelRecord, ProviderSettings } from "@roo-code/types"
+import type { ModelInfo, ModelRecord, ProviderSettings } from "@roo-code/types"
 
 import { useAppTranslation } from "@src/i18n/TranslationContext"
 import { useRouterModels } from "@src/components/ui/hooks/useRouterModels"
-import { Button } from "@src/components/ui"
 
 import { ModelPicker } from "../ModelPicker"
 
 const VENDOR_CONTEXT_FALLBACK = 256_000
 
+// kilocode_change (defect U, 9.2.8): pick the semantically newest model id from
+// a detected list so the default selection auto-tracks vendor releases
+// (grok-4.7 > grok-4.6 > grok-4, glm-5.3 > glm-4.9, ...).
+// Compares the numeric segments embedded in the id segment by segment;
+// ids without any digits (legacy aliases like deepseek-chat) sort last.
+const versionSegments = (id: string): number[] =>
+	(id.match(/\d+/g) ?? []).map((segment) => Number.parseInt(segment, 10))
+
+const compareVersionedIds = (a: string, b: string): number => {
+	const segmentsA = versionSegments(a)
+	const segmentsB = versionSegments(b)
+
+	if (segmentsA.length === 0 && segmentsB.length === 0) return a.localeCompare(b)
+	if (segmentsA.length === 0) return -1
+	if (segmentsB.length === 0) return 1
+
+	const length = Math.max(segmentsA.length, segmentsB.length)
+	for (let i = 0; i < length; i++) {
+		const valueA = segmentsA[i] ?? 0
+		const valueB = segmentsB[i] ?? 0
+		if (valueA !== valueB) return valueA - valueB
+	}
+	return 0
+}
+
+export const pickLatestModelId = (models?: ModelRecord): string | undefined => {
+	const ids = Object.keys(models ?? {})
+	if (ids.length === 0) return undefined
+	return ids.reduce((best, id) => (compareVersionedIds(id, best) > 0 ? id : best))
+}
+
+// kilocode_change (defect U, 9.2.8): module-level memo of auto-applied ids per
+// provider, so settings-tab remounts within the same webview lifetime do not
+// mistake an auto-applied value for a manual user choice.
+const autoAppliedByProvider = new Map<string, string>()
+
 type DynamicVendorModelSettingsProps = {
-	provider: "deepseek" | "groq" | "mistral" | "cerebras" | "zai"
+	provider: "deepseek" | "groq" | "mistral" | "cerebras" | "zai" | "xai"
 	defaultModelId: string
 	staticModels: ModelRecord
 	remoteModels?: ModelRecord
@@ -26,6 +60,11 @@ type DynamicVendorModelSettingsProps = {
 		value: ProviderSettings[K],
 		isUserAction?: boolean,
 	) => void
+	/** kilocode_change: infer capability fields (e.g. supportsImages) for
+	 * detected ids missing from the static table, so new versions / aliases
+	 * (deepseek-flash, deepseek-v4.2, ...) get correct metadata automatically
+	 * without waiting for a static-table update. */
+	inferModelInfo?: (modelId: string) => Partial<ModelInfo> | undefined
 }
 
 export const DynamicVendorModelSettings = ({
@@ -37,6 +76,7 @@ export const DynamicVendorModelSettings = ({
 	baseUrl,
 	apiConfiguration,
 	setApiConfigurationField,
+	inferModelInfo,
 }: DynamicVendorModelSettingsProps) => {
 	const { t } = useAppTranslation()
 	const [debouncedApiKey, setDebouncedApiKey] = useState("")
@@ -55,18 +95,41 @@ export const DynamicVendorModelSettings = ({
 			cerebrasApiKey: provider === "cerebras" ? debouncedApiKey : undefined,
 			zaiApiKey: provider === "zai" ? debouncedApiKey : undefined,
 			zaiBaseUrl: provider === "zai" ? baseUrl : undefined,
+			xaiApiKey: provider === "xai" ? debouncedApiKey : undefined,
 		}),
 		[baseUrl, debouncedApiKey, provider],
 	)
+	// kilocode_change (defect T, 9.2.8): anonymous discovery — detection fires
+	// as soon as the settings panel mounts (public /models endpoints answer
+	// without auth). Typing a key later upgrades to authenticated discovery
+	// via the debounced queryKey change.
 	const { data: accountModels, refetch, isFetching, isError } = useRouterModels(requestOptions, {
 		provider,
-		enabled: debouncedApiKey.length > 0,
 	})
 	const detectedModels = accountModels?.[provider] ?? remoteModels
 	const detectedModelCount = detectedModels ? Object.keys(detectedModels).length : 0
 	const detectionFailed = isError || Boolean(debouncedApiKey && accountModels && detectedModelCount === 0)
-	const models = useMemo(() => ({ ...staticModels, ...(detectedModels ?? {}) }), [detectedModels, staticModels])
-	const selectedModelId = apiConfiguration.apiModelId || defaultModelId
+	// kilocode_change: field-level merge instead of whole-entry replacement —
+	// detected entries from /models endpoints carry no description, so keep the
+	// static table's description (and vision flag) when a detected id collides
+	// with a known static id (e.g. deepseek-chat / deepseek-flash aliases).
+	const models = useMemo(() => {
+		const merged: ModelRecord = { ...staticModels }
+		for (const [id, detected] of Object.entries(detectedModels ?? {})) {
+			// kilocode_change: unknown detected ids (new versions / aliases not
+			// yet in the static table) get inferred capability fields so they
+			// behave correctly (e.g. vision) without a static-table release.
+			const inferred = staticModels[id] ? undefined : inferModelInfo?.(id)
+			merged[id] = { ...(inferred ?? {}), ...(staticModels[id] ?? {}), ...detected }
+		}
+		return merged
+	}, [detectedModels, inferModelInfo, staticModels])
+	// kilocode_change (defect U, 9.2.8): default selection auto-tracks the
+	// newest detected model. apiModelId stays unset until the user picks one,
+	// so the "default" keeps following vendor releases (grok-4.7 today,
+	// grok-4.8 tomorrow) without any user action.
+	const latestDetectedId = useMemo(() => pickLatestModelId(detectedModels), [detectedModels])
+	const selectedModelId = apiConfiguration.apiModelId || latestDetectedId || defaultModelId
 	const detectedInfo = detectedModels?.[selectedModelId]
 	const staticInfo = staticModels[selectedModelId]
 	const hasBoundOverride = apiConfiguration.apiModelInfoModelId === selectedModelId
@@ -75,8 +138,35 @@ export const DynamicVendorModelSettings = ({
 		? apiConfiguration.apiModelInfo?.contextWindow
 		: detectedInfo?.contextWindow ?? staticInfo?.contextWindow ?? (debouncedApiKey ? VENDOR_CONTEXT_FALLBACK : undefined)
 
+	// kilocode_change (defect U, 9.2.8): persist the auto-tracked latest id so
+	// the backend actually uses it. Rules:
+	//  - never DOWNGRADE (stored version newer than detected latest stays);
+	//  - the module-level map remembers what we auto-applied per provider, so
+	//    a value that differs from it (user picked manually) is respected and
+	//    survives settings-tab remounts within the same webview lifetime.
 	useEffect(() => {
-		if (!debouncedApiKey || hasManualOverride) {
+		if (!latestDetectedId) {
+			return
+		}
+		const stored = apiConfiguration.apiModelId
+		if (stored && stored !== defaultModelId && stored !== autoAppliedByProvider.get(provider)) {
+			return // user pinned a different model — stop auto-tracking
+		}
+		if (stored === latestDetectedId) {
+			return // already current
+		}
+		if (stored && stored !== defaultModelId && compareVersionedIds(stored, latestDetectedId) > 0) {
+			return // stored is newer than anything detected — keep it
+		}
+		autoAppliedByProvider.set(provider, latestDetectedId)
+		setApiConfigurationField("apiModelId", latestDetectedId, false)
+	}, [apiConfiguration.apiModelId, defaultModelId, latestDetectedId, provider, setApiConfigurationField])
+
+	useEffect(() => {
+		// kilocode_change (defect T, 9.2.8): anonymous discovery also binds
+		// detected model info — manual overrides still win. The 256k safety
+		// fallback keeps binding for ids unknown to both tables.
+		if (hasManualOverride) {
 			return
 		}
 
@@ -127,8 +217,12 @@ export const DynamicVendorModelSettings = ({
 
 	return (
 		<>
-			<div className="flex items-center justify-between gap-2">
-				<div className="min-w-0 text-sm text-vscode-descriptionForeground" data-testid="vendor-model-status">
+			{/* kilocode_change: manual refresh button removed — model detection is
+			    fully automatic: it triggers 500ms after the API key is typed
+			    (debounced) and again whenever baseUrl / provider config changes. */}
+			<div className="flex items-center gap-2" data-testid="vendor-model-status">
+				{isFetching && <span className="codicon codicon-loading codicon-modifier-spin" />}
+				<div className="min-w-0 text-sm text-vscode-descriptionForeground">
 					{isFetching
 						? t("settings:providers.refreshModels.loading")
 						: detectionFailed
@@ -137,19 +231,11 @@ export const DynamicVendorModelSettings = ({
 								? t("settings:providers.sapAiCore.modelsCount", { count: detectedModelCount })
 								: ""}
 				</div>
-				<Button
-					variant="secondary"
-					onClick={() => refetch()}
-					disabled={!debouncedApiKey || isFetching}
-					title={t("settings:providers.refreshModels.label")}>
-					<RefreshCw className={`size-4 mr-1 ${isFetching ? "animate-spin" : ""}`} />
-					{t("settings:providers.refreshModels.label")}
-				</Button>
 			</div>
 			<ModelPicker
 				apiConfiguration={apiConfiguration}
 				setApiConfigurationField={setApiConfigurationField}
-				defaultModelId={defaultModelId}
+				defaultModelId={latestDetectedId || defaultModelId}
 				models={models}
 				modelIdKey="apiModelId"
 				serviceName={provider}

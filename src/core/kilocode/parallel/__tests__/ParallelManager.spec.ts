@@ -1,4 +1,6 @@
 // kilocode_change - new file: tests for the parallel conversation registry
+import { EventEmitter } from "node:events"
+
 import type { ExtensionMessage, ParallelConversation } from "@roo-code/types"
 
 import { Task } from "../../../task/Task"
@@ -745,6 +747,134 @@ describe("ParallelManager conversations", () => {
 		manager.spawn(parent, { label: "override", task: "explicit profile", providerProfileName: "AIHUBMIX-VL" })
 
 		expect(handedSubagent?.providerProfileName).toBe("AIHUBMIX-VL")
+		createSpy.mockRestore()
+	})
+	// kilocode_change end
+
+	// kilocode_change start: ghost resurrection root-fix regression (9.2.7).
+	// A settled subagent must be evicted from the provider's clineStack so it
+	// can never silently become the "current task" (ghost conversation).
+	test("spawn evicts the settled child from the provider stack", async () => {
+		const { manager } = setup()
+		const removed: string[] = []
+		const provider = {
+			context: { globalState: makeStorage(new Map()) },
+			postMessageToWebview: async () => {},
+			removeBackgroundClineFromStack: (taskId: string) => {
+				removed.push(taskId)
+				return true
+			},
+		} as unknown as ConstructorParameters<typeof ParallelManager>[0]
+		const managerWithEviction = new ParallelManager(
+			provider,
+			new WorkspaceRegistry(makeStorage(new Map()) as never),
+		)
+		await managerWithEviction.registerMainFolder("/repo")
+		const createSpy = vi.spyOn(Task, "create").mockImplementation(() => {
+			const child = { taskId: "child-task" } as Task
+			return [child, Promise.resolve()]
+		})
+		const parent = {
+			taskId: "parent-task",
+			cwd: "/repo",
+			apiConfiguration: { apiProvider: "openai" },
+			enableCheckpoints: false,
+			diffEnabled: false,
+			checkpointTimeout: 42,
+			subagent: undefined,
+		} as unknown as Task
+
+		const spawned = managerWithEviction.spawn(parent, { label: "ghost", task: "settle then vanish" })
+		await spawned.done
+
+		expect(removed).toContain("child-task")
+		createSpy.mockRestore()
+	})
+
+	// A settled-but-still-listed zombie session (the "cannot close subagent
+	// from the panel" defect) must be evicted by cancel(), not ignored.
+	test("cancel evicts a settled zombie session holding a task instance", async () => {
+		const { manager } = setup()
+		const removed: string[] = []
+		const provider = {
+			context: { globalState: makeStorage(new Map()) },
+			postMessageToWebview: async () => {},
+			removeBackgroundClineFromStack: (taskId: string) => {
+				removed.push(taskId)
+				return true
+			},
+		} as unknown as ConstructorParameters<typeof ParallelManager>[0]
+		const managerWithEviction = new ParallelManager(
+			provider,
+			new WorkspaceRegistry(makeStorage(new Map()) as never),
+		)
+		await managerWithEviction.registerMainFolder("/repo")
+		const createSpy = vi.spyOn(Task, "create").mockImplementation(() => {
+			const child = { taskId: "child-task" } as Task
+			return [child, Promise.resolve()]
+		})
+		const parent = {
+			taskId: "parent-task",
+			cwd: "/repo",
+			apiConfiguration: { apiProvider: "openai" },
+			enableCheckpoints: false,
+			diffEnabled: false,
+			checkpointTimeout: 42,
+			subagent: undefined,
+		} as unknown as Task
+
+		const spawned = managerWithEviction.spawn(parent, { label: "zombie", task: "settle" })
+		await spawned.done
+		// Settled spawn already evicted once; simulate the legacy zombie case
+		// where the session entry still holds the task instance.
+		const cancelled = managerWithEviction.cancel("child-task")
+
+		// 9.2.7 defect-B semantics: cancel keeps the session entry (rail
+		// continuity for a later Continue) but marks it cancelled and evicts
+		// the provider-stack instance.
+		expect(cancelled).toBe(true)
+		expect(removed).toContain("child-task")
+		const kept = managerWithEviction.getSession("child-task")
+		expect(kept?.info.status).toBe("cancelled")
+		createSpy.mockRestore()
+	})
+	// kilocode_change end
+
+	// kilocode_change start: DEFECT S3 regression — interrupting the parent's
+	// dispatch tool call must cancel still-running children EVENT-DRIVEN, not
+	// via the dispatch tool's polling loop (a host interrupt abandons that
+	// promise). Parent TaskAborted → child session cancelled.
+	test("parent task abort cancels a still-running child session (S3)", async () => {
+		const { manager } = setup()
+		await manager.registerMainFolder("/repo")
+		const createSpy = vi.spyOn(Task, "create").mockImplementation(() => {
+			const child = { taskId: "child-task" } as Task
+			return [child, Promise.resolve()]
+		})
+		const parentEmitter = new EventEmitter()
+		const parent = parentEmitter as unknown as Task
+		Object.assign(parent, {
+			taskId: "parent-task",
+			cwd: "/repo",
+			apiConfiguration: { apiProvider: "openai" },
+			enableCheckpoints: false,
+			diffEnabled: false,
+			checkpointTimeout: 42,
+			subagent: undefined,
+		})
+		const cancelSpy = vi.spyOn(manager, "cancel").mockReturnValue(true)
+
+		manager.spawn(parent, { label: "reader", task: "read files" })
+
+		// Child is running; parent aborts (what a host-side interrupt does).
+		parentEmitter.emit("taskAborted")
+
+		expect(cancelSpy).toHaveBeenCalledWith("child-task")
+		// Guard: cancelling an already-settled child is skipped.
+		cancelSpy.mockClear()
+		manager.getSession("child-task")!.info.status = "completed"
+		parentEmitter.emit("taskAborted")
+		expect(cancelSpy).not.toHaveBeenCalled()
 		createSpy.mockRestore()
 	})
 	// kilocode_change end

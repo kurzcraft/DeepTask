@@ -62,6 +62,7 @@ import { findLast } from "../../shared/array"
 import { supportPrompt } from "../../shared/support-prompt"
 import { GlobalFileNames } from "../../shared/globalFileNames"
 import { Mode, defaultModeSlug, getModeBySlug } from "../../shared/modes"
+import { isEvolveSlug, resolveLatestEvolve, parseEvolveVersion } from "../../shared/evolve-upgrade"
 import { experimentDefault } from "../../shared/experiments"
 import { formatLanguage } from "../../shared/language"
 import { WebviewMessage } from "../../shared/WebviewMessage"
@@ -1007,6 +1008,42 @@ export class ClineProvider
 		}
 	}
 
+	// kilocode_change start: subagent lifecycle cleanup (ghost resurrection fix)
+	/**
+	 * Removes a settled subagent (or any background task) from clineStack by
+	 * taskId WITHOUT touching the stack top. Previously nothing ever removed
+	 * background subagents: they were unshift()ed by addBackgroundClineToStack
+	 * and stayed in the stack forever. After the parent popped itself off, a
+	 * leftover subagent instance silently became the "current task" — the ghost
+	 * conversation that could not be closed, sometimes resumed on its own, and
+	 * confused follow-up message routing.
+	 *
+	 * Safe by design:
+	 * - Never aborts the task (the caller handles lifecycle; this is pure
+	 *   stack hygiene).
+	 * - Detaches the provider event listeners so a late emit cannot re-enter
+	 *   task creation flows.
+	 */
+	removeBackgroundClineFromStack(taskId: string): boolean {
+		const index = this.clineStack.findIndex((task) => task.taskId === taskId)
+		if (index === -1) {
+			return false
+		}
+		const [task] = this.clineStack.splice(index, 1)
+		try {
+			task.emit(RooCodeEventName.TaskUnfocused)
+		} catch {
+			// non-fatal
+		}
+		const cleanupFunctions = this.taskEventListeners.get(task)
+		if (cleanupFunctions) {
+			cleanupFunctions.forEach((cleanup) => cleanup())
+			this.taskEventListeners.delete(task)
+		}
+		return true
+	}
+	// kilocode_change end
+
 	async performPreparationTasks(cline: Task) {
 		// LMStudio: We need to force model loading in order to read its context
 		// size; we do it now since we're starting a task with that model selected.
@@ -1694,6 +1731,28 @@ export class ClineProvider
 				historyItem.mode = defaultModeSlug
 			}
 
+			// kilocode_change start: evolve lineage auto-upgrade on history
+			// restore. An old evolve-N conversation must land on the newest
+			// installed evolve mode, ranked by NAME version ("Evolve-12"), not
+			// by slug digit (slug digits drifted from the lineage: slug
+			// evolve-11 = name "Evolve-10" is OLDER than slug evolve-10 =
+			// name "Evolve-12"). Root conversations only — subagent/child
+			// history keeps its dispatcher-assigned mode.
+			if (!historyItem.rootTask && !historyItem.parentTask && isEvolveSlug(historyItem.mode)) {
+				const latest = resolveLatestEvolve(customModes)
+				const currentVersion = parseEvolveVersion(
+					customModes.find((m) => m.slug === historyItem.mode)?.name,
+					historyItem.mode,
+				)
+				if (latest && latest.version > currentVersion && latest.slug !== historyItem.mode) {
+					this.log(
+						`[evolve-upgrade] history task ${historyItem.id}: ${historyItem.mode} -> ${latest.slug} (Evolve-${latest.version})`,
+					)
+					historyItem.mode = latest.slug
+				}
+			}
+			// kilocode_change end
+
 			await this.updateGlobalState("mode", historyItem.mode)
 
 			// Load the saved API config for the restored mode if it exists.
@@ -1790,6 +1849,19 @@ export class ClineProvider
 		} = await this.getState()
 
 		const shouldStartTask = options?.startTask ?? true
+		// kilocode_change start: subagent rehydration continuity. A history item
+		// whose taskId matches a live parallel-subagent session must rebuild its
+		// Task WITH the subagent descriptor — without it the resumed/continued
+		// subagent conversation lost isChildAgent (the parent-owned EXTRA/task
+		// completion gate locked its attempt_completion) and dropped subagent
+		// semantics entirely. The manager keeps the exact spawn-time descriptor.
+		const subagentDescriptor = this.parallelManager.getSession(historyItem.id)?.subagentMeta
+		if (subagentDescriptor) {
+			// Rebind routing to the rehydrated instance so messages land in the
+			// live conversation; keep the original depth/identity fields.
+			subagentDescriptor.manager ??= this.parallelManager
+		}
+		// kilocode_change end
 		const task = new Task({
 			context: this.context, // kilocode_change
 			provider: this,
@@ -1805,6 +1877,7 @@ export class ClineProvider
 			parentTask: historyItem.parentTask,
 			taskNumber: historyItem.number,
 			workspacePath: historyItem.workspace,
+			subagent: subagentDescriptor, // kilocode_change: restore subagent identity
 			onCreated: this.taskCreationCallback,
 			// kilocode_change start
 			// History restoration must start only after this instance is installed in
@@ -3308,6 +3381,8 @@ export class ClineProvider
 			yoloGatekeeperApiConfigId, // kilocode_change: AI gatekeeper for YOLO mode
 			selectedMicrophoneDevice, // kilocode_change: Selected microphone device for STT
 			isBrowserSessionActive,
+			agentSubagentDispatchEnabled, // kilocode_change: parallel subagents toggle
+			agentWorkspaceManagementEnabled, // kilocode_change: parallel workspaces toggle
 		} = await this.getState()
 
 		// kilocode_change start: Get active model for virtual quota fallback UI display
@@ -3446,6 +3521,11 @@ export class ClineProvider
 			commitMessageApiConfigId, // kilocode_change
 			terminalCommandApiConfigId, // kilocode_change
 			autoApprovalEnabled: autoApprovalEnabled ?? true,
+			// kilocode_change start: forward the parallel permission toggles to the
+			// webview (missing here = webview stuck on its local default true).
+			agentSubagentDispatchEnabled: agentSubagentDispatchEnabled ?? true,
+			agentWorkspaceManagementEnabled: agentWorkspaceManagementEnabled ?? true,
+			// kilocode_change end
 			customModes,
 			experiments: experiments ?? experimentDefault,
 			mcpServers: this.mcpHub?.getAllServers() ?? [],
@@ -3710,6 +3790,14 @@ export class ClineProvider
 			alwaysAllowExecute: stateValues.alwaysAllowExecute ?? true,
 			alwaysAllowBrowser: stateValues.alwaysAllowBrowser ?? false,
 			alwaysAllowMcp: stateValues.alwaysAllowMcp ?? false,
+			// kilocode_change start: parallel subagents & workspaces permission toggles.
+			// These two keys MUST be present in getState()/getStateToPostToWebview() —
+			// they were previously missing, so the webview kept its local default
+			// (true) and every toggle bounced back while the backend stayed
+			// undefined (toggles appeared broken).
+			agentSubagentDispatchEnabled: stateValues.agentSubagentDispatchEnabled ?? true,
+			agentWorkspaceManagementEnabled: stateValues.agentWorkspaceManagementEnabled ?? true,
+			// kilocode_change end
 			alwaysAllowModeSwitch: stateValues.alwaysAllowModeSwitch ?? true,
 			alwaysAllowProviderProfileSwitch: stateValues.alwaysAllowProviderProfileSwitch ?? true, // kilocode_change
 			alwaysAllowSubtasks: stateValues.alwaysAllowSubtasks ?? true,
@@ -4756,6 +4844,30 @@ export class ClineProvider
 				)
 				return
 			}
+		}
+		// kilocode_change end
+
+		// kilocode_change start: never rehydrate a cancelled SUBAGENT task.
+		// Cancelling a focused subagent used to fall through to the generic
+		// createTaskWithHistoryItem rehydrate path below, which rebuilt the
+		// subagent as the new "current task" — the cancelled agent came back
+		// to life as a ghost conversation the user could not close. A
+		// cancelled subagent should simply be gone: evict it from the stack
+		// and refresh the UI.
+		// DEFECT S round 2 (9.2.7): the manager must also learn about the
+		// cancellation. The old flow only evicted the stack instance; the
+		// parallel session stayed "running" (folder rail spinners forever) and
+		// the parent's dispatch_subagents allSettled waited indefinitely when
+		// the child's runPromise never settled. parallelManager.cancel()
+		// aborts (already done above, no-op if aborted), arms the
+		// force-settle watchdog, flips status to cancelled, and broadcasts.
+		if (task.subagent) {
+			this.parallelManager?.cancel(task.subagent.sessionId)
+			this.removeBackgroundClineFromStack(task.taskId)
+			await this.parallelManager?.broadcast().catch(() => undefined)
+			await this.postStateToWebview()
+			await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
+			return
 		}
 		// kilocode_change end
 

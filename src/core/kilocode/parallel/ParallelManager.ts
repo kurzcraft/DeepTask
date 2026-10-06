@@ -18,6 +18,7 @@ import type {
 	ParallelSession,
 	ParallelWorkspace,
 } from "@roo-code/types"
+import { RooCodeEventName } from "@roo-code/types"
 
 import type { ClineProvider } from "../../webview/ClineProvider"
 import { Task } from "../../task/Task"
@@ -58,6 +59,25 @@ interface SessionState {
 	info: ParallelSession
 	messages: ClineMessage[]
 	task?: Task
+	// kilocode_change start: subagent lifecycle continuity across rehydration.
+	// The exact subagent descriptor handed to Task.create at spawn time
+	// (sessionId already re-keyed to the child's taskId). createTaskWithHistoryItem
+	// reads it back so a resumed/continued subagent conversation rebuilds its Task
+	// WITH the subagent flag (isChildAgent) — without it the parent-owned
+	// EXTRA/task completion gate locked the child's attempt_completion and the
+	// child lost subagent semantics entirely.
+	subagentMeta?: Task["subagent"]
+	// Resolves the raced `done` promise when cancel()'s watchdog force-settles a
+	// subagent whose runPromise never settles after abortTask() (defect: parent
+	// stuck without Continue/Cancel buttons waiting on allSettled forever).
+	forceSettle?: () => void
+	// kilocode_change: set when the watchdog has already force-settled this
+	// session; the late-arriving runPromise settlement chain reads it to skip
+	// overwriting the force-settled cancelled status or evicting a Task that
+	// markSessionRunning re-bound for an explicit user Continue (DEFECT S r2).
+	forceSettled?: boolean
+	// kilocode_change end
+	// kilocode_change end
 }
 
 export type { SessionState as ParallelSessionState }
@@ -184,6 +204,14 @@ export class ParallelManager {
 			apiConfiguration: childApiConfig,
 			task: spec.task,
 			workspacePath,
+			// kilocode_change start: DEFECT W — persist lineage ids into taskHistory
+			// so subagent conversations nest under their parent in History. Plain
+			// string overrides (NOT the parentTask Task reference) keep new_task
+			// delegation semantics off; dispatch results still return through the
+			// polling loop / settlement chain.
+			parentTaskIdOverride: parentTask.taskId,
+			rootTaskIdOverride: parentTask.rootTaskId ?? parentTask.taskId,
+			// kilocode_change end
 			enableDiff: parentTask.diffEnabled,
 			enableCheckpoints: parentTask.enableCheckpoints,
 			checkpointTimeout: parentTask.checkpointTimeout,
@@ -232,33 +260,96 @@ export class ParallelManager {
 		}
 		// kilocode_change end
 
-		const done = runPromise
+		// kilocode_change start: keep the exact subagent descriptor so a
+		// rehydrated (continued) subagent conversation can rebuild its Task with
+		// the subagent flag intact (isChildAgent keeps the EXTRA/task gate off
+		// the child and keeps subagent semantics after resume).
+		state.subagentMeta = child.subagent
+		// kilocode_change end
+
+		// kilocode_change start: DEFECT S3 — interrupting the PARENT's dispatch
+		// tool call aborts the parent task, but the child-cancellation only
+		// lived in the dispatch tool's execute() polling loop. A host-side
+		// interrupt abandons that promise, so in-process children kept
+		// reasoning with a dead cancel button. Bind event-driven cleanup here:
+		// the moment the parent emits TaskAborted, this child gets cancelled.
+		this.bindParentAbortCleanup(parentTask, child.taskId)
+		// kilocode_change end
+
+		// kilocode_change start: raced done promise — cancel()'s watchdog can
+		// force-settle a subagent whose runPromise never settles after abort.
+		// Once the real settlement chain settles first, the resolver becomes a
+		// no-op. `done` awaits the FULL settlement chain (status writeback +
+		// stack eviction + workspace release), so awaiting done guarantees the
+		// child is fully cleaned up — not merely that runPromise resolved.
+		let settleDone: () => void
+		// kilocode_change start: settled guard (DEFECT S round 2, 9.2.7).
+		// cancel()'s force-settle watchdog flips status to cancelled and
+		// resolves `done` so the parent's allSettled cannot hang. When the real
+		// runPromise settles LATER, its handlers used to overwrite the
+		// force-settled cancelled status back to completed, and evicted a Task
+		// instance that markSessionRunning had re-bound for an explicit user
+		// Continue (killing the live conversation = ghost reborn). Guard both.
+		const settlementChain = runPromise
 			.then(() => {
-				state.info.status = "completed"
-				state.info.result = this.extractResult(state)
+				if (!state.forceSettled) {
+					state.info.status = "completed"
+					state.info.result = this.extractResult(state)
+				}
 			})
 			.catch((error) => {
-				state.info.status = child.abort ? "cancelled" : "error"
-				state.info.error = error instanceof Error ? error.message : String(error)
-				state.info.result = this.extractResult(state)
+				if (!state.forceSettled) {
+					state.info.status = child.abort ? "cancelled" : "error"
+					state.info.error = error instanceof Error ? error.message : String(error)
+					state.info.result = this.extractResult(state)
+				}
 			})
 			.finally(() => {
-				state.info.endedAt = Date.now()
+				if (!state.forceSettled) {
+					state.info.endedAt = Date.now()
+				}
+				// kilocode_change start: ghost resurrection fix — a settled
+				// subagent must leave clineStack immediately. Previously nothing
+				// ever removed background subagent instances, so after the
+				// parent finished, leftover subagent instances became the
+				// "current task" (ghost conversations that reappeared after
+				// manual close and confused message routing).
+				// Evict the ORIGINAL child instance only: a session re-bound to
+				// a rehydrated Task (explicit user Continue via
+				// markSessionRunning) must not lose its live instance to this
+				// stale settlement chain.
+				if (state.task === child) {
+					const provider = this.provider as ClineProvider & {
+						removeBackgroundClineFromStack?: (taskId: string) => boolean
+					}
+					try {
+						provider.removeBackgroundClineFromStack?.(child.taskId)
+					} catch {
+						// stack hygiene is best-effort; never fail settlement
+					}
+				}
+				// kilocode_change end
 				if (spec.workspaceName) {
 					// Release the exclusive claim; merge decisions come after all subagents finish.
 					this.registry.release(spec.workspaceName, "available").catch(() => undefined)
 				}
 				void this.broadcast()
 			})
-
-		void registered.finally(() => {
-			void this.broadcast()
-		})
-		// kilocode_change: expose the child's real taskId as the public session
-		// id — conversations, focusTask, and jumpToSession are all keyed by
-		// child.taskId, while the internal `sa-` key stays for message routing.
-		// getSession() resolves both, so no duplicate map entries are needed.
-		return { sessionId: child.taskId, done }
+	
+			const done = new Promise<void>((resolve) => {
+				settleDone = resolve
+				void settlementChain.then(() => resolve()).catch(() => resolve())
+			})
+			state.forceSettle = () => settleDone()
+	
+			void registered.finally(() => {
+				void this.broadcast()
+			})
+			// kilocode_change: expose the child's real taskId as the public session
+			// id — conversations, focusTask, and jumpToSession are all keyed by
+			// child.taskId, while the internal `sa-` key stays for message routing.
+			// getSession() resolves both, so no duplicate map entries are needed.
+			return { sessionId: child.taskId, done }
 	}
 
 	private extractResult(state: SessionState): string | undefined {
@@ -315,22 +406,128 @@ export class ParallelManager {
 			.catch(() => undefined)
 	}
 
+	// kilocode_change start: stop a subagent from its detail panel (ghost fix).
+	// Old behavior: only `status === "running"` sessions could be stopped, and
+	// even then the aborted child Task stayed in clineStack forever (nothing
+	// removed background subagents), so a manually-closed subagent conversation
+	// resurrected as the "current task" the moment the parent finished — the
+	// panel stop button appeared to do nothing and the ghost never died.
+	// New behavior:
+	//  1. running -> abort the task (abortTask) and let spawn()'s settled
+	//     handler remove it from the stack (removeBackgroundClineFromStack).
+	//  2. already settled (completed/cancelled/error) but still holding a Task
+	//     instance (legacy zombies) -> remove it from the stack right here and
+	//     drop the session entry so the rail stops listing it as a live agent.
 	cancel(sessionId: string): boolean {
-		const state = this.sessions.get(sessionId)
-		if (!state?.task || state.info.status !== "running") {
+		const state = this.getSession(sessionId)
+		if (!state) {
 			return false
 		}
-		void state.task.abortTask(true)
-		return true
+		if (state.info.status === "running" && state.task) {
+			void state.task.abortTask(true)
+			// kilocode_change start: settle watchdog. abortTask() does not
+			// guarantee the child's runPromise settles (e.g. a provider call
+			// stuck mid-stream leaves the recursively-running task pending
+			// forever). The parent's dispatch_subagents waits on allSettled, so
+			// one hung child left the parent without Continue/Cancel buttons
+			// indefinitely. Force-settle after a grace period; the raced done
+			// promise makes the real settlement a no-op when it arrives first.
+			const forceSettle = state.forceSettle
+			if (forceSettle) {
+				setTimeout(() => {
+					if (this.getSession(state.info.sessionId)?.info.status === "running") {
+						state.info.status = state.task?.abort ? "cancelled" : "error"
+						state.info.endedAt = Date.now()
+						// kilocode_change: latch the force-settled flag so the late
+						// runPromise settlement chain cannot overwrite this status
+						// or evict a Task re-bound via markSessionRunning (user
+						// Continue). Intentionally NEVER cleared: after a user
+						// Continue flips the session back to running, the stale
+						// original-child settlement must stay inert forever
+						// (DEFECT S r2, 9.2.7).
+						state.forceSettled = true
+						forceSettle()
+						void this.broadcast()
+					}
+				}, 3_000).unref?.()
+			}			// kilocode_change end
+			return true
+		}
+		// Settled zombie: evict it from the provider stack but KEEP the session
+		// entry (marked cancelled) so the rail keeps tracking this conversation;
+		// a later Continue on that conversation flips it back to running via
+		// markSessionRunning.
+		if (state.task) {
+			const provider = this.provider as ClineProvider & {
+				removeBackgroundClineFromStack?: (taskId: string) => boolean
+			}
+			try {
+				provider.removeBackgroundClineFromStack?.(state.task.taskId)
+			} catch {
+				// best-effort
+			}
+			state.info.status = "cancelled"
+			state.info.endedAt = state.info.endedAt ?? Date.now()
+			void this.broadcast()
+			return true
+		}
+		return false
 	}
+
+	// kilocode_change start: a continued/rehydrated subagent conversation is
+	// running again — flip the tracked session back to running so the folder
+	// rail shows the live icon and stop buttons work, and rebind the live Task
+	// instance (the rehydrated Task object) for message routing.
+	markSessionRunning(sessionId: string, task?: Task): void {
+		const state = this.getSession(sessionId)
+		if (!state) {
+			return
+		}
+		state.info.status = "running"
+		state.info.endedAt = undefined
+		if (task) {
+			state.task = task
+		}
+		void this.broadcast()
+	}
+	// kilocode_change end
 
 	cancelChildrenOf(parentTaskId: string): void {
 		for (const state of this.sessions.values()) {
 			if (state.info.parentTaskId === parentTaskId && state.info.status === "running" && state.task) {
-				void state.task.abortTask(true)
+				// kilocode_change: route through cancel() so each child gets the
+				// force-settle watchdog + status writeback + broadcast instead of a
+				// bare abortTask (a hung runPromise used to leave the session
+				// "running" forever and the parent's allSettled stuck).
+				this.cancel(state.info.sessionId)
 			}
 		}
 	}
+
+	// kilocode_change start: DEFECT S3 (9.2.7) — interrupting a dispatch tool
+	// call aborts the PARENT task, but the only child-cancellation path lived
+	// inside the dispatch tool's execute() polling loop; a host-side interrupt
+	// abandons that promise, so in-process children of the MAIN workspace kept
+	// reasoning with a dead cancel button (the interrupt flow also disturbed
+	// clineStack/focus state the chat cancel path depends on). The design axiom
+	// (user interrupt = terminal intent) requires event-driven cleanup: the
+	// moment the parent task emits TaskAborted, cancel every still-running
+	// child session — no polling, no UI focus, no execute liveness needed.
+	bindParentAbortCleanup(parentTask: Task, childSessionId: string): void {
+		const onParentAborted = () => {
+			const state = this.getSession(childSessionId)
+			if (state?.info.status === "running") {
+				this.cancel(childSessionId)
+			}
+		}
+		// Task extends EventEmitter in production; the typeof guard only
+		// tolerates plain-object parent mocks in tests (never skips the real
+		// path, since a real Task always has .once).
+		if (typeof parentTask.once === "function") {
+			parentTask.once(RooCodeEventName.TaskAborted, onParentAborted)
+		}
+	}
+	// kilocode_change end
 
 	/**
 	 * Sidebar folders are the user-opened project roots only. Git worktrees

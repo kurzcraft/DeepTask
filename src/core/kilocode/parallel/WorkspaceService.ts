@@ -183,6 +183,28 @@ export class WorkspaceService {
 		await this.ensureGitExclude(repoRoot)
 
 		let branch = `deeptask/${name}`
+		// kilocode_change start: DEFECT V2 — an interrupted/cancelled write
+		// subagent's cleanup can remove the worktree directory while leaving
+		// the branch behind, and git's LOCALIZED error text (e.g. Chinese
+		// "一个分支名 ... 已经存在") evades the English leftover regex below,
+		// so the next same-name create fails permanently (the dispatch failed
+		// with "writer-worktree" until the branch was deleted by hand). Probe
+		// the branch explicitly (locale-independent) and delete true leftovers
+		// — branches no worktree has checked out and no registry entry owns.
+		const branchSha = await gitAtRoot
+			.raw(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])
+			.catch(() => "")
+		if (branchSha && branchSha.trim().length > 0) {
+			const porcelain = await gitAtRoot.raw(["worktree", "list", "--porcelain"]).catch(() => "")
+			const checkedOut = porcelain
+				.split("\n")
+				.some((line) => line.trim() === `branch ${branch}`)
+			const registered = await this.registry.get(name)
+			if (!checkedOut && !registered) {
+				await gitAtRoot.raw(["branch", "-D", branch]).catch(() => undefined)
+			}
+		}
+		// kilocode_change end
 		try {
 			await gitAtRoot.raw(["worktree", "add", "-b", branch, wtPath, startPoint])
 		} catch (error) {

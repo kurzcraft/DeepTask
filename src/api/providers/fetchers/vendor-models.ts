@@ -6,15 +6,18 @@ import {
   type ModelRecord,
   cerebrasModels,
   deepSeekModels,
+  deepSeekSupportsImagesDynamic,
   groqModels,
   internationalZAiModels,
   mainlandZAiModels,
   mistralModels,
   NATIVE_TOOL_DEFAULTS,
+  xaiModels,
+  xaiInferModelInfo,
   zaiApiLineConfigs,
 } from "@roo-code/types"
 
-export type DiscoverableVendor = "deepseek" | "groq" | "mistral" | "cerebras" | "zai"
+export type DiscoverableVendor = "deepseek" | "groq" | "mistral" | "cerebras" | "zai" | "xai"
 
 const VENDOR_CONFIG: Record<
   DiscoverableVendor,
@@ -39,6 +42,10 @@ const VENDOR_CONFIG: Record<
   zai: {
     baseUrl: zaiApiLineConfigs.international_coding.baseUrl,
     staticModels: { ...internationalZAiModels, ...mainlandZAiModels },
+  },
+  xai: {
+    baseUrl: "https://api.x.ai/v1",
+    staticModels: xaiModels,
   },
 }
 
@@ -73,14 +80,14 @@ export async function getVendorModels(
   apiKey?: string,
   baseUrl?: string,
 ): Promise<ModelRecord> {
-  if (!apiKey?.trim()) {
-    throw new Error(`${provider} API key is required to refresh models`)
-  }
-
+  // kilocode_change (defect T, 9.2.8): anonymous discovery — most vendor
+  // /models endpoints answer without authentication. Do not throw when the
+  // key is empty; just omit the Authorization header. Authenticated calls
+  // (when a key exists) may see account-specific availability on top.
   const config = VENDOR_CONFIG[provider]
   const resolvedBaseUrl = (baseUrl?.trim() || config.baseUrl).replace(/\/+$/, "")
   const response = await axios.get(`${resolvedBaseUrl}/models`, {
-    headers: { Authorization: `Bearer ${apiKey.trim()}` },
+    headers: apiKey?.trim() ? { Authorization: `Bearer ${apiKey.trim()}` } : {},
     timeout: 10_000,
   })
   const remoteModels = Array.isArray(response.data?.data)
@@ -112,6 +119,19 @@ export async function getVendorModels(
     }
   }
 
+  // kilocode_change: capability inference for ids missing from the static
+  // table, so newly released generations (deepseek-v4.2, grok-4.7, ...) get
+  // correct vision/tool metadata without waiting for a static-table release.
+  const inferVendorCapabilities = (id: string): Partial<ModelInfo> | undefined => {
+    if (provider === "deepseek" && deepSeekSupportsImagesDynamic(id)) {
+      return { supportsImages: true, contextWindow: 1_000_000, maxTokens: 32_768 }
+    }
+    if (provider === "xai") {
+      return xaiInferModelInfo(id)
+    }
+    return undefined
+  }
+
   for (const remoteModel of remoteModels) {
     if (!remoteModel || typeof remoteModel.id !== "string" || !remoteModel.id.trim()) {
       continue
@@ -119,6 +139,9 @@ export async function getVendorModels(
 
     const id = remoteModel.id.trim()
     const staticInfo = config.staticModels[id]
+    // kilocode_change: apply capability inference only for ids NOT in the
+    // static table (static entries win; inference fills the gaps).
+    const inferredInfo = staticInfo ? undefined : inferVendorCapabilities(id)
     const remoteContextWindow = getFirstPositiveNumber(
       remoteModel.contextWindow,
       remoteModel.context_window,
@@ -150,6 +173,7 @@ export async function getVendorModels(
 
     models[id] = inferZaiReasoning(id, {
       ...UNKNOWN_VENDOR_MODEL_DEFAULTS,
+      ...inferredInfo,
       ...staticInfo,
       ...(remoteContextWindow ? { contextWindow: remoteContextWindow } : {}),
       ...(remoteMaxTokens ? { maxTokens: remoteMaxTokens } : {}),

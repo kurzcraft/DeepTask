@@ -1,7 +1,7 @@
 // kilocode_change - file added
 
 import { ApiHandlerCreateMessageMetadata, SingleCompletionHandler } from ".."
-import { ApiHandlerOptions } from "../../shared/api"
+import { ApiHandlerOptions, GetModelsOptions } from "../../shared/api"
 import { calculateApiCostOpenAI } from "../../shared/cost"
 import { RouterProvider } from "./router-provider"
 
@@ -97,7 +97,13 @@ export class InceptionLabsHandler extends RouterProvider implements SingleComple
 	}
 
 	public override async fetchModel() {
-		this.models = await getModels({ provider: this.name, apiKey: this.client.apiKey, baseUrl: this.client.baseURL })
+		// kilocode_change: cast — this.name is a RouterName and the union
+		// distribution in GetModelsOptions cannot accept it structurally.
+		this.models = await getModels({
+			provider: this.name,
+			apiKey: this.client.apiKey,
+			baseUrl: this.client.baseURL,
+		} as GetModelsOptions)
 		return this.getModel()
 	}
 

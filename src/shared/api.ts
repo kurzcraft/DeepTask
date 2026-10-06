@@ -186,6 +186,7 @@ const dynamicProviderExtras = {
 	mistral: {} as { apiKey?: string; baseUrl?: string },
 	cerebras: {} as { apiKey?: string; baseUrl?: string },
 	zai: {} as { apiKey?: string; baseUrl?: string },
+	xai: {} as { apiKey?: string; baseUrl?: string }, // kilocode_change: xAI discoverable vendor
 	// kilocode_change end
 	openrouter: {} as {}, // eslint-disable-line @typescript-eslint/no-empty-object-type
 	"vercel-ai-gateway": {} as {}, // eslint-disable-line @typescript-eslint/no-empty-object-type

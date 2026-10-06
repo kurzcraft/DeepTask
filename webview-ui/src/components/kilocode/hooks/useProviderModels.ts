@@ -111,7 +111,13 @@ export const getModelsByProvider = ({
 		}
 		case "xai": {
 			return {
-				models: xaiModels,
+				// kilocode_change: DEFECT T2 — merge the discovered catalog on top
+				// of the static one (same additive pattern as deepseek) so newly
+				// detected ids appear in the chat dropdown.
+				models: {
+					...xaiModels,
+					...(routerModels.xai ?? {}),
+				},
 				defaultModel: xaiDefaultModelId,
 			}
 		}

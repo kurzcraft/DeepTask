@@ -45,6 +45,14 @@ import { getNanoGptModels } from "./nano-gpt" //kilocode_change
 
 const memoryCache = new NodeCache({ stdTTL: 5 * 60, checkperiod: 5 * 60 })
 
+// kilocode_change start: DEFECT T2 — anonymous disk cache must expire. Without a
+// TTL, a stale xai_models.json / deepseek_models.json on disk is served forever
+// and newly released models (e.g. grok-4.7) never appear. 24h matches the daily
+// cadence of vendor catalog updates while still giving offline cold starts a
+// recent snapshot.
+const DISK_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+// kilocode_change end
+
 // Zod schema for validating ModelRecord structure from disk cache
 const modelRecordSchema = z.record(z.string(), modelInfoSchema)
 
@@ -148,6 +156,7 @@ async function fetchModelsFromProvider(options: GetModelsOptions): Promise<Model
 		case "mistral":
 		case "cerebras":
 		case "zai":
+		case "xai": // kilocode_change: xAI discoverable vendor
 			models = await getVendorModels(provider, options.apiKey, options.baseUrl)
 			break
 		// kilocode_change end
@@ -361,6 +370,18 @@ export async function initializeModelCacheRefresh(): Promise<void> {
 			{ provider: "io-intelligence", options: { provider: "io-intelligence" } }, // kilocode_change: Add io-intelligence to background refresh
 			{ provider: "ovhcloud", options: { provider: "ovhcloud" } }, // kilocode_change: Add ovhcloud to background refresh
 			{ provider: "litellm", options: { provider: "litellm" } }, // kilocode_change: Add litellm to background refresh
+			// kilocode_change start: DEFECT T2 — discoverable vendors are fetched
+			// anonymously (getVendorModels allows missing keys), so refresh them at
+			// startup too. This is what pulls brand-new ids (grok-4.7, deepseek
+			// 4.1) into the catalog on every extension restart, even when the user
+			// never opens the provider settings page.
+			{ provider: "deepseek", options: { provider: "deepseek" } },
+			{ provider: "zai", options: { provider: "zai" } },
+			{ provider: "xai", options: { provider: "xai" } },
+			{ provider: "groq", options: { provider: "groq" } },
+			{ provider: "mistral", options: { provider: "mistral" } },
+			{ provider: "cerebras", options: { provider: "cerebras" } },
+			// kilocode_change end
 		]
 
 		// Refresh each provider in background (fire and forget)
@@ -432,6 +453,14 @@ export function getModelsFromCache(
 
 		// Use synchronous fs to avoid async complexity in getModel() callers
 		if (fsSync.existsSync(filePath)) {
+			// kilocode_change start: DEFECT T2 — stale anonymous disk cache must expire.
+			// Without this check a months-old catalog keeps hiding newly released
+			// models even after extension restarts.
+			const stat = fsSync.statSync(filePath)
+			if (Date.now() - stat.mtimeMs > DISK_CACHE_TTL_MS) {
+				return undefined
+			}
+			// kilocode_change end
 			const data = fsSync.readFileSync(filePath, "utf8")
 			const models = JSON.parse(data)
 

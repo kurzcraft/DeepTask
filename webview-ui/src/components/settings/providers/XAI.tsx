@@ -1,19 +1,29 @@
 import { useCallback } from "react"
 import { VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
 
-import type { ProviderSettings } from "@roo-code/types"
+import {
+	type ModelInfo,
+	type ProviderSettings,
+	type RouterModels,
+	xaiDefaultModelId,
+	xaiModels,
+	xaiInferModelInfo,
+} from "@roo-code/types"
 
 import { useAppTranslation } from "@src/i18n/TranslationContext"
 import { VSCodeButtonLink } from "@src/components/common/VSCodeButtonLink"
 
 import { inputEventTransform } from "../transforms"
+import { DynamicVendorModelSettings } from "./DynamicVendorModelSettings"
 
 type XAIProps = {
 	apiConfiguration: ProviderSettings
 	setApiConfigurationField: (field: keyof ProviderSettings, value: ProviderSettings[keyof ProviderSettings]) => void
+	simplifySettings?: boolean
+	routerModels?: RouterModels
 }
 
-export const XAI = ({ apiConfiguration, setApiConfigurationField }: XAIProps) => {
+export const XAI = ({ apiConfiguration, setApiConfigurationField, routerModels }: XAIProps) => {
 	const { t } = useAppTranslation()
 
 	const handleInputChange = useCallback(
@@ -25,6 +35,14 @@ export const XAI = ({ apiConfiguration, setApiConfigurationField }: XAIProps) =>
 				setApiConfigurationField(field, transform(event as E))
 			},
 		[setApiConfigurationField],
+	)
+
+	// kilocode_change: capability inference for detected ids missing from the
+	// static table — newer grok generations get vision/tool metadata
+	// automatically.
+	const inferModelInfo = useCallback(
+		(modelId: string): Partial<ModelInfo> | undefined => xaiInferModelInfo(modelId),
+		[],
 	)
 
 	return (
@@ -45,6 +63,16 @@ export const XAI = ({ apiConfiguration, setApiConfigurationField }: XAIProps) =>
 					{t("settings:providers.getXaiApiKey")}
 				</VSCodeButtonLink>
 			)}
+			<DynamicVendorModelSettings
+				provider="xai"
+				defaultModelId={xaiDefaultModelId}
+				staticModels={xaiModels}
+				remoteModels={routerModels?.xai}
+				apiKey={apiConfiguration.xaiApiKey}
+				apiConfiguration={apiConfiguration}
+				setApiConfigurationField={setApiConfigurationField}
+				inferModelInfo={inferModelInfo}
+			/>
 		</>
 	)
 }

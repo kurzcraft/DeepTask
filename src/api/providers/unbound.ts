@@ -3,7 +3,7 @@ import OpenAI from "openai"
 
 import { unboundDefaultModelId, unboundDefaultModelInfo } from "@roo-code/types"
 
-import type { ApiHandlerOptions } from "../../shared/api"
+import type { ApiHandlerOptions, GetModelsOptions } from "../../shared/api"
 
 import { ApiStream, ApiStreamUsageChunk } from "../transform/stream"
 import { convertToOpenAiMessages } from "../transform/openai-format"
@@ -55,7 +55,13 @@ export class UnboundHandler extends RouterProvider implements SingleCompletionHa
 	}
 
 	public override async fetchModel() {
-		this.models = await getModels({ provider: this.name, apiKey: this.client.apiKey, baseUrl: this.client.baseURL })
+		// kilocode_change: cast — this.name is a RouterName and the union
+		// distribution in GetModelsOptions cannot accept it structurally.
+		this.models = await getModels({
+			provider: this.name,
+			apiKey: this.client.apiKey,
+			baseUrl: this.client.baseURL,
+		} as GetModelsOptions)
 		return this.getModel()
 	}
 

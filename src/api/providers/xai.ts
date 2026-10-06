@@ -1,7 +1,7 @@
 import { Anthropic } from "@anthropic-ai/sdk"
 import OpenAI from "openai"
 
-import { type XAIModelId, xaiDefaultModelId, xaiModels, ApiProviderError } from "@roo-code/types"
+import { type XAIModelId, xaiDefaultModelId, xaiModels, xaiInferModelInfo, ApiProviderError } from "@roo-code/types"
 import { TelemetryService } from "@roo-code/telemetry"
 
 import { NativeToolCallParser } from "../../core/assistant-message/NativeToolCallParser"
@@ -40,12 +40,13 @@ export class XAIHandler extends BaseProvider implements SingleCompletionHandler 
 	}
 
 	override getModel() {
-		const id =
-			this.options.apiModelId && this.options.apiModelId in xaiModels
-				? (this.options.apiModelId as XAIModelId)
-				: xaiDefaultModelId
-
-		const info = xaiModels[id]
+		// kilocode_change: unknown ids (new grok generations typed by the user,
+		// e.g. grok-4.7 / grok-5) must NOT silently fall back to the default —
+		// pass the id through with inferred capability info so the request hits
+		// the model the user actually selected.
+		const id = this.options.apiModelId || xaiDefaultModelId
+		const staticInfo = id in xaiModels ? xaiModels[id as XAIModelId] : undefined
+		const info = staticInfo ?? { ...xaiModels[xaiDefaultModelId], ...xaiInferModelInfo(id) }
 		const params = getModelParams({ format: "openai", modelId: id, model: info, settings: this.options })
 		return { id, info, ...params }
 	}

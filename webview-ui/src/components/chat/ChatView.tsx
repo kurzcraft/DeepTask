@@ -669,6 +669,13 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							setEnableButtons(false)
 							setPrimaryButtonText(undefined)
 							setSecondaryButtonText(undefined)
+							// kilocode_change: a new API round-trip must also reset the
+							// cancel-click flag. Without this, a Cancel clicked during a
+							// previous round (e.g. while a dispatched subagent ran) keeps
+							// didClickCancel=true and the NEXT round's Cancel button stays
+							// permanently grayed (isStreaming && !didClickCancel can never
+							// re-enable it).
+							setDidClickCancel(false)
 							break
 						case "command_output":
 							// kilocode_change start
@@ -989,6 +996,44 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			return false
 		}
 
+		// kilocode_change start: tool-execution window counts as streaming.
+		// After a model turn ends (api_req_started.text carries a cost) a tool
+		// may run for minutes (dispatch_subagents blocking on children, long
+		// commands, MCP calls). During that window the last row is a settled
+		// say/answered ask with NO new api_req_started and NO pending ask —
+		// every branch above returns false and the action row disappears
+		// entirely (the "no Proceed/Cancel while stopping a subagent" freeze).
+		// Keep Cancel available whenever the last visible row belongs to the
+		// current model turn (it arrived after the last cost-bearing
+		// api_req_started) — i.e. the turn is still executing tools.
+		//
+		// An ANSWERED ask row must count too: dispatch_subagents first asks
+		// "tool" and gets auto-approved (yolo / always-allow), so during the
+		// whole blocked execution the last row stays that answered ask while
+		// clineAsk is already undefined — excluding it by type alone hid every
+		// button for the entire dispatch wait (S4: no Cancel on the parent).
+		const lastVisibleRow = modifiedMessages.at(-1)
+		const isAnsweredAskRow =
+			!!lastVisibleRow && lastVisibleRow.type === "ask" && clineAsk === undefined
+		const isToolExecutionWindow =
+			!!lastApiReqStarted &&
+			lastApiReqStarted.text !== null &&
+			lastApiReqStarted.text !== undefined &&
+			!!lastVisibleRow &&
+			(lastVisibleRow.type !== "ask" || isAnsweredAskRow) &&
+			lastVisibleRow.ts > lastApiReqStarted.ts &&
+			!lastVisibleRow.partial &&
+			lastVisibleRow.say !== "completion_result" &&
+			lastVisibleRow.say !== "api_req_finished" &&
+			lastVisibleRow.say !== "api_req_retry_delayed" &&
+			lastVisibleRow.say !== "api_req_rate_limit_wait" &&
+			lastVisibleRow.say !== "error" &&
+			lastVisibleRow.say !== "text"
+		if (isToolExecutionWindow) {
+			return true
+		}
+		// kilocode_change end
+
 		// A settled command can leave the preceding API request row unfinished until
 		// the final tool result is persisted. It must not keep the action row in a
 		// streaming/cancel state after the command exit barrier has closed.
@@ -1052,6 +1097,13 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		setSelectedImages([])
 		setClineAsk(undefined)
 		setEnableButtons(false)
+		// kilocode_change: DEFECT S5 — conversation switches reuse this single
+		// ChatView instance; a Cancel clicked in subagent A's view left
+		// didClickCancel=true, so switching to subagent B rendered its Cancel
+		// button permanently grayed (!(isStreaming && !didClickCancel) can
+		// never re-enable it). Reset the click flag at every conversation
+		// boundary, same semantics as the api_req_started reset.
+		setDidClickCancel(false)
 		// Do not reset mode here as it should persist.
 		// setPrimaryButtonText(undefined)
 		// setSecondaryButtonText(undefined)
@@ -1706,11 +1758,18 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 					break
 				}
 				case "condenseTaskContextStarted":
+					// kilocode_change start: cross-conversation guard. Parallel
+					// conversations make the old "only one active task" assumption
+					// false: a background conversation condensing must not light
+					// the condensing indicator nor block the focused view. The
+					// payload IS the condensing task's id; when the focused
+					// currentTaskItem is known and differs, ignore the event.
+					// Legacy/unknown focused id keeps the old trusting behavior.
+					if (message.text && currentTaskItem?.id && message.text !== currentTaskItem.id) {
+						break
+					}
+					// kilocode_change end
 					// Handle both manual and automatic condensation start
-					// We don't check the task ID because:
-					// 1. There can only be one active task at a time
-					// 2. Task switching resets isCondensing to false (see useEffect with task?.ts dependency)
-					// 3. For new tasks, currentTaskItem may not be populated yet due to async state updates
 					if (message.text) {
 						setIsCondensing(true)
 						// Note: sendingDisabled is only set for manual condensation via handleCondenseContext
@@ -1718,7 +1777,14 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 					}
 					break
 				case "condenseTaskContextResponse":
-					// Same reasoning as above - we trust this is for the current task
+					// kilocode_change start: same cross-conversation guard — a
+					// background conversation finishing its condensation must
+					// not clear the focused conversation's indicator or re-
+					// enable sending while it is still condensing.
+					if (message.text && currentTaskItem?.id && message.text !== currentTaskItem.id) {
+						break
+					}
+					// kilocode_change end
 					if (message.text) {
 						if (isCondensing && sendingDisabled) {
 							setSendingDisabled(false)
@@ -2187,9 +2253,14 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const handleTouchMove = useCallback(
 		(event: Event) => {
 			const touchY = (event as TouchEvent).touches[0]?.clientY
-			// kilocode_change: release on BOTH touch directions — scrolling down
-			// away from a pinned jump must also unpin.
-			if (touchY !== undefined && lastTouchYRef.current !== undefined && touchY !== lastTouchYRef.current) {
+			// kilocode_change: direction-aware release — a finger moving toward
+			// newer output (clientY decreasing) KEEPS following, only moving
+			// toward older output (clientY increasing) releases. The old
+			// both-directions release fought the established spec semantics
+			// (see ChatView.spec "keeps following when a touch gesture moves
+			// toward newer output"); pinned jumps are still freed when the
+			// user reaches the bottom via atBottomStateChange.
+			if (touchY !== undefined && lastTouchYRef.current !== undefined && touchY > lastTouchYRef.current) {
 				releaseOutputFollowing(event.target)
 			}
 			lastTouchYRef.current = touchY
@@ -2471,6 +2542,21 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		!!lastMessage &&
 		lastMessage.partial !== true &&
 		(lastMessage.say === "completion_result" || lastMessage.ask === "completion_result")
+	// kilocode_change start: DEFECT S6 — dispatch-wait Proceed fallback flag.
+	// While dispatch_subagents blocks, S4's answered-ask rule keeps isStreaming
+	// true but primaryButtonText is wiped, so Cancel falls into its wide
+	// flex-[2] branch while the S5 Proceed fallback stays flex-1 — the pair
+	// renders 2:1 asymmetric. Hoist the fallback predicate so the Cancel
+	// className can share it and keep the pair symmetric 1:1.
+	const dispatchProceedFallbackVisible =
+		!primaryButtonText &&
+		!secondaryButtonText &&
+		isStreaming &&
+		clineAsk === undefined &&
+		lastMessage?.type === "ask" &&
+		!lastMessageIsSettledCompletion &&
+		!deadLetterForceControls
+	// kilocode_change end
 	// (deadLetter refs/state/armDeadLetterWatchdog are declared at the top of
 	// the component so click handlers can arm them before this derivation.)
 	// Resolve the armed timer. Host progress is defined strictly: streaming
@@ -2808,13 +2894,32 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 										</Button>
 									</StandardTooltip>
 								)}
-								{!showScrollToBottom && (
-									<>
-										{/* Keep Continue/Run visible even if a stale api_req_started
-									    still marks isStreaming true. Hiding the primary button
-									    leaves only Cancel during long commands. */}
-										{primaryButtonText && (!isStreaming || clineAsk === "command_output") && (
-											<StandardTooltip
+							{!showScrollToBottom && (
+								<>
+									{/* kilocode_change start: DEFECT S5 — dispatch-wait Proceed
+									    fallback. While dispatch_subagents blocks, S4's
+									    answered-ask rule keeps isStreaming true (Cancel shows)
+									    but primaryButtonText was wiped by the answered-ask
+									    effect, leaving a lone Cancel with no Proceed. Render a
+									    Proceed (queued-continue via terminalOperation) whenever
+									    the last row is an ANSWERED ask with no button texts —
+									    exactly the tool-execution window. Skip when the
+									    dead-letter watchdog already forces its own row. */}
+									{dispatchProceedFallbackVisible && (
+										<StandardTooltip content={t("chat:proceedWhileRunning.tooltip")}>
+											<Button
+												data-testid="dispatch-proceed-fallback"
+												className="flex-1 mr-[6px]"
+												onClick={() => handleWatchdogProceed()}>
+												{t("chat:proceedWhileRunning.title")}
+											</Button>
+										</StandardTooltip>
+									)}
+									{/* kilocode_change end */}
+									{/* Keep Continue/Run visible even if a stale api_req_started
+								    still marks isStreaming true. Hiding the primary button
+								    leaves only Cancel during long commands. */}
+									{primaryButtonText && (!isStreaming || clineAsk === "command_output") && (<StandardTooltip
 												content={
 													primaryButtonText === t("chat:retry.title")
 														? t("chat:retry.tooltip")
@@ -2878,13 +2983,25 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 												!(isStreaming && !didClickCancel) &&
 												!cancelPendingStuck
 											}
-											className={
-												isStreaming
-													? showScrollToBottom
-														? "flex-1 ml-0"
-														: "flex-[2] ml-0"
-													: "flex-1 ml-[6px]"
-											}
+										className={
+											isStreaming
+												? showScrollToBottom
+													? "flex-1 ml-0"
+													: // kilocode_change: when the primary button also renders
+														// (command_output ask: Proceed-While-Running + Cancel),
+														// keep the pair symmetric 1:1 with the shared 6px gap.
+														// The old flex-[2] made Cancel twice as wide as the
+														// proceed button — the reported asymmetry.
+														// DEFECT S6: the S5 dispatch-wait Proceed fallback is
+														// the same situation (a flex-1 sibling rendering next
+														// to Cancel) — include it so the pair stays 1:1 there
+														// too instead of falling into the lone-wide-cancel
+														// flex-[2] branch.
+														primaryButtonText || dispatchProceedFallbackVisible
+													? "flex-1 ml-[6px]"
+													: "flex-[2] ml-0"
+												: "flex-1 ml-[6px]"
+										}
 											onClick={() => handleSecondaryButtonClick(inputValue, selectedImages)}>
 											{isStreaming ? t("chat:cancel.title") : secondaryButtonText}
 										</Button>

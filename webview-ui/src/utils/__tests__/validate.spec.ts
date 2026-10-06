@@ -86,6 +86,7 @@ describe("Model Validation Functions", () => {
 		mistral: {},
 		cerebras: {},
 		zai: {},
+		xai: {}, // kilocode_change: xAI discoverable vendor
 		inception: {},
 		synthetic: {},
 		"sap-ai-core": {},

@@ -113,23 +113,25 @@ describe("DynamicVendorModelSettings", () => {
 		)
 	})
 
-	it("enables current-account discovery after the API key debounce", () => {
+	it("runs anonymous discovery on mount and upgrades to authenticated after the key debounce", () => {
 		renderSettings({ apiProvider: "deepseek", apiModelId: "default-model" })
 
+		// kilocode_change (defect T, 9.2.8): no enabled gate — discovery fires
+		// immediately on mount (anonymous /models), key still empty pre-debounce.
 		expect(useRouterModelsMock).toHaveBeenLastCalledWith(
 			expect.objectContaining({ deepSeekApiKey: "" }),
-			{ provider: "deepseek", enabled: false },
+			{ provider: "deepseek" },
 		)
 
 		act(() => vi.advanceTimersByTime(500))
 
 		expect(useRouterModelsMock).toHaveBeenLastCalledWith(
-		expect.objectContaining({
-			deepSeekApiKey: "unsaved-subscription-key",
-			deepSeekBaseUrl: "https://subscription.example/v1",
-		}),
-		{ provider: "deepseek", enabled: true },
-	)
+			expect.objectContaining({
+				deepSeekApiKey: "unsaved-subscription-key",
+				deepSeekBaseUrl: "https://subscription.example/v1",
+			}),
+			{ provider: "deepseek" },
+		)
 	})
 
 	it("automatically binds detected context metadata to the selected model", () => {
@@ -222,5 +224,49 @@ describe("DynamicVendorModelSettings", () => {
 		expect(screen.getByTestId("vendor-model-status")).toHaveTextContent(
 			"settings:providers.sapAiCore.noModelsFound",
 		)
+	})
+
+	// kilocode_change (defect U, 9.2.8): default model auto-tracks the newest
+	// detected release; a manual user pick is respected; no downgrades.
+	it("auto-applies the newest detected model when the stored id is unset or the static default", () => {
+		useRouterModelsMock.mockReturnValue({
+			data: {
+				deepseek: {
+					"deepseek-chat": { contextWindow: 128_000 },
+					"deepseek-v4.1-flash": { contextWindow: 1_000_000 },
+					"deepseek-v4.2": { contextWindow: 1_000_000 },
+				},
+			},
+			refetch: refetchMock,
+			isFetching: false,
+			isError: false,
+		})
+		const setApiConfigurationField = renderSettings({ apiProvider: "deepseek" })
+
+		act(() => vi.advanceTimersByTime(500))
+
+		// v4.2 (segments 4.2) beats v4.1-flash (4.1) and the digit-less alias.
+		expect(setApiConfigurationField).toHaveBeenCalledWith("apiModelId", "deepseek-v4.2", false)
+	})
+
+	it("never auto-downgrades away from a user-pinned model", () => {
+		useRouterModelsMock.mockReturnValue({
+			data: {
+				deepseek: {
+					"deepseek-v4.1-flash": { contextWindow: 1_000_000 },
+				},
+			},
+			refetch: refetchMock,
+			isFetching: false,
+			isError: false,
+		})
+		const setApiConfigurationField = renderSettings({
+			apiProvider: "deepseek",
+			apiModelId: "deepseek-reasoner-r2", // user's manual choice, newer by version
+		})
+
+		act(() => vi.advanceTimersByTime(500))
+
+		expect(setApiConfigurationField).not.toHaveBeenCalledWith("apiModelId", expect.anything(), expect.anything())
 	})
 })

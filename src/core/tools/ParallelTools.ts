@@ -230,6 +230,26 @@ export class DispatchSubagentsTool extends BaseTool<"dispatch_subagents"> {
 				// kilocode_change: forward the resolved profile name so spawn can
 				// seed the child's sticky identity (banner + persistence).
 				const providerProfileName = overrides.providerProfileName
+					// kilocode_change: needs_workspace === false means READ-ONLY +
+					// share-parent-cwd. It must take ABSOLUTE precedence over the
+					// spec.workspace branch below — models routinely pass BOTH
+					// (e.g. needs_workspace:false + workspace:"main"), and the old
+					// ordering routed them into workspace claim/create, forking a
+					// sibling worktree (main-fork-9) for a task that was explicitly
+					// marked as needing no workspace at all.
+					if (spec.needs_workspace === false) {
+						prepared.push({
+							spec: {
+								label,
+								task: spec.task,
+								mode: modeOverride,
+								apiConfiguration: apiConfigOverride,
+								providerProfileName,
+								sharedWorkspace: true,
+							},
+						})
+						continue
+					}
 					if (spec.workspace && workspaceService) {
 						let claimed = await workspaceService.claim(spec.workspace, `dispatch:${task.taskId}`)
 						if (!claimed) {
@@ -265,11 +285,13 @@ export class DispatchSubagentsTool extends BaseTool<"dispatch_subagents"> {
 						},
 						workspaceName: claimed.name,
 					})
-					} else if (spec.needs_workspace !== false && workspaceService) {
+					} else if (workspaceService) {
 						// kilocode_change: needs_workspace now DEFAULTS TO TRUE — a
 						// dispatched subagent gets its own isolated git workspace
 						// unless the model explicitly marks the task read-only with
-						// needs_workspace:false. Pure-read parallel tasks opt out.
+						// needs_workspace:false. Pure-read parallel tasks opt out
+						// (already handled by the continue branch above), so every
+						// spec reaching here wants an isolated workspace.
 						if ((await provider.getState())?.agentWorkspaceManagementEnabled === false) {
 							failures.push(`${label}: workspace management is disabled; set needs_workspace:false for read-only work.`)
 							continue

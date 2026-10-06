@@ -219,6 +219,44 @@ describe("DispatchSubagentsTool", () => {
 		expect(spec.workspaceName).toBeUndefined()
 	})
 
+	test("needs_workspace:false wins over an explicit workspace field (no sibling fork)", async () => {
+		// kilocode_change: defect G regression — models pass BOTH needs_workspace:false
+		// AND workspace:"main"; the workspace branch used to run first and fork a
+		// sibling worktree (main-fork-9) for an explicitly read-only task.
+		const callbacks = makeCallbacks()
+		const provider = makeProvider({
+			agentSubagentDispatchEnabled: true,
+			agentWorkspaceManagementEnabled: true,
+		})
+		provider.workspaceService = {
+			create: vi.fn(async () => {
+				throw new Error("must not create")
+			}),
+			claim: vi.fn(async () => {
+				throw new Error("must not claim")
+			}),
+		}
+		provider.parallelManager = {
+			folderPathForPath: (cwd: string) => cwd,
+			spawn: vi.fn(() => ({ sessionId: "sa-ro-main", done: Promise.resolve() })),
+			getSession: () => ({
+				info: { label: "reader-main", status: "completed", result: "read ok" },
+			}),
+			cancelChildrenOf: vi.fn(),
+			broadcast: vi.fn(async () => undefined),
+		}
+		await dispatchSubagentsTool.execute(
+			{ tasks: [{ task: "read only in parent cwd", label: "reader-main", needs_workspace: false, workspace: "main" }] },
+			makeTask(provider),
+			callbacks,
+		)
+		expect(provider.workspaceService.create).not.toHaveBeenCalled()
+		expect(provider.workspaceService.claim).not.toHaveBeenCalled()
+		const spec = (provider.parallelManager.spawn as ReturnType<typeof vi.fn>).mock.calls[0][1]
+		expect(spec.workspaceName).toBeUndefined()
+		expect(spec.sharedWorkspace).toBe(true)
+	})
+
 	test("completed write-bearing workspaces auto-merge into the parent workspace", async () => {
 		const callbacks = makeCallbacks()
 		const created = {

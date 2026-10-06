@@ -216,6 +216,14 @@ export interface TaskOptions extends CreateTaskOptions {
 	startTask?: boolean
 	rootTask?: Task
 	parentTask?: Task
+	// kilocode_change start: DEFECT W — explicit id-only lineage for in-process
+	// parallel subagents. Passing the parent Task REFERENCE would activate
+	// new_task delegation semantics (AttemptCompletionTool reopenParentFromDelegation),
+	// which dispatch_subagents does not use. Plain ids keep history lineage
+	// (parentTaskId/rootTaskId persist into taskHistory for hierarchical display)
+	// without triggering the metadata-delegation flow.
+	rootTaskIdOverride?: string
+	parentTaskIdOverride?: string
 	taskNumber?: number
 	onCreated?: (task: Task) => void
 	initialTodos?: TodoItem[]
@@ -245,6 +253,10 @@ export interface TaskOptions extends CreateTaskOptions {
 export interface SubagentMessageSink {
 	recordMessageCreated(sessionId: string, message: ClineMessage): void
 	recordMessageUpdated(sessionId: string, message: ClineMessage): void
+	/** Optional lifecycle hook: the manager flips the tracked session back to
+	 * running and rebinds the live Task instance when a rehydrated/continued
+	 * subagent conversation resumes inference. */
+	markSessionRunning?(sessionId: string, task: Task): void
 }
 
 /** Subagent tasks run sandboxed; their asks are auto-resolved with this state override. */
@@ -716,6 +728,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		startTask = true,
 		rootTask,
 		parentTask,
+		// kilocode_change: DEFECT W id-only lineage overrides (see options comment)
+		rootTaskIdOverride,
+		parentTaskIdOverride,
 		taskNumber = -1,
 		onCreated,
 		initialTodos,
@@ -753,8 +768,14 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		this.taskProgressInstanceId = historyItem?.taskProgressInstanceId
 		this.taskIsFavorited = historyItem?.isFavorited
 		// kilocode_change end
-		this.rootTaskId = historyItem ? historyItem.rootTaskId : rootTask?.taskId
-		this.parentTaskId = historyItem ? historyItem.parentTaskId : parentTask?.taskId
+		this.rootTaskId = historyItem
+			? historyItem.rootTaskId
+			: // kilocode_change: DEFECT W — explicit id overrides win for in-process
+				// subagents so parentTaskId/rootTaskId persist to taskHistory without
+				// activating new_task delegation semantics (which need the Task refs).
+				rootTaskIdOverride ?? rootTask?.taskId
+		this.parentTaskId = historyItem ? historyItem.parentTaskId : parentTaskIdOverride ?? parentTask?.taskId
+		// kilocode_change end
 		this.childTaskId = undefined
 
 		this.metadata = {
@@ -842,7 +863,19 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			this._taskApiConfigName = historyItem.apiConfigName
 			// kilocode_change: sticky model isolation for parallel conversations
 			this._taskApiModelId = historyItem.apiModelId
-			this.taskModeReady = Promise.resolve()
+			// kilocode_change start: evolve auto-upgrade on RESUME. History items
+			// used to lock the persisted mode forever (taskModeReady resolved
+			// immediately), so an old evolve-N conversation NEVER picked up the
+			// latest evolved prompt — the new-task upgrade in initializeTaskMode
+			// was bypassed entirely. Run the same lineage upgrade here (async, so
+			// construction stays synchronous) for ROOT tasks only: subagents and
+			// child tasks keep their dispatcher-assigned mode.
+			if (!this.subagent && !this.parentTaskId && !this.isDelegatedChildProcess) {
+				this.taskModeReady = this.upgradeEvolveModeOnResume(provider)
+			} else {
+				this.taskModeReady = Promise.resolve()
+			}
+			// kilocode_change end
 			this.taskApiConfigReady = Promise.resolve()
 			TelemetryService.instance.captureTaskRestarted(this.taskId)
 
@@ -1021,6 +1054,38 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	 * @param provider - The ClineProvider instance to fetch state from
 	 * @returns Promise that resolves when initialization is complete
 	 */
+	private async upgradeEvolveModeOnResume(provider: ClineProvider): Promise<void> {
+		try {
+			const current = this._taskMode
+			if (!current) {
+				return
+			}
+			const { isEvolveSlug, resolveLatestEvolve, parseEvolveVersion } = await import(
+				"../../shared/evolve-upgrade"
+			)
+			if (!isEvolveSlug(current)) {
+				return
+			}
+			const customModes = (await provider.customModesManager?.getCustomModes?.()) ?? []
+			const currentVersion = parseEvolveVersion(
+				customModes.find((m) => m.slug === current)?.name,
+				current,
+			)
+			const latest = resolveLatestEvolve(customModes)
+			if (!latest || latest.version <= currentVersion || latest.slug === current) {
+				return
+			}
+			this._taskMode = latest.slug
+			provider.log?.(
+				`[evolve-upgrade] resumed task ${this.taskId}: ${current} -> ${latest.slug} (Evolve-${latest.version})`,
+			)
+		} catch (error) {
+			provider.log?.(
+				`[evolve-upgrade] resume upgrade failed: ${error instanceof Error ? error.message : String(error)}`,
+			)
+		}
+	}
+
 	private async initializeTaskMode(provider: ClineProvider): Promise<void> {
 		try {
 			// kilocode_change start: a subagent's explicit mode override wins;
@@ -1037,24 +1102,24 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			// the base "evolve" mode, which the old ^evolve-(\d+)$ regex never
 			// matched) is transparently upgraded to the highest installed evolve-M
 			// mode, so the latest evolved prompt is always active from the first
-			// message. Runs exactly once per new task (initializeTaskMode is only
-			// invoked for new tasks; resumed history tasks keep their recorded
-			// mode). Child agents (subtasks / subagents / delegated child
+			// message. Child agents (subtasks / subagents / delegated child
 			// processes) are excluded: their mode is dictated by the dispatcher.
+			// Ranking uses the NAME version ("Evolve-12") because slug digits have
+			// drifted from the lineage (slug evolve-11 = name "Evolve-10" is OLDER
+			// than slug evolve-10 = name "Evolve-12").
 			if (!this.subagent && !this.parentTaskId && !this.isDelegatedChildProcess) {
-				const currentMatch = /^evolve(?:-(\d+))?$/.exec(mode)
-				if (currentMatch) {
+				const { isEvolveSlug, resolveLatestEvolve, parseEvolveVersion } = await import("../../shared/evolve-upgrade")
+				if (isEvolveSlug(mode)) {
 					try {
 						const customModes = (await provider.customModesManager?.getCustomModes?.()) ?? []
-						let latest = Number(currentMatch[1] ?? 0)
-						for (const candidate of customModes) {
-							const candidateMatch = /^evolve-(\d+)$/.exec(candidate.slug)
-							if (candidateMatch) latest = Math.max(latest, Number(candidateMatch[1]))
-						}
-						if (latest > Number(currentMatch[1] ?? 0)) {
-							const upgraded = `evolve-${latest}`
-							await provider.setMode?.(upgraded)
-							mode = upgraded
+						const currentVersion = parseEvolveVersion(
+							customModes.find((m) => m.slug === mode)?.name,
+							mode,
+						)
+						const latest = resolveLatestEvolve(customModes)
+						if (latest && latest.version > currentVersion && latest.slug !== mode) {
+							await provider.setMode?.(latest.slug)
+							mode = latest.slug
 						}
 					} catch (upgradeError) {
 						// Non-fatal: keep the persisted mode when the upgrade check fails.
@@ -2051,12 +2116,21 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		}
 
 		// kilocode_change start: auto-answer for asks that can never reach a human
-		// (1) Subagents: a resume_task / resume_completed_task ask issued during a
-		// delegated child's history restoration has no user to answer it — the child
-		// would hang forever, blocking dispatch_subagents' allSettled. Self-answer
-		// so the child proceeds autonomously with its original task text.
-		// (2) YOLO mode follow-up questions: auto-select the first suggestion.
-		if (this.subagent && (type === "resume_task" || type === "resume_completed_task")) {
+		// (1) Forked agent-runtime child processes (isDelegatedChildProcess): a
+		// resume_task / resume_completed_task ask issued during a delegated
+		// child's history restoration has no user to answer it — the child
+		// would hang forever, blocking dispatch_subagents' allSettled.
+		// Self-answer so the child proceeds autonomously with its original
+		// task text.
+		// DEFECT S (9.2.8): in-process parallel subagents (this.subagent) were
+		// ALSO auto-answered here, which resurrected a STOPPED subagent the
+		// moment the user merely VIEWED its conversation: rail click ->
+		// focusTask -> createTaskWithHistoryItem -> resumeTaskFromHistory ->
+		// ask(resume_task) -> auto-answered with metadata.task -> inference
+		// restarted with the parent's prompt shown as a user message. In-process
+		// subagent conversations DO have a user (the rail viewer), so they now
+		// keep the normal Resume/Terminate UI instead of silently reviving.
+		if (this.isDelegatedChildProcess && (type === "resume_task" || type === "resume_completed_task")) {
 			const autoAnswer = this.metadata?.task?.slice(0, 200) || "Continue the assigned subagent task."
 			this.handleWebviewAskResponse("messageResponse", autoAnswer, undefined)
 			const result = { response: this.askResponse!, text: autoAnswer, images: undefined }
@@ -2112,9 +2186,17 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// kilocode_change start: parallel subagents never reach the main approval UI;
 		// they run sandboxed in their own workspace (or read-only) so every ask is
 		// resolved automatically using an all-approvals state override.
-		const effectiveState = this.subagent ? subagentAutoApprovalState(state) : state
+		// DEFECT S round 2 (9.2.7): resume_task / resume_completed_task asks for
+		// in-process subagents must NEVER be auto-approved. Auto-approving them is
+		// equivalent to clicking "Continue" on the user's behalf — merely VIEWING a
+		// cancelled subagent conversation (rail click -> focusTask ->
+		// resumeTaskFromHistory -> ask(resume_task)) resurrected its inference.
+		// Design axiom: user cancellation is the terminal intent; the ONLY way a
+		// cancelled subagent runs again is an explicit user "Continue" answer.
+		const isResumeAsk = type === "resume_task" || type === "resume_completed_task"
+		const effectiveState = this.subagent && !isResumeAsk ? subagentAutoApprovalState(state) : state
 		const approval = await checkAutoApproval({ state: effectiveState, ask: type, text, isProtected })
-		if (this.subagent && approval.decision === "ask") {
+		if (this.subagent && approval.decision === "ask" && !isResumeAsk) {
 			if (type === "followup") {
 				// No user will answer a subagent's follow-up; proceed autonomously.
 				this.handleWebviewAskResponse("messageResponse", "Proceed with your best judgment.", undefined)
@@ -3455,6 +3537,15 @@ ${protocolHint}
 		}
 		// kilocode_change end
 
+		// kilocode_change start: subagent resume continuity — DEFERRED (DEFECT S
+		// round 2, 9.2.7). markSessionRunning used to fire here unconditionally,
+		// flipping the folder rail back to "running" the moment the user merely
+		// VIEWED a cancelled subagent conversation, before any resume decision.
+		// Per the design axiom (user cancellation is terminal), the session only
+		// flips back to running after the resume ask is actually answered with a
+		// continuation (see markSessionRunning call after resumeResponse below).
+		// kilocode_change end
+
 		if (this.enableBridge) {
 			try {
 				await BridgeOrchestrator.subscribeToTask(this)
@@ -3596,6 +3687,18 @@ ${protocolHint}
 
 		if (response === "messageResponse") {
 			const continuationText = text || "Continue from the latest user feedback"
+			// kilocode_change start: subagent resume continuity — the resume ask
+			// was actually answered with a continuation (explicit user "Continue"
+			// or an injected user-initiated continuation), so NOW the subagent
+			// session is genuinely running again. Flip the manager state (rail
+			// live icon + stop button) and rebind routing to this Task instance.
+			// DEFECT S round 2 (9.2.7): moved here from the top of
+			// resumeTaskFromHistory so merely viewing a cancelled subagent
+			// conversation never flips it back to running.
+			if (this.subagent) {
+				this.subagent.manager.markSessionRunning?.(this.subagent.sessionId, this)
+			}
+			// kilocode_change end
 			await this.markTaskActiveForUserContinuation()
 			this.shouldKeepNextCompletionActive = true
 			this.activeContinuationWorkToolUsed = false

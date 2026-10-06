@@ -13,7 +13,7 @@ import { Tab, TabContent, TabHeader } from "../common/Tab"
 import { useTaskSearch } from "./useTaskSearch"
 import TaskItem from "./TaskItem"
 import { useExtensionState } from "@/context/ExtensionStateContext"
-import { folderConversationsFor, groupHistoryByWorkspace, resolveActiveFolderPath } from "./folderHistory"
+import { folderConversationsFor, groupHistoryByWorkspace, nestHistoryItems, resolveActiveFolderPath } from "./folderHistory"
 
 type HistoryViewProps = {
 	onDone: () => void
@@ -347,19 +347,22 @@ const HistoryView = ({ onDone }: HistoryViewProps) => {
 								<div className="text-[11px] uppercase tracking-wide text-vscode-descriptionForeground px-3 py-1">
 									{group.label}
 								</div>
-								{group.items.map((item) => (
-									<TaskItem
-										key={item.id}
-										item={item}
-										variant="full"
-										showWorkspace={showAllWorkspaces}
+								{/* kilocode_change start: DEFECT W — render nested subagent
+								    history under its parent task; annotate workspace. */}
+								{nestHistoryItems(group.items).map((node) => (
+									<HistoryTreeNode
+										key={node.item.id}
+										node={node}
 										isSelectionMode={isSelectionMode}
-										isSelected={selectedTaskIds.includes(item.id)}
-										onToggleSelection={toggleTaskSelection}
+										selectedTaskIds={selectedTaskIds}
+										toggleTaskSelection={toggleTaskSelection}
 										onDelete={setDeleteTaskId}
-										className="m-2"
+										showWorkspace={showAllWorkspaces}
+										groupPath={group.path}
+										depth={0}
 									/>
 								))}
+								{/* kilocode_change end */}
 							</div>
 						))}
 					</div>
@@ -451,3 +454,80 @@ const HistoryView = ({ onDone }: HistoryViewProps) => {
 }
 
 export default memo(HistoryView)
+
+// kilocode_change start: DEFECT W — recursive history tree node. Subagent
+// tasks (parentTaskId set) render indented under their parent with a
+// "subagent" badge and a workspace annotation, mirroring the dispatch tree.
+type HistoryTreeNodeProps = {
+	node: ReturnType<typeof nestHistoryItems>[number]
+	isSelectionMode: boolean
+	selectedTaskIds: string[]
+	toggleTaskSelection: (taskId: string, isSelected: boolean) => void
+	onDelete: (taskId: string) => void
+	showWorkspace: boolean
+	groupPath: string
+	depth: number
+}
+
+const workspaceLabelFor = (item: { workspace?: string }, groupPath: string): string | undefined => {
+	if (!item.workspace) return undefined
+	// kilocode_change: DEFECT W2 — in "all workspaces" mode groupPath is "",
+	// but a subagent STILL annotates its (worktree) workspace so the user can
+	// see where it ran. In folder mode show the tail segments only when the
+	// path differs from the group's own path.
+	const tail = item.workspace.split(/[\\/]/).filter(Boolean).slice(-2).join("/")
+	if (!groupPath) return tail || item.workspace
+	if (item.workspace === groupPath) return undefined
+	return tail || undefined
+}
+
+const HistoryTreeNode = ({
+	node,
+	isSelectionMode,
+	selectedTaskIds,
+	toggleTaskSelection,
+	onDelete,
+	showWorkspace,
+	groupPath,
+	depth,
+}: HistoryTreeNodeProps) => {
+	const isSub = depth > 0 || Boolean(node.item.parentTaskId)
+	const label = isSub ? workspaceLabelFor(node.item, groupPath) : showWorkspace ? node.item.workspace : undefined
+	return (
+		<div data-testid={`history-tree-node-${node.item.id}`} style={{ marginLeft: depth > 0 ? depth * 16 : 0 }}>
+			<TaskItem
+				item={node.item}
+				variant="full"
+				showWorkspace={depth === 0 ? showWorkspace : false}
+				isSelectionMode={isSelectionMode}
+				isSelected={selectedTaskIds.includes(node.item.id)}
+				onToggleSelection={toggleTaskSelection}
+				onDelete={onDelete}
+				className="m-2"
+				// kilocode_change: DEFECT W props
+				isSubagentItem={isSub}
+				showWorkspaceLabel={label}
+			/>
+			{node.children.length > 0 && (
+				<div
+					className="border-l border-vscode-panel-border ml-5"
+					data-testid={`history-tree-children-${node.item.id}`}>
+					{node.children.map((child) => (
+						<HistoryTreeNode
+							key={child.item.id}
+							node={child}
+							isSelectionMode={isSelectionMode}
+							selectedTaskIds={selectedTaskIds}
+							toggleTaskSelection={toggleTaskSelection}
+							onDelete={onDelete}
+							showWorkspace={showWorkspace}
+							groupPath={groupPath}
+							depth={depth + 1}
+						/>
+					))}
+				</div>
+			)}
+		</div>
+	)
+}
+// kilocode_change end

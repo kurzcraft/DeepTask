@@ -128,6 +128,21 @@ export const xaiModels = {
 		includedTools: ["search_replace"],
 		excludedTools: ["apply_diff"],
 	},
+	// kilocode_change: grok-4.6 — newest officially named Grok generation.
+	// Pricing not yet published, so price fields are omitted (cost tracking
+	// falls back to 0 rather than guessing wrong numbers). Newer ids (grok-4.7,
+	// grok-5, ...) are handled by xaiInferModelInfo below.
+	"grok-4.6": {
+		maxTokens: 65_536,
+		contextWindow: 2_000_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsNativeTools: true,
+		defaultToolProtocol: "native",
+		description: "xAI's Grok 4.6 model with 2M context window and vision input support.",
+		includedTools: ["search_replace"],
+		excludedTools: ["apply_diff"],
+	},
 	// kilocode_change end
 	"grok-3-mini": {
 		maxTokens: 8192,
@@ -162,3 +177,26 @@ export const xaiModels = {
 		excludedTools: ["apply_diff"],
 	},
 } as const satisfies Record<string, ModelInfo>
+
+/**
+ * kilocode_change: capability inference for xAI model ids typed or detected
+ * dynamically (e.g. "grok-4.7", "grok-5", "grok-4-1-fast") that are not yet in
+ * xaiModels. All modern Grok generations (>= grok-3) accept images, support
+ * native tools and prompt caching — so unknown newer ids get a safe modern
+ * baseline instead of silently falling back to an old static entry.
+ */
+export function xaiInferModelInfo(modelId: string | undefined): Partial<ModelInfo> | undefined {
+	if (!modelId || !/^grok/i.test(modelId)) {
+		return undefined
+	}
+	// Anything that looks like a grok generation we don't know yet (grok-4.7,
+	// grok-5, grok-4-1-fast-*) gets the modern capability baseline.
+	return {
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsNativeTools: true,
+		defaultToolProtocol: "native",
+		contextWindow: 2_000_000,
+		maxTokens: 65_536,
+	}
+}

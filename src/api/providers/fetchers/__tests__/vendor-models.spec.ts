@@ -95,9 +95,18 @@ describe("getVendorModels", () => {
     expect(axios.get).toHaveBeenCalledWith("https://relay.example/v1/models", expect.any(Object))
   })
 
-  it("rejects missing credentials without making a network request", async () => {
-    await expect(getVendorModels("groq", "  ")).rejects.toThrow("groq API key is required")
-    expect(axios.get).not.toHaveBeenCalled()
+  it("attempts anonymous discovery without credentials instead of throwing", async () => {
+    // kilocode_change (defect T): a missing key no longer blocks model
+    // discovery — the request goes out anonymously (Authorization omitted).
+    vi.mocked(axios.get).mockResolvedValue({ data: { data: [{ id: "grok-4.7" }] } })
+
+    const models = await getVendorModels("groq", "  ")
+
+    expect(axios.get).toHaveBeenCalledWith(
+      "https://api.groq.com/openai/v1/models",
+      expect.objectContaining({ headers: {} }),
+    )
+    expect(models["grok-4.7"]).toBeDefined()
   })
 
   it("fetches z.ai models from the selected line and infers reasoning effort", async () => {

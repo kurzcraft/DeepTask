@@ -2,10 +2,12 @@ import { useCallback } from "react"
 import { VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
 
 import {
+	type ModelInfo,
 	type ProviderSettings,
 	type RouterModels,
 	deepSeekDefaultModelId,
 	deepSeekModels,
+	deepSeekSupportsImagesDynamic,
 } from "@roo-code/types"
 
 import { useAppTranslation } from "@src/i18n/TranslationContext"
@@ -23,6 +25,19 @@ type DeepSeekProps = {
 
 export const DeepSeek = ({ apiConfiguration, setApiConfigurationField, routerModels }: DeepSeekProps) => {
 	const { t } = useAppTranslation()
+
+	// kilocode_change: capability inference for detected ids missing from the
+	// static table — e.g. the "deepseek-flash" alias or future "deepseek-v4.2"
+	// get vision support / context metadata automatically.
+	const inferModelInfo = useCallback(
+		(modelId: string): Partial<ModelInfo> | undefined => {
+			if (!deepSeekSupportsImagesDynamic(modelId)) {
+				return undefined
+			}
+			return { supportsImages: true, contextWindow: 1_000_000, maxTokens: 32_768 }
+		},
+		[],
+	)
 
 	const handleInputChange = useCallback(
 		<K extends keyof ProviderSettings, E>(
@@ -61,16 +76,17 @@ export const DeepSeek = ({ apiConfiguration, setApiConfigurationField, routerMod
 					{t("settings:providers.getDeepSeekApiKey")}
 				</VSCodeButtonLink>
 			)}
-			<DynamicVendorModelSettings
-				provider="deepseek"
-				defaultModelId={deepSeekDefaultModelId}
-				staticModels={deepSeekModels}
-				remoteModels={routerModels?.deepseek}
-				apiKey={apiConfiguration.deepSeekApiKey}
-				baseUrl={apiConfiguration.deepSeekBaseUrl}
-				apiConfiguration={apiConfiguration}
-				setApiConfigurationField={setApiConfigurationField}
-			/>
+		<DynamicVendorModelSettings
+			provider="deepseek"
+			defaultModelId={deepSeekDefaultModelId}
+			staticModels={deepSeekModels}
+			remoteModels={routerModels?.deepseek}
+			apiKey={apiConfiguration.deepSeekApiKey}
+			baseUrl={apiConfiguration.deepSeekBaseUrl}
+			apiConfiguration={apiConfiguration}
+			setApiConfigurationField={setApiConfigurationField}
+			inferModelInfo={inferModelInfo}
+		/>
 		</>
 	)
 }

@@ -360,7 +360,7 @@ export class OpenAiCodexHandler extends BaseProvider /* kilocode_change: impleme
 
 				// Build Codex-specific headers. Authorization is provided by the SDK apiKey.
 				const codexHeaders: Record<string, string> = {
-					originator: "kilo-code", // kilocode_change
+					originator: "codex_cli_rs", // kilocode_change: official CLI originator — backend rejects unknown values
 					session_id: sessionId || this.sessionId,
 					"User-Agent": DEFAULT_HEADERS["User-Agent"], // kilocode_change
 					...(accountId ? { "ChatGPT-Account-Id": accountId } : {}),
@@ -506,7 +506,7 @@ export class OpenAiCodexHandler extends BaseProvider /* kilocode_change: impleme
 		const headers: Record<string, string> = {
 			"Content-Type": "application/json",
 			Authorization: `Bearer ${accessToken}`,
-			originator: "kilo-code", // kilocode_change
+			originator: "codex_cli_rs", // kilocode_change: official CLI originator — backend rejects unknown values
 			session_id: sessionId || this.sessionId,
 			"User-Agent": DEFAULT_HEADERS["User-Agent"], // kilocode_change
 		}
@@ -1072,7 +1072,7 @@ export class OpenAiCodexHandler extends BaseProvider /* kilocode_change: impleme
 			const headers: Record<string, string> = {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${accessToken}`,
-				originator: "kilo-code", // kilocode_change
+				originator: "codex_cli_rs", // kilocode_change: official CLI originator — backend rejects unknown values
 				session_id: this.sessionId,
 				"User-Agent": DEFAULT_HEADERS["User-Agent"], // kilocode_change
 			}

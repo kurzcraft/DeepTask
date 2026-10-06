@@ -206,7 +206,11 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 			;(task as Task & { markTaskCompletedInCurrentLoop?: () => void }).markTaskCompletedInCurrentLoop?.()
 
 			// Check for subtask using parentTaskId (metadata-driven delegation)
-			if (task.parentTaskId) {
+			// kilocode_change: in-process parallel subagents (dispatch_subagents) may
+			// now carry a parentTaskId for history lineage (DEFECT W) — their result
+			// returns through the ParallelManager dispatch polling loop, NOT the
+			// new_task delegation flow. Explicitly exempt them here.
+			if (task.parentTaskId && !task.subagent) {
 				// Check if this subtask has already completed and returned to parent
 				// to prevent duplicate tool_results when user revisits from history
 				const provider = task.providerRef.deref() as DelegationProvider | undefined

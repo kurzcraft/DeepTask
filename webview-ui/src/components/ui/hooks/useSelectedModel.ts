@@ -51,6 +51,10 @@ import { useRouterModels } from "./useRouterModels"
 import { useOpenRouterModelProviders } from "./useOpenRouterModelProviders"
 import { useLmStudioModels } from "./useLmStudioModels"
 import { useExtensionState } from "@/context/ExtensionStateContext" // kilocode_change
+// kilocode_change start: DEFECT U2 — reuse the settings-page version-segment
+// picker so the chat view agrees on "latest" for dynamic vendors.
+import { pickLatestModelId } from "@/components/settings/providers/DynamicVendorModelSettings"
+// kilocode_change end
 
 // kilocode_change start
 export const useModelProviders = (kilocodeDefaultModel: string, apiConfiguration?: ProviderSettings) => {
@@ -101,6 +105,19 @@ function getVendorModel(
 	remoteModels: ModelRecord | undefined,
 	apiConfiguration: ProviderSettings,
 ): { id: string; info: ModelInfo } {
+	// kilocode_change start: DEFECT U2 — when the user never picked a model (or
+	// only carries the static default), surface the newest detected catalog id
+	// instead of the stale static default. Dynamic vendor /models endpoints are
+	// anonymous-friendly, so the merged catalog is available even without a key.
+	const isDefaultSelection = !configuredId || configuredId === defaultModelId
+	if (isDefaultSelection && remoteModels) {
+		const latestId = pickLatestModelId({ ...staticModels, ...remoteModels })
+		if (latestId && latestId !== defaultModelId) {
+			const latestInfo = { ...NATIVE_TOOL_DEFAULTS, ...staticModels[latestId], ...remoteModels[latestId] }
+			return { id: latestId, info: latestInfo }
+		}
+	}
+	// kilocode_change end
 	const id = configuredId || defaultModelId
 	const defaultInfo = staticModels[defaultModelId]
 	const staticInfo = staticModels[id]
@@ -140,6 +157,9 @@ export const useSelectedModel = (apiConfiguration?: ProviderSettings) => {
 			zaiBaseUrl: apiConfiguration?.zaiApiLine
 				? zaiApiLineConfigs[apiConfiguration.zaiApiLine]?.baseUrl
 				: undefined,
+			// kilocode_change: DEFECT T2 — pass the xAI key so authenticated
+			// discovery refreshes when the user edits it; anonymous works too.
+			xaiApiKey: apiConfiguration?.xaiApiKey,
 		},
 		// kilocode_change end
 		{
@@ -271,9 +291,11 @@ function getSelectedModel({
 			return { id, info }
 		}
 		case "xai": {
-			const id = apiConfiguration.apiModelId ?? defaultModelId
-			const info = xaiModels[id as keyof typeof xaiModels]
-			return info ? { id, info } : { id, info: undefined }
+			// kilocode_change: DEFECT T2 — xAI is a discoverable vendor; resolve
+			// the selected model through the same static+remote merge as the other
+			// dynamic vendors so newly detected ids (grok-4.7…) show up in the
+			// chat model box instead of only in settings.
+			return getVendorModel(apiConfiguration.apiModelId, defaultModelId, xaiModels, routerModels.xai, apiConfiguration)
 		}
 		case "groq":
 			return getVendorModel(apiConfiguration.apiModelId, defaultModelId, groqModels, routerModels.groq, apiConfiguration)

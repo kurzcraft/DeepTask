@@ -20,6 +20,11 @@ interface TaskItemProps {
 	onToggleSelection?: (taskId: string, isSelected: boolean) => void
 	onDelete?: (taskId: string) => void
 	className?: string
+	// kilocode_change start: DEFECT W — subagent badge + workspace annotation for
+	// hierarchical history display.
+	isSubagentItem?: boolean
+	showWorkspaceLabel?: string
+	// kilocode_change end
 }
 
 const TaskItem = ({
@@ -31,6 +36,9 @@ const TaskItem = ({
 	onToggleSelection,
 	onDelete,
 	className,
+	// kilocode_change
+	isSubagentItem = false,
+	showWorkspaceLabel,
 }: TaskItemProps) => {
 	const handleClick = () => {
 		if (isSelectionMode && onToggleSelection) {
@@ -68,6 +76,25 @@ const TaskItem = ({
 				)}
 
 				<div className="flex-1 min-w-0">
+					{/* kilocode_change start: DEFECT W — subagent badge + workspace label */}
+					{(isSubagentItem || showWorkspaceLabel) && (
+						<div className="flex flex-row items-center gap-1 mb-1 text-vscode-descriptionForeground">
+							{isSubagentItem && (
+								<span
+									data-testid={`subagent-badge-${item.id}`}
+									className="inline-flex items-center gap-0.5 text-[10px] uppercase tracking-wide border border-vscode-panel-border rounded px-1 py-px">
+									<span className="codicon codicon-organization scale-75" />
+									子代理
+								</span>
+							)}
+							{showWorkspaceLabel && (
+								<span className="text-[10px] truncate" data-testid={`workspace-label-${item.id}`}>
+									<span className="codicon codicon-folder scale-75" /> {showWorkspaceLabel}
+								</span>
+							)}
+						</div>
+					)}
+					{/* kilocode_change end */}
 					<div
 						className={cn(
 							"overflow-hidden whitespace-pre-wrap font-light text-vscode-foreground text-ellipsis line-clamp-3",

@@ -47,6 +47,16 @@ export const ReasoningEffortSelector = ({
 			const modelDefault = modelInfo?.reasoningEffort as ReasoningEffortOption | undefined
 			return modelDefault && values.includes(modelDefault) ? modelDefault : (values[0] ?? "medium")
 		}
+		// kilocode_change: align with the settings ThinkingBudget semantics.
+		// An UNSET effort means the request omits the reasoning parameter, so
+		// the model runs at its own default — showing "off" here while the
+		// settings page showed the model default was the reported
+		// "bottom-left selector never matches settings" desync. Show the same
+		// effective value both places.
+		const modelDefault = modelInfo?.reasoningEffort as ReasoningEffortOption | undefined
+		if (modelDefault && values.includes(modelDefault)) {
+			return modelDefault
+		}
 		return "disable"
 	}, [apiConfiguration.reasoningEffort, values, required, modelInfo])
 

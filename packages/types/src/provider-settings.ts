@@ -66,6 +66,7 @@ export const dynamicProviders = [
 	"mistral",
 	"cerebras",
 	"zai",
+	"xai", // kilocode_change: xAI joined the discoverable-vendor pipeline
 	// kilocode_change end
 	"deepinfra",
 	"io-intelligence",

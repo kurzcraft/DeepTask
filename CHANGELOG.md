@@ -1,5 +1,14 @@
 # Deeptask
 
+## 9.2.7
+
+### Patch Changes
+
+- Ghost subagents eradicated at the root: settled subagents (completed / cancelled / error) are now evicted from the provider's task stack the moment they settle (`removeBackgroundClineFromStack` in `ParallelManager.spawn`'s settle handler). Previously nothing ever removed background subagent instances — after the parent finished, a leftover subagent silently became the "current task": ghost conversations that reappeared after manual close, sometimes resumed on their own, and hijacked follow-up message routing.
+- Cancelling a focused subagent no longer resurrects it: `cancelTask` used to fall through to the generic `createTaskWithHistoryItem` rehydrate path, which rebuilt the cancelled subagent as the new "current task" (close → comes back to life). A cancelled subagent is now simply evicted from the stack and the UI refreshed — close means gone.
+- The parallel-session stop button now actually stops: `ParallelManager.cancel` previously returned `false` for any session whose status was not `running`, so settled-but-still-listed zombie sessions could never be cleared from the panel. Non-running sessions holding a task instance are now evicted from the stack AND removed from the session map (legacy zombies die on first click).
+- The workspace/subagent permission toggles work again: `getState()` and `getStateToPostToWebview()` were both missing the `agentSubagentDispatchEnabled` / `agentWorkspaceManagementEnabled` keys, so the backend always read `undefined` and the webview always rendered the toggles as ON. Both state paths now forward the persisted values, making the permission bar switches actually disable `dispatch_subagents` and workspace tools.
+
 ## 9.2.6
 
 ### Patch Changes

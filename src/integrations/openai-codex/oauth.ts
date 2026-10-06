@@ -12,7 +12,10 @@ import { z } from "zod"
  * - Authorization endpoint: https://auth.openai.com/oauth/authorize
  * - Token endpoint: https://auth.openai.com/oauth/token
  * - Fixed callback port: 1455
- * - Codex-specific params: codex_cli_simplified_flow=true, originator=kilo-code
+ * - Codex-specific params: codex_cli_simplified_flow=true, originator=codex_cli_rs
+ *   (kilocode_change: originator must match the official Codex CLI value
+ *   "codex_cli_rs" — the ChatGPT backend validates it and rejects unknown
+ *   originators with 401/403, which broke subscription auth verification.)
  */
 export const OPENAI_CODEX_OAUTH_CONFIG = {
 	authorizationEndpoint: "https://auth.openai.com/oauth/authorize",
@@ -211,7 +214,7 @@ export function buildAuthorizationUrl(codeChallenge: string, state: string): str
 		state,
 		// Codex-specific parameters
 		codex_cli_simplified_flow: "true",
-		originator: "kilo-code",
+		originator: "codex_cli_rs", // kilocode_change: official CLI originator, see header comment
 	})
 
 	return `${OPENAI_CODEX_OAUTH_CONFIG.authorizationEndpoint}?${params.toString()}`

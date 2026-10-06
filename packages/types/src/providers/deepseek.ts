@@ -39,14 +39,57 @@ export const deepSeekModels = {
 	"deepseek-v4-pro": {
 		maxTokens: 32_768,
 		contextWindow: 1_000_000,
-		supportsImages: false,
+		supportsImages: false, // v4-pro is text-only; vision starts at v4.1-flash
 		supportsPromptCache: true,
 		supportsNativeTools: true,
 		defaultToolProtocol: "native",
 		preserveReasoning: true,
 		description: "DeepSeek V4 Pro reasoning model.",
 	},
+	"deepseek-v4.1-flash": {
+		maxTokens: 32_768,
+		contextWindow: 1_000_000,
+		// kilocode_change: DeepSeek V4.1 series are the first vision-capable
+		// DeepSeek models — image input supported.
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsNativeTools: true,
+		defaultToolProtocol: "native",
+		description: "DeepSeek V4.1 Flash multimodal model with vision input support.",
+	},
+	// kilocode_change: "deepseek-flash" is the alias DeepSeek's /models endpoint
+	// returns for the current Flash generation (V4.1 Flash at time of writing).
+	// Detected entries carry no description, so keep a static entry here with a
+	// human-readable description and vision flag for the alias.
+	"deepseek-flash": {
+		maxTokens: 32_768,
+		contextWindow: 1_000_000,
+		supportsImages: true,
+		supportsPromptCache: true,
+		supportsNativeTools: true,
+		defaultToolProtocol: "native",
+		description:
+			"DeepSeek Flash (alias of the current Flash generation, V4.1 Flash) — fast multimodal model with vision input support.",
+	},
 } as const satisfies Record<string, ModelInfo>
+
+/**
+ * kilocode_change: dynamic DeepSeek model ids typed into the model field (e.g.
+ * relay-served "deepseek-v4.1-flash", "deepseek-v4.2") cannot be enumerated in
+ * deepSeekModels. Vision support starts with the V4.1 family — infer it from
+ * the id so unknown-but-vision-capable ids still accept images.
+ */
+export function deepSeekSupportsImagesDynamic(modelId: string | undefined): boolean {
+	if (!modelId) {
+		return false
+	}
+	// v4.1 and newer minor versions (v4.1, v4.2, ...), or any explicit
+	// "-vl"/"-vision" suffix, are vision-capable.
+	if (/deepseek[-_]?v?4\.([1-9]\d*)/i.test(modelId) || /-vl$|-vision/i.test(modelId)) {
+		return true
+	}
+	return /v4\.1-flash/.test(modelId)
+}
 
 // https://api-docs.deepseek.com/quick_start/parameter_settings
 export const DEEP_SEEK_DEFAULT_TEMPERATURE = 0.3

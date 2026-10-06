@@ -41,6 +41,7 @@ describe("getModelsByProvider", () => {
 		mistral: {},
 		cerebras: {},
 		zai: {},
+		xai: {}, // kilocode_change: xAI discoverable vendor
 		ovhcloud: { "test-model": testModel },
 		chutes: { "test-model": testModel },
 		"sap-ai-core": { "test-model": testModel },
