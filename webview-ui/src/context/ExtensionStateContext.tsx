@@ -594,6 +594,18 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 							newClineMessages[lastIndex] = clineMessage
 							return { ...prevState, clineMessages: newClineMessages }
 						}
+						// kilocode_change start: incremental append for new messages
+						// The extension host streams newly created messages through this
+						// same message type instead of re-posting the full state (which
+						// cloned the entire clineMessages array on every message for
+						// long conversations). A message strictly newer than the current
+						// tail is an append; anything else (out-of-order/legacy replay)
+						// stays a no-op so the full-state snapshot remains authoritative.
+						const tail = prevState.clineMessages.at(-1)
+						if (!tail || clineMessage.ts > tail.ts) {
+							return { ...prevState, clineMessages: [...prevState.clineMessages, clineMessage] }
+						}
+						// kilocode_change end
 						return prevState
 					})
 					break

@@ -1832,13 +1832,21 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			// the user watching the child session sees live output.
 			const provider = this.providerRef.deref()
 			if (provider?.shouldBroadcastTaskToChat?.(this) === true) {
-				await provider?.postStateToWebview()
+				await provider?.postMessageToWebview?.({ type: "messageUpdated", clineMessage: message })
 			}
 		} else {
 			const provider = this.providerRef.deref()
 			provider?.syncLiveTask?.(this)
 			if (provider?.shouldBroadcastTaskToChat?.(this) !== false) {
-				await provider?.postStateToWebview()
+				// kilocode_change: memory optimization — post the single new
+				// message incrementally instead of cloning the whole state
+				// (incl. the full clineMessages array) through postStateToWebview
+				// for every message in long conversations. The webview appends
+				// messages newer than its tail via the messageUpdated handler;
+				// full-state pushes still happen for ask panels, todo updates,
+				// task switches, and every other state-mutating flow, so the
+				// snapshot path remains the authoritative fallback.
+				await provider?.postMessageToWebview?.({ type: "messageUpdated", clineMessage: message })
 			}
 		}
 		// kilocode_change end
@@ -4083,6 +4091,17 @@ ${protocolHint}
 			console.error(`Error saving messages during abort for task ${this.taskId}.${this.instanceId}:`, error)
 		}
 		// kilocode_change end
+
+		// kilocode_change start: memory optimization — after the bounded final
+		// save has taken its synchronous snapshot (saveClineMessages serializes
+		// the array before any await), release the in-memory UI history. Every
+		// resume path rebuilds a NEW Task instance that rehydrates from disk,
+		// and late callbacks are fenced by abort/historyPersistenceFrozen
+		// flags, so nothing reads these arrays afterwards. This keeps settled
+		// tasks from pinning tens of MB in the extension host.
+		this.clineMessages.length = 0
+		this.apiConversationHistory.length = 0
+		// kilocode_change end
 	}
 
 	public dispose(): void {
@@ -4200,6 +4219,24 @@ ${protocolHint}
 		} catch (error) {
 			console.error("Error reverting diff changes:", error)
 		}
+
+		// kilocode_change start: memory optimization — release message histories.
+		// dispose() must NOT truncate clineMessages here: abortTask() calls
+		// dispose() and THEN persists a final saveClineMessages() snapshot, so
+		// clearing here would write an empty history to disk. It also must not
+		// truncate apiConversationHistory: a late presentAssistantMessage
+		// branch (stripCompletedAttemptCompletionFromHistory +
+		// saveApiConversationHistory) can still run after dispose within the
+		// abort race window and would likewise persist an empty array.
+		// Both arrays are released by GC once the stack/listeners drop the Task
+		// reference; clineMessages is explicitly cleared in abortTask AFTER its
+		// bounded final save (whose synchronous snapshot already captured the
+		// full array before any I/O), and auxiliary buffers below are never
+		// written to disk again after disposal.
+		this.todoList = undefined
+		this.cloudSyncedMessageTimestamps.clear()
+		this.userMessageContent.length = 0
+		// kilocode_change end
 	}
 
 	// Subtasks

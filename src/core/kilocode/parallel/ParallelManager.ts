@@ -106,6 +106,11 @@ export class ParallelManager {
 	private workspacesHydrated = false
 	private worktreeWatchers = new Map<string, vscode.Disposable>()
 	private worktreeRefreshTimer: ReturnType<typeof setTimeout> | undefined
+	// kilocode_change start: broadcast coalescing state (memory/CPU).
+	private broadcastInFlight: Promise<void> | undefined
+	private broadcastTrailingRequested = false
+	private broadcastTrailingRun: Promise<void> | undefined
+	// kilocode_change end
 
 	constructor(
 		private readonly provider: ClineProvider,
@@ -327,6 +332,18 @@ export class ParallelManager {
 					} catch {
 						// stack hygiene is best-effort; never fail settlement
 					}
+					// kilocode_change start: memory optimization — the settled
+					// child's message sink is complete (extractResult already ran
+					// above and the child Task persisted its own history to disk).
+					// Drop the accumulated per-session message array so a long
+					// dispatch batch doesn't pin every subagent transcript in the
+					// extension host. recordMessage* guards keep late messages
+					// from re-accumulating after settlement. state.task is
+					// intentionally KEPT: cancel()'s settled-zombie eviction and
+					// findByTaskId routing depend on it, and the Task instance
+					// itself released its histories in abortTask/dispose.
+					state.messages.length = 0
+					// kilocode_change end
 				}
 				// kilocode_change end
 				if (spec.workspaceName) {
@@ -376,6 +393,17 @@ export class ParallelManager {
 		if (!state) {
 			return
 		}
+		// kilocode_change start: memory optimization — a settled session's
+		// message sink was released at settlement (result extracted, history
+		// persisted by the child Task). Late callbacks from the disposed child
+		// must not re-accumulate its transcript in the extension host. An
+		// explicit user Continue rebinds the session via markSessionRunning
+		// (status back to "running"), which reopens accumulation for the new
+		// Task instance.
+		if (state.info.status !== "running") {
+			return
+		}
+		// kilocode_change end
 		state.messages.push(message)
 		void this.provider
 			.postMessageToWebview({
@@ -391,6 +419,12 @@ export class ParallelManager {
 		if (!state) {
 			return
 		}
+		// kilocode_change start: memory optimization — same settled-session
+		// guard as recordMessageCreated (see above).
+		if (state.info.status !== "running") {
+			return
+		}
+		// kilocode_change end
 		const index = state.messages.findIndex((m) => m.ts === message.ts)
 		if (index === -1) {
 			state.messages.push(message)
@@ -1361,6 +1395,43 @@ export class ParallelManager {
 	}
 
 	async broadcast(): Promise<void> {
+		// kilocode_change start: memory/CPU optimization — coalesce broadcast bursts.
+		// Every streamed message fired broadcast() fire-and-forget (registry
+		// prune + worktree watch + full conversations reload from disk), so a
+		// long subagent turn re-read and re-serialized the whole parallel state
+		// on EVERY message. Coalesce bursts while preserving await semantics:
+		// callers that await broadcast() either drive a real run or wait for
+		// "current run + exactly one trailing run", so their awaited state IS
+		// broadcast when the promise resolves. Fire-and-forget callers during
+		// a long turn merge into one trailing run per in-flight run.
+		if (this.broadcastInFlight) {
+			this.broadcastTrailingRequested = true
+			if (!this.broadcastTrailingRun) {
+				this.broadcastTrailingRun = (async () => {
+					// Wait for the in-flight run, then run ONE trailing
+					// broadcast that reflects every coalesced request.
+					await this.broadcastInFlight
+					if (this.broadcastTrailingRequested) {
+						this.broadcastTrailingRequested = false
+						await this.broadcast()
+					}
+				})().finally(() => {
+					this.broadcastTrailingRun = undefined
+				})
+			}
+			return this.broadcastTrailingRun
+		}
+		const run = this.runBroadcast().finally(() => {
+			if (this.broadcastInFlight === run) {
+				this.broadcastInFlight = undefined
+			}
+		})
+		this.broadcastInFlight = run
+		return run
+	}
+
+	private async runBroadcast(): Promise<void> {
+		// kilocode_change end
 		if (this.workspacesHydrated) {
 			await this.registry.prune()
 			this.watchWorktreeFolders()
