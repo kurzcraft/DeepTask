@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.2.6</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.2.7</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.2.6** 修复 9.2.5 引入的"进入对话后继续/取消按钮永久消失"回归：9.2.5 把清按钮逻辑放在 lastMessage 恢复 effect 之后定义的 task 切换 effect 里，同一 React commit 先恢复后清除，刚恢复的按钮被擦掉且不再重跑。9.2.6 新增前置 reset effect（仅依赖 task?.ts、定义在恢复 effect 之前），同一 commit 先清上一个对话按钮、再恢复当前对话按钮，"不闪现"与"进入即显示"同时成立；面板隐藏/显示不再误清按钮。
+> **Deeptask 9.2.7** 双主题更新：① 根除子代理"幽灵复活"（settle 后立即出栈、取消即销毁、僵尸会话一键清除、并行权限开关真正生效）；② **长上下文内存优化**——每条新消息不再克隆整个会话状态推送给 webview，改为单条增量推送（13,820 条消息的真实会话累计克隆流量从 424.86GB 降至 30.7MB，削减 99.99%），已结束任务与子代理会话的消息历史即时释放（每个 settled 任务约释放 40MB），并行广播按突发合并——长时间使用后 VSCodium 内存超 90%、Deeptask 面板灰屏的问题从根因上解决。
 
 ## 你可以怎样使用 Deeptask
 
@@ -146,17 +146,17 @@ Deeptask 选择寄生在 VSCodium 里而不是做成独立软件，是刻意为�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.2.6.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.2.7.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.2.6.vsix --force
+    codium --install-extension ./deeptask-9.2.7.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.2.6.vsix --force
+    code --install-extension ./deeptask-9.2.7.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

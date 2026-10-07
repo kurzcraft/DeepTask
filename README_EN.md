@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.2.6</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.2.7</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.2.6** fixes the 9.2.5 regression where Continue/Cancel (and pending-approval) buttons permanently disappeared the moment you entered a conversation: 9.2.5 placed the button-clearing logic in a task-switch effect defined AFTER the lastMessage restore effect, so within one React commit the freshly restored buttons were wiped (restore-first/clear-second) and the deep-compare never re-ran to bring them back. A new reset effect (deps: `task?.ts` only) is now defined BEFORE the restore effect — the same commit runs clear-first/restore-second — so buttons never flash across conversations AND are always present when entering one. Deps deliberately exclude `isHidden` (panel hide/show must not clear buttons that have no restore source).
+> **Deeptask 9.2.7** dual-theme update: (1) eradicated subagent "ghost revival" (settled subagents are evicted from the task stack the moment they settle, cancel means gone, zombie sessions cleared on first click, parallel permission toggles actually work); (2) **long-context memory optimization** - every new message no longer clones the entire conversation state to the webview; a single-message incremental path replaces the full-state push (on a real 13,820-message session, cumulative structured-clone traffic drops from 424.86GB to 30.7MB, a 99.99% reduction), message histories of finished tasks and subagent sessions are released immediately (~40MB freed per settled task), and parallel broadcasts are coalesced per burst - the root cause of VSCodium memory exceeding 90% and the Deeptask panel going gray after long sessions is eliminated at the source.
 
 ## What you can do with Deeptask
 
@@ -146,17 +146,17 @@ Apart from "the model's own conversation handling that commands cannot do" (work
 
 ## Start in three minutes
 
-1. Download `deeptask-9.2.6.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.2.7.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.2.6.vsix --force
+    codium --install-extension ./deeptask-9.2.7.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.2.6.vsix --force
+    code --install-extension ./deeptask-9.2.7.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.
