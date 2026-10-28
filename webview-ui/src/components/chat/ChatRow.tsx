@@ -18,7 +18,7 @@ import { Mode } from "@roo/modes"
 import { COMMAND_OUTPUT_STRING } from "@roo/combineCommandSequences"
 import { safeJsonParse } from "@roo/core"
 
-import { useExtensionState } from "@src/context/ExtensionStateContext"
+import { useExtensionSettings } from "@src/context/ExtensionStateContext"
 import { findMatchingResourceOrTemplate } from "@src/utils/mcp"
 import { vscode } from "@src/utils/vscode"
 import { formatPathTooltip } from "@src/utils/formatPathTooltip"
@@ -88,45 +88,13 @@ import ChatTimestamps from "./ChatTimestamps"
 import { removeLeadingNonAlphanumeric } from "@/utils/removeLeadingNonAlphanumeric"
 // kilocode_change end
 
-// Helper function to get previous todos before a specific message
-function getPreviousTodos(messages: ClineMessage[], currentMessageTs: number): any[] {
-	// Find the previous updateTodoList message before the current one
-	const previousUpdateIndex = messages
-		.slice()
-		.reverse()
-		.findIndex((msg) => {
-			if (msg.ts >= currentMessageTs) return false
-			if (msg.type === "ask" && msg.ask === "tool") {
-				try {
-					const tool = JSON.parse(msg.text || "{}")
-					return tool.tool === "updateTodoList"
-				} catch {
-					return false
-				}
-			}
-			return false
-		})
-
-	if (previousUpdateIndex !== -1) {
-		const previousMessage = messages.slice().reverse()[previousUpdateIndex]
-		try {
-			const tool = JSON.parse(previousMessage.text || "{}")
-			return tool.todos || []
-		} catch {
-			return []
-		}
-	}
-
-	// If no previous updateTodoList message, return empty array
-	return []
-}
-
 interface ChatRowProps {
 	message: ClineMessage
 	lastModifiedMessage?: ClineMessage
 	isExpanded: boolean
 	isLast: boolean
 	isStreaming: boolean
+	previousTodos?: any[]
 	onToggleExpand: (ts: number) => void
 	onHeightChange: (isTaller: boolean) => void
 	onSuggestionClick?: (suggestion: SuggestionItem, event?: React.MouseEvent) => void
@@ -146,7 +114,7 @@ interface ChatRowContentProps extends Omit<ChatRowProps, "onHeightChange"> {}
 const ChatRow = memo(
 	(props: ChatRowProps) => {
 		const { highlighted } = props // kilocode_change: Add highlighted prop
-		const { showTaskTimeline } = useExtensionState() // kilocode_change: Used by KiloChatRowGutterBar
+		const { showTaskTimeline } = useExtensionSettings() // kilocode_change: Used by KiloChatRowGutterBar
 		const { isLast, onHeightChange, message } = props
 		// Store the previous height to compare with the current height
 		// This allows us to detect changes without causing re-renders
@@ -191,6 +159,7 @@ export const ChatRowContent = ({
 	isExpanded,
 	isLast,
 	isStreaming,
+	previousTodos,
 	onToggleExpand,
 	onSuggestionClick,
 	onFollowUpUnmount,
@@ -201,9 +170,17 @@ export const ChatRowContent = ({
 }: ChatRowContentProps) => {
 	const { t, i18n } = useTranslation()
 
-	// kilocode_change: add showTimestamps
-	const { mcpServers, alwaysAllowMcp, currentCheckpoint, mode, apiConfiguration, clineMessages, showTimestamps } =
-		useExtensionState()
+	// kilocode_change: add showTimestamps; settings-only so streaming transcripts
+	// cannot re-render historical rows.
+	const {
+		mcpServers,
+		alwaysAllowMcp,
+		currentCheckpoint,
+		mode,
+		apiConfiguration,
+		showTimestamps,
+		hideCostBelowThreshold,
+	} = useExtensionSettings()
 	const { info: model } = useSelectedModel(apiConfiguration)
 	const [isEditing, setIsEditing] = useState(false)
 	const [editedContent, setEditedContent] = useState("")
@@ -294,7 +271,6 @@ export const ChatRowContent = ({
 	}, [message.text, message.say])
 
 	// kilocode_change start: hide cost display check
-	const { hideCostBelowThreshold } = useExtensionState()
 	const shouldShowCost = useMemo(() => {
 		if (cost === undefined || cost === null || cost <= 0) return false
 		if (isExpanded) return true
@@ -630,10 +606,7 @@ export const ChatRowContent = ({
 			}
 			case "updateTodoList" as any: {
 				const todos = (tool as any).todos || []
-				// Get previous todos from the latest todos in the task context
-				const previousTodos = getPreviousTodos(clineMessages, message.ts)
-
-				return <TodoChangeDisplay previousTodos={previousTodos} newTodos={todos} />
+				return <TodoChangeDisplay previousTodos={previousTodos ?? []} newTodos={todos} />
 			}
 			case "newFileCreated":
 				return (

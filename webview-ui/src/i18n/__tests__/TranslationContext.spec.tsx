@@ -6,6 +6,9 @@ vi.mock("@/context/ExtensionStateContext", () => ({
 	useExtensionState: () => ({
 		language: "en",
 	}),
+	useExtensionSettings: () => ({
+		language: "en",
+	}),
 }))
 
 vi.mock("react-i18next", () => ({

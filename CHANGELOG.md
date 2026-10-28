@@ -21,6 +21,7 @@
 - Protect final conversation snapshots after cancellation and isolate streaming tool parsing by task to prevent cross-session state interference.
 - Scope MCP file watchers by server and configuration source, and dispose indexing ignore watchers with their owning scan or service generation.
 - Queue agent startup handshakes without serializing active work; retain process ownership through exit, settle terminal events once, and bound termination cleanup.
+- Isolate streaming transcripts from settings context so historical chat rows no longer re-render on every messageUpdated; precompute list lookups and pass previous todos as props without scanning the full transcript per row.
 
 ## 9.2.7
 

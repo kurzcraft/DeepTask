@@ -1,7 +1,7 @@
 import React, { createContext, useContext, ReactNode, useEffect, useCallback } from "react"
 import { useTranslation } from "react-i18next"
 import i18next, { loadTranslations } from "./setup"
-import { useExtensionState } from "@/context/ExtensionStateContext"
+import { useExtensionSettings } from "@/context/ExtensionStateContext"
 
 // Create context for translations
 export const TranslationContext = createContext<{
@@ -16,8 +16,9 @@ export const TranslationContext = createContext<{
 export const TranslationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
 	// Initialize with default configuration
 	const { i18n } = useTranslation()
-	// Get the extension state directly - it already contains all state properties
-	const extensionState = useExtensionState()
+	// Subscribe to settings only so streaming transcripts cannot re-render the
+	// entire translation tree on every messageUpdated.
+	const { language } = useExtensionSettings()
 
 	// Load translations once when the component mounts
 	useEffect(() => {
@@ -29,8 +30,8 @@ export const TranslationProvider: React.FC<{ children: ReactNode }> = ({ childre
 	}, [])
 
 	useEffect(() => {
-		i18n.changeLanguage(extensionState.language)
-	}, [i18n, extensionState.language])
+		i18n.changeLanguage(language)
+	}, [i18n, language])
 
 	// Memoize the translation function to prevent unnecessary re-renders
 	const translate = useCallback(

@@ -1,5 +1,5 @@
 import React from "react"
-import { render, screen, fireEvent } from "@src/utils/test-utils"
+import { render, screen } from "@src/utils/test-utils"
 import { ChatRowContent } from "../ChatRow"
 import { vscode } from "@src/utils/vscode"
 
@@ -9,6 +9,7 @@ let mockExtensionState: any = {}
 // Mock ExtensionStateContext
 vi.mock("@src/context/ExtensionStateContext", () => ({
 	useExtensionState: () => mockExtensionState,
+	useExtensionSettings: () => mockExtensionState,
 }))
 
 // Mock i18n
@@ -76,7 +77,7 @@ describe("ChatRow - KiloCode auth error login button", () => {
 		vi.clearAllMocks()
 	})
 
-	it("shows login button for KiloCode auth error", () => {
+	it("renders a generic error without a Kilo login button", () => {
 		const message: any = {
 			type: "say",
 			say: "error",
@@ -86,7 +87,9 @@ describe("ChatRow - KiloCode auth error login button", () => {
 
 		renderChatRow(message, { apiProvider: "kilocode" })
 
-		expect(screen.getByText("Login")).toBeInTheDocument()
+		expect(screen.getAllByText("Error").length).toBeGreaterThan(0)
+		expect(screen.queryByText("Login")).not.toBeInTheDocument()
+		expect(vscode.postMessage).not.toHaveBeenCalled()
 	})
 
 	it("does not show login button for non-KiloCode provider", () => {
@@ -115,7 +118,7 @@ describe("ChatRow - KiloCode auth error login button", () => {
 		expect(screen.queryByText("Login")).not.toBeInTheDocument()
 	})
 
-	it("navigates to auth tab when login button is clicked", () => {
+	it("does not navigate to the auth tab from error rows", () => {
 		const message: any = {
 			type: "say",
 			say: "error",
@@ -125,10 +128,8 @@ describe("ChatRow - KiloCode auth error login button", () => {
 
 		renderChatRow(message, { apiProvider: "kilocode" })
 
-		const loginButton = screen.getByText("Login")
-		fireEvent.click(loginButton)
-
-		expect(vscode.postMessage).toHaveBeenCalledWith({
+		expect(screen.queryByText("Login")).not.toBeInTheDocument()
+		expect(vscode.postMessage).not.toHaveBeenCalledWith({
 			type: "switchTab",
 			tab: "auth",
 			values: { returnTo: "chat" },

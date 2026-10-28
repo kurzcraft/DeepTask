@@ -45,6 +45,7 @@ import Announcement from "./Announcement"
 import BrowserActionRow from "./BrowserActionRow"
 import BrowserSessionStatusRow from "./BrowserSessionStatusRow"
 import ChatRow from "./ChatRow"
+import { buildChatRowListMeta, buildPreviousTodosByTs } from "./chatRowListMeta"
 import { ChatTextArea } from "./ChatTextArea"
 // import TaskHeader from "./TaskHeader"// kilocode_change
 import KiloTaskHeader from "../kilocode/KiloTaskHeader" // kilocode_change
@@ -2045,6 +2046,9 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		return result
 	}, [isCondensing, visibleMessages, isBrowserSessionMessage])
 
+	const chatRowListMeta = useMemo(() => buildChatRowListMeta(modifiedMessages), [modifiedMessages])
+	const previousTodosByTs = useMemo(() => buildPreviousTodosByTs(modifiedMessages), [modifiedMessages])
+
 	// scrolling
 
 	const scrollToBottomSmooth = useMemo(
@@ -2362,19 +2366,13 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 
 	const itemContent = useCallback(
 		(index: number, messageOrGroup: ClineMessage) => {
-			const hasCheckpoint = modifiedMessages.some((message) => message.say === "checkpoint_saved")
+			const isLast = index === groupedMessages.length - 1
 
 			// Check if this is a browser action message
 			if (messageOrGroup.type === "say" && messageOrGroup.say === "browser_action") {
-				// Find the corresponding result message by looking for the next browser_action_result after this action's timestamp
-				const nextMessage = modifiedMessages.find(
-					(m) => m.ts > messageOrGroup.ts && m.say === "browser_action_result",
-				)
-
-				// Calculate action index and total count
-				const browserActions = modifiedMessages.filter((m) => m.say === "browser_action")
-				const actionIndex = browserActions.findIndex((m) => m.ts === messageOrGroup.ts) + 1
-				const totalActions = browserActions.length
+				const nextMessage = chatRowListMeta.nextBrowserActionResultByActionTs.get(messageOrGroup.ts)
+				const actionIndex = (chatRowListMeta.browserActionIndexByTs.get(messageOrGroup.ts) ?? 0) + 1
+				const totalActions = chatRowListMeta.browserActions.length
 
 				return (
 					<BrowserActionRow
@@ -2399,10 +2397,11 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 					message={messageOrGroup}
 					isExpanded={expandedRows[messageOrGroup.ts] || false}
 					onToggleExpand={toggleRowExpansion} // This was already stabilized
-					lastModifiedMessage={modifiedMessages.at(-1)} // Original direct access
-					isLast={index === groupedMessages.length - 1} // Original direct access
+					lastModifiedMessage={isLast ? chatRowListMeta.lastModifiedMessage : undefined}
+					isLast={isLast}
 					onHeightChange={handleRowHeightChange}
-					isStreaming={isStreaming}
+					isStreaming={isLast ? isStreaming : false}
+					previousTodos={previousTodosByTs.get(messageOrGroup.ts)}
 					onSuggestionClick={handleSuggestionClickInRow} // This was already stabilized
 					onBatchFileResponse={handleBatchFileResponse}
 					highlighted={highlightedMessageIndex === index} // kilocode_change: add highlight prop
@@ -2424,14 +2423,15 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 							return tool.tool === "updateTodoList" && enableButtons && !!primaryButtonText
 						})()
 					}
-					hasCheckpoint={hasCheckpoint}
+					hasCheckpoint={chatRowListMeta.hasCheckpoint}
 				/>
 			)
 		},
 		[
 			expandedRows,
 			toggleRowExpansion,
-			modifiedMessages,
+			chatRowListMeta,
+			previousTodosByTs,
 			groupedMessages.length,
 			handleRowHeightChange,
 			isStreaming,

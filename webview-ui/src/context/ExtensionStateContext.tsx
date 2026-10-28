@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react"
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import type { ModelRecord } from "@roo/api"
 
 import {
@@ -250,9 +250,8 @@ export interface ExtensionStateContextType extends ExtensionState {
 }
 
 // kilocode_change start: parallel subagents & workspaces (webview-maintained slices)
-export type WebviewState = ExtensionState & {
+export type WebviewState = Omit<ExtensionState, "clineMessages"> & {
 	parallelSessions?: Record<string, ParallelSession>
-	parallelSessionMessages?: Record<string, ClineMessage[]>
 	parallelWorkspaces?: ParallelWorkspace[]
 	parallelFolders?: ParallelFolder[]
 	parallelConversations?: ParallelConversation[]
@@ -261,16 +260,34 @@ export type WebviewState = ExtensionState & {
 }
 // kilocode_change end
 
-export const ExtensionStateContext = createContext<ExtensionStateContextType | undefined>(undefined)
+// kilocode_change start: isolate high-churn message slices so chat rows that only
+// need settings do not re-render on every streaming messageUpdated.
+export type ExtensionSettingsContextType = Omit<ExtensionStateContextType, "clineMessages" | "parallelSessionMessages">
 
-export const mergeExtensionState = (prevState: ExtensionState, newState: ExtensionState) => {
-	const { customModePrompts: prevCustomModePrompts, experiments: prevExperiments, ...prevRest } = prevState
+export type ExtensionMessageSlice = {
+	clineMessages: ClineMessage[]
+	parallelSessionMessages?: Record<string, ClineMessage[]>
+}
+
+export const ExtensionStateContext = createContext<ExtensionSettingsContextType | undefined>(undefined)
+
+export const ExtensionMessageSliceContext = createContext<ExtensionMessageSlice | undefined>(undefined)
+// kilocode_change end
+
+export const mergeExtensionState = (prevState: ExtensionState | WebviewState, newState: ExtensionState): WebviewState => {
+	const {
+		customModePrompts: prevCustomModePrompts,
+		experiments: prevExperiments,
+		clineMessages: _prevClineMessages,
+		...prevRest
+	} = prevState as ExtensionState
 
 	const {
 		apiConfiguration,
 		customModePrompts: newCustomModePrompts,
 		customSupportPrompts,
 		experiments: newExperiments,
+		clineMessages: _newClineMessages,
 		...newRest
 	} = newState
 
@@ -280,7 +297,9 @@ export const mergeExtensionState = (prevState: ExtensionState, newState: Extensi
 
 	// Note that we completely replace the previous apiConfiguration and customSupportPrompts objects
 	// with new ones since the state that is broadcast is the entire objects so merging is not necessary.
-	return { ...rest, apiConfiguration, customModePrompts, customSupportPrompts, experiments }
+	// kilocode_change: drop clineMessages here; the webview keeps transcripts in a
+	// dedicated slice so settings context identity stays stable during streaming.
+	return { ...rest, apiConfiguration, customModePrompts, customSupportPrompts, experiments } as WebviewState
 }
 
 export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -288,7 +307,6 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		// kilocode_change: parallel slices
 		apiConfiguration: {},
 		version: "",
-		clineMessages: [],
 		taskHistoryFullLength: 0, // kilocode_change
 		taskHistoryVersion: 0, // kilocode_change
 		shouldShowAnnouncement: false,
@@ -337,7 +355,6 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		agentSubagentDispatchEnabled: true,
 		agentWorkspaceManagementEnabled: true,
 		parallelSessions: {},
-		parallelSessionMessages: {},
 		parallelWorkspaces: [],
 		parallelFolders: [],
 		parallelConversations: [],
@@ -417,6 +434,13 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		includeCurrentCost: true,
 	})
 
+	// kilocode_change start: keep high-churn transcripts out of the settings
+	// useState so streaming messageUpdated cannot change the settings object
+	// identity or the memoized settings context value.
+	const [clineMessages, setClineMessages] = useState<ClineMessage[]>([])
+	const [parallelSessionMessages, setParallelSessionMessages] = useState<Record<string, ClineMessage[]>>({})
+	// kilocode_change end
+
 	const [didHydrateState, setDidHydrateState] = useState(false)
 	const [showWelcome, setShowWelcome] = useState(false)
 	const [theme, setTheme] = useState<any>(undefined)
@@ -468,7 +492,8 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 				case "state": {
 					const newState = message.state!
 					// kilocode_change: preserve parallel slices through merges
-					setState((prevState) => mergeExtensionState(prevState, newState) as WebviewState)
+					setState((prevState) => mergeExtensionState(prevState, newState))
+					setClineMessages(newState.clineMessages ?? [])
 					setShowWelcome(!checkExistKey(newState.apiConfiguration))
 					setDidHydrateState(true)
 					// Update alwaysAllowFollowupQuestions if present in state message
@@ -513,13 +538,15 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 						parallelFolders: folders,
 						parallelConversations: conversations,
 						parallelActiveConversationId: message.parallelActiveConversationId,
-						// Keep messages only for sessions that still exist.
-						parallelSessionMessages: Object.fromEntries(
-							Object.entries(prevState.parallelSessionMessages ?? {}).filter(([id]) =>
+					}))
+					// Keep messages only for sessions that still exist.
+					setParallelSessionMessages((prevMessages) =>
+						Object.fromEntries(
+							Object.entries(prevMessages).filter(([id]) =>
 								sessions.some((session) => session.sessionId === id),
 							),
 						),
-					}))
+					)
 					break
 				}
 				case "parallelSessionMessage":
@@ -527,8 +554,8 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 					const sessionId = message.parallelSessionId!
 					const clineMessage = message.clineMessage!
 					const isUpdate = message.type === "parallelSessionMessageUpdated"
-					setState((prevState) => {
-						const list = [...(prevState.parallelSessionMessages?.[sessionId] ?? [])]
+					setParallelSessionMessages((prevMessages) => {
+						const list = [...(prevMessages[sessionId] ?? [])]
 						if (isUpdate) {
 							const index = list.findIndex((m) => m.ts === clineMessage.ts)
 							if (index === -1) {
@@ -540,11 +567,8 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 							list.push(clineMessage)
 						}
 						return {
-							...prevState,
-							parallelSessionMessages: {
-								...(prevState.parallelSessionMessages ?? {}),
-								[sessionId]: list,
-							},
+							...prevMessages,
+							[sessionId]: list,
 						}
 					})
 					break
@@ -586,13 +610,13 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 				}
 				case "messageUpdated": {
 					const clineMessage = message.clineMessage!
-					setState((prevState) => {
+					setClineMessages((prevMessages) => {
 						// worth noting it will never be possible for a more up-to-date message to be sent here or in normal messages post since the presentAssistantContent function uses lock
-						const lastIndex = findLastIndex(prevState.clineMessages, (msg) => msg.ts === clineMessage.ts)
+						const lastIndex = findLastIndex(prevMessages, (msg) => msg.ts === clineMessage.ts)
 						if (lastIndex !== -1) {
-							const newClineMessages = [...prevState.clineMessages]
+							const newClineMessages = [...prevMessages]
 							newClineMessages[lastIndex] = clineMessage
-							return { ...prevState, clineMessages: newClineMessages }
+							return newClineMessages
 						}
 						// kilocode_change start: incremental append for new messages
 						// The extension host streams newly created messages through this
@@ -601,12 +625,12 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 						// long conversations). A message strictly newer than the current
 						// tail is an append; anything else (out-of-order/legacy replay)
 						// stays a no-op so the full-state snapshot remains authoritative.
-						const tail = prevState.clineMessages.at(-1)
+						const tail = prevMessages.at(-1)
 						if (!tail || clineMessage.ts > tail.ts) {
-							return { ...prevState, clineMessages: [...prevState.clineMessages, clineMessage] }
+							return [...prevMessages, clineMessage]
 						}
 						// kilocode_change end
-						return prevState
+						return prevMessages
 					})
 					break
 				}
@@ -709,7 +733,16 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		setPrevCloudIsAuthenticated(currentAuth)
 	}, [state.cloudIsAuthenticated, prevCloudIsAuthenticated, state.apiConfiguration?.apiProvider])
 
-	const contextValue: ExtensionStateContextType = {
+	const messageSlice = useMemo<ExtensionMessageSlice>(
+		() => ({
+			clineMessages,
+			parallelSessionMessages,
+		}),
+		[clineMessages, parallelSessionMessages],
+	)
+
+	const contextValue = useMemo<ExtensionSettingsContextType>(
+		() => ({
 		...state,
 		reasoningBlockCollapsed: state.reasoningBlockCollapsed ?? true,
 		didHydrateState,
@@ -916,17 +949,77 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		setIncludeCurrentTime,
 		includeCurrentCost,
 		setIncludeCurrentCost,
-	}
+		}),
+		[
+			state,
+			didHydrateState,
+			showWelcome,
+			theme,
+			mcpServers,
+			mcpMarketplaceCatalog,
+			currentCheckpoint,
+			filePaths,
+			openedTabs,
+			globalRules,
+			localRules,
+			globalWorkflows,
+			localWorkflows,
+			commands,
+			extensionRouterModels,
+			dynamicProviderModels,
+			marketplaceItems,
+			marketplaceInstalledMetadata,
+			alwaysAllowFollowupQuestions,
+			followupAutoApproveTimeoutMs,
+			includeTaskHistoryInEnhance,
+			includeCurrentTime,
+			includeCurrentCost,
+			setApiConfiguration,
+			setListApiConfigMeta,
+		],
+	)
 
-	return <ExtensionStateContext.Provider value={contextValue}>{children}</ExtensionStateContext.Provider>
+	return (
+		<ExtensionStateContext.Provider value={contextValue}>
+			<ExtensionMessageSliceContext.Provider value={messageSlice}>{children}</ExtensionMessageSliceContext.Provider>
+		</ExtensionStateContext.Provider>
+	)
 }
 
-export const useExtensionState = () => {
+export const useExtensionSettings = () => {
 	const context = useContext(ExtensionStateContext)
 
 	if (context === undefined) {
-		throw new Error("useExtensionState must be used within an ExtensionStateContextProvider")
+		throw new Error("useExtensionSettings must be used within an ExtensionStateContextProvider")
 	}
 
 	return context
+}
+
+export const useExtensionMessages = () => {
+	const context = useContext(ExtensionMessageSliceContext)
+
+	if (context === undefined) {
+		throw new Error("useExtensionMessages must be used within an ExtensionStateContextProvider")
+	}
+
+	return context
+}
+
+export const useExtensionState = (): ExtensionStateContextType => {
+	const settings = useContext(ExtensionStateContext)
+	const messages = useContext(ExtensionMessageSliceContext)
+
+	if (settings === undefined || messages === undefined) {
+		throw new Error("useExtensionState must be used within an ExtensionStateContextProvider")
+	}
+
+	return useMemo(
+		() => ({
+			...settings,
+			clineMessages: messages.clineMessages,
+			parallelSessionMessages: messages.parallelSessionMessages,
+		}),
+		[settings, messages],
+	)
 }

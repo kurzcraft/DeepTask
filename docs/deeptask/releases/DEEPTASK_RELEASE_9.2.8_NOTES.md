@@ -50,3 +50,10 @@
 - 进程测试使用模拟子进程；Git工作区测试使用受控临时仓库。上述测试不等于用户现场中断、跨平台全覆盖或长时灰屏验收。
 - 修复前现场采样约44.93分钟、269个样本：系统OOM kill计数未增加；扩展宿主RSS约642至669MiB，峰值约702MiB；文件监听进程约1311至1868MiB。另一个未明确归属进程继续增长，尚不能归因到具体插件对象。
 - 没有告警同步堆快照、灰屏现场及同负载前后对照，不能据此声称内存泄漏已经全部消除。安装核验只证明磁盘文件，运行宿主加载状态与重载后长时表现仍须分别验证。
+
+## 面板堆持有链（2026-10-28 追加）
+
+- 90% 告警来自 webview `totalJSHeapSize / jsHeapSizeLimit`，不是整机 RAM。现场证据显示历史行仍订阅完整扩展状态，流式 `messageUpdated` 会带动整棵翻译树和已渲染行重绘。
+- 设置与转录拆成独立 context：`ChatRow` / `TranslationProvider` 只订设置；列表元数据一次预计算，`previousTodos` 作为 props 传入，不再每行反向扫描全文。
+- 最后一行才接收 `lastModifiedMessage` 与 `isStreaming`；历史行保持原有 checkpoint、浏览器动作配对和 todo 对比语义。
+- 专项回归：`chatRowListMeta`、`ChatRow` 错误行、`TranslationContext`、`ExtensionStateContext` 共 4 文件 21 项通过。未完成重载后的长期灰屏现场验收。
