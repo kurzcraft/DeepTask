@@ -1676,7 +1676,7 @@ export class McpHub {
 
 	async deleteConnection(name: string, source?: "global" | "project"): Promise<void> {
 		// Clean up file watchers for this server
-		this.removeFileWatchersForServer(name)
+		this.removeFileWatchersForServer(name, source) // kilocode_change: source owns its watchers.
 
 		// kilocode_change - Cancel any pending reconnect attempts
 		if (source) {
@@ -1737,7 +1737,7 @@ export class McpHub {
 		if (manageConnectingState) {
 			this.isConnecting = true
 		}
-		this.removeAllFileWatchers()
+		// kilocode_change: unchanged and other-source servers retain their live watchers.
 		// Filter connections by source
 		const currentConnections = this.connections.filter(
 			(conn) => conn.server.source === source || (!conn.server.source && source === "global"),
@@ -1769,10 +1769,7 @@ export class McpHub {
 			if (!currentConnection) {
 				// New server
 				try {
-					// Only setup file watcher for enabled servers
-					if (!validatedConfig.disabled) {
-						this.setupFileWatcher(name, validatedConfig, source)
-					}
+					// kilocode_change: connectToServer exclusively creates the watcher set.
 					await this.connectToServer(name, validatedConfig, source)
 				} catch (error) {
 					this.showErrorMessage(`Failed to connect to new MCP server ${name}`, error)
@@ -1780,10 +1777,7 @@ export class McpHub {
 			} else if (!deepEqual(JSON.parse(currentConnection.server.config), config)) {
 				// Existing server with changed config
 				try {
-					// Only setup file watcher for enabled servers
-					if (!validatedConfig.disabled) {
-						this.setupFileWatcher(name, validatedConfig, source)
-					}
+					// kilocode_change: connectToServer exclusively creates the watcher set.
 					await this.deleteConnection(name, source)
 					await this.connectToServer(name, validatedConfig, source)
 				} catch (error) {
@@ -1803,12 +1797,12 @@ export class McpHub {
 		config: z.infer<typeof ServerConfigSchema>,
 		source: "global" | "project" = "global",
 	) {
-		// Initialize an empty array for this server if it doesn't exist
-		if (!this.fileWatchers.has(name)) {
-			this.fileWatchers.set(name, [])
-		}
-
-		const watchers = this.fileWatchers.get(name) || []
+		// kilocode_change start: ownership is (source, name), not just name.
+		this.removeFileWatchersForServer(name, source)
+		const key = JSON.stringify([source, name])
+		const watchers: FSWatcher[] = []
+		this.fileWatchers.set(key, watchers)
+		// kilocode_change end
 
 		// Only stdio type has args
 		if (config.type === "stdio") {
@@ -1821,6 +1815,7 @@ export class McpHub {
 				})
 
 				watchPathsWatcher.on("change", async (changedPath) => {
+					if (this.fileWatchers.get(key) !== watchers) return // kilocode_change: stale callback
 					try {
 						// Pass the source from the config to restartConnection
 						await this.restartConnection(name, source)
@@ -1843,6 +1838,7 @@ export class McpHub {
 				})
 
 				indexJsWatcher.on("change", async () => {
+					if (this.fileWatchers.get(key) !== watchers) return // kilocode_change: stale callback
 					try {
 						// Pass the source from the config to restartConnection
 						await this.restartConnection(name, source)
@@ -1856,23 +1852,37 @@ export class McpHub {
 
 			// Update the fileWatchers map with all watchers for this server
 			if (watchers.length > 0) {
-				this.fileWatchers.set(name, watchers)
+				this.fileWatchers.set(key, watchers)
 			}
 		}
 	}
 
-	private removeAllFileWatchers() {
-		this.fileWatchers.forEach((watchers) => watchers.forEach((watcher) => watcher.close()))
-		this.fileWatchers.clear()
-	}
-
-	private removeFileWatchersForServer(serverName: string) {
-		const watchers = this.fileWatchers.get(serverName)
-		if (watchers) {
-			watchers.forEach((watcher) => watcher.close())
-			this.fileWatchers.delete(serverName)
+	// kilocode_change start
+	private closeFileWatchers(watchers: FSWatcher[]): void {
+		for (const watcher of watchers) {
+			try {
+				void watcher.close().catch((error) => console.error("Failed to close MCP file watcher:", error))
+			} catch (error) {
+				console.error("Failed to close MCP file watcher:", error)
+			}
 		}
 	}
+
+	private removeAllFileWatchers(): void {
+		const groups = [...this.fileWatchers.values()]
+		this.fileWatchers.clear()
+		for (const watchers of groups) this.closeFileWatchers(watchers)
+	}
+
+	private removeFileWatchersForServer(serverName: string, source?: "global" | "project"): void {
+		for (const owner of source ? [source] : ["global", "project"]) {
+			const key = JSON.stringify([owner, serverName])
+			const watchers = this.fileWatchers.get(key)
+			this.fileWatchers.delete(key)
+			if (watchers) this.closeFileWatchers(watchers)
+		}
+	}
+	// kilocode_change end
 
 	async restartConnection(serverName: string, source?: "global" | "project"): Promise<void> {
 		this.isConnecting = true

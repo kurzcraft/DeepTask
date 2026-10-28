@@ -26,6 +26,7 @@ export class CodeIndexManager {
 	private _orchestrator: CodeIndexOrchestrator | undefined
 	private _searchService: CodeIndexSearchService | undefined
 	private _cacheManager: CacheManager | undefined
+	private _rooIgnoreController: RooIgnoreController | undefined // kilocode_change: manager-owned shared watcher
 
 	// Flag to prevent race conditions during error recovery
 	private _isRecoveringFromError = false
@@ -262,12 +263,16 @@ export class CodeIndexManager {
 
 		this._isRecoveringFromError = true
 		try {
+			// kilocode_change: stop consumers before releasing their shared ignore watcher.
+			this._orchestrator?.stopWatcher()
 			// Clear error state
 			this._stateManager.setSystemState("Standby", "")
 		} catch (error) {
 			// Log error but continue with recovery - clearing service instances is more important
 			console.error("Failed to clear error state during recovery:", error)
 		} finally {
+			this._rooIgnoreController?.dispose() // kilocode_change
+			this._rooIgnoreController = undefined // kilocode_change
 			// Force re-initialization by clearing service instances
 			// This ensures a clean slate even if state update failed
 			this._configManager = undefined
@@ -284,9 +289,11 @@ export class CodeIndexManager {
 	 * Cleans up the manager instance.
 	 */
 	public dispose(): void {
-		if (this._orchestrator) {
-			this.stopWatcher()
-		}
+		// kilocode_change start: cleanup cannot depend on the current feature setting.
+		this._orchestrator?.stopWatcher()
+		this._rooIgnoreController?.dispose()
+		this._rooIgnoreController = undefined
+		// kilocode_change end
 		this._stateManager.dispose()
 	}
 
@@ -332,10 +339,11 @@ export class CodeIndexManager {
 	 * Used by both initialize() and handleSettingsChange().
 	 */
 	private async _recreateServices(): Promise<void> {
-		// Stop watcher if it exists
-		if (this._orchestrator) {
-			this.stopWatcher()
-		}
+		// kilocode_change start: release resources owned by the previous service generation.
+		this._orchestrator?.stopWatcher()
+		this._rooIgnoreController?.dispose()
+		this._rooIgnoreController = undefined
+		// kilocode_change end
 		// Clear existing services to ensure clean state
 		this._orchestrator = undefined
 		this._searchService = undefined
@@ -373,58 +381,68 @@ export class CodeIndexManager {
 
 		// Create RooIgnoreController instance
 		const rooIgnoreController = new RooIgnoreController(workspacePath)
-		await rooIgnoreController.initialize()
+		this._rooIgnoreController = rooIgnoreController // kilocode_change
+		try {
+			// kilocode_change: failed initialization must release the new watcher too.
+			await rooIgnoreController.initialize()
 
-		// (Re)Create shared service instances
-		const { embedder, vectorStore, scanner, fileWatcher } = this._serviceFactory.createServices(
-			this.context,
-			this._cacheManager!,
-			ignoreInstance,
-			rooIgnoreController,
-		)
+			// (Re)Create shared service instances
+			const { embedder, vectorStore, scanner, fileWatcher } = this._serviceFactory.createServices(
+				this.context,
+				this._cacheManager!,
+				ignoreInstance,
+				rooIgnoreController,
+			)
 
-		// kilocode_change start: Handle Kilo org mode (no embedder/vector store validation needed)
-		const isKiloOrgMode = this._configManager!.isKiloOrgMode
+			// kilocode_change start: Handle Kilo org mode (no embedder/vector store validation needed)
+			const isKiloOrgMode = this._configManager!.isKiloOrgMode
 
-		if (!isKiloOrgMode) {
-			// Only validate the embedder if it matches the currently configured provider
-			const config = this._configManager!.getConfig()
-			const shouldValidate = embedder && embedder.embedderInfo.name === config.embedderProvider
+			if (!isKiloOrgMode) {
+				// Only validate the embedder if it matches the currently configured provider
+				const config = this._configManager!.getConfig()
+				const shouldValidate = embedder && embedder.embedderInfo.name === config.embedderProvider
 
-			if (shouldValidate) {
-				const validationResult = await this._serviceFactory.validateEmbedder(embedder)
-				if (!validationResult.valid) {
-					const errorMessage = validationResult.error || "Embedder configuration validation failed"
-					this._stateManager.setSystemState("Error", errorMessage)
-					throw new Error(errorMessage)
+				if (shouldValidate) {
+					const validationResult = await this._serviceFactory.validateEmbedder(embedder)
+					if (!validationResult.valid) {
+						const errorMessage = validationResult.error || "Embedder configuration validation failed"
+						this._stateManager.setSystemState("Error", errorMessage)
+						throw new Error(errorMessage)
+					}
 				}
 			}
+			// kilocode_change end
+
+			// (Re)Initialize orchestrator
+			this._orchestrator = new CodeIndexOrchestrator(
+				this._configManager!,
+				this._stateManager,
+				this.workspacePath,
+				this._cacheManager!,
+				vectorStore,
+				scanner,
+				fileWatcher,
+			)
+
+			// kilocode_change start: Always create search service (it handles both local and Kilo org mode)
+			// In Kilo org mode, embedder and vectorStore ill be null, but search service handles this
+			this._searchService = new CodeIndexSearchService(
+				this._configManager!,
+				this._stateManager,
+				embedder,
+				vectorStore,
+			)
+			// kilocode_change end
+
+			// Clear any error state after successful recwreation
+			this._stateManager.setSystemState("Standby", "")
+			// kilocode_change start
+		} catch (error) {
+			rooIgnoreController.dispose()
+			if (this._rooIgnoreController === rooIgnoreController) this._rooIgnoreController = undefined
+			throw error
 		}
 		// kilocode_change end
-
-		// (Re)Initialize orchestrator
-		this._orchestrator = new CodeIndexOrchestrator(
-			this._configManager!,
-			this._stateManager,
-			this.workspacePath,
-			this._cacheManager!,
-			vectorStore,
-			scanner,
-			fileWatcher,
-		)
-
-		// kilocode_change start: Always create search service (it handles both local and Kilo org mode)
-		// In Kilo org mode, embedder and vectorStore ill be null, but search service handles this
-		this._searchService = new CodeIndexSearchService(
-			this._configManager!,
-			this._stateManager,
-			embedder,
-			vectorStore,
-		)
-		// kilocode_change end
-
-		// Clear any error state after successful recwreation
-		this._stateManager.setSystemState("Standby", "")
 	}
 
 	/**

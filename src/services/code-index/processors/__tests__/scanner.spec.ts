@@ -151,6 +151,29 @@ describe("DirectoryScanner", () => {
 		vi.mocked(listFiles).mockResolvedValue([["test/file1.js", "test/file2.js"], false])
 	})
 
+	// kilocode_change start
+	it.each(["success", "initialize", "filter"])("disposes scan-local ignore watcher on %s", async (mode) => {
+		const { RooIgnoreController } = await import("../../../../core/ignore/RooIgnoreController")
+		const initialize = vi.spyOn(RooIgnoreController.prototype, "initialize").mockResolvedValue(undefined)
+		const filter = vi.spyOn(RooIgnoreController.prototype, "filterPaths").mockReturnValue([])
+		const dispose = vi.spyOn(RooIgnoreController.prototype, "dispose")
+		try {
+			if (mode === "initialize") initialize.mockRejectedValueOnce(new Error("init failure"))
+			if (mode === "filter")
+				filter.mockImplementationOnce(() => {
+					throw new Error("filter failure")
+				})
+			if (mode === "success") await scanner.scanDirectory("/test")
+			else await expect(scanner.scanDirectory("/test")).rejects.toThrow()
+			expect(dispose).toHaveBeenCalledOnce()
+		} finally {
+			initialize.mockRestore()
+			filter.mockRestore()
+			dispose.mockRestore()
+		}
+	})
+	// kilocode_change end
+
 	describe("scanDirectory", () => {
 		it("should skip files larger than MAX_FILE_SIZE_BYTES", async () => {
 			const { listFiles } = await import("../../../glob/list-files")

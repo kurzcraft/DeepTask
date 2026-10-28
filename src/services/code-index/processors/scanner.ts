@@ -118,10 +118,15 @@ export class DirectoryScanner implements IDirectoryScanner {
 		// Initialize RooIgnoreController if not provided
 		const ignoreController = new RooIgnoreController(directoryPath)
 
-		await ignoreController.initialize()
-
-		// Filter paths using .rooignore
-		const allowedPaths = ignoreController.filterPaths(filePaths)
+		// kilocode_change start: this controller is only needed for this synchronous filter.
+		let allowedPaths: string[]
+		try {
+			await ignoreController.initialize()
+			allowedPaths = ignoreController.filterPaths(filePaths)
+		} finally {
+			ignoreController.dispose()
+		}
+		// kilocode_change end
 
 		// Filter by supported extensions, ignore patterns, and excluded directories
 		const supportedPaths = allowedPaths.filter((filePath) => {

@@ -16,6 +16,11 @@
 - Coalesce overlapping full-state builds with a shared trailing promise; deduplicate paired fork IPC snapshots while preserving standalone state events and parent controls.
 - Release settled workspace claims only for their expected owner, serialize registry mutations, and protect resumed or actively writing instances from stale cleanup.
 - Remove duplicate host-generated progress and command rules and compact MCP schema whitespace without dropping user instructions, tool fields, or conversation history.
+- Preserve native tool argument text without legacy HTML decoding; retain XML compatibility and preview fidelity.
+- Validate oversized or malformed Bash commands without executing substitutions or startup files; keep normal long-running terminal tasks unbounded by the preflight deadline.
+- Protect final conversation snapshots after cancellation and isolate streaming tool parsing by task to prevent cross-session state interference.
+- Scope MCP file watchers by server and configuration source, and dispose indexing ignore watchers with their owning scan or service generation.
+- Queue agent startup handshakes without serializing active work; retain process ownership through exit, settle terminal events once, and bound termination cleanup.
 
 ## 9.2.7
 

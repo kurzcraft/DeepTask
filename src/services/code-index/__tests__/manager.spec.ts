@@ -294,6 +294,30 @@ describe("CodeIndexManager - handleSettingsChange regression", () => {
 		})
 	})
 
+	// kilocode_change start
+	it("releases the shared ignore controller on disposal even when disabled", () => {
+		const controller = { dispose: vi.fn() }
+		const orchestrator = { stopWatcher: vi.fn() }
+		Object.assign(manager, { _rooIgnoreController: controller, _orchestrator: orchestrator })
+		expect(manager.isFeatureEnabled).toBe(false)
+		manager.dispose()
+		expect(orchestrator.stopWatcher).toHaveBeenCalledOnce()
+		expect(controller.dispose).toHaveBeenCalledOnce()
+		expect((manager as any)._rooIgnoreController).toBeUndefined()
+	})
+
+	it("releases the shared ignore controller on recovery", async () => {
+		const controller = { dispose: vi.fn() }
+		const orchestrator = { stopWatcher: vi.fn() }
+		Object.assign(manager, { _rooIgnoreController: controller, _orchestrator: orchestrator })
+		await manager.recoverFromError()
+		await manager.recoverFromError()
+		expect(orchestrator.stopWatcher).toHaveBeenCalledOnce()
+		expect(controller.dispose).toHaveBeenCalledOnce()
+		expect((manager as any)._rooIgnoreController).toBeUndefined()
+	})
+	// kilocode_change end
+
 	describe("embedder validation integration", () => {
 		let mockServiceFactoryInstance: any
 		let mockStateManager: any
@@ -350,6 +374,29 @@ describe("CodeIndexManager - handleSettingsChange regression", () => {
 			}
 			;(manager as any)._configManager = mockConfigManager
 		})
+
+		// kilocode_change start
+		it("releases previous and failed-generation ignore watchers", async () => {
+			const previous = { dispose: vi.fn() }
+			;(manager as any)._rooIgnoreController = previous
+			mockServiceFactoryInstance.validateEmbedder.mockResolvedValue({ valid: false, error: "invalid" })
+			await expect((manager as any)._recreateServices()).rejects.toThrow("invalid")
+			const created = mockServiceFactoryInstance.createServices.mock.calls[0][3]
+			expect(previous.dispose).toHaveBeenCalledOnce()
+			expect((manager as any)._rooIgnoreController).toBeUndefined()
+			expect(created.disposables).toHaveLength(0)
+		})
+
+		it("retains a successful generation until the next recreation", async () => {
+			mockServiceFactoryInstance.validateEmbedder.mockResolvedValue({ valid: true })
+			await (manager as any)._recreateServices()
+			const previous = (manager as any)._rooIgnoreController
+			const dispose = vi.spyOn(previous, "dispose")
+			await (manager as any)._recreateServices()
+			expect(dispose).toHaveBeenCalledOnce()
+			expect((manager as any)._rooIgnoreController).not.toBe(previous)
+		})
+		// kilocode_change end
 
 		it("should validate embedder during _recreateServices when validation succeeds", async () => {
 			// Arrange

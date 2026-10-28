@@ -8,6 +8,7 @@ import OpenAI from "openai"
 import { OpenRouterHandler } from "../openrouter"
 import { ApiHandlerOptions } from "../../../shared/api"
 import { Package } from "../../../shared/package"
+import { OPENAI_UNLIMITED_TIMEOUT_MS } from "../utils/timeout-config" // kilocode_change
 
 vitest.mock("openai")
 vitest.mock("delay", () => ({ default: vitest.fn(() => Promise.resolve()) }))
@@ -102,6 +103,7 @@ describe("OpenRouterHandler", () => {
 		expect(OpenAI).toHaveBeenCalledWith({
 			baseURL: "https://openrouter.ai/api/v1",
 			apiKey: mockOptions.openRouterApiKey,
+			timeout: OPENAI_UNLIMITED_TIMEOUT_MS, // kilocode_change: existing default is explicit.
 			defaultHeaders: {
 				"HTTP-Referer": "https://kilocode.ai",
 				"X-Title": "Kilo Code",

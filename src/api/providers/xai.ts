@@ -4,7 +4,7 @@ import OpenAI from "openai"
 import { type XAIModelId, xaiDefaultModelId, xaiModels, xaiInferModelInfo, ApiProviderError } from "@roo-code/types"
 import { TelemetryService } from "@roo-code/telemetry"
 
-import { NativeToolCallParser } from "../../core/assistant-message/NativeToolCallParser"
+// kilocode_change: native completion tracking is request-local; no global parser state.
 import type { ApiHandlerOptions } from "../../shared/api"
 
 import { ApiStream } from "../transform/stream"
@@ -90,6 +90,8 @@ export class XAIHandler extends BaseProvider implements SingleCompletionHandler 
 			throw handleOpenAIError(error, this.providerName)
 		}
 
+		// kilocode_change: keep only IDs here; Task owns argument accumulation.
+		const pendingToolCallIds = new Set<string>()
 		for await (const chunk of stream) {
 			verifyFinishReason(chunk.choices[0]) // kilocode_change
 			const delta = chunk.choices[0]?.delta
@@ -112,6 +114,8 @@ export class XAIHandler extends BaseProvider implements SingleCompletionHandler 
 			// Handle tool calls in stream - emit partial chunks for NativeToolCallParser
 			if (delta?.tool_calls) {
 				for (const toolCall of delta.tool_calls) {
+					// kilocode_change: register before yielding so consumers need no shared state.
+					if (toolCall.id) pendingToolCallIds.add(toolCall.id)
 					yield {
 						type: "tool_call_partial",
 						index: toolCall.index,
@@ -124,12 +128,14 @@ export class XAIHandler extends BaseProvider implements SingleCompletionHandler 
 
 			// Process finish_reason to emit tool_call_end events
 			// This ensures tool calls are finalized even if the stream doesn't properly close
-			if (finishReason) {
-				const endEvents = NativeToolCallParser.processFinishReason(finishReason)
-				for (const event of endEvents) {
-					yield event
+			// kilocode_change start
+			if (finishReason === "tool_calls") {
+				for (const id of pendingToolCallIds) {
+					yield { type: "tool_call_end", id }
 				}
+				pendingToolCallIds.clear()
 			}
+			// kilocode_change end
 
 			if (chunk.usage) {
 				// Extract detailed token information if available

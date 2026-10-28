@@ -4,7 +4,7 @@ import OpenAI from "openai"
 import { rooDefaultModelId, getApiProtocol, type ImageGenerationApiMethod } from "@roo-code/types"
 import { CloudService } from "@roo-code/cloud"
 
-import { NativeToolCallParser } from "../../core/assistant-message/NativeToolCallParser"
+// kilocode_change: native completion tracking is request-local; no global parser state.
 
 import { Package } from "../../shared/package"
 import type { ApiHandlerOptions } from "../../shared/api"
@@ -163,6 +163,8 @@ export class RooHandler extends BaseOpenAiCompatibleProvider<string> {
 			// we skip yielding the top-level reasoning field to avoid duplicate display.
 			let hasYieldedReasoningFromDetails = false
 
+			// kilocode_change: keep only IDs here; Task owns argument accumulation.
+			const pendingToolCallIds = new Set<string>()
 			for await (const chunk of stream) {
 				const delta = chunk.choices[0]?.delta
 				const finishReason = chunk.choices[0]?.finish_reason
@@ -257,6 +259,8 @@ export class RooHandler extends BaseOpenAiCompatibleProvider<string> {
 					// Emit raw tool call chunks - NativeToolCallParser handles state management
 					if ("tool_calls" in delta && Array.isArray(delta.tool_calls)) {
 						for (const toolCall of delta.tool_calls) {
+							// kilocode_change: register before yielding so consumers need no shared state.
+							if (toolCall.id) pendingToolCallIds.add(toolCall.id)
 							yield {
 								type: "tool_call_partial",
 								index: toolCall.index,
@@ -275,12 +279,14 @@ export class RooHandler extends BaseOpenAiCompatibleProvider<string> {
 					}
 				}
 
-				if (finishReason) {
-					const endEvents = NativeToolCallParser.processFinishReason(finishReason)
-					for (const event of endEvents) {
-						yield event
+				// kilocode_change start
+				if (finishReason === "tool_calls") {
+					for (const id of pendingToolCallIds) {
+						yield { type: "tool_call_end", id }
 					}
+					pendingToolCallIds.clear()
 				}
+				// kilocode_change end
 
 				if (chunk.usage) {
 					lastUsage = chunk.usage as RooUsage

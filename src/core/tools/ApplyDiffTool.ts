@@ -36,7 +36,8 @@ export class ApplyDiffTool extends BaseTool<"apply_diff"> {
 		const { askApproval, handleError, pushToolResult, toolProtocol } = callbacks
 		let { path: relPath, diff: diffContent } = params
 
-		if (diffContent && !task.api.getModel().id.includes("claude")) {
+		// kilocode_change: native JSON diff strings have already been decoded exactly once.
+		if (toolProtocol !== "native" && diffContent && !task.api.getModel().id.includes("claude")) {
 			diffContent = unescapeHtmlEntities(diffContent)
 		}
 

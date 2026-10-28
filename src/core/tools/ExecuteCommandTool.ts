@@ -24,6 +24,10 @@ import {
 	getExecuteCommandPhysicalLineLimitError,
 	isExecuteCommandOverPhysicalLineLimit,
 } from "./helpers/commandPhysicalLines" // kilocode_change: hard 2-line command guard
+// kilocode_change start: bounded input preflight, not a timeout for actual work.
+import { getCommandInputError, getCommandSyntaxError } from "./helpers/commandPreflight"
+import { getShell } from "../../utils/shell"
+// kilocode_change end
 
 const COMMAND_OUTPUT_PERSISTENCE_TIMEOUT_MS = 2_000 // kilocode_change
 
@@ -45,23 +49,28 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 	}
 
 	async execute(params: ExecuteCommandParams, task: Task, callbacks: ToolCallbacks): Promise<void> {
-		const { command, cwd: customCwd } = params
+		const { command: rawCommand, cwd: customCwd } = params // kilocode_change
 		const { handleError, pushToolResult, askApproval, removeClosingTag, toolProtocol } = callbacks
 
 		try {
-			if (!command) {
+			if (!rawCommand) {
 				task.consecutiveMistakeCount++
 				task.recordToolError("execute_command")
 				pushToolResult(await task.sayAndCreateMissingParamError("execute_command", "command"))
 				return
 			}
 
-			// kilocode_change start: reject >2 physical lines before approval/terminal
-			if (isExecuteCommandOverPhysicalLineLimit(command)) {
+			// kilocode_change start: decode legacy entities only; validate exactly what will execute.
+			const command = toolProtocol === "native" ? rawCommand : unescapeHtmlEntities(rawCommand)
+			const inputError =
+				getCommandInputError(command) ??
+				(isExecuteCommandOverPhysicalLineLimit(command)
+					? getExecuteCommandPhysicalLineLimitError(countCommandPhysicalLines(command))
+					: undefined)
+			if (inputError) {
 				task.consecutiveMistakeCount++
 				task.recordToolError("execute_command")
-				const errorMessage = getExecuteCommandPhysicalLineLimitError(countCommandPhysicalLines(command))
-				pushToolResult(formatResponse.toolError(errorMessage, toolProtocol))
+				pushToolResult(formatResponse.toolError(inputError, toolProtocol))
 				return
 			}
 			// kilocode_change end
@@ -74,10 +83,18 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 				return
 			}
 
+			// kilocode_change start: syntax checker never executes the command or starts a terminal.
+			const syntaxError = await getCommandSyntaxError(command, getShell())
+			if (syntaxError) {
+				task.consecutiveMistakeCount++
+				task.recordToolError("execute_command")
+				pushToolResult(formatResponse.toolError(syntaxError, toolProtocol))
+				return
+			}
 			task.consecutiveMistakeCount = 0
-
-			const unescapedCommand = unescapeHtmlEntities(command)
+			const unescapedCommand = command
 			const didApprove = await askApproval("command", unescapedCommand)
+			// kilocode_change end
 
 			if (!didApprove) {
 				return
@@ -159,7 +176,7 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 	override async handlePartial(task: Task, block: ToolUse<"execute_command">): Promise<void> {
 		const command = block.params.command
 		// kilocode_change start: never open approval UI for over-limit streaming commands
-		if (isExecuteCommandOverPhysicalLineLimit(command)) {
+		if (getCommandInputError(command) || isExecuteCommandOverPhysicalLineLimit(command)) {
 			return
 		}
 		// kilocode_change end

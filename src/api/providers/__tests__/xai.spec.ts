@@ -41,6 +41,42 @@ describe("XAIHandler", () => {
 		handler = new XAIHandler({})
 	})
 
+	// kilocode_change start
+	it("isolates interleaved tool completion events without shared parser state", async () => {
+		const makeStream = (id: string) =>
+			(async function* () {
+				yield {
+					choices: [
+						{
+							delta: {
+								tool_calls: [
+									{
+										index: 0,
+										id,
+										function: {
+											name: "write_to_file",
+											arguments: JSON.stringify({ path: id, content: id }),
+										},
+									},
+								],
+							},
+						},
+					],
+				}
+				yield { choices: [{ delta: {}, finish_reason: "tool_calls" }] }
+			})()
+		mockCreate.mockResolvedValueOnce(makeStream("call-a")).mockResolvedValueOnce(makeStream("call-b"))
+		const a = handler.createMessage("A", [])
+		const b = handler.createMessage("B", [])
+		expect((await a.next()).value).toMatchObject({ type: "tool_call_partial", id: "call-a" })
+		expect((await b.next()).value).toMatchObject({ type: "tool_call_partial", id: "call-b" })
+		expect((await a.next()).value).toEqual({ type: "tool_call_end", id: "call-a" })
+		await a.return(undefined)
+		expect((await b.next()).value).toEqual({ type: "tool_call_end", id: "call-b" })
+		expect((await b.next()).done).toBe(true)
+	})
+	// kilocode_change end
+
 	it("should use the correct X.AI base URL", () => {
 		expect(OpenAI).toHaveBeenCalledWith(
 			expect.objectContaining({

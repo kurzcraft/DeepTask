@@ -9,6 +9,8 @@ import { unescapeHtmlEntities } from "../../../utils/text-normalization"
 import { everyLineHasLineNumbers, stripLineNumbers } from "../../../integrations/misc/extract-text"
 import { ToolUse, ToolResponse } from "../../../shared/tools"
 import { writeToFileTool } from "../WriteToFileTool"
+// kilocode_change: exercise the native JSON parser before the write tool.
+import { NativeToolCallParser } from "../../assistant-message/NativeToolCallParser"
 
 vi.mock("path", async () => {
 	const originalPath = await vi.importActual("path")
@@ -180,6 +182,7 @@ describe("writeToFileTool", () => {
 		mockCline.say = vi.fn().mockResolvedValue(undefined)
 		mockCline.ask = vi.fn().mockResolvedValue(undefined)
 		mockCline.recordToolError = vi.fn()
+		mockCline.processQueuedMessages = vi.fn()
 		mockCline.sayAndCreateMissingParamError = vi.fn().mockResolvedValue("Missing param error")
 
 		mockAskApproval = vi.fn().mockResolvedValue(true)
@@ -198,6 +201,7 @@ describe("writeToFileTool", () => {
 			fileExists?: boolean
 			isPartial?: boolean
 			accessAllowed?: boolean
+			toolProtocol?: "native" | "xml"
 		} = {},
 	): Promise<ToolResponse | undefined> {
 		// Configure mocks based on test scenario
@@ -224,12 +228,24 @@ describe("writeToFileTool", () => {
 			toolResult = result
 		})
 
-		await writeToFileTool.handle(mockCline, toolUse as ToolUse<"write_to_file">, {
+		// kilocode_change: native arguments must survive one JSON decode, not legacy cleanup.
+		const toolProtocol = options.toolProtocol ?? "xml"
+		const parsed =
+			toolProtocol === "native"
+				? NativeToolCallParser.parseToolCall({
+						id: "write-fidelity",
+						name: "write_to_file",
+						arguments: JSON.stringify(toolUse.params),
+					})
+				: toolUse
+		expect(parsed).not.toBeNull()
+		parsed!.partial = isPartial
+		await writeToFileTool.handle(mockCline, parsed as ToolUse<"write_to_file">, {
 			askApproval: mockAskApproval,
 			handleError: mockHandleError,
 			pushToolResult: mockPushToolResult,
 			removeClosingTag: mockRemoveClosingTag,
-			toolProtocol: "xml",
+			toolProtocol,
 		})
 
 		return toolResult
@@ -313,6 +329,46 @@ describe("writeToFileTool", () => {
 			expect(mockedCreateDirectoriesForFile).toHaveBeenCalledWith(absoluteFilePath)
 		})
 	})
+
+	// kilocode_change start: independent byte fixtures catch destructive native normalization.
+	describe("native content fidelity", () => {
+		const slash = String.fromCharCode(92)
+		const newline = String.fromCharCode(10)
+		const ampersand = String.fromCharCode(38)
+		const fixtures = [
+			["lt;node", "gt; ", "amp; ", "quot; ", "#39; ", "amp;lt;"].map((part) => ampersand + part).join(""),
+			["```python", "print('hello')", "```"].join(newline),
+			["1 | first", "2 | second"].join(newline),
+			[
+				"literal " + slash + "n " + slash + "t " + slash + "r",
+				"C:" + slash + "temp" + slash + "file.txt",
+				"regex: " + slash + "d+" + slash + "s*; 中文 😀",
+			].join(newline),
+			String.fromCharCode(13, 10, 9) + "trailing  " + newline,
+			"",
+		]
+
+		it.each(fixtures)("preserves parsed native content: %j", async (content) => {
+			mockCline.api.getModel.mockReturnValue({ id: "gpt-test" })
+			await executeWriteFileTool({ content }, { toolProtocol: "native" })
+			expect(mockCline.diffViewProvider.update).toHaveBeenCalledWith(content, true)
+			expect(mockedUnescapeHtmlEntities).not.toHaveBeenCalled()
+			expect(mockedEveryLineHasLineNumbers).not.toHaveBeenCalled()
+			expect(mockedStripLineNumbers).not.toHaveBeenCalled()
+			expect(mockCline.diffViewProvider.saveChanges).toHaveBeenCalled()
+			expect(mockHandleError).not.toHaveBeenCalled()
+		})
+
+		it("preserves numbered native content during partial preview", async () => {
+			const content = ["1 | &", "2 | " + slash + "n"].join(newline)
+			mockedEveryLineHasLineNumbers.mockReturnValue(true)
+			await executeWriteFileTool({ content }, { toolProtocol: "native", isPartial: true })
+			await executeWriteFileTool({ content }, { toolProtocol: "native", isPartial: true })
+			expect(mockCline.diffViewProvider.update).toHaveBeenCalledWith(content, false)
+			expect(mockedStripLineNumbers).not.toHaveBeenCalled()
+		})
+	})
+	// kilocode_change end
 
 	describe("content preprocessing", () => {
 		it("removes markdown code block markers from content", async () => {

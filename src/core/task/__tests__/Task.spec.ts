@@ -20,6 +20,7 @@ import { EXPERIMENT_IDS } from "../../../shared/experiments"
 import { summarizeConversation } from "../../condense"
 import * as contextManagement from "../../context-management"
 import fs from "fs/promises"
+import * as taskPersistence from "../../task-persistence" // kilocode_change
 
 // Mock delay before any imports that might use it
 vi.mock("delay", () => ({
@@ -1946,6 +1947,154 @@ describe("Cline", () => {
 			// Restore console.error
 			consoleErrorSpy.mockRestore()
 		})
+		// kilocode_change start
+		describe("cancelled history write barrier", () => {
+			let task: Task
+			let uiSave: import("vitest").MockInstance<typeof taskPersistence.saveTaskMessages>
+			let apiSave: import("vitest").MockInstance<typeof taskPersistence.saveApiMessages>
+
+			beforeEach(() => {
+				task = new Task({
+					provider: mockProvider,
+					apiConfiguration: mockApiConfig,
+					task: "cancellation history",
+					startTask: false,
+					context: mockExtensionContext,
+				})
+				task.clineMessages = [{ ts: 1, type: "say", say: "text", text: "keep UI history" }]
+				task.apiConversationHistory = [{ ts: 1, role: "user", content: "keep API history" }]
+				uiSave = vi.spyOn(taskPersistence, "saveTaskMessages").mockResolvedValue(undefined)
+				apiSave = vi.spyOn(taskPersistence, "saveApiMessages").mockResolvedValue(undefined)
+			})
+
+			afterEach(() => {
+				uiSave.mockRestore()
+				apiSave.mockRestore()
+				vi.useRealTimers()
+			})
+
+			it("saves the final UI snapshot and fences late saves after releasing both buffers", async () => {
+				const expected = [...task.clineMessages]
+				await task.abortTask()
+				expect(uiSave).toHaveBeenCalledWith(expect.objectContaining({ messages: expected }))
+				expect(task.clineMessages).toEqual([])
+				expect(task.apiConversationHistory).toEqual([])
+				const writeCount = uiSave.mock.calls.length
+				await (task as any).saveClineMessages()
+				await (task as any).saveApiConversationHistory()
+				await (task as any).addToClineMessages({ ts: 2, type: "say", say: "text", text: "late" })
+				await (task as any).addToApiConversationHistory({ role: "assistant", content: "late" })
+				await task.overwriteClineMessages([{ ts: 3, type: "say", say: "text", text: "late" }])
+				expect(uiSave).toHaveBeenCalledTimes(writeCount)
+				expect(apiSave).not.toHaveBeenCalled()
+				expect(task.clineMessages).toEqual([])
+				expect(task.apiConversationHistory).toEqual([])
+			})
+
+			it("waits for already queued API history before freezing and clears the deadline timer", async () => {
+				vi.useFakeTimers()
+				let release!: () => void
+				;(task as any).apiConversationHistorySaveChain = new Promise<void>((resolve) => {
+					release = resolve
+				})
+				const pendingApiSave = (task as any).saveApiConversationHistory()
+				let finished = false
+				const abort = task.abortTask().then(() => {
+					finished = true
+				})
+				await vi.advanceTimersByTimeAsync(100)
+				expect(finished).toBe(false)
+				expect(task.apiConversationHistory).toHaveLength(1)
+				release()
+				await Promise.all([abort, pendingApiSave])
+				expect(apiSave).toHaveBeenCalledWith(
+					expect.objectContaining({
+						messages: [{ ts: 1, role: "user", content: "keep API history" }],
+					}),
+				)
+				expect((task as any).historyPersistenceFrozen).toBe(true)
+				const warning = vi.spyOn(console, "warn").mockImplementation(() => {})
+				await vi.advanceTimersByTimeAsync(6000)
+				expect(warning).not.toHaveBeenCalledWith(expect.stringContaining("History persistence timed out"))
+				warning.mockRestore()
+			})
+
+			it("keeps an in-flight snapshot valid on timeout and rejects subsequent empty writes", async () => {
+				vi.useFakeTimers()
+				let release!: () => void
+				uiSave.mockImplementation(
+					() =>
+						new Promise<void>((resolve) => {
+							release = resolve
+						}),
+				)
+				const warning = vi.spyOn(console, "warn").mockImplementation(() => {})
+				const abort = task.abortTask()
+				await vi.advanceTimersByTimeAsync(5001)
+				await abort
+				expect(warning).toHaveBeenCalledWith(expect.stringContaining("History persistence timed out"))
+				expect(uiSave.mock.calls[0][0].messages).toHaveLength(1)
+				expect((task as any).historyPersistenceFrozen).toBe(true)
+				await (task as any).saveClineMessages()
+				expect(uiSave).toHaveBeenCalledTimes(1)
+				release()
+				await (task as any).clineMessagesSaveChain
+				expect(uiSave.mock.calls[0][0].messages[0].text).toBe("keep UI history")
+				warning.mockRestore()
+			})
+
+			it("does not force an abort snapshot over an already frozen replacement branch", async () => {
+				task.freezeHistoryPersistenceForBranchReplacement()
+				await task.abortTask()
+				expect(uiSave).not.toHaveBeenCalled()
+				expect(apiSave).not.toHaveBeenCalled()
+			})
+
+			it("preserves captured UI and API snapshots while fencing new writes after timeout", async () => {
+				vi.useFakeTimers()
+				let release!: () => void
+				const blocked = new Promise<void>((resolve) => {
+					release = resolve
+				})
+				;(task as any).clineMessagesSaveChain = blocked
+				;(task as any).apiConversationHistorySaveChain = blocked
+				const pending = (task as any).saveClineMessages()
+				const pendingApi = (task as any).saveApiConversationHistory()
+				const abort = task.abortTask()
+				await vi.advanceTimersByTimeAsync(5001)
+				await abort
+				await (task as any).saveClineMessages()
+				await (task as any).saveApiConversationHistory()
+				release()
+				await Promise.all([pending, pendingApi, (task as any).clineMessagesSaveChain])
+				expect(uiSave).toHaveBeenCalledTimes(2)
+				for (const [options] of uiSave.mock.calls) {
+					expect(options.messages).toEqual([{ ts: 1, type: "say", say: "text", text: "keep UI history" }])
+				}
+				expect(apiSave).toHaveBeenCalledTimes(1)
+				expect(apiSave.mock.calls[0][0].messages).toHaveLength(1)
+				expect(task.clineMessages).toEqual([])
+			})
+
+			it("invalidates queued cancellation snapshots if an edited branch supersedes them", async () => {
+				vi.useFakeTimers()
+				let release!: () => void
+				;(task as any).clineMessagesSaveChain = new Promise<void>((resolve) => {
+					release = resolve
+				})
+				const abort = task.abortTask()
+				await vi.advanceTimersByTimeAsync(5001)
+				await abort
+				task.freezeHistoryPersistenceForBranchReplacement()
+				const replacement = [{ ts: 2, type: "say" as const, say: "text" as const, text: "replacement" }]
+				const commit = task.overwriteClineMessages(replacement, { force: true })
+				release()
+				await commit
+				expect(uiSave).toHaveBeenCalledTimes(1)
+				expect(uiSave).toHaveBeenCalledWith(expect.objectContaining({ messages: replacement }))
+			})
+		})
+		// kilocode_change end
 		describe("Stream Failure Retry", () => {
 			it("should not abort task on stream failure, only on user cancellation", async () => {
 				const task = new Task({
@@ -3444,9 +3593,9 @@ describe("Queued message processing after condense", () => {
 
 		expect(task.todoList).toEqual([{ id: "old", content: "old completed delivery", status: "completed" }])
 		expect(task.shouldRequireProgressListExpansion()).toBe(true)
-		expect(task.shouldRejectToolUntilProgressListExpanded("list_files", { path: "EXTRA/task", recursive: false })).toBe(
-			false,
-		)
+		expect(
+			task.shouldRejectToolUntilProgressListExpanded("list_files", { path: "EXTRA/task", recursive: false }),
+		).toBe(false)
 		expect(
 			task.shouldRejectToolUntilProgressListExpanded("write_to_file", {
 				path: "EXTRA/task/NEW_WORK_PROGRESS.md",
@@ -3477,9 +3626,9 @@ describe("Queued message processing after condense", () => {
 				path: "src/core/task/Task.ts",
 			}),
 		).toBe(false)
-		expect(
-			task.shouldRejectToolUntilProgressListExpanded("write_to_file", { path: "src/core/task/Task.ts" }),
-		).toBe(false)
+		expect(task.shouldRejectToolUntilProgressListExpanded("write_to_file", { path: "src/core/task/Task.ts" })).toBe(
+			false,
+		)
 		expect(task.shouldRejectToolUntilProgressListExpanded("execute_command", { command: "pwd" })).toBe(false)
 		expect(task.shouldRejectToolUntilProgressListExpanded("read_file")).toBe(false)
 		expect(task.shouldRejectToolUntilProgressListExpanded("update_todo_list")).toBe(false)

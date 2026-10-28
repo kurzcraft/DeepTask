@@ -7,6 +7,13 @@ import { Task } from "../../task/Task"
 import { formatResponse } from "../../prompts/responses"
 import { ToolUse, AskApproval, HandleError, PushToolResult, RemoveClosingTag } from "../../../shared/tools"
 import { unescapeHtmlEntities } from "../../../utils/text-normalization"
+// kilocode_change: isolate terminal unit tests from the separately tested Bash checker.
+import { getCommandSyntaxError, MAX_EXECUTE_COMMAND_BYTES } from "../helpers/commandPreflight"
+vi.mock("../../../utils/shell", () => ({ getShell: () => "/bin/bash" }))
+vi.mock("../helpers/commandPreflight", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../helpers/commandPreflight")>()
+	return { ...actual, getCommandSyntaxError: vi.fn().mockResolvedValue(undefined) }
+})
 
 // Mock dependencies
 vitest.mock("execa", () => ({
@@ -52,6 +59,7 @@ describe("executeCommandTool", () => {
 	beforeEach(() => {
 		// Reset mocks
 		vitest.clearAllMocks()
+		vi.mocked(getCommandSyntaxError).mockResolvedValue(undefined)
 		mockTerminal = {
 			runCommand: vitest.fn((_command: string, callbacks: any) => {
 				callbacks.onShellExecutionStarted(undefined)
@@ -147,6 +155,70 @@ describe("executeCommandTool", () => {
 			expect(unescapeHtmlEntities(input)).toBe(expected)
 		})
 	})
+
+	// kilocode_change start
+	describe("native fidelity and preflight boundaries", () => {
+		async function run(command: string, toolProtocol: "native" | "xml" = "native") {
+			mockToolUse.params.command = command
+			if (toolProtocol === "native") mockToolUse.nativeArgs = { command }
+			await executeCommandTool.handle(mockCline as Task, mockToolUse, {
+				askApproval: mockAskApproval,
+				handleError: mockHandleError,
+				pushToolResult: mockPushToolResult,
+				removeClosingTag: mockRemoveClosingTag,
+				toolProtocol,
+			})
+		}
+
+		it("preserves native entities and backslashes through approval and execution", async () => {
+			const command = "printf '%s' '" + String.fromCharCode(38) + "amp; " + String.fromCharCode(92) + "n'"
+			await run(command)
+			expect(getCommandSyntaxError).toHaveBeenCalledWith(command, "/bin/bash")
+			expect(mockCline.rooIgnoreController.validateCommand).toHaveBeenCalledWith(command)
+			expect(mockAskApproval).toHaveBeenCalledWith("command", command)
+			expect(mockTerminal.runCommand).toHaveBeenCalledWith(command, expect.any(Object))
+			expect(mockHandleError).not.toHaveBeenCalled()
+		})
+
+		it("validates the decoded legacy command before approval", async () => {
+			const command =
+				"echo first " + String.fromCharCode(38) + "amp;" + String.fromCharCode(38) + "amp; echo second"
+			await run(command, "xml")
+			const expected = "echo first && echo second"
+			expect(getCommandSyntaxError).toHaveBeenCalledWith(expected, "/bin/bash")
+			expect(mockCline.rooIgnoreController.validateCommand).toHaveBeenCalledWith(expected)
+			expect(mockAskApproval).toHaveBeenCalledWith("command", expected)
+			expect(mockTerminal.runCommand).toHaveBeenCalledWith(expected, expect.any(Object))
+		})
+
+		it("rejects oversized single-line commands before syntax checking and approval", async () => {
+			await run("x".repeat(MAX_EXECUTE_COMMAND_BYTES + 1))
+			expect(formatResponse.toolError).toHaveBeenCalledWith(expect.stringContaining("inline limit"), "native")
+			expect(getCommandSyntaxError).not.toHaveBeenCalled()
+			expect(mockAskApproval).not.toHaveBeenCalled()
+			expect(mockTerminal.runCommand).not.toHaveBeenCalled()
+		})
+
+		it("returns syntax errors without approval or terminal allocation", async () => {
+			const { TerminalRegistry } = await import("../../../integrations/terminal/TerminalRegistry")
+			vi.mocked(getCommandSyntaxError).mockResolvedValue("syntax preflight rejected")
+			await run("python -c 'unfinished")
+			expect(formatResponse.toolError).toHaveBeenCalledWith("syntax preflight rejected", "native")
+			expect(mockAskApproval).not.toHaveBeenCalled()
+			expect(TerminalRegistry.getOrCreateTerminal).not.toHaveBeenCalled()
+			expect(mockTerminal.runCommand).not.toHaveBeenCalled()
+			expect(mockCline.recordToolError).toHaveBeenCalledWith("execute_command")
+		})
+
+		it("does not syntax-check incomplete streamed prefixes", async () => {
+			mockToolUse.partial = true
+			await run("python -c 'unfinished")
+			expect(getCommandSyntaxError).not.toHaveBeenCalled()
+			expect(mockPushToolResult).not.toHaveBeenCalled()
+			expect(mockTerminal.runCommand).not.toHaveBeenCalled()
+		})
+	})
+	// kilocode_change end
 
 	// Now we can run these tests
 	describe("Basic functionality", () => {

@@ -51,6 +51,15 @@ export type ToolCallStreamEvent = ApiStreamToolCallStartChunk | ApiStreamToolCal
  * provider-level raw chunks into start/delta/end events.
  */
 export class NativeToolCallParser {
+	// kilocode_change start
+	/** Create stream-owned buffers while sharing the stateless conversion methods. */
+	public static createSession(): typeof NativeToolCallParser {
+		class StreamParser extends NativeToolCallParser {}
+		StreamParser.streamingToolCalls = new Map()
+		StreamParser.rawChunkTracker = new Map()
+		return StreamParser
+	}
+	// kilocode_change end
 	// Streaming state management for argument accumulation (keyed by tool call id)
 	// Note: name is string to accommodate dynamic MCP tools (mcp--serverName--toolName)
 	private static streamingToolCalls = new Map<

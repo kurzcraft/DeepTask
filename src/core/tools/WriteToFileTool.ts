@@ -35,7 +35,7 @@ export class WriteToFileTool extends BaseTool<"write_to_file"> {
 	}
 
 	async execute(params: WriteToFileParams, task: Task, callbacks: ToolCallbacks): Promise<void> {
-		const { pushToolResult, handleError, askApproval, removeClosingTag } = callbacks
+		const { pushToolResult, handleError, askApproval, removeClosingTag, toolProtocol } = callbacks // kilocode_change
 		const relPath = params.path
 		let newContent = params.content
 
@@ -87,17 +87,21 @@ export class WriteToFileTool extends BaseTool<"write_to_file"> {
 		}
 		// kilocode_change end
 
-		if (newContent.startsWith("```")) {
-			newContent = newContent.split("\n").slice(1).join("\n")
-		}
+		// kilocode_change start: native JSON strings are already decoded; preserve literal file content.
+		if (toolProtocol !== "native") {
+			if (newContent.startsWith("```")) {
+				newContent = newContent.split("\n").slice(1).join("\n")
+			}
 
-		if (newContent.endsWith("```")) {
-			newContent = newContent.split("\n").slice(0, -1).join("\n")
-		}
+			if (newContent.endsWith("```")) {
+				newContent = newContent.split("\n").slice(0, -1).join("\n")
+			}
 
-		if (!task.api.getModel().id.includes("claude")) {
-			newContent = unescapeHtmlEntities(newContent)
+			if (!task.api.getModel().id.includes("claude")) {
+				newContent = unescapeHtmlEntities(newContent)
+			}
 		}
+		// kilocode_change end
 
 		const fullPath = relPath ? path.resolve(task.cwd, removeClosingTag("path", relPath)) : ""
 		const isOutsideWorkspace = isPathOutsideWorkspace(fullPath)
@@ -169,8 +173,11 @@ export class WriteToFileTool extends BaseTool<"write_to_file"> {
 					await task.diffViewProvider.open(relPath)
 				}
 
+				// kilocode_change: line-number-looking text may be intentional native file content.
 				await task.diffViewProvider.update(
-					everyLineHasLineNumbers(newContent) ? stripLineNumbers(newContent) : newContent,
+					toolProtocol !== "native" && everyLineHasLineNumbers(newContent)
+						? stripLineNumbers(newContent)
+						: newContent,
 					true,
 				)
 
@@ -291,8 +298,11 @@ export class WriteToFileTool extends BaseTool<"write_to_file"> {
 				await task.diffViewProvider.open(relPath!)
 			}
 
+			// kilocode_change: the native parser also supplies typed args for partial previews.
 			await task.diffViewProvider.update(
-				everyLineHasLineNumbers(newContent) ? stripLineNumbers(newContent) : newContent,
+				block.nativeArgs === undefined && everyLineHasLineNumbers(newContent)
+					? stripLineNumbers(newContent)
+					: newContent,
 				false,
 			)
 		}

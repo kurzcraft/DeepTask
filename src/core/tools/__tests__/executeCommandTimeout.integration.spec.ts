@@ -16,6 +16,12 @@ vitest.mock("vscode", () => ({
 
 vitest.mock("fs/promises")
 vitest.mock("../../../integrations/terminal/TerminalRegistry")
+// kilocode_change: syntax checks have dedicated real-shell tests; these isolate execution timeouts.
+vitest.mock("../../../utils/shell", () => ({ getShell: () => "/bin/bash" }))
+vitest.mock("../helpers/commandPreflight", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../helpers/commandPreflight")>()
+	return { ...actual, getCommandSyntaxError: vi.fn().mockResolvedValue(undefined) }
+})
 vitest.mock("../../task/Task")
 vitest.mock("../../prompts/responses", () => ({
 	formatResponse: {
@@ -203,6 +209,40 @@ describe("Command Execution Timeout Integration", () => {
 		expect(result[1]).not.toContain("terminated after exceeding")
 	})
 
+	// kilocode_change: no implicit runtime deadline is introduced by syntax validation.
+	it("keeps a six-hour workload alive when runtime timeout is disabled", async () => {
+		vi.useFakeTimers()
+		let finish!: () => void
+		const workload = Object.assign(
+			new Promise<void>((resolve) => {
+				finish = resolve
+			}),
+			{ abort: vi.fn() },
+		)
+		mockTerminal.runCommand.mockReturnValue(workload)
+		let settled = false
+		try {
+			const result = executeCommandInTerminal(mockTask as Task, {
+				executionId: "six-hour-workload",
+				command: "bash EXTRA/bash/training.sh",
+				commandExecutionTimeout: 0,
+			}).then((value) => {
+				settled = true
+				return value
+			})
+			await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000)
+			expect(mockTerminal.runCommand).toHaveBeenCalled()
+			expect(workload.abort).not.toHaveBeenCalled()
+			expect(settled).toBe(false)
+			finish()
+			await vi.advanceTimersByTimeAsync(100)
+			expect((await result)[1]).not.toContain("terminated after exceeding")
+		} finally {
+			finish()
+			vi.useRealTimers()
+		}
+	})
+
 	describe("Command Timeout Allowlist", () => {
 		let mockBlock: any
 		let mockAskApproval: any
@@ -250,12 +290,12 @@ describe("Command Execution Timeout Integration", () => {
 				rooIgnoreController: {
 					validateCommand: vitest.fn().mockReturnValue(null),
 				},
-			lastMessageTs: Date.now(),
-			ask: vitest.fn(),
-			didRejectTool: false,
-			// kilocode_change: pending command-output feedback queue consumed by ExecuteCommandTool
-			consumePendingCommandOutputFeedback: vitest.fn().mockReturnValue(undefined),
-		}
+				lastMessageTs: Date.now(),
+				ask: vitest.fn(),
+				didRejectTool: false,
+				// kilocode_change: pending command-output feedback queue consumed by ExecuteCommandTool
+				consumePendingCommandOutputFeedback: vitest.fn().mockReturnValue(undefined),
+			}
 		})
 
 		it("should skip timeout for commands in allowlist", async () => {

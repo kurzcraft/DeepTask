@@ -561,6 +561,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	// histories are rewound. Late stream/tool callbacks may still finish, but they
 	// must never overwrite the persisted prefix that the replacement Task restores.
 	private historyPersistenceFrozen = false
+	// kilocode_change: cancellation blocks new writes but preserves captured saves;
+	// a branch replacement invalidates those queued snapshots as well.
+	private allowPendingHistoryWritesAfterAbort = false
 	private apiConversationHistorySaveChain: Promise<void> = Promise.resolve()
 	private clineMessagesSaveChain: Promise<void> = Promise.resolve()
 
@@ -1464,6 +1467,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	 * replacement task's durable UI/API prefix.
 	 */
 	public freezeHistoryPersistenceForBranchReplacement(): void {
+		this.allowPendingHistoryWritesAfterAbort = false
 		this.historyPersistenceFrozen = true
 		this.apiConversationHistoryRevision++
 	}
@@ -1776,7 +1780,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		const messages = [...this.apiConversationHistory]
 		const force = options.force === true
 		const write = async () => {
-			if (this.historyPersistenceFrozen && !force) {
+			if (this.historyPersistenceFrozen && !force && !this.allowPendingHistoryWritesAfterAbort) {
 				return
 			}
 
@@ -1855,7 +1859,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	private extractChildInboxResult(messages: ClineMessage[]): string | undefined {
 		const completion = [...messages]
 			.reverse()
-			.find((message) => message.type === "say" && message.say === "completion_result" && message.partial !== true)
+			.find(
+				(message) => message.type === "say" && message.say === "completion_result" && message.partial !== true,
+			)
 		return completion?.text?.trim() || undefined
 	}
 
@@ -2110,7 +2116,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		const messages = [...this.clineMessages]
 		const force = options.force === true
 		const write = async () => {
-			if (this.historyPersistenceFrozen && !force) {
+			if (this.historyPersistenceFrozen && !force && !this.allowPendingHistoryWritesAfterAbort) {
 				return
 			}
 
@@ -4274,29 +4280,42 @@ ${protocolHint}
 			// Don't rethrow - we want abort to always succeed
 		}
 		// kilocode_change start: bounded persistence during abort.
-		// saveClineMessages can hang on locked history I/O; an abort path must
-		// never block forever on it. Race it against a short deadline and log
-		// the timeout instead of freezing cancellation in a half-aborted state.
+		// Preserve the final UI snapshot and already-queued API writes before
+		// freezing this instance. A branch replacement already froze its history;
+		// never force a cancellation snapshot over its explicitly rewound prefix.
 		const ABORT_SAVE_TIMEOUT_MS = 5_000
+		let saveTimeout: ReturnType<typeof setTimeout> | undefined
 		try {
 			await Promise.race([
-				this.saveClineMessages(),
-				new Promise<void>((resolve) => setTimeout(resolve, ABORT_SAVE_TIMEOUT_MS).unref?.()),
+				Promise.all([this.saveClineMessages(), this.apiConversationHistorySaveChain]),
+				new Promise<void>((resolve) => {
+					saveTimeout = setTimeout(() => {
+						console.warn(
+							`History persistence timed out during abort for task ${this.taskId}.${this.instanceId}`,
+						)
+						resolve()
+					}, ABORT_SAVE_TIMEOUT_MS)
+					saveTimeout.unref?.()
+				}),
 			])
 		} catch (error) {
 			console.error(`Error saving messages during abort for task ${this.taskId}.${this.instanceId}:`, error)
+		} finally {
+			if (saveTimeout !== undefined) {
+				clearTimeout(saveTimeout)
+			}
+			// Fence new writes before releasing buffers, even on timeout. Unlike a
+			// branch replacement, ordinary cancellation must still commit snapshots
+			// already queued before this fence (including the final UI snapshot).
+			// Never reopen a branch-replacement barrier or a repeated cancellation.
+			if (!this.historyPersistenceFrozen) {
+				this.allowPendingHistoryWritesAfterAbort = true
+				this.historyPersistenceFrozen = true
+				this.apiConversationHistoryRevision++
+			}
+			this.clineMessages.length = 0
+			this.apiConversationHistory.length = 0
 		}
-		// kilocode_change end
-
-		// kilocode_change start: memory optimization — after the bounded final
-		// save has taken its synchronous snapshot (saveClineMessages serializes
-		// the array before any await), release the in-memory UI history. Every
-		// resume path rebuilds a NEW Task instance that rehydrates from disk,
-		// and late callbacks are fenced by abort/historyPersistenceFrozen
-		// flags, so nothing reads these arrays afterwards. This keeps settled
-		// tasks from pinning tens of MB in the extension host.
-		this.clineMessages.length = 0
-		this.apiConversationHistory.length = 0
 		// kilocode_change end
 	}
 
@@ -4868,9 +4887,8 @@ ${protocolHint}
 				this.presentAssistantMessageHasPendingUpdates = false
 				this.assistantMessageParser?.reset()
 				this.streamingToolCallIndices.clear()
-				// Clear any leftover streaming tool call state from previous interrupted streams
-				NativeToolCallParser.clearAllStreamingToolCalls()
-				NativeToolCallParser.clearRawChunkState()
+				// kilocode_change: each request owns its parser, including retry and cancellation.
+				const nativeToolCallParser = NativeToolCallParser.createSession()
 
 				await this.diffViewProvider.reset()
 
@@ -4994,7 +5012,7 @@ ${protocolHint}
 							case "tool_call_partial": {
 								// Process raw tool call chunk through NativeToolCallParser
 								// which handles tracking, buffering, and emits events
-								const events = NativeToolCallParser.processRawChunk({
+								const events = nativeToolCallParser.processRawChunk({
 									index: chunk.index,
 									id: chunk.id,
 									name: chunk.name,
@@ -5016,7 +5034,7 @@ ${protocolHint}
 										}
 
 										// Initialize streaming in NativeToolCallParser
-										NativeToolCallParser.startStreamingToolCall(event.id, event.name as ToolName)
+										nativeToolCallParser.startStreamingToolCall(event.id, event.name as ToolName)
 
 										// Before adding a new tool, finalize any preceding text block
 										// This prevents the text block from blocking tool presentation
@@ -5047,7 +5065,7 @@ ${protocolHint}
 										presentAssistantMessage(this)
 									} else if (event.type === "tool_call_delta") {
 										// Process chunk using streaming JSON parser
-										const partialToolUse = NativeToolCallParser.processStreamingChunk(
+										const partialToolUse = nativeToolCallParser.processStreamingChunk(
 											event.id,
 											event.delta,
 										)
@@ -5068,7 +5086,7 @@ ${protocolHint}
 										}
 									} else if (event.type === "tool_call_end") {
 										// Finalize the streaming tool call
-										const finalToolUse = NativeToolCallParser.finalizeStreamingToolCall(event.id)
+										const finalToolUse = nativeToolCallParser.finalizeStreamingToolCall(event.id)
 
 										// Get the index for this tool call
 										const toolUseIndex = this.streamingToolCallIndices.get(event.id)
@@ -5236,11 +5254,11 @@ ${protocolHint}
 					// Finalize any remaining streaming tool calls that weren't explicitly ended
 					// This is critical for MCP tools which need tool_call_end events to be properly
 					// converted from ToolUse to McpToolUse via finalizeStreamingToolCall()
-					const finalizeEvents = NativeToolCallParser.finalizeRawChunks()
+					const finalizeEvents = nativeToolCallParser.finalizeRawChunks()
 					for (const event of finalizeEvents) {
 						if (event.type === "tool_call_end") {
 							// Finalize the streaming tool call
-							const finalToolUse = NativeToolCallParser.finalizeStreamingToolCall(event.id)
+							const finalToolUse = nativeToolCallParser.finalizeStreamingToolCall(event.id)
 
 							// Get the index for this tool call
 							const toolUseIndex = this.streamingToolCallIndices.get(event.id)
@@ -5539,6 +5557,9 @@ ${protocolHint}
 						}
 					}
 				} finally {
+					// kilocode_change: release incomplete argument buffers even after a failed stream.
+					nativeToolCallParser.clearAllStreamingToolCalls()
+					nativeToolCallParser.clearRawChunkState()
 					this.isStreaming = false
 					if (streamAbortSignal && streamAbortListener) {
 						streamAbortSignal.removeEventListener("abort", streamAbortListener)

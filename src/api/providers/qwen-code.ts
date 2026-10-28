@@ -8,7 +8,7 @@ import { type ModelInfo, type QwenCodeModelId, qwenCodeModels, qwenCodeDefaultMo
 
 import type { ApiHandlerOptions } from "../../shared/api"
 
-import { NativeToolCallParser } from "../../core/assistant-message/NativeToolCallParser"
+// kilocode_change: native completion tracking is request-local; no global parser state.
 
 import { convertToOpenAiMessages } from "../transform/openai-format"
 import { ApiStream } from "../transform/stream"
@@ -242,6 +242,8 @@ export class QwenCodeHandler extends BaseProvider implements SingleCompletionHan
 
 		let fullContent = ""
 
+		// kilocode_change: keep only IDs here; Task owns argument accumulation.
+		const pendingToolCallIds = new Set<string>()
 		for await (const apiChunk of stream) {
 			const delta = apiChunk.choices[0]?.delta ?? {}
 			const finishReason = apiChunk.choices[0]?.finish_reason
@@ -294,6 +296,8 @@ export class QwenCodeHandler extends BaseProvider implements SingleCompletionHan
 			// Handle tool calls in stream - emit partial chunks for NativeToolCallParser
 			if (delta.tool_calls) {
 				for (const toolCall of delta.tool_calls) {
+					// kilocode_change: register before yielding so consumers need no shared state.
+					if (toolCall.id) pendingToolCallIds.add(toolCall.id)
 					yield {
 						type: "tool_call_partial",
 						index: toolCall.index,
@@ -305,12 +309,14 @@ export class QwenCodeHandler extends BaseProvider implements SingleCompletionHan
 			}
 
 			// Process finish_reason to emit tool_call_end events
-			if (finishReason) {
-				const endEvents = NativeToolCallParser.processFinishReason(finishReason)
-				for (const event of endEvents) {
-					yield event
+			// kilocode_change start
+			if (finishReason === "tool_calls") {
+				for (const id of pendingToolCallIds) {
+					yield { type: "tool_call_end", id }
 				}
+				pendingToolCallIds.clear()
 			}
+			// kilocode_change end
 
 			if (apiChunk.usage) {
 				yield {

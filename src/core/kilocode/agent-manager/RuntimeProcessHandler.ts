@@ -123,6 +123,11 @@ export interface RuntimeProcessHandlerCallbacks {
 export class RuntimeProcessHandler {
 	private activeSessions: Map<string, ActiveProcessInfo> = new Map()
 	private pendingProcess: PendingProcessInfo | null = null
+	private spawnQueue: Array<Parameters<RuntimeProcessHandler["spawnProcess"]>> = []
+	private drainingSpawnQueue = false
+	private disposed = false
+	private terminationTimers = new Map<ChildProcess, NodeJS.Timeout>()
+	private stoppingProcesses = new WeakSet<ChildProcess>()
 	// Track whether we've sent api_req_started for each session
 	private sentApiReqStarted: Set<string> = new Set()
 	// Track pending resume continuations - sent after session is loaded from server
@@ -314,6 +319,50 @@ export class RuntimeProcessHandler {
 			| undefined,
 		onEvent: (sessionId: string, event: StreamEvent) => void,
 	): void {
+		if (this.disposed) {
+			this.callbacks.onStartSessionFailed({ type: "spawn_error", message: "Agent manager is disposed" })
+			return
+		}
+		this.spawnQueue.push([_cliPath, workspace, prompt, options, onEvent])
+		this.drainSpawnQueue()
+	}
+
+	private drainSpawnQueue(): void {
+		if (this.disposed || this.drainingSpawnQueue) return
+		this.drainingSpawnQueue = true
+		try {
+			while (!this.pendingProcess && this.spawnQueue.length > 0 && !this.disposed) {
+				const args = this.spawnQueue.shift()!
+				const sessionId = args[3]?.sessionId
+				if (sessionId && this.activeSessions.has(sessionId)) {
+					this.callbacks.onStartSessionFailed({
+						type: "spawn_error",
+						message: `Session ${sessionId} already has an active process`,
+					})
+					continue
+				}
+				try {
+					this.startProcess(...args)
+				} catch (error) {
+					this.callbacks.onLog(`Failed to prepare agent process: ${String(error)}`)
+					if (sessionId) this.registry.updateSessionStatus(sessionId, "error")
+					this.registry.clearPendingSession()
+					this.callbacks.onPendingSessionChanged(null)
+					this.callbacks.onStartSessionFailed({ type: "spawn_error", message: String(error) })
+				}
+			}
+		} finally {
+			this.drainingSpawnQueue = false
+		}
+	}
+
+	private scheduleQueuedSpawn(): void {
+		if (this.spawnQueue.length > 0 && !this.disposed) queueMicrotask(() => this.drainSpawnQueue())
+	}
+
+	private startProcess(
+		...[_cliPath, workspace, prompt, options, onEvent]: Parameters<RuntimeProcessHandler["spawnProcess"]>
+	): void {
 		const isResume = !!options?.sessionId
 
 		if (isResume) {
@@ -422,6 +471,7 @@ export class RuntimeProcessHandler {
 			})
 
 			// Clean up pending state
+			if (options?.sessionId) this.registry.updateSessionStatus(options.sessionId, "error")
 			this.registry.clearPendingSession()
 			this.callbacks.onPendingSessionChanged(null)
 		}
@@ -435,6 +485,7 @@ export class RuntimeProcessHandler {
 		msg: AgentIPCMessage,
 		onEvent: (sessionId: string, event: StreamEvent) => void,
 	): void {
+		if (this.stoppingProcesses.has(proc)) return
 		const sessionId = this.getSessionIdForProcess(proc) || this.pendingProcess?.desiredSessionId || "pending"
 
 		// Log incoming IPC message from agent (except verbose log messages)
@@ -550,6 +601,7 @@ export class RuntimeProcessHandler {
 		const worktreeInfo = this.pendingProcess.worktreeInfo
 		const parallelMode = this.pendingProcess.parallelMode
 		this.pendingProcess = null
+		this.scheduleQueuedSpawn()
 
 		this.callbacks.onStateChanged()
 		this.callbacks.onPendingSessionChanged(null)
@@ -807,27 +859,58 @@ export class RuntimeProcessHandler {
 	): void {
 		const sessionId = this.getSessionIdForProcess(proc)
 		const errorMsg = error?.message || "Unknown agent error"
-
 		this.callbacks.onLog(`Agent error: ${errorMsg}`)
-
 		if (this.pendingProcess?.process === proc) {
-			// Error during session creation
-			this.clearPendingTimeout()
-			this.callbacks.onStartSessionFailed({
-				type: "spawn_error",
-				message: errorMsg,
-			})
-			this.registry.clearPendingSession()
-			this.pendingProcess = null
-			this.callbacks.onPendingSessionChanged(null)
+			this.releasePendingProcess(proc, "error")
+			this.terminateOwnedProcess(proc)
+			this.callbacks.onStartSessionFailed({ type: "spawn_error", message: errorMsg })
 		} else if (sessionId) {
-			// Error in active session
 			const errorEvent: ErrorStreamEvent = {
 				streamEventType: "error",
 				error: errorMsg,
 				timestamp: new Date().toISOString(),
 			}
 			onEvent(sessionId, errorEvent)
+		}
+	}
+
+	private releasePendingProcess(proc: ChildProcess, status: "error" | "stopped"): void {
+		if (this.pendingProcess?.process !== proc) return
+		const sessionId = this.pendingProcess.desiredSessionId
+		this.clearPendingTimeout()
+		this.pendingProcess = null
+		if (sessionId) this.registry.updateSessionStatus(sessionId, status)
+		this.registry.clearPendingSession()
+		this.callbacks.onPendingSessionChanged(null)
+		this.callbacks.onStateChanged()
+		this.scheduleQueuedSpawn()
+	}
+
+	private clearTerminationTimer(proc: ChildProcess): void {
+		const timer = this.terminationTimers.get(proc)
+		if (timer) clearTimeout(timer)
+		this.terminationTimers.delete(proc)
+	}
+
+	private terminateOwnedProcess(proc: ChildProcess): void {
+		if (proc.exitCode !== null || proc.signalCode != null || this.stoppingProcesses.has(proc)) return
+		this.stoppingProcesses.add(proc)
+		const timer = setTimeout(() => {
+			this.terminationTimers.delete(proc)
+			if (proc.exitCode === null && proc.signalCode == null) {
+				try {
+					proc.kill("SIGKILL")
+				} catch (error) {
+					this.callbacks.onLog(`Failed to kill owned agent: ${String(error)}`)
+				}
+			}
+		}, 5000)
+		timer.unref()
+		this.terminationTimers.set(proc, timer)
+		try {
+			proc.kill("SIGTERM")
+		} catch (error) {
+			this.callbacks.onLog(`Failed to terminate owned agent: ${String(error)}`)
 		}
 	}
 
@@ -845,19 +928,14 @@ export class RuntimeProcessHandler {
 	/**
 	 * Handle session timeout
 	 */
-	private handleSessionTimeout(proc: ChildProcess, onEvent: (sessionId: string, event: StreamEvent) => void): void {
+	private handleSessionTimeout(proc: ChildProcess, _onEvent: (sessionId: string, event: StreamEvent) => void): void {
+		if (this.pendingProcess?.process !== proc) return
+		this.releasePendingProcess(proc, "error")
+		this.terminateOwnedProcess(proc)
 		this.callbacks.onStartSessionFailed({
 			type: "unknown",
 			message: "Agent session timed out waiting for ready signal",
 		})
-
-		// Kill the process
-		proc.kill("SIGTERM")
-
-		// Clean up pending state
-		this.registry.clearPendingSession()
-		this.pendingProcess = null
-		this.callbacks.onPendingSessionChanged(null)
 	}
 
 	/**
@@ -869,18 +947,17 @@ export class RuntimeProcessHandler {
 		signal: string | null,
 		onEvent: (sessionId: string, event: StreamEvent) => void,
 	): void {
+		this.clearTerminationTimer(proc)
+		this.stoppingProcesses.delete(proc)
 		const sessionId = this.getSessionIdForProcess(proc)
 
 		if (this.pendingProcess?.process === proc) {
 			// Exit during pending state
-			this.clearPendingTimeout()
+			this.releasePendingProcess(proc, "error")
 			this.callbacks.onStartSessionFailed({
 				type: "unknown",
 				message: `Agent process exited unexpectedly (code: ${code}, signal: ${signal})`,
 			})
-			this.registry.clearPendingSession()
-			this.pendingProcess = null
-			this.callbacks.onPendingSessionChanged(null)
 		} else if (sessionId) {
 			// Exit of active session
 			this.activeSessions.delete(sessionId)
@@ -915,16 +992,10 @@ export class RuntimeProcessHandler {
 	 */
 	private handleProcessError(proc: ChildProcess, error: Error): void {
 		this.callbacks.onLog(`Agent process error: ${error.message}`)
-
 		if (this.pendingProcess?.process === proc) {
-			this.clearPendingTimeout()
-			this.callbacks.onStartSessionFailed({
-				type: "spawn_error",
-				message: error.message,
-			})
-			this.registry.clearPendingSession()
-			this.pendingProcess = null
-			this.callbacks.onPendingSessionChanged(null)
+			this.releasePendingProcess(proc, "error")
+			if (proc.pid) this.terminateOwnedProcess(proc)
+			this.callbacks.onStartSessionFailed({ type: "spawn_error", message: error.message })
 		}
 	}
 
@@ -1030,21 +1101,14 @@ export class RuntimeProcessHandler {
 	 * Stop all active processes
 	 */
 	public stopAllProcesses(): void {
-		// Stop pending process
-		if (this.pendingProcess) {
-			this.clearPendingTimeout()
-			this.pendingProcess.process.kill("SIGTERM")
-			this.pendingProcess = null
-		}
-
-		// Stop all active sessions
-		for (const info of this.activeSessions.values()) {
-			if (info.process.exitCode === null) {
-				info.process.kill("SIGTERM")
-			}
-		}
-		this.activeSessions.clear()
+		// Discard only not-yet-started requests on explicit stop-all.
+		this.spawnQueue = []
+		this.cancelPendingSession()
+		for (const info of this.activeSessions.values()) this.terminateOwnedProcess(info.process)
+		// Keep process ownership until exit so each session receives its terminal event.
+		this.sentApiReqStarted.clear()
 		this.pendingResumeContinuation.clear()
+		this.sessionModes.clear()
 	}
 
 	/**
@@ -1052,11 +1116,9 @@ export class RuntimeProcessHandler {
 	 */
 	public cancelPendingSession(): void {
 		if (this.pendingProcess) {
-			this.clearPendingTimeout()
-			this.pendingProcess.process.kill("SIGTERM")
-			this.registry.clearPendingSession()
-			this.pendingProcess = null
-			this.callbacks.onPendingSessionChanged(null)
+			const proc = this.pendingProcess.process
+			this.releasePendingProcess(proc, "stopped")
+			this.terminateOwnedProcess(proc)
 		}
 	}
 
@@ -1078,7 +1140,7 @@ export class RuntimeProcessHandler {
 	 * Check if there's a pending session
 	 */
 	public hasPendingSession(): boolean {
-		return this.pendingProcess !== null
+		return this.pendingProcess !== null || this.spawnQueue.length > 0
 	}
 
 	/**
@@ -1115,6 +1177,7 @@ export class RuntimeProcessHandler {
 	 * Dispose all resources
 	 */
 	public dispose(): void {
+		this.disposed = true
 		this.stopAllProcesses()
 	}
 }

@@ -2248,3 +2248,97 @@ describe("McpHub", () => {
 		})
 	})
 })
+
+// kilocode_change start
+describe("watcher ownership regression", () => {
+	const config = { type: "stdio", command: "node", args: [], watchPaths: ["/test/watch"] }
+	let hub: any
+	let watchers: Array<{ on: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> }>
+
+	beforeEach(async () => {
+		const { default: chokidar } = await import("chokidar")
+		watchers = []
+		vi.mocked(chokidar.watch).mockImplementation(() => {
+			const watcher = { on: vi.fn().mockReturnThis(), close: vi.fn().mockResolvedValue(undefined) }
+			watchers.push(watcher)
+			return watcher as any
+		})
+		hub = Object.create(McpHub.prototype)
+		Object.assign(hub, {
+			fileWatchers: new Map(),
+			connections: [],
+			sanitizedNameRegistry: new Map(),
+			cancelReconnect: vi.fn(),
+			notifyWebviewOfServerChanges: vi.fn().mockResolvedValue(undefined),
+			restartConnection: vi.fn().mockResolvedValue(undefined),
+			validateServerConfig: vi.fn((value) => value),
+			showErrorMessage: vi.fn(),
+		})
+	})
+
+	afterEach(() => hub.removeAllFileWatchers())
+
+	it("deletes only the requested source for same-name servers", async () => {
+		hub.setupFileWatcher("same", config, "global")
+		hub.setupFileWatcher("same", config, "project")
+		hub.connections = ["global", "project"].map((source) => ({
+			type: "disconnected",
+			server: { name: "same", source, config: JSON.stringify(config) },
+		}))
+		await hub.deleteConnection("same", "project")
+		expect(watchers[0].close).not.toHaveBeenCalled()
+		expect(watchers[1].close).toHaveBeenCalledOnce()
+		expect(hub.fileWatchers.size).toBe(1)
+		expect(hub.connections.map((c: any) => c.server.source)).toEqual(["global"])
+	})
+
+	it("keeps unchanged watchers and the other source on repeated updates", async () => {
+		hub.setupFileWatcher("same", config, "global")
+		hub.setupFileWatcher("same", config, "project")
+		hub.connections = ["global", "project"].map((source) => ({
+			type: "disconnected",
+			server: { name: "same", source, config: JSON.stringify(config) },
+		}))
+		for (let i = 0; i < 100; i++) await hub.updateServerConnections({ same: config }, "project")
+		expect(watchers).toHaveLength(2)
+		expect(watchers.every((w) => w.close.mock.calls.length === 0)).toBe(true)
+		expect(hub.fileWatchers.size).toBe(2)
+	})
+
+	it("replaces one generation and ignores its late change callbacks", async () => {
+		hub.setupFileWatcher("same", config, "project")
+		const oldCallback = watchers[0].on.mock.calls[0][1]
+		hub.setupFileWatcher("same", config, "project")
+		expect(watchers[0].close).toHaveBeenCalledOnce()
+		expect(hub.fileWatchers.size).toBe(1)
+		await oldCallback("/test/watch")
+		expect(hub.restartConnection).not.toHaveBeenCalled()
+		await watchers[1].on.mock.calls[0][1]("/test/watch")
+		expect(hub.restartConnection).toHaveBeenCalledWith("same", "project")
+	})
+
+	it("clears both sources on unscoped deletion and tolerates repeated cleanup", async () => {
+		hub.setupFileWatcher("same", config, "global")
+		hub.setupFileWatcher("same", config, "project")
+		await hub.deleteConnection("same")
+		hub.removeAllFileWatchers()
+		expect(hub.fileWatchers.size).toBe(0)
+		for (const watcher of watchers) expect(watcher.close).toHaveBeenCalledOnce()
+	})
+
+	it("observes async close rejection without retaining watchers", async () => {
+		const error = new Error("close failure")
+		const log = vi.spyOn(console, "error").mockImplementation(() => undefined)
+		try {
+			hub.setupFileWatcher("same", config, "project")
+			watchers[0].close.mockRejectedValue(error)
+			hub.removeAllFileWatchers()
+			await Promise.resolve()
+			expect(hub.fileWatchers.size).toBe(0)
+			expect(log).toHaveBeenCalledWith("Failed to close MCP file watcher:", error)
+		} finally {
+			log.mockRestore()
+		}
+	})
+})
+// kilocode_change end
