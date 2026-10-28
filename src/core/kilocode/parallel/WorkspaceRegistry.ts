@@ -33,10 +33,9 @@ export interface RegistryPersistence {
 export class WorkspaceRegistry implements RegistryPersistence {
 	private workspaces: Map<string, ParallelWorkspace> = new Map()
 	private loaded = false
+	private mutationQueue: Promise<void> = Promise.resolve()
 
-	constructor(
-		private readonly storage: WorkspaceStorage | ParallelStateStorage,
-	) {}
+	constructor(private readonly storage: WorkspaceStorage | ParallelStateStorage) {}
 
 	private isShared(): boolean {
 		return isParallelStateStorage(this.storage)
@@ -51,20 +50,35 @@ export class WorkspaceRegistry implements RegistryPersistence {
 		if (this.isShared()) {
 			return await this.asShared().read<ParallelWorkspace[]>(STORAGE_KEY)
 		}
-		return await (this.storage as WorkspaceStorage).get<ParallelWorkspace[] | undefined>(
-			STORAGE_KEY,
-			undefined,
-		)
+		return await (this.storage as WorkspaceStorage).get<ParallelWorkspace[] | undefined>(STORAGE_KEY, undefined)
 	}
 
-	private async writeAll(next: Map<string, ParallelWorkspace>): Promise<void> {
-		if (this.isShared()) {
-			// Lock-protected read-modify-write: fresh file read, replace only
-			// this key, atomic rename. Other windows' keys are untouched.
-			await this.asShared().mutate(STORAGE_KEY, () => [...next.values()])
-			return
-		}
-		await (this.storage as WorkspaceStorage).update(STORAGE_KEY, [...next.values()])
+	/** Read, validate and update inside the same inter-process transaction. */
+	private mutate<T>(update: (current: Map<string, ParallelWorkspace>) => T): Promise<T> {
+		const run = this.mutationQueue.then(async () => {
+			let result!: T
+			const apply = (stored: ParallelWorkspace[] | undefined): ParallelWorkspace[] => {
+				const current = new Map(stored === undefined ? this.workspaces : stored.map((ws) => [ws.name, ws]))
+				result = update(current)
+				return [...current.values()]
+			}
+			let next: ParallelWorkspace[]
+			if (this.isShared()) {
+				next = await this.asShared().mutate<ParallelWorkspace[]>(STORAGE_KEY, apply)
+			} else {
+				next = apply(await this.readAll())
+				await (this.storage as WorkspaceStorage).update(STORAGE_KEY, next)
+			}
+			this.workspaces = new Map(next.map((ws) => [ws.name, ws]))
+			this.loaded = true
+			return result
+		})
+		// Recover only the queue tail; the returned promise still reports failures.
+		this.mutationQueue = run.then(
+			() => undefined,
+			() => undefined,
+		)
+		return run
 	}
 
 	async load(force = false): Promise<void> {
@@ -99,66 +113,74 @@ export class WorkspaceRegistry implements RegistryPersistence {
 	}
 
 	async register(entry: ParallelWorkspace): Promise<void> {
-		await this.load(true) // fresh read so concurrent windows compose instead of clobber
-		this.workspaces.set(entry.name, entry)
-		await this.writeAll(this.workspaces)
+		await this.mutate((current) => {
+			current.set(entry.name, entry)
+		})
 	}
 
-	/** Try to exclusively claim a workspace for an owner. Returns false when already busy. */
+	/** Try to exclusively claim a workspace; return undefined when already busy. */
 	async claim(name: string, owner: string): Promise<ParallelWorkspace | undefined> {
-		await this.load(true) // fresh read so concurrent windows cannot double-claim
-		const ws = this.workspaces.get(name)
-		if (!ws) {
-			return undefined
-		}
-		if (ws.status === "busy") {
-			return undefined
-		}
-		const updated: ParallelWorkspace = { ...ws, status: "busy", owner, updatedAt: Date.now() }
-		this.workspaces.set(name, updated)
-		await this.writeAll(this.workspaces)
-		return updated
+		return this.mutate((current) => {
+			const ws = current.get(name)
+			if (!ws || ws.status === "busy") return undefined
+			const updated: ParallelWorkspace = { ...ws, status: "busy", owner, updatedAt: Date.now() }
+			current.set(name, updated)
+			return updated
+		})
 	}
 
-	async release(name: string, status: ParallelWorkspace["status"] = "available"): Promise<void> {
-		await this.load(true)
-		const ws = this.workspaces.get(name)
-		if (!ws) {
-			return
-		}
-		this.workspaces.set(name, { ...ws, status, owner: undefined, updatedAt: Date.now() })
-		await this.writeAll(this.workspaces)
+	async release(
+		name: string,
+		status: ParallelWorkspace["status"] = "available",
+		expectedOwner?: string,
+		canRelease: () => boolean = () => true,
+	): Promise<void> {
+		await this.mutate((current) => {
+			if (!canRelease()) return
+			const ws = current.get(name)
+			if (!ws || (expectedOwner !== undefined && (ws.owner !== expectedOwner || ws.status !== "busy"))) return
+			current.set(name, { ...ws, status, owner: undefined, updatedAt: Date.now() })
+		})
+	}
+
+	/** Release only claims still owned by the task that actually settled. */
+	async releaseOwnedBy(owner: string, canRelease: () => boolean = () => true): Promise<void> {
+		await this.mutate((current) => {
+			if (!canRelease()) return
+			for (const [name, ws] of current) {
+				if (ws.status === "busy" && ws.owner === owner) {
+					current.set(name, { ...ws, status: "available", owner: undefined, updatedAt: Date.now() })
+				}
+			}
+		})
 	}
 
 	async mark(name: string, status: ParallelWorkspace["status"], extra?: Partial<ParallelWorkspace>): Promise<void> {
-		await this.load(true)
-		const ws = this.workspaces.get(name)
-		if (!ws) {
-			return
-		}
-		this.workspaces.set(name, { ...ws, ...extra, status, updatedAt: Date.now() })
-		await this.writeAll(this.workspaces)
+		await this.mutate((current) => {
+			const ws = current.get(name)
+			if (ws) current.set(name, { ...ws, ...extra, status, updatedAt: Date.now() })
+		})
 	}
 
 	async remove(name: string): Promise<void> {
-		await this.load(true)
-		this.workspaces.delete(name)
-		await this.writeAll(this.workspaces)
+		await this.mutate((current) => {
+			current.delete(name)
+		})
 	}
 
-	/** Drop entries whose worktree directory no longer exists on disk. */
+	/** Recheck missing paths inside the transaction before removing entries. */
 	async prune(): Promise<string[]> {
 		await this.load(true)
-		const removed: string[] = []
-		for (const [name, ws] of [...this.workspaces.entries()]) {
-			if (!fs.existsSync(path.resolve(ws.path))) {
-				this.workspaces.delete(name)
-				removed.push(name)
+		if (!this.list().some((ws) => !fs.existsSync(path.resolve(ws.path)))) return []
+		return this.mutate((current) => {
+			const removed: string[] = []
+			for (const [name, ws] of current) {
+				if (!fs.existsSync(path.resolve(ws.path))) {
+					current.delete(name)
+					removed.push(name)
+				}
 			}
-		}
-		if (removed.length > 0) {
-			await this.writeAll(this.workspaces)
-		}
-		return removed
+			return removed
+		})
 	}
 }

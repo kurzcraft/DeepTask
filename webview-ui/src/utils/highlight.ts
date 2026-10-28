@@ -1,7 +1,22 @@
 import { LRUCache } from "lru-cache"
 
-// LRU cache for escapeHtml with reasonable size limit
-const escapeHtmlCache = new LRUCache<string, string>({ max: 500 })
+// kilocode_change start - bound retained string payload, not just entry count.
+// UTF-16 estimate includes both key and value; it is not a heap measurement.
+export const ESCAPE_HTML_CACHE_MAX_TOTAL_BYTES = 1024 * 1024
+export const ESCAPE_HTML_CACHE_MAX_ITEM_BYTES = 64 * 1024
+const estimatePayloadBytes = (value: string, key: string) => Math.max(1, 2 * (key.length + value.length))
+const escapeHtmlCache = new LRUCache<string, string>({
+	max: 500,
+	maxSize: ESCAPE_HTML_CACHE_MAX_TOTAL_BYTES,
+	maxEntrySize: ESCAPE_HTML_CACHE_MAX_ITEM_BYTES,
+	sizeCalculation: estimatePayloadBytes,
+})
+export const getEscapeHtmlCacheStatsForTests = () => ({
+	size: escapeHtmlCache.size,
+	calculatedSize: escapeHtmlCache.calculatedSize,
+})
+export const resetEscapeHtmlCacheForTests = () => escapeHtmlCache.clear()
+// kilocode_change end
 
 export function escapeHtml(text: string): string {
 	// Check cache first
@@ -18,8 +33,11 @@ export function escapeHtml(text: string): string {
 		.replace(/"/g, "&quot;")
 		.replace(/'/g, "&#39;")
 
-	// Cache the result
-	escapeHtmlCache.set(text, escaped)
+	// kilocode_change start - large results remain complete, but are not retained.
+	if (estimatePayloadBytes(escaped, text) <= ESCAPE_HTML_CACHE_MAX_ITEM_BYTES) {
+		escapeHtmlCache.set(text, escaped)
+	}
+	// kilocode_change end
 
 	return escaped
 }

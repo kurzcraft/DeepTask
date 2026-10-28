@@ -499,6 +499,20 @@ describe("Workspace tools execute guards", () => {
 		expect(result).toContain("first")
 	})
 
+	test("workspace_merge never substitutes the current workspace for an unknown name", async () => {
+		const callbacks = makeCallbacks()
+		const provider = makeProvider({ agentWorkspaceManagementEnabled: true })
+		provider.workspaceService = {
+			findByNameOrPath: vi.fn(async (value: string) =>
+				value === "/repo" ? { name: "current", path: "/repo" } : undefined,
+			),
+			merge: vi.fn(),
+		}
+		await workspaceMergeTool.execute({ name: "typo" }, makeTask(provider), callbacks)
+		expect(provider.workspaceService.merge).not.toHaveBeenCalled()
+		expect(JSON.stringify(callbacks.pushToolResult.mock.calls)).toContain("Unknown workspace")
+	})
+
 	test("workspace_merge requires a name", async () => {
 		const callbacks = makeCallbacks()
 		const task = makeTask(makeProvider({}))

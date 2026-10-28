@@ -816,7 +816,7 @@ export class WorkspaceMergeTool extends BaseTool<"workspace_merge"> {
 			const manager = provider.parallelManager
 			const folderPath = manager?.folderPathForPath(task.cwd) ?? task.cwd
 			const service = provider.getWorkspaceService(folderPath)
-			const source = (await service.findByNameOrPath(params.name)) ?? (await service.findByNameOrPath(task.cwd))
+			const source = await service.findByNameOrPath(params.name)
 			if (!source) {
 				pushToolResult(formatResponse.toolError(`Unknown workspace "${params.name}".`))
 				return
@@ -825,14 +825,14 @@ export class WorkspaceMergeTool extends BaseTool<"workspace_merge"> {
 			// kilocode_change start: defect K - sanitize switch_to. Host bridges may
 			// stringify JSON null into "null"; non-absolute junk must never become a
 			// conversation cwd. Valid: "main", a registered workspace name, or an
-			// absolute path that exists on disk. Everything else is ignored with an
-			// explicit notice instead of silently straying the conversation.
+			// absolute path that exists on disk. Invalid values abort the merge
+			// without moving the conversation or modifying either workspace.
 			const rawSwitch = params.switch_to
 			const switchTarget = sanitizeSwitchTarget(rawSwitch)
 			if (rawSwitch && !switchTarget) {
 				pushToolResult(
 					formatResponse.toolError(
-						`Ignoring invalid switch_to value "${rawSwitch}" (literal null/undefined or empty). Use "main", a registered workspace name, or an existing absolute path. The merge proceeds without switching.`,
+						`Ignoring invalid switch_to value "${rawSwitch}" (literal null/undefined or empty). Use "main", a registered workspace name, or an existing absolute path. The merge was aborted; no workspace was changed.`,
 					),
 				)
 				return

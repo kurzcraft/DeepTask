@@ -352,6 +352,7 @@ export class ParallelManager {
 		// Continue (killing the live conversation = ghost reborn). Guard both.
 		const settlementChain = runPromise
 			.then(async () => {
+				if (state.task !== child) return
 				if (!state.forceSettled) {
 					state.info.status = "completed"
 					state.info.result = this.extractResult(state)
@@ -359,6 +360,7 @@ export class ParallelManager {
 				await this.persistSessionInbox(state, parentTask)
 			})
 			.catch(async (error) => {
+				if (state.task !== child) return
 				if (!state.forceSettled) {
 					state.info.status = child.abort ? "cancelled" : "error"
 					state.info.error = error instanceof Error ? error.message : String(error)
@@ -366,8 +368,8 @@ export class ParallelManager {
 				}
 				await this.persistSessionInbox(state, parentTask)
 			})
-			.finally(() => {
-				if (!state.forceSettled) {
+			.finally(async () => {
+				if (state.task === child && !state.forceSettled) {
 					state.info.endedAt = Date.now()
 				}
 				// kilocode_change start: ghost resurrection fix — a settled
@@ -403,9 +405,29 @@ export class ParallelManager {
 					// kilocode_change end
 				}
 				// kilocode_change end
-				if (spec.workspaceName) {
-					// Release the exclusive claim; merge decisions come after all subagents finish.
-					this.registry.release(spec.workspaceName, "available").catch(() => undefined)
+				// A watchdog result is not proof that writes stopped. Only the real
+				// run settlement releases claims, and never for a resumed Task instance.
+				if (state.task === child) {
+					try {
+						if (spec.workspaceName) {
+							await this.registry.release(
+								spec.workspaceName,
+								"available",
+								`dispatch:${parentTask.taskId}`,
+								() => state.task === child,
+							)
+						}
+						if (state.task === child) {
+							// workspace_create / relocation may have claimed additional trees.
+							await this.registry.releaseOwnedBy(`task:${child.taskId}`, () => state.task === child)
+						}
+					} catch (error) {
+						const detail = error instanceof Error ? error.message : String(error)
+						console.error(`[ParallelManager] workspace release failed for ${child.taskId}:`, error)
+						state.info.error = [state.info.error, `Workspace release failed: ${detail}`]
+							.filter(Boolean)
+							.join("; ")
+					}
 				}
 				void this.broadcast()
 			})

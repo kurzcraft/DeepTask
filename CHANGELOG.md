@@ -12,6 +12,11 @@
 - Reject execute-command parameters exceeding two physical lines before approval or terminal creation, with script-first recovery guidance.
 - Long-context condensation now keeps incremental continuation state instead of recopying a prior opening mantra or nested Previous Conversation dump; the 15-second local fast path still preserves the newest user request.
 
+- Bound auxiliary escaped-text cache by total and per-entry payload budgets without truncating displayed content; load syntax-highlighting themes on demand and allow failed initialization to retry.
+- Coalesce overlapping full-state builds with a shared trailing promise; deduplicate paired fork IPC snapshots while preserving standalone state events and parent controls.
+- Release settled workspace claims only for their expected owner, serialize registry mutations, and protect resumed or actively writing instances from stale cleanup.
+- Remove duplicate host-generated progress and command rules and compact MCP schema whitespace without dropping user instructions, tool fields, or conversation history.
+
 ## 9.2.7
 
 ### Patch Changes

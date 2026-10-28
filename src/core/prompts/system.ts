@@ -197,7 +197,7 @@ ${getCapabilitiesSection(cwd, shouldIncludeMcp ? mcpHub : undefined)}
 
 ${modesSection}
 ${skillsSection ? `\n${skillsSection}` : ""}
-${getRulesSection(cwd, settings, clineProviderState /* kilocode_change */)}
+${getRulesSection(cwd, settings, clineProviderState, true /* kilocode_change: complete command section below */)}
 
 ${getSystemInfoSection(cwd)}
 
@@ -212,6 +212,7 @@ ${await addCustomInstructions(baseInstructions, globalCustomInstructions || "", 
 	globalRulesToggleState: context.globalState.get("globalRulesToggles"), // kilocode_change
 	settings,
 	taskId,
+	omitTaskProgressFileInstructions: clineProviderState?.taskProgressFileEnabled === true, // kilocode_change
 })}`
 
 	// kilocode_change start: Append custom system prompt from CLI if provided
@@ -289,6 +290,7 @@ export const SYSTEM_PROMPT = async (
 				rooIgnoreInstructions,
 				settings,
 				taskId,
+				omitTaskProgressFileInstructions: clineProviderState?.taskProgressFileEnabled === true, // kilocode_change
 			},
 		)
 

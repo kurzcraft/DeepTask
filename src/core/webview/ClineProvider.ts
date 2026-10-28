@@ -2,6 +2,7 @@ import os from "os"
 import * as path from "path"
 import fs from "fs/promises"
 import EventEmitter from "events"
+import { CoalesceLatestWork } from "./helpers/coalesceLatestWork" // kilocode_change
 
 import { Anthropic } from "@anthropic-ai/sdk"
 import delay from "delay"
@@ -235,6 +236,10 @@ export class ClineProvider
 	private autoPurgeScheduler?: any // kilocode_change - (Any) Prevent circular import
 	private deviceAuthHandler?: DeviceAuthHandler // kilocode_change - Device auth handler
 
+	// kilocode_change start - snapshot work is bounded; incremental events remain untouched.
+	private stateSnapshotDisposed = false
+	private readonly stateSnapshotWork = new CoalesceLatestWork(() => this.flushStateToWebview())
+	// kilocode_change end
 	private recentTasksCache?: string[]
 	private pendingOperations: Map<string, PendingEditOperation> = new Map()
 	private pendingCancelledTaskContinuation?: PendingCancelledTaskContinuation // kilocode_change
@@ -1407,6 +1412,9 @@ export class ClineProvider
 		// Clear all pending edit operations to prevent memory leaks
 		this.clearAllPendingEditOperations()
 		this.log("Cleared pending operations")
+		// kilocode_change: finish task teardown first, then stop queued view snapshots.
+		this.stateSnapshotDisposed = true
+		this.stateSnapshotWork.dispose()
 
 		if (this.view && "dispose" in this.view) {
 			this.view.dispose()
@@ -3155,9 +3163,17 @@ export class ClineProvider
 		await this.postStateToWebview()
 	}
 
-	async postStateToWebview() {
+	// kilocode_change start - share a pending promise instead of retaining N full states.
+	postStateToWebview(): Promise<void> {
+		return this.stateSnapshotWork.request()
+	}
+
+	private async flushStateToWebview(): Promise<void> {
+		if (this.stateSnapshotDisposed) return
 		const state = await this.getStateToPostToWebview()
-		this.postMessageToWebview({ type: "state", state })
+		if (this.stateSnapshotDisposed) return
+		await this.postMessageToWebview({ type: "state", state })
+		// kilocode_change end
 
 		// kilocode_change start: construct manager on startup and restore folders/conversations
 		try {

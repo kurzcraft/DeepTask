@@ -1013,6 +1013,69 @@ describe("SYSTEM_PROMPT", () => {
 	})
 	// kilocode_change end
 
+	// kilocode_change start - use the real custom-instruction assembler for deduplication.
+	it.each([false, true])("preserves user rules and emits one host block (file override: %s)", async (override) => {
+		const actual = await vi.importActual<typeof import("../sections/custom-instructions")>(
+			"../sections/custom-instructions",
+		)
+		vi.mocked(addCustomInstructions).mockImplementationOnce(actual.addCustomInstructions)
+		const loader = await import("../sections/custom-system-prompt")
+		const loadSpy = vi
+			.spyOn(loader, "loadSystemPromptFile")
+			.mockResolvedValueOnce(override ? "CUSTOM OVERRIDE: preserve this verbatim" : "")
+		const userRules = "USER RULE repeated verbatim. USER RULE repeated verbatim."
+		try {
+			const prompt = await SYSTEM_PROMPT(
+				mockContext,
+				"/test/path",
+				false,
+				undefined,
+				undefined,
+				undefined,
+				defaultModeSlug,
+				undefined,
+				undefined,
+				userRules,
+				undefined,
+				{},
+				false,
+				"en",
+				undefined,
+				undefined,
+				{
+					maxConcurrentFileReads: 5,
+					todoListEnabled: true,
+					useAgentRules: false,
+					newTaskRequireTodos: false,
+					taskProgressFileEnabled: true,
+					toolProtocol: "native",
+				},
+				undefined,
+				undefined,
+				undefined,
+				{ taskProgressFileEnabled: true } as any,
+				"host-dedup-id",
+			)
+			expect(prompt).toContain(userRules)
+			expect(prompt.split("Canonical file format (mandatory; this is not YAML frontmatter)")).toHaveLength(2)
+			expect(prompt).toContain("<!-- deeptask-task-id:host-dedup-id -->")
+			expect(prompt).toContain("read it back and verify its marker, checklist, order, statuses, and hierarchy")
+			expect(prompt).toContain("four-space increments")
+			expect(prompt).toContain("stale")
+			expect(prompt).toContain("EXTRA/task/finished/")
+			if (override) {
+				expect(prompt).toContain("CUSTOM OVERRIDE: preserve this verbatim")
+			} else {
+				expect(prompt).toContain("RELIABLE COMMAND EXECUTION")
+				expect(prompt).toContain("more than 2 physical lines")
+				expect(prompt).not.toContain("SCRIPT-FIRST COMMAND RULE:")
+			}
+		} finally {
+			loadSpy.mockRestore()
+		}
+	})
+	// kilocode_change end
+
 	afterAll(() => {
 		vi.restoreAllMocks()
 	})

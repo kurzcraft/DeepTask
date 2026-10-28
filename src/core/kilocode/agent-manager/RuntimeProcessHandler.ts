@@ -669,6 +669,10 @@ export class RuntimeProcessHandler {
 				}
 			}
 
+			// kilocode_change: preserve empty-state delivery formerly duplicated by stateChange.
+			if (chatMessages && chatMessages.length === 0) {
+				this.callbacks.onChatMessages(sessionId, [])
+			}
 			if (chatMessages && chatMessages.length > 0) {
 				// Log last few message types and content for debugging
 				const lastMsgs = chatMessages.slice(-3).map((m) => {
@@ -958,11 +962,7 @@ export class RuntimeProcessHandler {
 	}
 	// kilocode_change end
 
-	private sendIpcMessage(
-		sessionId: string,
-		type: ParentIPCMessage["type"],
-		message: unknown,
-	): Promise<void> {
+	private sendIpcMessage(sessionId: string, type: ParentIPCMessage["type"], message: unknown): Promise<void> {
 		const info = this.activeSessions.get(sessionId)
 		if (!info) {
 			return Promise.reject(new Error(`No active session: ${sessionId}`))

@@ -48,6 +48,7 @@
 
 import { createExtensionService, type ExtensionService } from "./services/extension.js"
 import { forceSendWebviewMessage } from "./force-send.js" // kilocode_change
+import { createForkParentIpcForwarder } from "./fork-parent-ipc.js" // kilocode_change
 import { logs, setLogger, createIPCLogger } from "./utils/logger.js"
 import type { ExtensionMessage, WebviewMessage, ExtensionState, ModeConfig, ProviderSettings } from "./types/index.js"
 
@@ -353,13 +354,10 @@ async function main(): Promise<void> {
 			sendToParent({ type: "ready" })
 		})
 
-		agent.on("message", (message: ExtensionMessage) => {
-			sendToParent({ type: "message", payload: message })
-		})
-
-		agent.on("stateChange", (state: ExtensionState) => {
-			sendToParent({ type: "stateChange", state })
-		})
+		// kilocode_change: serialize the paired full-state event only once.
+		const parentForwarder = createForkParentIpcForwarder(sendToParent)
+		agent.on("message", parentForwarder.forwardMessage)
+		agent.on("stateChange", parentForwarder.forwardStateChange)
 
 		agent.on("error", (error: Error) => {
 			sendToParent({

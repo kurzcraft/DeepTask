@@ -389,6 +389,7 @@ export class WorkspaceService {
 	}
 
 	async merge(params: { name: string; removeAfter?: boolean; allowOwner?: string }): Promise<MergeResult> {
+		await this.registry.load(true)
 		const entry = await this.registry.get(params.name)
 		if (!entry) {
 			return { ok: false, reason: `Unknown workspace "${params.name}".` }
@@ -398,7 +399,11 @@ export class WorkspaceService {
 			const canLeave =
 				!!params.allowOwner && (owner === params.allowOwner || owner.endsWith(`:${params.allowOwner}`))
 			if (canLeave) {
-				await this.registry.release(params.name, "available")
+				await this.registry.release(params.name, "available", owner)
+				await this.registry.load(true)
+				if ((await this.registry.get(params.name))?.status === "busy") {
+					return { ok: false, reason: "Workspace ownership changed; refusing to merge a busy tree." }
+				}
 			} else {
 				return {
 					ok: false,

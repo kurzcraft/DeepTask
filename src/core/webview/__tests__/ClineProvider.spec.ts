@@ -363,6 +363,26 @@ afterAll(() => {
 	vi.restoreAllMocks()
 })
 
+// kilocode_change start - exercise the current immediate-edit/parked-continuation contract.
+function prepareInlineEdit(provider: ClineProvider, task: Task) {
+	Object.defineProperty(task, "messageQueueService", {
+		value: { clear: vi.fn() },
+		configurable: true,
+	})
+	task.clearStaleWebviewAskResponse = vi.fn()
+	task.continueTaskFromUserMessage = vi.fn().mockResolvedValue(undefined)
+	task.overwriteClineMessages = vi.fn().mockImplementation(async (messages) => {
+		task.clineMessages = messages
+	})
+	task.overwriteApiConversationHistory = vi.fn().mockImplementation(async (messages) => {
+		task.apiConversationHistory = messages
+	})
+	const pending = vi.spyOn(provider, "setPendingCancelledTaskContinuation").mockImplementation(() => {})
+	const cancel = vi.spyOn(provider, "cancelTask").mockResolvedValue(undefined)
+	return { pending, cancel }
+}
+// kilocode_change end
+
 describe("ClineProvider", () => {
 	beforeAll(() => {
 		vi.mocked(Task).mockImplementation((options: any) => {
@@ -469,10 +489,7 @@ describe("ClineProvider", () => {
 				cspSource: "vscode-webview://test-csp-source",
 			},
 			visible: true,
-			onDidDispose: vi.fn().mockImplementation((callback) => {
-				callback()
-				return { dispose: vi.fn() }
-			}),
+			onDidDispose: vi.fn().mockReturnValue({ dispose: vi.fn() }), // kilocode_change: register, do not fire
 			onDidChangeVisibility: vi.fn().mockImplementation(() => ({ dispose: vi.fn() })),
 		} as unknown as vscode.WebviewView
 
@@ -1160,6 +1177,9 @@ describe("ClineProvider", () => {
 	})
 
 	it("saves current config when switching to mode without config", async () => {
+		// kilocode_change: bootstrap has separate real-manager coverage above.
+		await provider.getState()
+		vi.spyOn(provider as any, "ensureDefaultProviderProfileInActiveState").mockResolvedValue(undefined)
 		await provider.resolveWebviewView(mockWebviewView)
 		const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
@@ -1528,78 +1548,38 @@ describe("ClineProvider", () => {
 		})
 
 		test("handles edit with confirmation dialog", async () => {
-			// Setup mock messages
-			const mockMessages = [
-				{ ts: 1000, type: "say", say: "user_feedback" }, // User message 1
-				{ ts: 2000, type: "say", say: "tool" }, // Tool message
-				{ ts: 3000, type: "say", say: "text" }, // Message before edit
-				{ ts: 4000, type: "say", say: "browser_action" }, // Message to edit
-				{ ts: 5000, type: "say", say: "user_feedback" }, // Next user message
-				{ ts: 6000, type: "say", say: "user_feedback" }, // Final message
+			const task = new Task(defaultTaskOptions)
+			task.clineMessages = [
+				{ ts: 1000, type: "say", say: "user_feedback", text: "Prefix" },
+				{ ts: 2000, type: "say", say: "user_feedback", text: "Original" },
+				{ ts: 3000, type: "say", say: "text", text: "Discarded answer" },
 			] as ClineMessage[]
+			task.apiConversationHistory = [
+				{ ts: 1000, role: "user", content: "Prefix" },
+				{ ts: 2000, role: "user", content: "Original" },
+				{ ts: 3000, role: "assistant", content: "Discarded answer" },
+			] as any[]
+			const { pending, cancel } = prepareInlineEdit(provider, task)
+			await provider.addClineToStack(task)
+			const handler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
-			const mockApiHistory = [
-				{ ts: 1000 },
-				{ ts: 2000 },
-				{ ts: 3000 },
-				{ ts: 4000 },
-				{ ts: 5000 },
-				{ ts: 6000 },
-			] as (Anthropic.MessageParam & { ts?: number })[]
+			const content = "Edited message content"
+			const images = undefined
 
-			// Setup Task instance with auto-mock from the top of the file
-			const mockCline = new Task(defaultTaskOptions) // Create a new mocked instance
-			mockCline.clineMessages = mockMessages // Set test-specific messages
-			mockCline.apiConversationHistory = mockApiHistory // Set API history
-
-			// Explicitly mock the overwrite methods since they're not being called in the tests
-			mockCline.overwriteClineMessages = vi.fn()
-			mockCline.overwriteApiConversationHistory = vi.fn()
-			mockCline.handleWebviewAskResponse = vi.fn()
-
-			await provider.addClineToStack(mockCline) // Add the mocked instance to the stack
-
-			// Mock getTaskWithId
-			;(provider as any).getTaskWithId = vi.fn().mockResolvedValue({
-				historyItem: { id: "test-task-id" },
+			await handler({ type: "submitEditedMessage", value: 2000, editedMessageContent: content, images })
+			expect(task.clineMessages).toEqual([expect.objectContaining({ ts: 1000 })])
+			expect(task.apiConversationHistory).toEqual([{ ts: 1000, role: "user", content: "Prefix" }])
+			expect(task.overwriteClineMessages).toHaveBeenCalledWith([expect.objectContaining({ ts: 1000 })], {
+				force: true,
 			})
-
-			// Trigger message edit
-			// Get the message handler function that was registered with the webview
-			const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
-
-			// Call the message handler with a submitEditedMessage message
-			await messageHandler({
-				type: "submitEditedMessage",
-				value: 4000,
-				editedMessageContent: "Edited message content",
-			})
-
-			// Verify that the dialog message was sent to webview
-			expect(mockPostMessage).toHaveBeenCalledWith({
-				type: "showEditMessageDialog",
-				messageTs: 4000,
-				text: "Edited message content",
-				hasCheckpoint: false,
-				images: undefined,
-			})
-
-			// Simulate user confirming edit through the dialog
-			await messageHandler({
-				type: "editMessageConfirm",
-				messageTs: 4000,
-				text: "Edited message content",
-			})
-
-			// Verify correct messages were kept - delete from the preceding user message to truly replace it
-			expect(mockCline.overwriteClineMessages).toHaveBeenCalledWith([])
-
-			// Verify correct API messages were kept
-			expect(mockCline.overwriteApiConversationHistory).toHaveBeenCalledWith([])
-
-			// The new flow calls webviewMessageHandler recursively with askResponse
-			// We need to verify the recursive call happened by checking if the handler was called again
-			expect((mockWebviewView.webview.onDidReceiveMessage as any).mock.calls.length).toBeGreaterThanOrEqual(1)
+			expect(pending).toHaveBeenCalledWith(content, images, { kind: "edited_resend" })
+			expect(cancel).toHaveBeenCalledTimes(1)
+			expect(mockPostMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "showEditMessageDialog" }))
+			expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
+			// A delayed legacy confirmation cannot replay an edit whose target is now gone.
+			await handler({ type: "editMessageConfirm", messageTs: 2000, text: content })
+			expect(pending).toHaveBeenCalledTimes(1)
+			expect(cancel).toHaveBeenCalledTimes(1)
 		})
 	})
 
@@ -1878,7 +1858,7 @@ describe("ClineProvider", () => {
 			}
 
 			;(provider as any).providerSettingsManager = {
-			initialize: vi.fn().mockResolvedValue(undefined),
+				initialize: vi.fn().mockResolvedValue(undefined),
 				getModeConfigId: vi.fn().mockResolvedValue("saved-config-id"),
 				listConfig: vi.fn().mockResolvedValue([profile]),
 				activateProfile: vi.fn().mockResolvedValue(profile),
@@ -1969,7 +1949,7 @@ describe("ClineProvider", () => {
 
 			// Mock provider settings manager
 			;(provider as any).providerSettingsManager = {
-			initialize: vi.fn().mockResolvedValue(undefined),
+				initialize: vi.fn().mockResolvedValue(undefined),
 				getModeConfigId: vi.fn().mockResolvedValue(undefined),
 				listConfig: vi.fn().mockResolvedValue([]),
 			}
@@ -2034,7 +2014,7 @@ describe("ClineProvider", () => {
 
 			// Mock provider settings manager
 			;(provider as any).providerSettingsManager = {
-			initialize: vi.fn().mockResolvedValue(undefined),
+				initialize: vi.fn().mockResolvedValue(undefined),
 				getModeConfigId: vi.fn().mockResolvedValue("config-id"),
 				listConfig: vi
 					.fn()
@@ -2095,7 +2075,7 @@ describe("ClineProvider", () => {
 
 			// Mock provider settings manager
 			;(provider as any).providerSettingsManager = {
-			initialize: vi.fn().mockResolvedValue(undefined),
+				initialize: vi.fn().mockResolvedValue(undefined),
 				getModeConfigId: vi.fn().mockResolvedValue(undefined),
 				listConfig: vi.fn().mockResolvedValue([]),
 			}
@@ -2123,11 +2103,14 @@ describe("ClineProvider", () => {
 		})
 
 		test("handles history items without mode property", async () => {
+			// kilocode_change: bootstrap has separate real-manager coverage above.
+			await provider.getState()
+			vi.spyOn(provider as any, "ensureDefaultProviderProfileInActiveState").mockResolvedValue(undefined)
 			await provider.resolveWebviewView(mockWebviewView)
 
 			// Mock provider settings manager
 			;(provider as any).providerSettingsManager = {
-			initialize: vi.fn().mockResolvedValue(undefined),
+				initialize: vi.fn().mockResolvedValue(undefined),
 				getModeConfigId: vi.fn().mockResolvedValue(undefined),
 				listConfig: vi.fn().mockResolvedValue([]),
 			}
@@ -2152,6 +2135,9 @@ describe("ClineProvider", () => {
 		})
 
 		test("continues with task restoration even if mode config loading fails", async () => {
+			// kilocode_change: bootstrap has separate real-manager coverage above.
+			await provider.getState()
+			vi.spyOn(provider as any, "ensureDefaultProviderProfileInActiveState").mockResolvedValue(undefined)
 			await provider.resolveWebviewView(mockWebviewView)
 
 			// Mock custom modes
@@ -2172,7 +2158,7 @@ describe("ClineProvider", () => {
 
 			// Mock provider settings manager to throw error
 			;(provider as any).providerSettingsManager = {
-			initialize: vi.fn().mockResolvedValue(undefined),
+				initialize: vi.fn().mockResolvedValue(undefined),
 				getModeConfigId: vi.fn().mockResolvedValue("config-id"),
 				listConfig: vi
 					.fn()
@@ -2273,7 +2259,7 @@ describe("ClineProvider", () => {
 			const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
 			;(provider as any).providerSettingsManager = {
-			initialize: vi.fn().mockResolvedValue(undefined),
+				initialize: vi.fn().mockResolvedValue(undefined),
 				setModeConfig: vi.fn().mockRejectedValue(new Error("Failed to update mode config")),
 				listConfig: vi
 					.fn()
@@ -2301,11 +2287,14 @@ describe("ClineProvider", () => {
 		})
 
 		test("handles successful upsertApiConfiguration", async () => {
+			// kilocode_change: bootstrap has separate real-manager coverage above.
+			await provider.getState()
+			vi.spyOn(provider as any, "ensureDefaultProviderProfileInActiveState").mockResolvedValue(undefined)
 			await provider.resolveWebviewView(mockWebviewView)
 			const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
 			;(provider as any).providerSettingsManager = {
-			initialize: vi.fn().mockResolvedValue(undefined),
+				initialize: vi.fn().mockResolvedValue(undefined),
 				setModeConfig: vi.fn(),
 				saveConfig: vi.fn().mockResolvedValue(undefined),
 				listConfig: vi
@@ -2351,13 +2340,16 @@ describe("ClineProvider", () => {
 		})
 
 		test("handles buildApiHandler error in updateApiConfiguration", async () => {
+			// kilocode_change: bootstrap has separate real-manager coverage above.
+			await provider.getState()
+			vi.spyOn(provider as any, "ensureDefaultProviderProfileInActiveState").mockResolvedValue(undefined)
 			await provider.resolveWebviewView(mockWebviewView)
 			const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
 			// kilocode_change start
 			// Mock saveConfig to throw an error to test error handling
 			;(provider as any).providerSettingsManager = {
-			initialize: vi.fn().mockResolvedValue(undefined),
+				initialize: vi.fn().mockResolvedValue(undefined),
 				setModeConfig: vi.fn(),
 				saveConfig: vi.fn().mockRejectedValue(new Error("Failed to save config")),
 				listConfig: vi
@@ -3011,10 +3003,7 @@ describe("ClineProvider - Router Models", () => {
 				asWebviewUri: vi.fn(),
 			},
 			visible: true,
-			onDidDispose: vi.fn().mockImplementation((callback) => {
-				callback()
-				return { dispose: vi.fn() }
-			}),
+			onDidDispose: vi.fn().mockReturnValue({ dispose: vi.fn() }), // kilocode_change: register, do not fire
 			onDidChangeVisibility: vi.fn().mockImplementation(() => ({ dispose: vi.fn() })),
 		} as unknown as vscode.WebviewView
 
@@ -3104,7 +3093,7 @@ describe("ClineProvider - Router Models", () => {
 		// Verify response was sent
 		expect(mockPostMessage).toHaveBeenCalledWith({
 			type: "routerModels",
-			routerModels: {
+			routerModels: expect.objectContaining({
 				deepinfra: mockModels,
 				openrouter: mockModels,
 				gemini: mockModels, // kilocode_change
@@ -3125,7 +3114,7 @@ describe("ClineProvider - Router Models", () => {
 				"sap-ai-core": {}, // kilocode_change
 				huggingface: {},
 				"io-intelligence": {},
-			},
+			}),
 			values: undefined,
 		})
 	})
@@ -3160,31 +3149,26 @@ describe("ClineProvider - Router Models", () => {
 		}
 		const { getModels } = await import("../../../api/providers/fetchers/modelCache")
 
-		// Mock some providers to succeed and others to fail
-		vi.mocked(getModels)
-			.mockResolvedValueOnce(mockModels) // openrouter success
-			.mockResolvedValueOnce(mockModels) // kilocode_change: gemini success
-			.mockRejectedValueOnce(new Error("Requesty API error")) //
-			.mockResolvedValueOnce(mockModels) // kilocode_change glama success
-			.mockRejectedValueOnce(new Error("Unbound API error")) // unbound fail
-			.mockRejectedValueOnce(new Error("Kilocode-OpenRouter API error")) // kilocode-openrouter fail
-			.mockRejectedValueOnce(new Error("Ollama API error")) // kilocode_change
-			.mockResolvedValueOnce(mockModels) // vercel-ai-gateway success
-			.mockResolvedValueOnce(mockModels) // deepinfra success
-			.mockResolvedValueOnce(mockModels) // nano-gpt success // kilocode_change
-			.mockResolvedValueOnce(mockModels) // kilocode_change: ovhcloud
-			.mockResolvedValueOnce(mockModels) // kilocode_change: inception success
-			.mockResolvedValueOnce(mockModels) // kilocode_change: synthetic success
-			.mockResolvedValueOnce(mockModels) // roo success
-			.mockRejectedValueOnce(new Error("Chutes API error")) // chutes fail
-			.mockRejectedValueOnce(new Error("LiteLLM connection failed")) // litellm fail
+		// kilocode_change: select by provider, not the evolving router enumeration order.
+		const failures: Record<string, string> = {
+			requesty: "Requesty API error",
+			unbound: "Unbound API error",
+			kilocode: "Kilocode-OpenRouter API error",
+			ollama: "Ollama API error",
+			chutes: "Chutes API error",
+			litellm: "LiteLLM connection failed",
+		}
+		vi.mocked(getModels).mockImplementation(async ({ provider: name }) => {
+			if (failures[name]) throw new Error(failures[name])
+			return mockModels
+		})
 
 		await messageHandler({ type: "requestRouterModels" })
 
 		// Verify main response includes successful providers and empty objects for failed ones
 		expect(mockPostMessage).toHaveBeenCalledWith({
 			type: "routerModels",
-			routerModels: {
+			routerModels: expect.objectContaining({
 				deepinfra: mockModels,
 				openrouter: mockModels,
 				gemini: mockModels, // kilocode_change
@@ -3205,7 +3189,7 @@ describe("ClineProvider - Router Models", () => {
 				"sap-ai-core": {}, // kilocode_change
 				huggingface: {},
 				"io-intelligence": {},
-			},
+			}),
 			values: undefined,
 		})
 
@@ -3340,7 +3324,7 @@ describe("ClineProvider - Router Models", () => {
 		// Verify response includes empty object for LiteLLM
 		expect(mockPostMessage).toHaveBeenCalledWith({
 			type: "routerModels",
-			routerModels: {
+			routerModels: expect.objectContaining({
 				deepinfra: mockModels,
 				openrouter: mockModels,
 				gemini: mockModels, // kilocode_change
@@ -3361,7 +3345,7 @@ describe("ClineProvider - Router Models", () => {
 				"sap-ai-core": {}, // kilocode_change
 				huggingface: {},
 				"io-intelligence": {},
-			},
+			}),
 			values: undefined,
 		})
 	})
@@ -3457,10 +3441,7 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 				asWebviewUri: vi.fn(),
 			},
 			visible: true,
-			onDidDispose: vi.fn().mockImplementation((callback) => {
-				callback()
-				return { dispose: vi.fn() }
-			}),
+			onDidDispose: vi.fn().mockReturnValue({ dispose: vi.fn() }), // kilocode_change: register, do not fire
 			onDidChangeVisibility: vi.fn().mockImplementation(() => ({ dispose: vi.fn() })),
 		} as unknown as vscode.WebviewView
 
@@ -3490,114 +3471,73 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 		})
 
 		test("handles editing messages containing images", async () => {
-			const mockMessages = [
-				{ ts: 1000, type: "say", say: "user_feedback", text: "Original message" },
-				{
-					ts: 2000,
-					type: "say",
-					say: "user_feedback",
-					text: "Message with image",
-					images: [
-						"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
-					],
-					value: 3000,
-				},
-				{ ts: 3000, type: "say", say: "text", text: "AI response" },
+			const task = new Task(defaultTaskOptions)
+			task.clineMessages = [
+				{ ts: 1000, type: "say", say: "user_feedback", text: "Prefix" },
+				{ ts: 2000, type: "say", say: "user_feedback", text: "Original" },
+				{ ts: 3000, type: "say", say: "text", text: "Discarded answer" },
 			] as ClineMessage[]
+			task.apiConversationHistory = [
+				{ ts: 1000, role: "user", content: "Prefix" },
+				{ ts: 2000, role: "user", content: "Original" },
+				{ ts: 3000, role: "assistant", content: "Discarded answer" },
+			] as any[]
+			const { pending, cancel } = prepareInlineEdit(provider, task)
+			await provider.addClineToStack(task)
+			const handler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
-			const mockCline = new Task(defaultTaskOptions)
-			mockCline.clineMessages = mockMessages
-			mockCline.apiConversationHistory = [{ ts: 1000 }, { ts: 2000 }, { ts: 3000 }] as any[]
-			mockCline.overwriteClineMessages = vi.fn()
-			mockCline.overwriteApiConversationHistory = vi.fn()
-			mockCline.submitUserMessage = vi.fn()
+			const content = "Edited image message"
+			const images = ["data:image/png;base64,aGVsbG8="]
 
-			await provider.addClineToStack(mockCline)
-			;(provider as any).getTaskWithId = vi.fn().mockResolvedValue({
-				historyItem: { id: "test-task-id" },
+			await handler({ type: "submitEditedMessage", value: 2000, editedMessageContent: content, images })
+			expect(task.clineMessages).toEqual([expect.objectContaining({ ts: 1000 })])
+			expect(task.apiConversationHistory).toEqual([{ ts: 1000, role: "user", content: "Prefix" }])
+			expect(task.overwriteClineMessages).toHaveBeenCalledWith([expect.objectContaining({ ts: 1000 })], {
+				force: true,
 			})
-
-			const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
-			await messageHandler({
-				type: "submitEditedMessage",
-				value: 3000,
-				editedMessageContent: "Edited message with preserved images",
-			})
-
-			// Verify dialog was shown
-			expect(mockPostMessage).toHaveBeenCalledWith({
-				type: "showEditMessageDialog",
-				messageTs: 3000,
-				text: "Edited message with preserved images",
-				hasCheckpoint: false,
-				images: undefined,
-			})
-
-			// Simulate confirmation
-			await messageHandler({
-				type: "editMessageConfirm",
-				messageTs: 3000,
-				text: "Edited message with preserved images",
-			})
-
-			// Verify messages were edited correctly - the ORIGINAL user message and all subsequent messages are removed
-			expect(mockCline.overwriteClineMessages).toHaveBeenCalledWith([mockMessages[0]])
-			expect(mockCline.overwriteApiConversationHistory).toHaveBeenCalledWith([{ ts: 1000 }])
-			// Verify submitUserMessage was called with the edited content
-			expect(mockCline.submitUserMessage).toHaveBeenCalledWith("Edited message with preserved images", [])
+			expect(pending).toHaveBeenCalledWith(content, images, { kind: "edited_resend" })
+			expect(cancel).toHaveBeenCalledTimes(1)
+			expect(mockPostMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "showEditMessageDialog" }))
+			expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
+			// A delayed legacy confirmation cannot replay an edit whose target is now gone.
+			await handler({ type: "editMessageConfirm", messageTs: 2000, text: content })
+			expect(pending).toHaveBeenCalledTimes(1)
+			expect(cancel).toHaveBeenCalledTimes(1)
 		})
 
 		test("handles editing messages with file attachments", async () => {
-			const mockMessages = [
-				{ ts: 1000, type: "say", say: "user_feedback", text: "Original message" },
-				{
-					ts: 2000,
-					type: "say",
-					say: "user_feedback",
-					text: "Message with file",
-					attachments: [{ path: "/path/to/file.txt", type: "file" }],
-					value: 3000,
-				},
-				{ ts: 3000, type: "say", say: "text", text: "AI response" },
+			const task = new Task(defaultTaskOptions)
+			task.clineMessages = [
+				{ ts: 1000, type: "say", say: "user_feedback", text: "Prefix" },
+				{ ts: 2000, type: "say", say: "user_feedback", text: "Original" },
+				{ ts: 3000, type: "say", say: "text", text: "Discarded answer" },
 			] as ClineMessage[]
+			task.apiConversationHistory = [
+				{ ts: 1000, role: "user", content: "Prefix" },
+				{ ts: 2000, role: "user", content: "Original" },
+				{ ts: 3000, role: "assistant", content: "Discarded answer" },
+			] as any[]
+			const { pending, cancel } = prepareInlineEdit(provider, task)
+			await provider.addClineToStack(task)
+			const handler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
-			const mockCline = new Task(defaultTaskOptions)
-			mockCline.clineMessages = mockMessages
-			mockCline.apiConversationHistory = [{ ts: 1000 }, { ts: 2000 }, { ts: 3000 }] as any[]
-			mockCline.overwriteClineMessages = vi.fn()
-			mockCline.overwriteApiConversationHistory = vi.fn()
-			mockCline.submitUserMessage = vi.fn()
+			const content = "Edited message with @/path/to/file.txt attachment"
+			const images = undefined
 
-			await provider.addClineToStack(mockCline)
-			;(provider as any).getTaskWithId = vi.fn().mockResolvedValue({
-				historyItem: { id: "test-task-id" },
+			await handler({ type: "submitEditedMessage", value: 2000, editedMessageContent: content, images })
+			expect(task.clineMessages).toEqual([expect.objectContaining({ ts: 1000 })])
+			expect(task.apiConversationHistory).toEqual([{ ts: 1000, role: "user", content: "Prefix" }])
+			expect(task.overwriteClineMessages).toHaveBeenCalledWith([expect.objectContaining({ ts: 1000 })], {
+				force: true,
 			})
-
-			const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
-			await messageHandler({
-				type: "submitEditedMessage",
-				value: 3000,
-				editedMessageContent: "Edited message with file attachment",
-			})
-
-			// Verify dialog was shown
-			expect(mockPostMessage).toHaveBeenCalledWith({
-				type: "showEditMessageDialog",
-				messageTs: 3000,
-				text: "Edited message with file attachment",
-				hasCheckpoint: false,
-				images: undefined,
-			})
-
-			// Simulate user confirming the edit
-			await messageHandler({
-				type: "editMessageConfirm",
-				messageTs: 3000,
-				text: "Edited message with file attachment",
-			})
-
-			expect(mockCline.overwriteClineMessages).toHaveBeenCalled()
-			expect(mockCline.submitUserMessage).toHaveBeenCalledWith("Edited message with file attachment", [])
+			expect(pending).toHaveBeenCalledWith(content, images, { kind: "edited_resend" })
+			expect(cancel).toHaveBeenCalledTimes(1)
+			expect(mockPostMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "showEditMessageDialog" }))
+			expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
+			// A delayed legacy confirmation cannot replay an edit whose target is now gone.
+			await handler({ type: "editMessageConfirm", messageTs: 2000, text: content })
+			expect(pending).toHaveBeenCalledTimes(1)
+			expect(cancel).toHaveBeenCalledTimes(1)
 		})
 	})
 
@@ -3608,88 +3548,55 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 		})
 
 		test("handles network timeout during edit submission", async () => {
-			const mockCline = new Task(defaultTaskOptions)
-			mockCline.clineMessages = [
-				{ ts: 1000, type: "say", say: "user_feedback", text: "Original message", value: 2000 },
-				{ ts: 2000, type: "say", say: "text", text: "AI response" },
+			const task = new Task(defaultTaskOptions)
+			task.clineMessages = [
+				{ ts: 1000, type: "say", say: "user_feedback", text: "Prefix" },
+				{ ts: 2000, type: "say", say: "user_feedback", text: "Original" },
+				{ ts: 3000, type: "say", say: "text", text: "Discarded answer" },
 			] as ClineMessage[]
-			mockCline.apiConversationHistory = [{ ts: 1000 }, { ts: 2000 }] as any[]
-			mockCline.overwriteClineMessages = vi.fn()
-			mockCline.overwriteApiConversationHistory = vi.fn()
-			mockCline.handleWebviewAskResponse = vi.fn().mockRejectedValue(new Error("Network timeout"))
+			task.apiConversationHistory = [
+				{ ts: 1000, role: "user", content: "Prefix" },
+				{ ts: 2000, role: "user", content: "Original" },
+				{ ts: 3000, role: "assistant", content: "Discarded answer" },
+			] as any[]
+			const { pending, cancel } = prepareInlineEdit(provider, task)
+			await provider.addClineToStack(task)
+			const handler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
-			await provider.addClineToStack(mockCline)
-			;(provider as any).getTaskWithId = vi.fn().mockResolvedValue({
-				historyItem: { id: "test-task-id" },
-			})
-
-			const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
-
-			// Should not throw error, but handle gracefully
+			cancel.mockRejectedValueOnce(new Error("Network timeout"))
 			await expect(
-				messageHandler({
-					type: "submitEditedMessage",
-					value: 2000,
-					editedMessageContent: "Edited message",
-				}),
+				handler({ type: "submitEditedMessage", value: 2000, editedMessageContent: "Edited" }),
 			).resolves.toBeUndefined()
-
-			// Verify dialog was shown
-			expect(mockPostMessage).toHaveBeenCalledWith({
-				type: "showEditMessageDialog",
-				messageTs: 2000,
-				text: "Edited message",
-				hasCheckpoint: false,
-				images: undefined,
-			})
-
-			// Simulate user confirming the edit
-			await messageHandler({ type: "editMessageConfirm", messageTs: 2000, text: "Edited message" })
-
-			expect(mockCline.overwriteClineMessages).toHaveBeenCalled()
+			expect(task.clineMessages).toEqual([expect.objectContaining({ ts: 1000 })])
+			expect(pending).toHaveBeenCalledWith("Edited", undefined, { kind: "edited_resend" })
+			expect(mockPostMessage).toHaveBeenCalledWith({ type: "action", action: "chatButtonClicked" })
+			expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "state" }))
 		})
 
 		test("handles connection drops during edit operation", async () => {
-			const mockCline = new Task(defaultTaskOptions)
-			mockCline.clineMessages = [
-				{ ts: 1000, type: "say", say: "user_feedback", text: "Original message", value: 2000 },
-				{ ts: 2000, type: "say", say: "text", text: "AI response" },
+			const task = new Task(defaultTaskOptions)
+			task.clineMessages = [
+				{ ts: 1000, type: "say", say: "user_feedback", text: "Prefix" },
+				{ ts: 2000, type: "say", say: "user_feedback", text: "Original" },
+				{ ts: 3000, type: "say", say: "text", text: "Discarded answer" },
 			] as ClineMessage[]
-			mockCline.apiConversationHistory = [{ ts: 1000 }, { ts: 2000 }] as any[]
-			mockCline.overwriteClineMessages = vi.fn().mockRejectedValue(new Error("Connection lost"))
-			mockCline.overwriteApiConversationHistory = vi.fn()
-			mockCline.handleWebviewAskResponse = vi.fn()
+			task.apiConversationHistory = [
+				{ ts: 1000, role: "user", content: "Prefix" },
+				{ ts: 2000, role: "user", content: "Original" },
+				{ ts: 3000, role: "assistant", content: "Discarded answer" },
+			] as any[]
+			const { pending, cancel } = prepareInlineEdit(provider, task)
+			await provider.addClineToStack(task)
+			const handler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
-			await provider.addClineToStack(mockCline)
-			;(provider as any).getTaskWithId = vi.fn().mockResolvedValue({
-				historyItem: { id: "test-task-id" },
-			})
-
-			const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
-
-			// Should handle connection error gracefully
+			vi.mocked(task.overwriteClineMessages).mockRejectedValueOnce(new Error("Connection lost"))
 			await expect(
-				messageHandler({
-					type: "submitEditedMessage",
-					value: 2000,
-					editedMessageContent: "Edited message",
-				}),
+				handler({ type: "submitEditedMessage", value: 2000, editedMessageContent: "Edited" }),
 			).resolves.toBeUndefined()
-
-			// Verify dialog was shown
-			expect(mockPostMessage).toHaveBeenCalledWith({
-				type: "showEditMessageDialog",
-				messageTs: 2000,
-				text: "Edited message",
-				hasCheckpoint: false,
-				images: undefined,
-			})
-
-			// Simulate user confirming the edit
-			await messageHandler({ type: "editMessageConfirm", messageTs: 2000, text: "Edited message" })
-
-			// The error should be caught and shown
 			expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("errors.message.error_editing_message")
+			expect(pending).not.toHaveBeenCalled()
+			expect(cancel).not.toHaveBeenCalled()
+			expect(task.apiConversationHistory).toHaveLength(3)
 		})
 	})
 
@@ -3700,62 +3607,33 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 		})
 
 		test("handles race conditions with simultaneous edits", async () => {
-			const mockCline = new Task(defaultTaskOptions)
-			mockCline.clineMessages = [
-				{ ts: 1000, type: "say", say: "user_feedback", text: "Message 1", value: 2000 },
-				{ ts: 2000, type: "say", say: "text", text: "AI response 1" },
-				{ ts: 3000, type: "say", say: "user_feedback", text: "Message 2", value: 4000 },
-				{ ts: 4000, type: "say", say: "text", text: "AI response 2" },
+			const task = new Task(defaultTaskOptions)
+			task.clineMessages = [
+				{ ts: 1000, type: "say", say: "user_feedback", text: "Prefix" },
+				{ ts: 2000, type: "say", say: "user_feedback", text: "Original" },
+				{ ts: 3000, type: "say", say: "text", text: "Discarded answer" },
 			] as ClineMessage[]
-			mockCline.apiConversationHistory = [{ ts: 1000 }, { ts: 2000 }, { ts: 3000 }, { ts: 4000 }] as any[]
-			mockCline.overwriteClineMessages = vi.fn()
-			mockCline.overwriteApiConversationHistory = vi.fn()
-			mockCline.handleWebviewAskResponse = vi.fn()
+			task.apiConversationHistory = [
+				{ ts: 1000, role: "user", content: "Prefix" },
+				{ ts: 2000, role: "user", content: "Original" },
+				{ ts: 3000, role: "assistant", content: "Discarded answer" },
+			] as any[]
+			const { pending, cancel } = prepareInlineEdit(provider, task)
+			await provider.addClineToStack(task)
+			const handler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
-			await provider.addClineToStack(mockCline)
-			;(provider as any).getTaskWithId = vi.fn().mockResolvedValue({
-				historyItem: { id: "test-task-id" },
+			await Promise.all([
+				handler({ type: "submitEditedMessage", value: 2000, editedMessageContent: "Edit one" }),
+				handler({ type: "submitEditedMessage", value: 2000, editedMessageContent: "Edit two" }),
+			])
+			expect(task.clineMessages).toEqual([expect.objectContaining({ ts: 1000 })])
+			expect(task.apiConversationHistory).toEqual([{ ts: 1000, role: "user", content: "Prefix" }])
+			expect(pending).toHaveBeenCalledWith("Edit one", undefined, { kind: "edited_resend" })
+			expect(task.continueTaskFromUserMessage).toHaveBeenCalledWith("Edit two", undefined, {
+				kind: "edited_resend",
 			})
-
-			const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
-
-			// Simulate concurrent edit operations
-			const edit1Promise = messageHandler({
-				type: "submitEditedMessage",
-				value: 2000,
-				editedMessageContent: "Edited message 1",
-			})
-
-			const edit2Promise = messageHandler({
-				type: "submitEditedMessage",
-				value: 4000,
-				editedMessageContent: "Edited message 2",
-			})
-
-			await Promise.all([edit1Promise, edit2Promise])
-
-			// Verify dialogs were shown for both edits
-			expect(mockPostMessage).toHaveBeenCalledWith({
-				type: "showEditMessageDialog",
-				messageTs: 2000,
-				text: "Edited message 1",
-				hasCheckpoint: false,
-				images: undefined,
-			})
-			expect(mockPostMessage).toHaveBeenCalledWith({
-				type: "showEditMessageDialog",
-				messageTs: 4000,
-				text: "Edited message 2",
-				hasCheckpoint: false,
-				images: undefined,
-			})
-
-			// Simulate user confirming both edits
-			await messageHandler({ type: "editMessageConfirm", messageTs: 2000, text: "Edited message 1" })
-			await messageHandler({ type: "editMessageConfirm", messageTs: 4000, text: "Edited message 2" })
-
-			// Both operations should complete without throwing
-			expect(mockCline.overwriteClineMessages).toHaveBeenCalled()
+			expect(cancel).toHaveBeenCalledTimes(1)
+			expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
 		})
 	})
 
@@ -3905,48 +3783,31 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 			})
 
 			test("handles edit operations on deleted messages", async () => {
-				const mockCline = new Task(defaultTaskOptions)
-				mockCline.clineMessages = [
-					{ ts: 1000, type: "say", say: "user_feedback", text: "Existing message" },
+				const task = new Task(defaultTaskOptions)
+				task.clineMessages = [
+					{ ts: 1000, type: "say", say: "user_feedback", text: "Prefix" },
+					{ ts: 2000, type: "say", say: "user_feedback", text: "Original" },
+					{ ts: 3000, type: "say", say: "text", text: "Discarded answer" },
 				] as ClineMessage[]
-				mockCline.apiConversationHistory = [{ ts: 1000 }] as any[]
-				mockCline.overwriteClineMessages = vi.fn()
-				mockCline.overwriteApiConversationHistory = vi.fn()
-				mockCline.handleWebviewAskResponse = vi.fn()
+				task.apiConversationHistory = [
+					{ ts: 1000, role: "user", content: "Prefix" },
+					{ ts: 2000, role: "user", content: "Original" },
+					{ ts: 3000, role: "assistant", content: "Discarded answer" },
+				] as any[]
+				const { pending, cancel } = prepareInlineEdit(provider, task)
+				await provider.addClineToStack(task)
+				const handler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
-				await provider.addClineToStack(mockCline)
-				;(provider as any).getTaskWithId = vi.fn().mockResolvedValue({
-					historyItem: { id: "test-task-id" },
+				await handler({ type: "submitEditedMessage", value: 5000, editedMessageContent: "Explicit retry" })
+				expect(task.continueTaskFromUserMessage).toHaveBeenCalledWith("Explicit retry", undefined, {
+					kind: "edited_resend",
 				})
-
-				const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
-
-				// Try to edit a message that doesn't exist (timestamp 5000)
-				await messageHandler({
-					type: "submitEditedMessage",
-					value: 5000,
-					editedMessageContent: "Edited non-existent message",
-				})
-
-				// Should show edit dialog
-				expect(mockPostMessage).toHaveBeenCalledWith({
-					type: "showEditMessageDialog",
-					messageTs: 5000,
-					text: "Edited non-existent message",
-					hasCheckpoint: false,
-					images: undefined,
-				})
-
-				// Simulate user confirming the edit
-				await messageHandler({
-					type: "editMessageConfirm",
-					messageTs: 5000,
-					text: "Edited non-existent message",
-				})
-
-				// Should not perform any operations since message doesn't exist
-				expect(mockCline.overwriteClineMessages).not.toHaveBeenCalled()
-				expect(mockCline.handleWebviewAskResponse).not.toHaveBeenCalled()
+				await handler({ type: "editMessageConfirm", messageTs: 5000, text: "Stale dialog" })
+				expect(task.continueTaskFromUserMessage).toHaveBeenCalledTimes(1)
+				expect(task.overwriteClineMessages).not.toHaveBeenCalled()
+				expect(task.overwriteApiConversationHistory).not.toHaveBeenCalled()
+				expect(pending).not.toHaveBeenCalled()
+				expect(cancel).not.toHaveBeenCalled()
 			})
 
 			test("handles delete operations on non-existent messages", async () => {
@@ -3993,50 +3854,29 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 			})
 
 			test("validates proper cleanup during failed edit operations", async () => {
-				const mockCline = new Task(defaultTaskOptions)
-				mockCline.clineMessages = [
-					{ ts: 1000, type: "say", say: "user_feedback", text: "Original message", value: 2000 },
-					{ ts: 2000, type: "say", say: "text", text: "AI response" },
+				const task = new Task(defaultTaskOptions)
+				task.clineMessages = [
+					{ ts: 1000, type: "say", say: "user_feedback", text: "Prefix" },
+					{ ts: 2000, type: "say", say: "user_feedback", text: "Original" },
+					{ ts: 3000, type: "say", say: "text", text: "Discarded answer" },
 				] as ClineMessage[]
-				mockCline.apiConversationHistory = [{ ts: 1000 }, { ts: 2000 }] as any[]
+				task.apiConversationHistory = [
+					{ ts: 1000, role: "user", content: "Prefix" },
+					{ ts: 2000, role: "user", content: "Original" },
+					{ ts: 3000, role: "assistant", content: "Discarded answer" },
+				] as any[]
+				const { pending, cancel } = prepareInlineEdit(provider, task)
+				await provider.addClineToStack(task)
+				const handler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
-				// Mock cleanup tracking
-				const cleanupSpy = vi.fn()
-				mockCline.overwriteClineMessages = vi.fn().mockImplementation(() => {
-					cleanupSpy()
-					throw new Error("Operation failed")
-				})
-				mockCline.overwriteApiConversationHistory = vi.fn()
-				mockCline.handleWebviewAskResponse = vi.fn()
-
-				await provider.addClineToStack(mockCline)
-				;(provider as any).getTaskWithId = vi.fn().mockResolvedValue({
-					historyItem: { id: "test-task-id" },
-				})
-
-				const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
-
-				await messageHandler({
-					type: "submitEditedMessage",
-					value: 2000,
-					editedMessageContent: "Edited message",
-				})
-
-				// Should show edit dialog
-				expect(mockPostMessage).toHaveBeenCalledWith({
-					type: "showEditMessageDialog",
-					messageTs: 2000,
-					text: "Edited message",
-					hasCheckpoint: false,
-					images: undefined,
-				})
-
-				// Simulate user confirming the edit
-				await messageHandler({ type: "editMessageConfirm", messageTs: 2000, text: "Edited message" })
-
-				// Verify cleanup was attempted before failure
-				expect(cleanupSpy).toHaveBeenCalled()
+				vi.mocked(task.overwriteClineMessages).mockRejectedValueOnce(new Error("Operation failed"))
+				await handler({ type: "submitEditedMessage", value: 2000, editedMessageContent: "Edited" })
+				expect(task.messageQueueService.clear).toHaveBeenCalledTimes(1)
+				expect(task.clearStaleWebviewAskResponse).toHaveBeenCalledTimes(1)
+				expect(task.overwriteClineMessages).toHaveBeenCalledTimes(1)
 				expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("errors.message.error_editing_message")
+				expect(pending).not.toHaveBeenCalled()
+				expect(cancel).not.toHaveBeenCalled()
 			})
 
 			test("validates proper cleanup during failed delete operations", async () => {
@@ -4087,48 +3927,40 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 			})
 
 			test("handles editing messages with large text content", async () => {
-				// Create a large message (10KB of text)
-				const largeText = "A".repeat(10000)
-				const mockMessages = [
-					{ ts: 1000, type: "say", say: "user_feedback", text: largeText, value: 2000 },
-					{ ts: 2000, type: "say", say: "text", text: "AI response" },
+				const task = new Task(defaultTaskOptions)
+				task.clineMessages = [
+					{ ts: 1000, type: "say", say: "user_feedback", text: "Prefix" },
+					{ ts: 2000, type: "say", say: "user_feedback", text: "Original" },
+					{ ts: 3000, type: "say", say: "text", text: "Discarded answer" },
 				] as ClineMessage[]
+				task.apiConversationHistory = [
+					{ ts: 1000, role: "user", content: "Prefix" },
+					{ ts: 2000, role: "user", content: "Original" },
+					{ ts: 3000, role: "assistant", content: "Discarded answer" },
+				] as any[]
+				const { pending, cancel } = prepareInlineEdit(provider, task)
+				await provider.addClineToStack(task)
+				const handler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
-				const mockCline = new Task(defaultTaskOptions)
-				mockCline.clineMessages = mockMessages
-				mockCline.apiConversationHistory = [{ ts: 1000 }, { ts: 2000 }] as any[]
-				mockCline.overwriteClineMessages = vi.fn()
-				mockCline.overwriteApiConversationHistory = vi.fn()
-				mockCline.submitUserMessage = vi.fn()
+				const content = "B".repeat(15000)
+				const images = undefined
 
-				await provider.addClineToStack(mockCline)
-				;(provider as any).getTaskWithId = vi.fn().mockResolvedValue({
-					historyItem: { id: "test-task-id" },
+				await handler({ type: "submitEditedMessage", value: 2000, editedMessageContent: content, images })
+				expect(task.clineMessages).toEqual([expect.objectContaining({ ts: 1000 })])
+				expect(task.apiConversationHistory).toEqual([{ ts: 1000, role: "user", content: "Prefix" }])
+				expect(task.overwriteClineMessages).toHaveBeenCalledWith([expect.objectContaining({ ts: 1000 })], {
+					force: true,
 				})
-
-				const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
-
-				const largeEditedContent = "B".repeat(15000)
-				await messageHandler({
-					type: "submitEditedMessage",
-					value: 2000,
-					editedMessageContent: largeEditedContent,
-				})
-
-				// Should show edit dialog
-				expect(mockPostMessage).toHaveBeenCalledWith({
-					type: "showEditMessageDialog",
-					messageTs: 2000,
-					text: largeEditedContent,
-					hasCheckpoint: false,
-					images: undefined,
-				})
-
-				// Simulate user confirming the edit
-				await messageHandler({ type: "editMessageConfirm", messageTs: 2000, text: largeEditedContent })
-
-				expect(mockCline.overwriteClineMessages).toHaveBeenCalled()
-				expect(mockCline.submitUserMessage).toHaveBeenCalledWith(largeEditedContent, [])
+				expect(pending).toHaveBeenCalledWith(content, images, { kind: "edited_resend" })
+				expect(cancel).toHaveBeenCalledTimes(1)
+				expect(mockPostMessage).not.toHaveBeenCalledWith(
+					expect.objectContaining({ type: "showEditMessageDialog" }),
+				)
+				expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
+				// A delayed legacy confirmation cannot replay an edit whose target is now gone.
+				await handler({ type: "editMessageConfirm", messageTs: 2000, text: content })
+				expect(pending).toHaveBeenCalledTimes(1)
+				expect(cancel).toHaveBeenCalledTimes(1)
 			})
 
 			test("handles deleting messages with large payloads", async () => {
@@ -4216,32 +4048,28 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 			})
 
 			test("handles user cancellation gracefully", async () => {
-				// Test cancellation by not sending confirmation
-
-				const mockCline = new Task(defaultTaskOptions)
-				mockCline.clineMessages = [
-					{ ts: 1000, type: "say", say: "user_feedback", text: "Message to edit" },
-					{ ts: 2000, type: "say", say: "text", text: "AI response" },
+				const task = new Task(defaultTaskOptions)
+				task.clineMessages = [
+					{ ts: 1000, type: "say", say: "user_feedback", text: "Prefix" },
+					{ ts: 2000, type: "say", say: "user_feedback", text: "Original" },
+					{ ts: 3000, type: "say", say: "text", text: "Discarded answer" },
 				] as ClineMessage[]
-				mockCline.apiConversationHistory = [{ ts: 1000 }, { ts: 2000 }] as any[]
-				mockCline.overwriteClineMessages = vi.fn()
-				mockCline.overwriteApiConversationHistory = vi.fn()
-				mockCline.handleWebviewAskResponse = vi.fn()
+				task.apiConversationHistory = [
+					{ ts: 1000, role: "user", content: "Prefix" },
+					{ ts: 2000, role: "user", content: "Original" },
+					{ ts: 3000, role: "assistant", content: "Discarded answer" },
+				] as any[]
+				const { pending, cancel } = prepareInlineEdit(provider, task)
+				await provider.addClineToStack(task)
+				const handler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
-				await provider.addClineToStack(mockCline)
-
-				const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
-
-				await messageHandler({
-					type: "submitEditedMessage",
-					value: 2000,
-					editedMessageContent: "Edited message",
-				})
-
-				// Verify no operations were performed when user canceled
-				expect(mockCline.overwriteClineMessages).not.toHaveBeenCalled()
-				expect(mockCline.overwriteApiConversationHistory).not.toHaveBeenCalled()
-				expect(mockCline.handleWebviewAskResponse).not.toHaveBeenCalled()
+				// Cancelled composer edits do not emit submitEditedMessage. An invalid empty
+				// submission must likewise not mutate history or start a continuation.
+				await handler({ type: "submitEditedMessage", value: 2000, editedMessageContent: "" })
+				expect(task.overwriteClineMessages).not.toHaveBeenCalled()
+				expect(task.overwriteApiConversationHistory).not.toHaveBeenCalled()
+				expect(pending).not.toHaveBeenCalled()
+				expect(cancel).not.toHaveBeenCalled()
 				expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
 			})
 		})
@@ -4288,60 +4116,31 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 			})
 
 			test("handles messages with future timestamps", async () => {
-				const futureTimestamp = Date.now() + 100000 // Future timestamp
-				const mockCline = new Task(defaultTaskOptions)
-				mockCline.clineMessages = [
-					{ ts: 1000, type: "say", say: "user_feedback", text: "Past message" },
-					{
-						ts: futureTimestamp,
-						type: "say",
-						say: "user_feedback",
-						text: "Future message",
-						value: futureTimestamp + 1000,
-					},
-					{ ts: futureTimestamp + 1000, type: "say", say: "text", text: "AI response" },
+				const task = new Task(defaultTaskOptions)
+				task.clineMessages = [
+					{ ts: 1000, type: "say", say: "user_feedback", text: "Prefix" },
+					{ ts: 2000, type: "say", say: "user_feedback", text: "Original" },
+					{ ts: 3000, type: "say", say: "text", text: "Discarded answer" },
 				] as ClineMessage[]
-				mockCline.apiConversationHistory = [
-					{ ts: 1000 },
-					{ ts: futureTimestamp },
-					{ ts: futureTimestamp + 1000 },
+				task.apiConversationHistory = [
+					{ ts: 1000, role: "user", content: "Prefix" },
+					{ ts: 2000, role: "user", content: "Original" },
+					{ ts: 3000, role: "assistant", content: "Discarded answer" },
 				] as any[]
-				mockCline.overwriteClineMessages = vi.fn()
-				mockCline.overwriteApiConversationHistory = vi.fn()
-				mockCline.submitUserMessage = vi.fn()
+				const { pending, cancel } = prepareInlineEdit(provider, task)
+				await provider.addClineToStack(task)
+				const handler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
-				await provider.addClineToStack(mockCline)
-				;(provider as any).getTaskWithId = vi.fn().mockResolvedValue({
-					historyItem: { id: "test-task-id" },
-				})
-
-				const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
-
-				await messageHandler({
-					type: "submitEditedMessage",
-					value: futureTimestamp + 1000,
-					editedMessageContent: "Edited future message",
-				})
-
-				// Should show edit dialog
-				expect(mockPostMessage).toHaveBeenCalledWith({
-					type: "showEditMessageDialog",
-					messageTs: futureTimestamp + 1000,
-					text: "Edited future message",
-					hasCheckpoint: false,
-					images: undefined,
-				})
-
-				// Simulate user confirming the edit
-				await messageHandler({
-					type: "editMessageConfirm",
-					messageTs: futureTimestamp + 1000,
-					text: "Edited future message",
-				})
-
-				// Should handle future timestamps correctly
-				expect(mockCline.overwriteClineMessages).toHaveBeenCalled()
-				expect(mockCline.submitUserMessage).toHaveBeenCalled()
+				const future = Date.now() + 100000
+				task.clineMessages[1].ts = future
+				task.clineMessages[2].ts = future + 1000
+				;(task.apiConversationHistory[1] as any).ts = future
+				;(task.apiConversationHistory[2] as any).ts = future + 1000
+				await handler({ type: "submitEditedMessage", value: future, editedMessageContent: "Future edit" })
+				expect(task.clineMessages).toEqual([expect.objectContaining({ ts: 1000 })])
+				expect(task.apiConversationHistory).toEqual([{ ts: 1000, role: "user", content: "Prefix" }])
+				expect(pending).toHaveBeenCalledWith("Future edit", undefined, { kind: "edited_resend" })
+				expect(cancel).toHaveBeenCalledTimes(1)
 			})
 		})
 	})

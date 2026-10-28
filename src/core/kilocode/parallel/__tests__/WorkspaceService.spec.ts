@@ -180,6 +180,22 @@ describe("WorkspaceService", () => {
 		expect(result.reason).toContain("busy")
 	})
 
+	test("settled task claims permit merge while other owners remain protected", async () => {
+		const settled = await service.create({ name: "settled-child" })
+		const running = await service.create({ name: "running-child" })
+		await service.claim(settled.name, "task:finished")
+		await service.claim(running.name, "task:running")
+		await fs.promises.writeFile(path.join(settled.path, "result.txt"), "verified result")
+		await registry.releaseOwnedBy("task:finished")
+		const merged = await service.merge({ name: settled.name })
+		expect(merged.ok, merged.reason).toBe(true)
+		expect(await fs.promises.readFile(path.join(repo, "result.txt"), "utf8")).toBe("verified result")
+		const refused = await service.merge({ name: running.name })
+		expect(refused.ok).toBe(false)
+		expect(refused.reason).toContain("busy")
+		expect((await registry.get(running.name))?.owner).toBe("task:running")
+	})
+
 	test("merge lets the occupying owner leave and continue", async () => {
 		await service.create({ name: "self-busy" })
 		await service.claim("self-busy", "task:task-1")

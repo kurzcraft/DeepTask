@@ -24,7 +24,7 @@ export async function getMcpServersSection(
 									?.map((tool) => {
 										const schemaStr = tool.inputSchema
 											? `    Input Schema:
-		${JSON.stringify(tool.inputSchema, null, 2).split("\n").join("\n    ")}`
+		${JSON.stringify(tool.inputSchema)}` // kilocode_change: compact JSON preserves every schema value
 											: ""
 
 										return `- ${tool.name}: ${tool.description}\n${schemaStr}`

@@ -1,11 +1,4 @@
-import {
-	createHighlighter,
-	type Highlighter,
-	type BundledTheme,
-	type BundledLanguage,
-	bundledLanguages,
-	bundledThemes,
-} from "shiki"
+import { createHighlighter, type Highlighter, type BundledTheme, type BundledLanguage, bundledLanguages } from "shiki"
 
 // Extend BundledLanguage to include 'txt' because Shiki supports this but it is
 // not listed in the bundled languages
@@ -126,6 +119,10 @@ const LANGUAGE_LOAD_DELAY = 0
 
 // Common languages for first-stage initialization
 const initialLanguages: BundledLanguage[] = ["shell", "log"]
+// kilocode_change start - keep both UI themes ready; other bundled themes stay available.
+const initialThemes: BundledTheme[] = ["github-dark", "github-light"]
+const pendingThemeLoads = new Map<BundledTheme, Promise<void>>()
+// kilocode_change end
 
 // Singleton state
 const state: {
@@ -140,7 +137,8 @@ const state: {
 	pendingLanguageLoads: new Map(),
 }
 
-export const getHighlighter = async (language?: string): Promise<Highlighter> => {
+// kilocode_change: optional theme preserves all bundled themes without eagerly loading them.
+export const getHighlighter = async (language?: string, theme?: BundledTheme): Promise<Highlighter> => {
 	try {
 		const shikilang = normalizeLanguage(language)
 
@@ -151,7 +149,7 @@ export const getHighlighter = async (language?: string): Promise<Highlighter> =>
 				// console.debug("[Shiki] Initialization started...")
 
 				const instance = await createHighlighter({
-					themes: Object.keys(bundledThemes) as BundledTheme[],
+					themes: initialThemes, // kilocode_change: avoid retaining all bundled themes
 					langs: initialLanguages,
 				})
 
@@ -164,7 +162,11 @@ export const getHighlighter = async (language?: string): Promise<Highlighter> =>
 				initialLanguages.forEach((lang) => state.loadedLanguages.add(lang))
 
 				return instance
-			})()
+			})().catch((error) => {
+				// kilocode_change: a transient WASM/import failure must not poison the singleton.
+				state.instanceInitPromise = null
+				throw error
+			})
 		}
 
 		// Wait for initialization to complete
@@ -206,6 +208,19 @@ export const getHighlighter = async (language?: string): Promise<Highlighter> =>
 			await loadingPromise
 		}
 
+		// kilocode_change start - share in-flight theme loads and allow failure retries.
+		if (theme && !instance.getLoadedThemes().includes(theme)) {
+			let loading = pendingThemeLoads.get(theme)
+			if (!loading) {
+				loading = Promise.resolve()
+					.then(() => instance.loadTheme(theme))
+					.then(() => undefined)
+					.finally(() => pendingThemeLoads.delete(theme))
+				pendingThemeLoads.set(theme, loading)
+			}
+			await loading
+		}
+		// kilocode_change end
 		return instance
 	} catch (error) {
 		console.error("[Shiki] Error in getHighlighter:", error)
