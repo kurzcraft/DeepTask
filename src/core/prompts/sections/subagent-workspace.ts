@@ -1,0 +1,4 @@
+// kilocode_change - new file
+/** Shared by XML/native dispatch descriptions and the child's runtime banner. */
+export const SUBAGENT_DEPENDENCY_REUSE_INSTRUCTIONS =
+	"By default, reuse compatible dependencies from the main repository (existing executables, package cache, or environment) rather than reinstalling them for each subagent. Verify manifest/lockfile and runtime compatibility first. Keep source edits, test targets, configuration, generated artifacts and logs in the assigned workspace; run tests against that workspace, not the main checkout. Never install, prune or rebuild through a shared dependency link. If dependencies differ or the tool cannot isolate writes, use a workspace-local environment instead. This is a reuse policy, not a guarantee that dependencies are already linked."

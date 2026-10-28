@@ -156,4 +156,85 @@ describe("collectWorkspaceOccupants", () => {
 		})
 		expect(occupants.some((occupant) => occupant.kind === "registry" && occupant.id === "feature-x")).toBe(true)
 	})
+
+	test("a write subagent does not occupy its own assigned worktree", () => {
+		const assigned = "/repo/.kilocode/worktrees/928-workspace-routing"
+		const occupants = collectWorkspaceOccupants({
+			workspacePath: assigned,
+			conversations: [],
+			runningTasks: [{ taskId: "child-1", cwd: assigned, isStreaming: true }],
+			runningSubagents: [
+				{
+					sessionId: "child-1",
+					workspacePath: assigned,
+					workspaceName: "928-workspace-routing",
+					label: "928-workspace-routing",
+				},
+			],
+			workspaces: [
+				workspace({
+					name: "928-workspace-routing",
+					path: assigned,
+					owner: "dispatch:01a1807d-parent",
+				}),
+			],
+			except: { taskId: "child-1" },
+		})
+		expect(occupants).toEqual([])
+	})
+
+	test("a dispatch:<parent> claim does not eject the assigned child from its worktree", () => {
+		const assigned = "/repo/.kilocode/worktrees/child-ws"
+		const occupants = collectWorkspaceOccupants({
+			workspacePath: assigned,
+			conversations: [],
+			runningTasks: [
+				{ taskId: "parent-1", cwd: "/repo", isStreaming: true },
+				{ taskId: "child-1", cwd: assigned, isStreaming: true },
+			],
+			runningSubagents: [
+				{
+					sessionId: "child-1",
+					workspacePath: assigned,
+					workspaceName: "child-ws",
+					label: "child-ws",
+				},
+			],
+			workspaces: [
+				workspace({
+					name: "child-ws",
+					path: assigned,
+					owner: "dispatch:parent-1",
+				}),
+			],
+			except: { taskId: "child-1" },
+		})
+		expect(occupants).toEqual([])
+	})
+
+	test("a second write subagent still occupies a sibling's assigned worktree", () => {
+		const assigned = "/repo/.kilocode/worktrees/child-ws"
+		const occupants = collectWorkspaceOccupants({
+			workspacePath: assigned,
+			conversations: [],
+			runningTasks: [{ taskId: "child-1", cwd: assigned, isStreaming: true }],
+			runningSubagents: [
+				{
+					sessionId: "child-1",
+					workspacePath: assigned,
+					workspaceName: "child-ws",
+					label: "writer-1",
+				},
+			],
+			workspaces: [
+				workspace({
+					name: "child-ws",
+					path: assigned,
+					owner: "dispatch:parent-1",
+				}),
+			],
+			except: { taskId: "child-2" },
+		})
+		expect(occupants.some((occupant) => occupant.kind === "subagent" && occupant.id === "child-1")).toBe(true)
+	})
 })

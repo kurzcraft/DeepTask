@@ -17,6 +17,22 @@ export function workspacePathsEqual(a: string, b: string): boolean {
 	return normalizeWorkspacePath(a) === normalizeWorkspacePath(b)
 }
 
+/**
+ * Registry owners are stored as `task:<id>`, `dispatch:<id>`, or a raw id.
+ * Match whole tokens so a child task is not treated as a stranger to its own
+ * assigned worktree, and a short id cannot substring-match another owner.
+ */
+export function ownerClaimsIdentity(owner: string | undefined, identity: string | undefined): boolean {
+	if (!owner || !identity) {
+		return false
+	}
+	if (owner === identity) {
+		return true
+	}
+	const tokens = owner.split(/[\s,]+/).filter(Boolean)
+	return tokens.some((token) => token === identity || token.endsWith(`:${identity}`))
+}
+
 export interface WorkspaceOccupant {
 	kind: "conversation" | "task" | "subagent" | "registry"
 	id: string
@@ -110,6 +126,9 @@ export function collectWorkspaceOccupants(params: OccupancyInputs): WorkspaceOcc
 		if (subagent.sharedWorkspace) {
 			continue
 		}
+		if (params.except?.taskId && subagent.sessionId === params.except.taskId) {
+			continue
+		}
 		const named = subagent.workspaceName
 			? params.workspaces.find((workspace) => workspace.name === subagent.workspaceName)
 			: undefined
@@ -124,20 +143,37 @@ export function collectWorkspaceOccupants(params: OccupancyInputs): WorkspaceOcc
 		})
 	}
 
+	const exceptOwnsThisWorkspace = params.runningSubagents.some(
+		(subagent) =>
+			!subagent.sharedWorkspace &&
+			params.except?.taskId === subagent.sessionId &&
+			workspacePathsEqual(
+				subagent.workspacePath ??
+					params.workspaces.find((workspace) => workspace.name === subagent.workspaceName)?.path ??
+					"",
+				params.workspacePath,
+			),
+	)
+
 	for (const workspace of params.workspaces) {
 		if (workspace.status !== "busy" || !workspacePathsEqual(workspace.path, params.workspacePath)) {
 			continue
 		}
-		if (params.except?.taskId && workspace.owner?.includes(params.except.taskId)) {
+		if (ownerClaimsIdentity(workspace.owner, params.except?.taskId)) {
 			continue
 		}
-		if (params.except?.conversationId && workspace.owner?.includes(params.except.conversationId)) {
+		if (ownerClaimsIdentity(workspace.owner, params.except?.conversationId)) {
+			continue
+		}
+		// The assigned child already occupies this worktree. A leftover
+		// `dispatch:<parent>` claim must not eject that child from its own tree.
+		if (exceptOwnsThisWorkspace) {
 			continue
 		}
 		// A leftover busy mark must not occupy an idle workspace. Only count
 		// the registry claim when a live streaming task still matches it.
 		const ownerLive = workspace.owner
-			? liveTasks.some((task) => workspace.owner?.includes(task.taskId))
+			? liveTasks.some((task) => ownerClaimsIdentity(workspace.owner, task.taskId))
 			: liveTasks.some((task) => workspacePathsEqual(task.cwd, workspace.path))
 		if (!ownerLive) {
 			continue

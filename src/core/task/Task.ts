@@ -100,6 +100,7 @@ import { sanitizeToolUseId } from "../../utils/tool-id"
 // prompts
 import { formatResponse } from "../prompts/responses"
 import { SYSTEM_PROMPT } from "../prompts/system"
+import { SUBAGENT_DEPENDENCY_REUSE_INSTRUCTIONS } from "../prompts/sections/subagent-workspace" // kilocode_change
 import { buildNativeToolsArrayWithRestrictions } from "./build-tools"
 
 // core modules
@@ -124,6 +125,19 @@ import {
 	taskMetadata,
 } from "../task-persistence"
 import { getTaskDirectoryPath } from "../../utils/storage"
+import {
+	buildInboxResumeInjection,
+	confirmInboxDeliveryFromMessages,
+	extractAssistantToolUses,
+	flattenApiHistoryText,
+	historyContainsInboxMarker,
+	isInterruptedToolResultText,
+	listInboxEntries,
+	persistSubagentResult,
+	SubagentResultInboxError,
+	toolResultText,
+	undeliveredEntries,
+} from "../kilocode/parallel/subagentResultInbox"
 import { getEnvironmentDetails } from "../environment/getEnvironmentDetails"
 import { checkContextWindowExceededError } from "../context/context-management/context-error-handling"
 import {
@@ -496,6 +510,9 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	// True after startTask/resumeTaskFromHistory. A restored mirror in another
 	// window stays false until that window takes over inference.
 	public hasStartedInference = false
+	// kilocode_change: dispatch_subagents results are marked delivered only after
+	// the parent API history containing the inbox marker is persisted.
+	public pendingSubagentInboxDelivery?: { childSessionIds: string[]; toolUseId?: string }
 	// kilocode_change end
 	isInitialized = false
 	isPaused: boolean = false
@@ -773,8 +790,8 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			: // kilocode_change: DEFECT W — explicit id overrides win for in-process
 				// subagents so parentTaskId/rootTaskId persist to taskHistory without
 				// activating new_task delegation semantics (which need the Task refs).
-				rootTaskIdOverride ?? rootTask?.taskId
-		this.parentTaskId = historyItem ? historyItem.parentTaskId : parentTaskIdOverride ?? parentTask?.taskId
+				(rootTaskIdOverride ?? rootTask?.taskId)
+		this.parentTaskId = historyItem ? historyItem.parentTaskId : (parentTaskIdOverride ?? parentTask?.taskId)
 		// kilocode_change end
 		this.childTaskId = undefined
 
@@ -790,9 +807,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// Prefer an explicit workspacePath so parallel subagents can run in
 		// isolated worktrees even when they keep a parentTask for lineage.
 		this.workspacePath =
-			workspacePath ??
-			parentTask?.workspacePath ??
-			getWorkspacePath(path.join(os.homedir(), "Documents")) // kilocode_change: use Documents instead of Desktop as default
+			workspacePath ?? parentTask?.workspacePath ?? getWorkspacePath(path.join(os.homedir(), "Documents")) // kilocode_change: use Documents instead of Desktop as default
 
 		this.instanceId = crypto.randomUUID().slice(0, 8)
 		this.taskNumber = -1
@@ -1067,10 +1082,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 				return
 			}
 			const customModes = (await provider.customModesManager?.getCustomModes?.()) ?? []
-			const currentVersion = parseEvolveVersion(
-				customModes.find((m) => m.slug === current)?.name,
-				current,
-			)
+			const currentVersion = parseEvolveVersion(customModes.find((m) => m.slug === current)?.name, current)
 			const latest = resolveLatestEvolve(customModes)
 			if (!latest || latest.version <= currentVersion || latest.slug === current) {
 				return
@@ -1108,14 +1120,13 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			// drifted from the lineage (slug evolve-11 = name "Evolve-10" is OLDER
 			// than slug evolve-10 = name "Evolve-12").
 			if (!this.subagent && !this.parentTaskId && !this.isDelegatedChildProcess) {
-				const { isEvolveSlug, resolveLatestEvolve, parseEvolveVersion } = await import("../../shared/evolve-upgrade")
+				const { isEvolveSlug, resolveLatestEvolve, parseEvolveVersion } = await import(
+					"../../shared/evolve-upgrade"
+				)
 				if (isEvolveSlug(mode)) {
 					try {
 						const customModes = (await provider.customModesManager?.getCustomModes?.()) ?? []
-						const currentVersion = parseEvolveVersion(
-							customModes.find((m) => m.slug === mode)?.name,
-							mode,
-						)
+						const currentVersion = parseEvolveVersion(customModes.find((m) => m.slug === mode)?.name, mode)
 						const latest = resolveLatestEvolve(customModes)
 						if (latest && latest.version > currentVersion && latest.slug !== mode) {
 							await provider.setMode?.(latest.slug)
@@ -1793,6 +1804,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 				} catch (error) {
 					console.warn("Failed to notify webview about saved API messages:", error)
 				}
+				await this.confirmPendingSubagentInboxDelivery(messages)
 				// kilocode_change end
 			} catch (error) {
 				// In the off chance this fails, we don't want to stop the task.
@@ -1805,6 +1817,173 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			.then(write)
 		await this.apiConversationHistorySaveChain
 	}
+
+	// kilocode_change start: mark inbox delivered only after API history with
+	// the inbox marker is on disk. Never confirm from in-memory pushToolResult.
+	private async confirmPendingSubagentInboxDelivery(messages: Array<{ content?: unknown }>): Promise<void> {
+		const pending = this.pendingSubagentInboxDelivery
+		const historyText = flattenApiHistoryText(messages)
+		const pendingConfirmed =
+			pending?.childSessionIds.filter((id) => historyContainsInboxMarker(historyText, id)) ?? []
+		if (pendingConfirmed.length === 0 && !this.globalStoragePath) {
+			return
+		}
+		try {
+			const confirmed = await confirmInboxDeliveryFromMessages({
+				globalStoragePath: this.globalStoragePath,
+				parentTaskId: this.taskId,
+				parentInstanceId: this.instanceId,
+				messages,
+				toolUseId: pending?.toolUseId,
+			})
+			if (pending) {
+				const remaining = pending.childSessionIds.filter((id) => !confirmed.includes(id))
+				this.pendingSubagentInboxDelivery =
+					remaining.length > 0 ? { ...pending, childSessionIds: remaining } : undefined
+			}
+		} catch (error) {
+			const message =
+				error instanceof SubagentResultInboxError
+					? error.message
+					: error instanceof Error
+						? error.message
+						: String(error)
+			console.error("[Task] failed to confirm subagent inbox delivery after API history save:", message, error)
+		}
+	}
+
+	private extractChildInboxResult(messages: ClineMessage[]): string | undefined {
+		const completion = [...messages]
+			.reverse()
+			.find((message) => message.type === "say" && message.say === "completion_result" && message.partial !== true)
+		return completion?.text?.trim() || undefined
+	}
+
+	/**
+	 * Child completion used to wait for ParallelManager's in-memory runPromise.
+	 * After a host restart that chain is gone, so a finished child must write
+	 * the parent inbox itself as soon as a durable completion_result is saved.
+	 */
+	private async persistChildInboxIfCompleted(messages: ClineMessage[]): Promise<void> {
+		if (!this.parentTaskId || !this.globalStoragePath || (!this.subagent && !this.isDelegatedChildProcess)) {
+			return
+		}
+		const result = this.extractChildInboxResult(messages)
+		if (!result) {
+			return
+		}
+		const session = this.providerRef.deref()?.parallelManager?.getSession(this.taskId)
+		try {
+			await persistSubagentResult({
+				globalStoragePath: this.globalStoragePath,
+				parentTaskId: this.parentTaskId,
+				parentInstanceId: session?.parentInstanceId,
+				childSessionId: this.subagent?.sessionId ?? this.taskId,
+				childTaskId: this.taskId,
+				label: session?.info.label ?? this.taskId,
+				status: "completed",
+				result,
+				workspaceName: session?.info.workspaceName,
+				branch: session?.info.branch,
+				toolCallId: session?.toolCallId,
+			})
+		} catch (error) {
+			const message =
+				error instanceof SubagentResultInboxError
+					? error.message
+					: error instanceof Error
+						? error.message
+						: String(error)
+			console.error("[Task] failed to persist child inbox on completion:", message, error)
+		}
+	}
+
+	private async injectUndeliveredSubagentInbox(
+		userContent: Anthropic.Messages.ContentBlockParam[],
+		history: ApiMessage[],
+	): Promise<Anthropic.Messages.ContentBlockParam[]> {
+		if (!this.globalStoragePath) {
+			return userContent
+		}
+		let entries
+		try {
+			entries = undeliveredEntries(await listInboxEntries(this.globalStoragePath, this.taskId))
+		} catch (error) {
+			const message =
+				error instanceof SubagentResultInboxError
+					? error.message
+					: error instanceof Error
+						? error.message
+						: String(error)
+			console.error("[Task] failed to read subagent result inbox on resume:", message, error)
+			return addOrMergeUserContent(userContent, [
+				{
+					type: "text",
+					text: `[SUBAGENT INBOX RECOVERY ERROR] ${message}`,
+				},
+			])
+		}
+		if (entries.length === 0) {
+			return userContent
+		}
+		const historyText = flattenApiHistoryText([...history, { content: userContent }])
+		const lastAssistant = [...history].reverse().find((message) => message.role === "assistant")
+		const existingToolResultIds = userContent
+			.filter((block) => block.type === "tool_result")
+			.map((block) => (block as Anthropic.ToolResultBlockParam).tool_use_id)
+		const existingToolResultTextById: Record<string, string> = {}
+		for (const block of userContent) {
+			if (block.type !== "tool_result") {
+				continue
+			}
+			const result = block as Anthropic.ToolResultBlockParam
+			existingToolResultTextById[result.tool_use_id] = toolResultText(result)
+		}
+		const injection = buildInboxResumeInjection({
+			entries,
+			historyText,
+			assistantToolUses: extractAssistantToolUses(lastAssistant),
+			existingToolResultIds,
+			existingToolResultTextById,
+		})
+		if (injection.childSessionIds.length === 0) {
+			return userContent
+		}
+		let next = [...userContent]
+		for (const native of injection.nativeResults) {
+			const existingIndex = next.findIndex(
+				(block) => block.type === "tool_result" && block.tool_use_id === native.toolUseId,
+			)
+			const replacement: Anthropic.ToolResultBlockParam = {
+				type: "tool_result",
+				tool_use_id: native.toolUseId,
+				content: native.content,
+			}
+			if (existingIndex >= 0) {
+				const existing = next[existingIndex] as Anthropic.ToolResultBlockParam
+				const existingText = toolResultText(existing)
+				if (!existingText || isInterruptedToolResultText(existingText)) {
+					next[existingIndex] = replacement
+				}
+			} else {
+				next.push(replacement)
+			}
+		}
+		if (injection.userText) {
+			next = addOrMergeUserContent(next, [{ type: "text", text: injection.userText }])
+		}
+		this.pendingSubagentInboxDelivery = {
+			childSessionIds: [
+				...new Set([
+					...(this.pendingSubagentInboxDelivery?.childSessionIds ?? []),
+					...injection.childSessionIds,
+				]),
+			],
+			toolUseId: injection.nativeResults[0]?.toolUseId ?? this.pendingSubagentInboxDelivery?.toolUseId,
+		}
+		return next
+	}
+	// kilocode_change end
 
 	// Cline Messages
 
@@ -1990,6 +2169,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 				this.debouncedEmitTokenUsage(tokenUsage, this.toolUsage)
 
 				await this.providerRef.deref()?.updateTaskHistory(historyItem)
+				await this.persistChildInboxIfCompleted(messages)
 			} catch (error) {
 				console.error("Failed to save messages:", error)
 			}
@@ -2651,7 +2831,10 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		// path (attempt_completion is rejected AND downgrade requires a tool), which
 		// dead-loops the conversation with no reply to the user. So: either real
 		// work happened, or the continuation was never actionable in the first place.
-		return this.shouldKeepNextCompletionActive && (this.activeContinuationWorkToolUsed || !this.requiresProgressListExpansion)
+		return (
+			this.shouldKeepNextCompletionActive &&
+			(this.activeContinuationWorkToolUsed || !this.requiresProgressListExpansion)
+		)
 		// kilocode_change end
 	}
 
@@ -3964,6 +4147,19 @@ ${protocolHint}
 		}
 
 		await this.overwriteApiConversationHistory(modifiedApiConversationHistory)
+
+		// kilocode_change: parent interrupt leaves children running. Wait for
+		// their settlement (and durable inbox persist) before replacing the
+		// interrupted placeholder with the final tool_result.
+		try {
+			await this.providerRef.deref()?.parallelManager?.waitForChildrenOf?.(this.taskId)
+		} catch (error) {
+			console.error("[Task] failed waiting for subagent children before inbox resume:", error)
+		}
+
+		// kilocode_change: redeliver truly undelivered inbox results without
+		// respawning completed/cancelled work or creating orphan tool_result.
+		newUserContent = await this.injectUndeliveredSubagentInbox(newUserContent, modifiedApiConversationHistory)
 
 		// Task resuming from history item.
 		await this.initiateTaskLoop(newUserContent)
@@ -6011,6 +6207,8 @@ ${protocolHint}
 			`- Subagent depth: ${depth}${lineage}`,
 			``,
 			`This identity is injected by the host at runtime; do not restate it in your replies.`,
+			`Assigned workspace: ${this.cwd}. Keep file and command tool targets in this workspace unless the task explicitly requires external access; do not migrate to main. The parent handles merging.`,
+			SUBAGENT_DEPENDENCY_REUSE_INSTRUCTIONS,
 		].join("\n")
 	}
 	// kilocode_change end
@@ -7329,6 +7527,12 @@ ${protocolHint}
 
 	public get cwd() {
 		return this.workspacePath
+	}
+
+	// kilocode_change: durable subagent result inbox lives under the parent task
+	// directory; ParallelManager/DispatchSubagentsTool persist there on settle.
+	public get taskGlobalStoragePath(): string {
+		return this.globalStoragePath
 	}
 
 	// kilocode_change start: manual workspace switching from the chat header

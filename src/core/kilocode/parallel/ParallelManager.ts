@@ -18,13 +18,13 @@ import type {
 	ParallelSession,
 	ParallelWorkspace,
 } from "@roo-code/types"
-import { RooCodeEventName } from "@roo-code/types"
 
 import type { ClineProvider } from "../../webview/ClineProvider"
 import { Task } from "../../task/Task"
 import { WorkspaceRegistry } from "./WorkspaceRegistry"
 import { MementoParallelStateStore, type ParallelStateStorage } from "./ParallelStateStore"
 import { collectWorkspaceOccupants, type WorkspaceOccupant } from "./workspaceOccupancy"
+import { persistSubagentResult, SubagentResultInboxError, type SubagentInboxStatus } from "./subagentResultInbox"
 
 export interface SubagentSpec {
 	label: string
@@ -32,6 +32,8 @@ export interface SubagentSpec {
 	workspaceName?: string
 	workspacePath?: string
 	branch?: string
+	/** Native/XML parent tool_use id so resume can pair the inbox with the original call. */
+	toolCallId?: string
 	/** kilocode_change: true when dispatched with needs_workspace:false — the
 	 * subagent shares the parent workspace read-only and never occupies it. */
 	sharedWorkspace?: boolean
@@ -76,6 +78,14 @@ interface SessionState {
 	// overwriting the force-settled cancelled status or evicting a Task that
 	// markSessionRunning re-bound for an explicit user Continue (DEFECT S r2).
 	forceSettled?: boolean
+	/** Native/XML parent tool_use id captured at spawn for resume pairing. */
+	toolCallId?: string
+	/** Full settlement chain exposed so a resumed parent can wait without cancelling. */
+	done?: Promise<void>
+	parentStoragePath?: string
+	parentInstanceId?: string
+	/** Recoverable inbox write failure; never silent, never mutates child status. */
+	inboxPersistError?: string
 	// kilocode_change end
 	// kilocode_change end
 }
@@ -117,8 +127,7 @@ export class ParallelManager {
 		private readonly registry: WorkspaceRegistry,
 		stateStore?: ParallelStateStorage,
 	) {
-		this.stateStore =
-			stateStore ?? new MementoParallelStateStore(this.provider.context.globalState)
+		this.stateStore = stateStore ?? new MementoParallelStateStore(this.provider.context.globalState)
 	}
 
 	getSession(sessionId: string): SessionState | undefined {
@@ -126,6 +135,48 @@ export class ParallelManager {
 		// used by conversations / focusTask / jumpToSession) or the internal
 		// `sa-` key so older callers keep working.
 		return this.sessions.get(sessionId) ?? this.findByTaskId(sessionId)
+	}
+
+	/**
+	 * After a host restart the in-memory session map is empty. Rebuild a
+	 * lightweight session from persisted history so a continued child still
+	 * has isChildAgent / inbox routing without respawning work.
+	 */
+	restoreSessionFromHistory(input: {
+		taskId: string
+		parentTaskId: string
+		label?: string
+		workspacePath?: string
+	}): Task["subagent"] | undefined {
+		const existing = this.getSession(input.taskId)
+		if (existing?.subagentMeta) {
+			existing.subagentMeta.manager ??= this
+			return existing.subagentMeta
+		}
+		const conversation = this.conversationForSession(input.taskId)
+		const now = Date.now()
+		const info: ParallelSession = {
+			sessionId: input.taskId,
+			taskId: input.taskId,
+			parentTaskId: input.parentTaskId,
+			label: input.label ?? conversation?.title ?? input.taskId,
+			task: input.label ?? conversation?.title ?? input.taskId,
+			status: "running",
+			workspacePath: input.workspacePath ?? conversation?.workspacePath,
+			startedAt: conversation?.createdAt ?? now,
+		}
+		const subagentMeta: Task["subagent"] = {
+			sessionId: input.taskId,
+			depth: 1,
+			manager: this,
+		}
+		this.sessions.set(input.taskId, {
+			info,
+			messages: [],
+			subagentMeta,
+			parentStoragePath: this.provider.context?.globalStorageUri?.fsPath,
+		})
+		return subagentMeta
 	}
 
 	private findByTaskId(taskId: string): SessionState | undefined {
@@ -162,7 +213,13 @@ export class ParallelManager {
 			sharedWorkspace: spec.sharedWorkspace === true,
 			startedAt: Date.now(),
 		}
-		const state: SessionState = { info, messages: [] }
+		const state: SessionState = {
+			info,
+			messages: [],
+			toolCallId: spec.toolCallId,
+			parentStoragePath: parentTask.taskGlobalStoragePath,
+			parentInstanceId: parentTask.instanceId,
+		}
 		// kilocode_change: temporarily registered under the internal `sa-` key —
 		// Task.create() needs a sessionId before the child's taskId exists.
 		// The synchronous block after create() re-keys everything to
@@ -175,8 +232,8 @@ export class ParallelManager {
 		// kilocode_change start: subagents may override mode / provider config.
 		// Unspecified fields inherit the parent's values. The mode is applied via
 		// the subagent override before the child's initializeTaskMode reads state.
-		const childApiConfig = (spec.apiConfiguration as typeof parentTask.apiConfiguration | undefined) ??
-			parentTask.apiConfiguration
+		const childApiConfig =
+			(spec.apiConfiguration as typeof parentTask.apiConfiguration | undefined) ?? parentTask.apiConfiguration
 		const depth = (parentTask.subagent?.depth ?? 0) + 1
 		// kilocode_change start: mode inheritance — a subagent with NO explicit
 		// mode override used to fall back to the GLOBAL state.mode in
@@ -272,13 +329,11 @@ export class ParallelManager {
 		state.subagentMeta = child.subagent
 		// kilocode_change end
 
-		// kilocode_change start: DEFECT S3 — interrupting the PARENT's dispatch
-		// tool call aborts the parent task, but the child-cancellation only
-		// lived in the dispatch tool's execute() polling loop. A host-side
-		// interrupt abandons that promise, so in-process children kept
-		// reasoning with a dead cancel button. Bind event-driven cleanup here:
-		// the moment the parent emits TaskAborted, this child gets cancelled.
-		this.bindParentAbortCleanup(parentTask, child.taskId)
+		// kilocode_change start: parent interrupt must NOT cancel children.
+		// Host-side abort used to bind TaskAborted → cancel(child), so resume
+		// only saw interrupted placeholders and an empty inbox. Children now
+		// keep running, persist their final inbox entry, and the parent
+		// resume path waits on `state.done` before injecting that result.
 		// kilocode_change end
 
 		// kilocode_change start: raced done promise — cancel()'s watchdog can
@@ -296,18 +351,20 @@ export class ParallelManager {
 		// instance that markSessionRunning had re-bound for an explicit user
 		// Continue (killing the live conversation = ghost reborn). Guard both.
 		const settlementChain = runPromise
-			.then(() => {
+			.then(async () => {
 				if (!state.forceSettled) {
 					state.info.status = "completed"
 					state.info.result = this.extractResult(state)
 				}
+				await this.persistSessionInbox(state, parentTask)
 			})
-			.catch((error) => {
+			.catch(async (error) => {
 				if (!state.forceSettled) {
 					state.info.status = child.abort ? "cancelled" : "error"
 					state.info.error = error instanceof Error ? error.message : String(error)
 					state.info.result = this.extractResult(state)
 				}
+				await this.persistSessionInbox(state, parentTask)
 			})
 			.finally(() => {
 				if (!state.forceSettled) {
@@ -352,21 +409,64 @@ export class ParallelManager {
 				}
 				void this.broadcast()
 			})
-	
-			const done = new Promise<void>((resolve) => {
-				settleDone = resolve
-				void settlementChain.then(() => resolve()).catch(() => resolve())
+
+		const done = new Promise<void>((resolve) => {
+			settleDone = resolve
+			void settlementChain.then(() => resolve()).catch(() => resolve())
+		})
+		state.forceSettle = () => settleDone()
+		state.done = done
+
+		void registered.finally(() => {
+			void this.broadcast()
+		})
+		// kilocode_change: expose the child's real taskId as the public session
+		// id — conversations, focusTask, and jumpToSession are all keyed by
+		// child.taskId, while the internal `sa-` key stays for message routing.
+		// getSession() resolves both, so no duplicate map entries are needed.
+		return { sessionId: child.taskId, done }
+	}
+
+	private async persistSessionInbox(state: SessionState, parentTask?: Task): Promise<void> {
+		const globalStoragePath = parentTask?.taskGlobalStoragePath || state.parentStoragePath
+		const parentTaskId = parentTask?.taskId || state.info.parentTaskId
+		if (!globalStoragePath || !parentTaskId) {
+			const message = `Cannot persist subagent result inbox: parent storage path missing for ${state.info.sessionId}`
+			console.error("[ParallelManager]", message)
+			state.inboxPersistError = message
+			return
+		}
+		const status = (state.info.status ?? "error") as SubagentInboxStatus
+		const inboxStatus: SubagentInboxStatus =
+			status === "completed" || status === "cancelled" || status === "error" ? status : "error"
+		try {
+			await persistSubagentResult({
+				globalStoragePath,
+				parentTaskId,
+				parentInstanceId: parentTask?.instanceId ?? state.parentInstanceId,
+				childSessionId: state.info.sessionId,
+				childTaskId: state.task?.taskId ?? state.info.taskId,
+				label: state.info.label,
+				status: inboxStatus,
+				result: state.info.result,
+				error: state.info.error,
+				workspaceName: state.info.workspaceName,
+				branch: state.info.branch,
+				toolCallId: state.toolCallId,
 			})
-			state.forceSettle = () => settleDone()
-	
-			void registered.finally(() => {
-				void this.broadcast()
-			})
-			// kilocode_change: expose the child's real taskId as the public session
-			// id — conversations, focusTask, and jumpToSession are all keyed by
-			// child.taskId, while the internal `sa-` key stays for message routing.
-			// getSession() resolves both, so no duplicate map entries are needed.
-			return { sessionId: child.taskId, done }
+		} catch (error) {
+			const message =
+				error instanceof SubagentResultInboxError
+					? error.message
+					: error instanceof Error
+						? error.message
+						: String(error)
+			console.error(
+				`[ParallelManager] failed to persist subagent result inbox for ${state.info.sessionId}:`,
+				error,
+			)
+			state.inboxPersistError = message
+		}
 	}
 
 	private extractResult(state: SessionState): string | undefined {
@@ -472,6 +572,7 @@ export class ParallelManager {
 					if (this.getSession(state.info.sessionId)?.info.status === "running") {
 						state.info.status = state.task?.abort ? "cancelled" : "error"
 						state.info.endedAt = Date.now()
+						state.info.result = this.extractResult(state)
 						// kilocode_change: latch the force-settled flag so the late
 						// runPromise settlement chain cannot overwrite this status
 						// or evict a Task re-bound via markSessionRunning (user
@@ -480,11 +581,12 @@ export class ParallelManager {
 						// original-child settlement must stay inert forever
 						// (DEFECT S r2, 9.2.7).
 						state.forceSettled = true
+						void this.persistSessionInbox(state)
 						forceSettle()
 						void this.broadcast()
 					}
 				}, 3_000).unref?.()
-			}			// kilocode_change end
+			} // kilocode_change end
 			return true
 		}
 		// Settled zombie: evict it from the provider stack but KEEP the session
@@ -538,28 +640,18 @@ export class ParallelManager {
 		}
 	}
 
-	// kilocode_change start: DEFECT S3 (9.2.7) — interrupting a dispatch tool
-	// call aborts the PARENT task, but the only child-cancellation path lived
-	// inside the dispatch tool's execute() polling loop; a host-side interrupt
-	// abandons that promise, so in-process children of the MAIN workspace kept
-	// reasoning with a dead cancel button (the interrupt flow also disturbed
-	// clineStack/focus state the chat cancel path depends on). The design axiom
-	// (user interrupt = terminal intent) requires event-driven cleanup: the
-	// moment the parent task emits TaskAborted, cancel every still-running
-	// child session — no polling, no UI focus, no execute liveness needed.
-	bindParentAbortCleanup(parentTask: Task, childSessionId: string): void {
-		const onParentAborted = () => {
-			const state = this.getSession(childSessionId)
-			if (state?.info.status === "running") {
-				this.cancel(childSessionId)
-			}
+	// kilocode_change start: parent interrupt leaves children running. Resume
+	// waits here so injectUndeliveredSubagentInbox sees durable final results
+	// instead of the interrupted placeholder. Already-settled `done` promises
+	// resolve immediately; also wait through inbox persist, not just status.
+	async waitForChildrenOf(parentTaskId: string): Promise<void> {
+		const pending = this.sessionsForParent(parentTaskId)
+			.map((state) => state.done)
+			.filter((done): done is Promise<void> => !!done)
+		if (pending.length === 0) {
+			return
 		}
-		// Task extends EventEmitter in production; the typeof guard only
-		// tolerates plain-object parent mocks in tests (never skips the real
-		// path, since a real Task always has .once).
-		if (typeof parentTask.once === "function") {
-			parentTask.once(RooCodeEventName.TaskAborted, onParentAborted)
-		}
+		await Promise.allSettled(pending)
 	}
 	// kilocode_change end
 
@@ -812,15 +904,11 @@ export class ParallelManager {
 		return (conversation.sessionId ? 4 : 0) + (conversation.title ? 2 : 0) + (conversation.completedAt ? 1 : 0)
 	}
 
-	private mergeConversationPair(
-		kept: ParallelConversation,
-		incoming: ParallelConversation,
-	): ParallelConversation {
+	private mergeConversationPair(kept: ParallelConversation, incoming: ParallelConversation): ParallelConversation {
 		const incomingScore = this.conversationScore(incoming)
 		const keptScore = this.conversationScore(kept)
 		const preferIncoming =
-			incomingScore > keptScore ||
-			(incomingScore === keptScore && incoming.createdAt < kept.createdAt)
+			incomingScore > keptScore || (incomingScore === keptScore && incoming.createdAt < kept.createdAt)
 		const primary = preferIncoming ? incoming : kept
 		const secondary = preferIncoming ? kept : incoming
 		return {
@@ -869,7 +957,9 @@ export class ParallelManager {
 		// stable tie-breaker so the list never swaps between renders.
 		return Array.from(byId.values()).sort(
 			(left, right) =>
-				right.lastActiveAt - left.lastActiveAt || right.createdAt - left.createdAt || (left.id < right.id ? 1 : -1),
+				right.lastActiveAt - left.lastActiveAt ||
+				right.createdAt - left.createdAt ||
+				(left.id < right.id ? 1 : -1),
 		)
 	}
 
@@ -959,7 +1049,9 @@ export class ParallelManager {
 			await this.getFolders()
 			await this.loadConversations()
 			if (init?.sessionId) {
-				const existing = (this.conversations ?? []).find((conversation) => conversation.sessionId === init.sessionId)
+				const existing = (this.conversations ?? []).find(
+					(conversation) => conversation.sessionId === init.sessionId,
+				)
 				if (existing) {
 					if (init.activate !== false) {
 						await this.setActiveConversation(existing.id)
@@ -1081,9 +1173,7 @@ export class ParallelManager {
 			return this.activeConversationId
 		}
 		try {
-			this.activeConversationId = await this.stateStore.read<string | undefined>(
-				ACTIVE_CONVERSATION_STORAGE_KEY,
-			)
+			this.activeConversationId = await this.stateStore.read<string | undefined>(ACTIVE_CONVERSATION_STORAGE_KEY)
 		} catch (error) {
 			console.error("[ParallelManager] failed to load active conversation:", error)
 		}
@@ -1388,10 +1478,7 @@ export class ParallelManager {
 		// same-millisecond rows) — matches dedupeConversations ordering.
 		return [...list]
 			.filter((c) => includeArchived || !c.archivedAt)
-			.sort(
-				(a, b) =>
-					b.lastActiveAt - a.lastActiveAt || b.createdAt - a.createdAt || (a.id < b.id ? 1 : -1),
-			)
+			.sort((a, b) => b.lastActiveAt - a.lastActiveAt || b.createdAt - a.createdAt || (a.id < b.id ? 1 : -1))
 	}
 
 	async broadcast(): Promise<void> {

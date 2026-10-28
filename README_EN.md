@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.2.7</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.2.8</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.2.7** dual-theme update: (1) eradicated subagent "ghost revival" (settled subagents are evicted from the task stack the moment they settle, cancel means gone, zombie sessions cleared on first click, parallel permission toggles actually work); (2) **long-context memory optimization** - every new message no longer clones the entire conversation state to the webview; a single-message incremental path replaces the full-state push (on a real 13,820-message session, cumulative structured-clone traffic drops from 424.86GB to 30.7MB, a 99.99% reduction), message histories of finished tasks and subagent sessions are released immediately (~40MB freed per settled task), and parallel broadcasts are coalesced per burst - the root cause of VSCodium memory exceeding 90% and the Deeptask panel going gray after long sessions is eliminated at the source.
+> **Deeptask 9.2.8** strengthens long-task reliability: child results are persisted before delivery and recovered without duplicate replay; a finished child writes the parent inbox from its saved completion after a host restart, then Continue injects the final result; long-context condensation keeps incremental continuation state instead of recopying a prior opening mantra. Tools follow their assigned workspace; merges verify the real target branch and checkout while preserving unrelated edits; oversized multiline commands fail fast with recovery guidance. Compatible dependencies are reused by default while tests still target isolated sources. Long-session resource work is validated with regression and stress tests; cumulative traffic is not peak memory, and a permanent gray-panel fix is not claimed.
 
 ## What you can do with Deeptask
 
@@ -146,17 +146,17 @@ Apart from "the model's own conversation handling that commands cannot do" (work
 
 ## Start in three minutes
 
-1. Download `deeptask-9.2.7.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.2.8.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.2.7.vsix --force
+    codium --install-extension ./deeptask-9.2.8.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.2.7.vsix --force
+    code --install-extension ./deeptask-9.2.8.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

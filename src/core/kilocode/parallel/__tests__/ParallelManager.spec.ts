@@ -63,12 +63,39 @@ describe("ParallelManager conversations", () => {
 		expect(conversation?.sessionId).toBe("t1")
 	})
 
+	test("restoreSessionFromHistory rebuilds child identity after a host restart", async () => {
+		const { manager } = setup()
+		await manager.createConversation("/repo/worktree", { sessionId: "child-1", title: "write probe" })
+
+		const restored = manager.restoreSessionFromHistory({
+			taskId: "child-1",
+			parentTaskId: "parent-1",
+			label: "write probe",
+			workspacePath: "/repo/worktree",
+		})
+		expect(restored?.sessionId).toBe("child-1")
+		expect(restored?.manager).toBe(manager)
+
+		const session = manager.getSession("child-1")
+		expect(session?.info.parentTaskId).toBe("parent-1")
+		expect(session?.info.workspacePath).toBe("/repo/worktree")
+		expect(session?.subagentMeta?.sessionId).toBe("child-1")
+
+		const again = manager.restoreSessionFromHistory({
+			taskId: "child-1",
+			parentTaskId: "parent-1",
+		})
+		expect(again).toBe(restored)
+	})
+
 	test("createConversation reuses an existing session instead of duplicating the rail row", async () => {
 		const { manager } = setup()
 		const first = await manager.createConversation("/repo", { sessionId: "same-task", title: "first" })
 		const second = await manager.createConversation("/repo", { sessionId: "same-task", title: "second" })
 		expect(second.id).toBe(first.id)
-		expect((await manager.listConversations()).filter((conversation) => conversation.sessionId === "same-task")).toHaveLength(1)
+		expect(
+			(await manager.listConversations()).filter((conversation) => conversation.sessionId === "same-task"),
+		).toHaveLength(1)
 	})
 
 	test("ensureTaskConversation reuses an existing session and activates it", async () => {
@@ -123,14 +150,12 @@ describe("ParallelManager conversations", () => {
 				status: "completed",
 				startedAt: 1,
 			},
-			messages: [
-				{ type: "say", say: "text", partial: false, ts: 1, text: finalAnswer } as never,
-			],
+			messages: [{ type: "say", say: "text", partial: false, ts: 1, text: finalAnswer } as never],
 		}
 		;(manager as unknown as { sessions: Map<string, unknown> }).sessions.set(sessionId, state)
-		const extracted = (
-			manager as unknown as { extractResult: (s: unknown) => string | undefined }
-		).extractResult(state)
+		const extracted = (manager as unknown as { extractResult: (s: unknown) => string | undefined }).extractResult(
+			state,
+		)
 		expect(extracted).toBeDefined()
 		expect(extracted!.length).toBeLessThanOrEqual(8000)
 		expect(extracted!.length).toBeGreaterThan(2000)
@@ -840,16 +865,20 @@ describe("ParallelManager conversations", () => {
 	})
 	// kilocode_change end
 
-	// kilocode_change start: DEFECT S3 regression — interrupting the parent's
-	// dispatch tool call must cancel still-running children EVENT-DRIVEN, not
-	// via the dispatch tool's polling loop (a host interrupt abandons that
-	// promise). Parent TaskAborted → child session cancelled.
-	test("parent task abort cancels a still-running child session (S3)", async () => {
+	// kilocode_change start: 9.2.8 — parent interrupt must NOT cancel children.
+	// Host abort used to bind TaskAborted → cancel(child), so resume only saw
+	// interrupted placeholders. Children now keep running; waitForChildrenOf
+	// lets the parent resume inject the durable inbox result.
+	test("parent task abort leaves a still-running child session running", async () => {
 		const { manager } = setup()
 		await manager.registerMainFolder("/repo")
+		let settleChild: () => void = () => undefined
+		const runPromise = new Promise<void>((resolve) => {
+			settleChild = resolve
+		})
 		const createSpy = vi.spyOn(Task, "create").mockImplementation(() => {
 			const child = { taskId: "child-task" } as Task
-			return [child, Promise.resolve()]
+			return [child, runPromise]
 		})
 		const parentEmitter = new EventEmitter()
 		const parent = parentEmitter as unknown as Task
@@ -862,20 +891,146 @@ describe("ParallelManager conversations", () => {
 			checkpointTimeout: 42,
 			subagent: undefined,
 		})
-		const cancelSpy = vi.spyOn(manager, "cancel").mockReturnValue(true)
+		const cancelSpy = vi.spyOn(manager, "cancel")
 
 		manager.spawn(parent, { label: "reader", task: "read files" })
-
-		// Child is running; parent aborts (what a host-side interrupt does).
 		parentEmitter.emit("taskAborted")
 
-		expect(cancelSpy).toHaveBeenCalledWith("child-task")
-		// Guard: cancelling an already-settled child is skipped.
-		cancelSpy.mockClear()
-		manager.getSession("child-task")!.info.status = "completed"
-		parentEmitter.emit("taskAborted")
 		expect(cancelSpy).not.toHaveBeenCalled()
+		expect(manager.getSession("child-task")?.info.status).toBe("running")
+
+		const waited = manager.waitForChildrenOf("parent-task")
+		settleChild()
+		await waited
+		expect(manager.getSession("child-task")?.info.status).toBe("completed")
 		createSpy.mockRestore()
 	})
+
+	test("parent abort still persists the child inbox after waitForChildrenOf", async () => {
+		const { manager } = setup()
+		const os = await import("node:os")
+		const fs = await import("node:fs/promises")
+		const path = await import("node:path")
+		const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "928-keep-"))
+		let settleChild: () => void = () => undefined
+		const runPromise = new Promise<void>((resolve) => {
+			settleChild = resolve
+		})
+		const createSpy = vi.spyOn(Task, "create").mockImplementation(() => {
+			const child = { taskId: "child-task" } as Task
+			return [child, runPromise]
+		})
+		const parentEmitter = new EventEmitter()
+		const parent = parentEmitter as unknown as Task
+		Object.assign(parent, {
+			taskId: "parent-task",
+			instanceId: "parent-inst",
+			cwd: "/repo",
+			taskGlobalStoragePath: tmp,
+			apiConfiguration: { apiProvider: "openai" },
+			enableCheckpoints: false,
+			diffEnabled: false,
+			checkpointTimeout: 42,
+			subagent: undefined,
+		})
+		manager.spawn(parent, { label: "keep", task: "finish", toolCallId: "tool-keep" })
+		manager.getSession("child-task")?.messages.push({
+			ts: 1,
+			type: "say",
+			say: "completion_result",
+			text: "final-after-parent-abort",
+		} as never)
+		parentEmitter.emit("taskAborted")
+		expect(manager.getSession("child-task")?.info.status).toBe("running")
+		const waited = manager.waitForChildrenOf("parent-task")
+		settleChild()
+		await waited
+		const { listInboxEntries } = await import("../subagentResultInbox")
+		const entries = await listInboxEntries(tmp, "parent-task")
+		expect(entries).toHaveLength(1)
+		expect(entries[0].result).toBe("final-after-parent-abort")
+		expect(entries[0].status).toBe("completed")
+		expect(entries[0].toolCallId).toBe("tool-keep")
+		createSpy.mockRestore()
+		await fs.rm(tmp, { recursive: true, force: true })
+	})
 	// kilocode_change end
+
+	test("spawn persists the child result to the parent inbox before clearing messages", async () => {
+		const { manager } = setup()
+		const os = await import("node:os")
+		const fs = await import("node:fs/promises")
+		const path = await import("node:path")
+		const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "928-pm-"))
+		let settleChild: () => void = () => undefined
+		const runPromise = new Promise<void>((resolve) => {
+			settleChild = resolve
+		})
+		const createSpy = vi.spyOn(Task, "create").mockImplementation(() => {
+			const child = { taskId: "child-task" } as Task
+			return [child, runPromise]
+		})
+		const parent = {
+			taskId: "parent-task",
+			instanceId: "parent-inst",
+			cwd: "/repo",
+			taskGlobalStoragePath: tmp,
+			apiConfiguration: { apiProvider: "openai" },
+			enableCheckpoints: false,
+			diffEnabled: false,
+			checkpointTimeout: 42,
+			subagent: undefined,
+		} as unknown as Task
+
+		const spawned = manager.spawn(parent, {
+			label: "inbox",
+			task: "write result",
+			toolCallId: "tool-1",
+		})
+		const session = manager.getSession("child-task")
+		session?.messages.push({
+			ts: 1,
+			type: "say",
+			say: "completion_result",
+			text: "durable-result",
+		} as never)
+		settleChild()
+		await spawned.done
+
+		const { listInboxEntries } = await import("../subagentResultInbox")
+		const entries = await listInboxEntries(tmp, "parent-task")
+		expect(entries).toHaveLength(1)
+		expect(entries[0].childSessionId).toBe("child-task")
+		expect(entries[0].result).toBe("durable-result")
+		expect(entries[0].deliveryState).toBe("pending")
+		expect(entries[0].toolCallId).toBe("tool-1")
+		expect(session?.messages).toEqual([])
+		expect(session?.info.status).toBe("completed")
+		createSpy.mockRestore()
+		await fs.rm(tmp, { recursive: true, force: true })
+	})
+
+	test("inbox persist failure is recorded without mutating child status", async () => {
+		const { manager } = setup()
+		const createSpy = vi.spyOn(Task, "create").mockImplementation(() => {
+			const child = { taskId: "child-task" } as Task
+			return [child, Promise.resolve()]
+		})
+		const parent = {
+			taskId: "parent-task",
+			cwd: "/repo",
+			apiConfiguration: { apiProvider: "openai" },
+			enableCheckpoints: false,
+			diffEnabled: false,
+			checkpointTimeout: 42,
+			subagent: undefined,
+		} as unknown as Task
+
+		const spawned = manager.spawn(parent, { label: "fail-inbox", task: "still complete" })
+		await spawned.done
+		const session = manager.getSession("child-task")
+		expect(session?.info.status).toBe("completed")
+		expect(session?.inboxPersistError).toMatch(/parent storage path missing/)
+		createSpy.mockRestore()
+	})
 })

@@ -14,6 +14,13 @@ import { BaseTool, ToolCallbacks } from "./BaseTool"
 import type { ToolUse } from "../../shared/tools"
 import { getModeBySlug } from "../../shared/modes"
 import { MAX_PARALLEL_SUBAGENTS, type SubagentSpec } from "../kilocode/parallel/ParallelManager"
+import {
+	formatInboxEntriesForToolResult,
+	listInboxEntries,
+	SubagentResultInboxError,
+	truncateInboxText,
+	type SubagentInboxEntry,
+} from "../kilocode/parallel/subagentResultInbox"
 import type { ClineProvider } from "../webview/ClineProvider"
 // kilocode_change: provider-correct model keys for subagent model overrides
 import { modelIdKeys, modelIdKeysByProvider, isTypicalProvider } from "@roo-code/types"
@@ -61,7 +68,7 @@ export class DispatchSubagentsTool extends BaseTool<"dispatch_subagents"> {
 	}
 
 	async execute(params: { tasks: SubagentTaskSpec[] }, task: Task, callbacks: ToolCallbacks): Promise<void> {
-		const { askApproval, handleError, pushToolResult } = callbacks
+		const { askApproval, handleError, pushToolResult, toolCallId } = callbacks
 
 		try {
 			const specs = params.tasks ?? []
@@ -147,7 +154,7 @@ export class DispatchSubagentsTool extends BaseTool<"dispatch_subagents"> {
 							}`,
 						}
 					}
-					} else if (spec.model_id) {
+				} else if (spec.model_id) {
 					// Model-only override: inherit the parent's config but swap the model.
 					apiConfiguration = { ...(task.apiConfiguration as unknown as Record<string, unknown>) }
 					// kilocode_change: resolve the provider-correct model key, not a
@@ -225,11 +232,11 @@ export class DispatchSubagentsTool extends BaseTool<"dispatch_subagents"> {
 						failures.push(`${label}: ${overrides.error}`)
 						continue
 					}
-				const modeOverride = overrides.mode
-				const apiConfigOverride = overrides.apiConfiguration
-				// kilocode_change: forward the resolved profile name so spawn can
-				// seed the child's sticky identity (banner + persistence).
-				const providerProfileName = overrides.providerProfileName
+					const modeOverride = overrides.mode
+					const apiConfigOverride = overrides.apiConfiguration
+					// kilocode_change: forward the resolved profile name so spawn can
+					// seed the child's sticky identity (banner + persistence).
+					const providerProfileName = overrides.providerProfileName
 					// kilocode_change: needs_workspace === false means READ-ONLY +
 					// share-parent-cwd. It must take ABSOLUTE precedence over the
 					// spec.workspace branch below — models routinely pass BOTH
@@ -272,19 +279,19 @@ export class DispatchSubagentsTool extends BaseTool<"dispatch_subagents"> {
 								continue
 							}
 						}
-					prepared.push({
-						spec: {
-							label,
-							task: spec.task,
+						prepared.push({
+							spec: {
+								label,
+								task: spec.task,
+								workspaceName: claimed.name,
+								workspacePath: claimed.path,
+								branch: claimed.branch,
+								mode: modeOverride,
+								apiConfiguration: apiConfigOverride,
+								providerProfileName,
+							},
 							workspaceName: claimed.name,
-							workspacePath: claimed.path,
-							branch: claimed.branch,
-							mode: modeOverride,
-							apiConfiguration: apiConfigOverride,
-							providerProfileName,
-						},
-						workspaceName: claimed.name,
-					})
+						})
 					} else if (workspaceService) {
 						// kilocode_change: needs_workspace now DEFAULTS TO TRUE — a
 						// dispatched subagent gets its own isolated git workspace
@@ -293,7 +300,9 @@ export class DispatchSubagentsTool extends BaseTool<"dispatch_subagents"> {
 						// (already handled by the continue branch above), so every
 						// spec reaching here wants an isolated workspace.
 						if ((await provider.getState())?.agentWorkspaceManagementEnabled === false) {
-							failures.push(`${label}: workspace management is disabled; set needs_workspace:false for read-only work.`)
+							failures.push(
+								`${label}: workspace management is disabled; set needs_workspace:false for read-only work.`,
+							)
 							continue
 						}
 						const created = await workspaceService.create({
@@ -302,42 +311,42 @@ export class DispatchSubagentsTool extends BaseTool<"dispatch_subagents"> {
 							folderPath,
 						})
 						await workspaceService.claim(created.name, `dispatch:${task.taskId}`)
-					prepared.push({
-						spec: {
-							label,
-							task: spec.task,
+						prepared.push({
+							spec: {
+								label,
+								task: spec.task,
+								workspaceName: created.name,
+								workspacePath: created.path,
+								branch: created.branch,
+								mode: modeOverride,
+								apiConfiguration: apiConfigOverride,
+								providerProfileName,
+							},
 							workspaceName: created.name,
-							workspacePath: created.path,
-							branch: created.branch,
-							mode: modeOverride,
-							apiConfiguration: apiConfigOverride,
-							providerProfileName,
-						},
-						workspaceName: created.name,
-					})
-				} else {
-					// kilocode_change: needs_workspace:false — read-only subagent
-					// shares the parent workspace and must be flagged so it never
-					// occupies it (occupancy ejection would otherwise kick the
-					// PARENT out of its own workspace).
-					prepared.push({
-						spec: {
-							label,
-							task: spec.task,
-							mode: modeOverride,
-							apiConfiguration: apiConfigOverride,
-							providerProfileName,
-							sharedWorkspace: true,
-						},
-					})
-				}
+						})
+					} else {
+						// kilocode_change: needs_workspace:false — read-only subagent
+						// shares the parent workspace and must be flagged so it never
+						// occupies it (occupancy ejection would otherwise kick the
+						// PARENT out of its own workspace).
+						prepared.push({
+							spec: {
+								label,
+								task: spec.task,
+								mode: modeOverride,
+								apiConfiguration: apiConfigOverride,
+								providerProfileName,
+								sharedWorkspace: true,
+							},
+						})
+					}
 				} catch (error) {
 					failures.push(`${label}: ${error instanceof Error ? error.message : String(error)}`)
 				}
 			}
 
 			// Spawn every prepared subagent in parallel.
-			const spawned = prepared.map((p) => manager.spawn(task, p.spec))
+			const spawned = prepared.map((p) => manager.spawn(task, { ...p.spec, toolCallId }))
 
 			// kilocode_change start: new_task-style auto-jump — dispatch jumps to
 			// the first subagent, each completion jumps to the next running one,
@@ -395,12 +404,15 @@ export class DispatchSubagentsTool extends BaseTool<"dispatch_subagents"> {
 			// kilocode_change end
 
 			// Wait for ALL subagents to settle (the main model continues only
-			// after that). Poll the parent abort flag so cancelling the parent
-			// cancels all children promptly.
+			// after that). Parent interrupt must NOT cancel children: they keep
+			// running, persist inbox results, and resume injects the final
+			// status instead of the interrupted placeholder.
 			const allSettled = Promise.allSettled(spawned.map((s) => s.done))
 			while ((await raceWithTimeout(allSettled, 500)) === "timeout") {
 				if (task.abort) {
-					manager.cancelChildrenOf(task.taskId)
+					// Leave children running. Resume waits on waitForChildrenOf
+					// and replaces the interrupted placeholder with inbox results.
+					return
 				}
 			}
 			await allSettled
@@ -449,41 +461,82 @@ export class DispatchSubagentsTool extends BaseTool<"dispatch_subagents"> {
 			if (failures.length > 0) {
 				lines.push(`Failed to dispatch:\n${failures.join("\n")}`)
 			}
-			lines.push(`All ${spawned.length} subagent(s) finished:`)
-			for (const s of spawned) {
-				const session = manager.getSession(s.sessionId)
-				if (!session) {
-					continue
+			let inboxEntries: SubagentInboxEntry[] = []
+			let inboxReadError: string | undefined
+			try {
+				inboxEntries = await listInboxEntries(task.taskGlobalStoragePath, task.taskId)
+			} catch (error) {
+				inboxReadError =
+					error instanceof SubagentResultInboxError
+						? error.message
+						: error instanceof Error
+							? error.message
+							: String(error)
+				console.error("[DispatchSubagentsTool] failed to read subagent result inbox:", error)
+			}
+			const inboxByChild = new Map(inboxEntries.map((entry) => [entry.childSessionId, entry]))
+			const reportEntries: SubagentInboxEntry[] = spawned.map((s) => {
+				const inbox = inboxByChild.get(s.sessionId)
+				if (inbox) {
+					return inbox
 				}
-				const info = session.info
-				const ws = info.workspaceName ? ` [workspace: ${info.workspaceName} (${info.branch ?? "n/a"})]` : ""
+				const session = manager.getSession(s.sessionId)
+				const info = session?.info
+				const persistError = session?.inboxPersistError ?? inboxReadError
+				const status =
+					info?.status === "completed" || info?.status === "cancelled" || info?.status === "error"
+						? info.status
+						: "error"
+				return {
+					version: 1,
+					parentTaskId: task.taskId,
+					parentInstanceId: task.instanceId,
+					childSessionId: s.sessionId,
+					childTaskId: info?.taskId ?? s.sessionId,
+					label: info?.label ?? s.sessionId,
+					status,
+					result: info?.result,
+					error: info?.error,
+					workspaceName: info?.workspaceName,
+					branch: info?.branch,
+					toolCallId,
+					createdAt: info?.startedAt ?? Date.now(),
+					updatedAt: info?.endedAt ?? Date.now(),
+					cancelled: status === "cancelled",
+					deliveryState: "pending",
+					persistError,
+				}
+			})
+			const inboxBody = formatInboxEntriesForToolResult(reportEntries)
+			if (inboxBody) {
+				lines.push(inboxBody)
+			} else {
+				lines.push(`All ${spawned.length} subagent(s) finished:`)
+			}
+			if (inboxReadError) {
+				lines.push(`Inbox read error (recoverable): ${inboxReadError}`)
+			}
+			for (const [index, entry] of reportEntries.entries()) {
 				const outcome =
-					info.status === "completed"
-						? `completed`
-						: info.status === "cancelled"
-							? `cancelled`
-							: `error: ${info.error ?? "unknown"}`
-				// kilocode_change: 4000 chars cut off real subagent reports; raise to
-				// 20000 per subagent — full result flows back to the parent model.
-				const result = info.result ? `\nResult:\n${truncate(info.result, 20000)}` : "\nResult: (none)"
-				lines.push(`## ${info.label} — ${outcome}${ws}${result}`)
-				// kilocode_change start: per-subagent result mini-window in the
-				// parent chat (new_task-style completion card per subagent).
+					entry.status === "completed"
+						? "completed"
+						: entry.status === "cancelled"
+							? "cancelled"
+							: `error: ${entry.error ?? "unknown"}`
 				await task
 					.say(
 						"subtask_result",
 						JSON.stringify({
 							tool: "dispatchSubagents",
 							phase: "result",
-							index: spawned.indexOf(s) + 1,
-							label: info.label,
+							index: index + 1,
+							label: entry.label,
 							status: outcome,
-							workspace: info.workspaceName,
-							content: info.result ? truncate(info.result, 8000) : undefined,
+							workspace: entry.workspaceName,
+							content: entry.result ? truncateInboxText(entry.result, 8000) : undefined,
 						}),
 					)
 					.catch(() => undefined)
-				// kilocode_change end
 			}
 			if (mergeNotes.length > 0) {
 				lines.push(`Parent workspace merge:\n${mergeNotes.join("\n")}`)
@@ -494,6 +547,10 @@ export class DispatchSubagentsTool extends BaseTool<"dispatch_subagents"> {
 
 			await manager.broadcast()
 			pushToolResult(lines.join("\n\n"))
+			task.pendingSubagentInboxDelivery = {
+				childSessionIds: reportEntries.map((entry) => entry.childSessionId),
+				toolUseId: toolCallId,
+			}
 		} catch (error) {
 			await handleError("dispatching parallel subagents", error)
 		}

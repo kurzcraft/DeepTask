@@ -269,6 +269,108 @@ describe("executeCommandTool", () => {
 			expect(mockAskApproval).not.toHaveBeenCalled()
 			// executeCommandInTerminal should not be called since rooignore blocked it
 		})
+
+		it("rejects commands with more than two physical lines before approval or terminal creation", async () => {
+			const { TerminalRegistry } = await import("../../../integrations/terminal/TerminalRegistry")
+			const overLimit = "echo a\necho b\necho c"
+			mockToolUse.params.command = overLimit
+			;(formatResponse.toolError as any).mockReturnValue("physical-line-limit-error")
+
+			await executeCommandTool.handle(mockCline as unknown as Task, mockToolUse, {
+				askApproval: mockAskApproval as unknown as AskApproval,
+				handleError: mockHandleError as unknown as HandleError,
+				pushToolResult: mockPushToolResult as unknown as PushToolResult,
+				removeClosingTag: mockRemoveClosingTag as unknown as RemoveClosingTag,
+				toolProtocol: "xml",
+			})
+
+			expect(formatResponse.toolError).toHaveBeenCalled()
+			const errorArg = (formatResponse.toolError as any).mock.calls[0][0] as string
+			expect(errorArg).toContain("3 physical lines")
+			expect(errorArg).toContain("Do not wait for approval or a terminal")
+			expect(mockPushToolResult).toHaveBeenCalledWith("physical-line-limit-error")
+			expect(mockAskApproval).not.toHaveBeenCalled()
+			expect(mockCline.ask).not.toHaveBeenCalled()
+			expect(mockTerminal.runCommand).not.toHaveBeenCalled()
+			expect(TerminalRegistry.getOrCreateTerminal).not.toHaveBeenCalled()
+			expect(mockCline.consecutiveMistakeCount).toBe(1)
+			expect(mockCline.recordToolError).toHaveBeenCalledWith("execute_command")
+		})
+
+		it("rejects native-protocol over-limit commands without creating a terminal", async () => {
+			const { TerminalRegistry } = await import("../../../integrations/terminal/TerminalRegistry")
+			;(formatResponse.toolError as any).mockReturnValue("native-physical-line-limit-error")
+			mockToolUse.params = {}
+			mockToolUse.nativeArgs = {
+				command: "cat <<'EOF'\nhello\nworld\nEOF",
+			}
+
+			await executeCommandTool.handle(mockCline as unknown as Task, mockToolUse, {
+				askApproval: mockAskApproval as unknown as AskApproval,
+				handleError: mockHandleError as unknown as HandleError,
+				pushToolResult: mockPushToolResult as unknown as PushToolResult,
+				removeClosingTag: mockRemoveClosingTag as unknown as RemoveClosingTag,
+				toolProtocol: "native",
+			})
+
+			expect(mockPushToolResult).toHaveBeenCalledWith("native-physical-line-limit-error")
+			expect(mockAskApproval).not.toHaveBeenCalled()
+			expect(mockTerminal.runCommand).not.toHaveBeenCalled()
+			expect(TerminalRegistry.getOrCreateTerminal).not.toHaveBeenCalled()
+		})
+
+		it("rejects over-limit commands on a subagent task without hanging", async () => {
+			const { TerminalRegistry } = await import("../../../integrations/terminal/TerminalRegistry")
+			mockCline.subagent = { label: "child" }
+			mockToolUse.params.command = "echo a\r\necho b\r\necho c"
+			;(formatResponse.toolError as any).mockReturnValue("subagent-physical-line-limit-error")
+
+			await executeCommandTool.handle(mockCline as unknown as Task, mockToolUse, {
+				askApproval: mockAskApproval as unknown as AskApproval,
+				handleError: mockHandleError as unknown as HandleError,
+				pushToolResult: mockPushToolResult as unknown as PushToolResult,
+				removeClosingTag: mockRemoveClosingTag as unknown as RemoveClosingTag,
+				toolProtocol: "xml",
+			})
+
+			expect(mockPushToolResult).toHaveBeenCalledWith("subagent-physical-line-limit-error")
+			expect(mockAskApproval).not.toHaveBeenCalled()
+			expect(TerminalRegistry.getOrCreateTerminal).not.toHaveBeenCalled()
+		})
+
+		it("does not open a streaming approval ask for over-limit partial commands", async () => {
+			mockToolUse.partial = true
+			mockToolUse.params.command = "echo a\necho b\necho c"
+
+			await executeCommandTool.handle(mockCline as unknown as Task, mockToolUse, {
+				askApproval: mockAskApproval as unknown as AskApproval,
+				handleError: mockHandleError as unknown as HandleError,
+				pushToolResult: mockPushToolResult as unknown as PushToolResult,
+				removeClosingTag: mockRemoveClosingTag as unknown as RemoveClosingTag,
+				toolProtocol: "xml",
+			})
+
+			expect(mockCline.ask).not.toHaveBeenCalled()
+			expect(mockAskApproval).not.toHaveBeenCalled()
+			expect(mockPushToolResult).not.toHaveBeenCalled()
+			expect(mockTerminal.runCommand).not.toHaveBeenCalled()
+		})
+
+		it("still executes two-line commands", async () => {
+			mockToolUse.params.command = "echo a\necho b"
+
+			await executeCommandTool.handle(mockCline as unknown as Task, mockToolUse, {
+				askApproval: mockAskApproval as unknown as AskApproval,
+				handleError: mockHandleError as unknown as HandleError,
+				pushToolResult: mockPushToolResult as unknown as PushToolResult,
+				removeClosingTag: mockRemoveClosingTag as unknown as RemoveClosingTag,
+				toolProtocol: "xml",
+			})
+
+			expect(mockAskApproval).toHaveBeenCalledWith("command", "echo a\necho b")
+			expect(mockPushToolResult).toHaveBeenCalled()
+			expect(mockTerminal.runCommand).toHaveBeenCalled()
+		})
 	})
 
 	describe("command output waiting state", () => {

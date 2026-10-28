@@ -262,17 +262,20 @@ export const MAX_CONDENSE_THRESHOLD = 100 // Maximum percentage of context windo
 // Keep this prompt compact: it is paid on every provider-backed condensation.
 // The host appends authoritative live task state after the summary is committed.
 const SUMMARY_PROMPT = `\
-Compress the conversation into continuation context. Preserve facts and exact evidence; do not invent completion.
+Compress the conversation into continuation context for an unbounded chat. Preserve facts and exact evidence; do not invent completion. The next model turn must stay as capable as the original long history.
 
 Authority rules:
 - The newest user instruction is the active acceptance target and overrides older plans, summaries, and completions.
 - A checklist records progress facts; it does not define task scope. Never let an old checklist override newer user feedback.
 - Distinguish completed work, open work, verification evidence, modified files, decisions, and blockers.
 - If messages conflict, state the conflict and follow the newest user instruction.
+- Never copy a prior assistant opening sentence, status mantra, or an older summary section verbatim. Nested "Previous Conversation" dumps cause the next turn to repeat itself.
+- Previous Conversation is compressed background facts, not the first message and not a nested copy of an older summary.
+- Continuation State lists unfinished work. It must not tell the next turn to recite this summary as chat.
 
 Use exactly these sections:
-1. Previous Conversation: brief background only.
-2. Current Work and Decisions: recent actions, files, concrete results, failures, and rejected approaches.
+1. Previous Conversation: brief background facts only.
+2. Current Work and Decisions: recent actions, files, concrete results, failures, and rejected approaches. Incremental since the last summary.
 3. Continuation State: quote the newest user instruction verbatim; list unfinished work, verification status, and the immediate next action.
 
 Be dense. Omit repeated narration, obsolete plans, environment dumps, hidden reasoning, and examples. Output only the summary.`
@@ -332,12 +335,17 @@ function compactMessageForLocalSummary(message: ApiMessage): string {
 					})
 					.filter(Boolean)
 
-	return parts
+	const compacted = parts
 		.join("\n")
 		.replace(/<environment_details>[\s\S]*?<\/environment_details>/g, "[Environment details omitted]")
 		.replace(/\n{3,}/g, "\n\n")
 		.trim()
-		.slice(0, LOCAL_FALLBACK_MESSAGE_MAX_CHARS)
+
+	if (/1\.\s*Previous Conversation:|Continue from the newest user request/i.test(compacted)) {
+		return compactBackgroundFacts(compacted).slice(0, LOCAL_FALLBACK_MESSAGE_MAX_CHARS)
+	}
+
+	return compacted.slice(0, LOCAL_FALLBACK_MESSAGE_MAX_CHARS)
 }
 
 /**
@@ -380,14 +388,37 @@ export function buildLocalFallbackSummary(messages: ApiMessage[], providerError:
 	}
 
 	const timeline = [...selected.values()]
+		.filter((entry) => entry.index !== first.index)
 		.sort((left, right) => left.index - right.index)
 		.map((entry) => `${entry.role === "user" ? "User" : "Assistant"}: ${entry.text}`)
 		.join("\n\n")
 
-	const footer = `\n\n3. Continuation State:\nContinue from the newest user request and preserve unfinished tasks, modified files, test results, and explicit acceptance criteria above.\n\n[Fast local summary used because the configured condense provider failed: ${providerError.slice(0, 300)}]`
-	const header = `1. Previous Conversation:\n${first.text}\n\n2. Current Work and Recent Decisions:\n`
+	const footer = `\n\n3. Continuation State:\nNewest user request, unfinished work, modified files, test results, and acceptance criteria are listed above. Continue that work. Do not repeat this summary, any prior opening sentence, or a status mantra as chat.\n\n[Fast local summary used because the configured condense provider failed: ${providerError.slice(0, 300)}]`
+	const header = `1. Previous Conversation:\n${compactBackgroundFacts(first.text)}\n\n2. Current Work and Recent Decisions:\n`
 	const timelineBudget = Math.max(0, LOCAL_FALLBACK_SUMMARY_MAX_CHARS - header.length - footer.length)
 	return header + timeline.slice(Math.max(0, timeline.length - timelineBudget)) + footer
+}
+
+/** Brief background only — never dump a nested summary or a prior opening mantra. */
+export function compactBackgroundFacts(text: string): string {
+	const trimmed = text.trim()
+	if (!trimmed) {
+		return ""
+	}
+
+	const previousSection = trimmed.match(
+		/1\.\s*Previous Conversation:\s*([\s\S]*?)(?=\n\s*2\.\s*Current Work|\n\s*3\.\s*Continuation State|$)/i,
+	)
+	if (previousSection?.[1]) {
+		return previousSection[1].replace(/\s+/g, " ").trim().slice(0, 800)
+	}
+
+	const firstLine = trimmed.split(/\n/)[0]?.trim() ?? trimmed
+	if (/^(关窗后|Continue from the newest user request|1\.\s*Previous Conversation)/i.test(firstLine)) {
+		return firstLine.slice(0, 180)
+	}
+
+	return trimmed.slice(0, 800)
 }
 // kilocode_change end
 

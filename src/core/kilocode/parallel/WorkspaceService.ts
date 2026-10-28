@@ -3,10 +3,9 @@
  *
  * Conflict-safety rules:
  * - a workspace must be claimed (busy) before any agent writes to it
- * - merges never touch the user's checked-out branch state directly: when the
- *   base branch is checked out in the main worktree we merge in place only if
- *   that tree is clean, otherwise we merge through a temporary worktree of the
- *   base branch so the user's working copy is never disturbed
+ * - prepare merges in an isolated temporary tree, then fast-forward the actual
+ *   target checkout without stashing or discarding unrelated local changes;
+ *   overlapping changes block publication and retain the source workspace
  * - conflicts abort cleanly and are reported back to the model with the
  *   conflicted file list so it can resolve them in the workspace worktree
  */
@@ -196,9 +195,7 @@ export class WorkspaceService {
 			.catch(() => "")
 		if (branchSha && branchSha.trim().length > 0) {
 			const porcelain = await gitAtRoot.raw(["worktree", "list", "--porcelain"]).catch(() => "")
-			const checkedOut = porcelain
-				.split("\n")
-				.some((line) => line.trim() === `branch ${branch}`)
+			const checkedOut = porcelain.split("\n").some((line) => line.trim() === `branch ${branch}`)
 			const registered = await this.registry.get(name)
 			if (!checkedOut && !registered) {
 				await gitAtRoot.raw(["branch", "-D", branch]).catch(() => undefined)
@@ -428,53 +425,90 @@ export class WorkspaceService {
 			return { ok: false, reason: `Failed to commit pending changes: ${String(error)}` }
 		}
 
-		let ahead = 0
-		try {
-			const aheadRaw = await wtGit.raw(["rev-list", "--count", `${entry.baseBranch}..HEAD`]).catch(() => "0")
-			// simple-git exposes rev-list via raw(["rev-list", ...])
-			ahead = parseInt(aheadRaw.trim(), 10) || 0
-		} catch {
-			ahead = 0
-		}
-		if (ahead === 0) {
-			await this.registry.mark(entry.name, "merged")
-			return { ok: true, mergedCommits: "0", reason: "Nothing to merge (no commits ahead of base branch)." }
-		}
-
-		// Decide merge location: merge in the main worktree only when the user
-		// has the base branch checked out AND the tree is clean; otherwise use
-		// a temporary worktree of the base branch to leave the user untouched.
-		const rootStatus = await rootGit.status()
-		const rootBranch = rootStatus.current ?? ""
-		let mergeDir = this.projectRoot
+		// Prepare in isolation; publishing to the real target is a separate step.
+		// A detached merge commit alone must NEVER be reported as a successful merge.
+		const targetRef = `refs/heads/${entry.baseBranch}`
 		let tmpMergeDir: string | undefined
-		if (rootBranch !== entry.baseBranch || rootStatus.files.length > 0) {
-			tmpMergeDir = path.join(this.projectRoot, ...WORKTREES_DIR, `.tmp-merge-${Date.now().toString(36)}`)
-			try {
-				await rootGit.raw(["worktree", "add", "--detach", tmpMergeDir, entry.baseBranch])
-				mergeDir = tmpMergeDir
-			} catch (error) {
-				return { ok: false, reason: `Failed to prepare merge worktree: ${String(error)}` }
-			}
-		}
-
+		let published = false
 		try {
-			const mergeGit = this.git(mergeDir)
-			await mergeGit.merge(["--no-ff", "--no-edit", entry.branch])
-			// simple-git conflict parsing depends on git's output language, so
-			// detect unmerged paths directly (locale-independent).
-			const unmerged = await mergeGit.diff(["--name-only", "--diff-filter=U"])
-			const conflictFiles = unmerged
-				.split("\n")
-				.map((line) => line.trim())
-				.filter(Boolean)
-			if (conflictFiles.length > 0) {
-				throw new Error(`CONFLICT: ${conflictFiles.join(", ")}`)
+			const baseHead = (await rootGit.revparse(["--verify", targetRef])).trim()
+			const sourceHead = (await wtGit.revparse(["--verify", "HEAD"])).trim()
+			const ahead = Number((await rootGit.raw(["rev-list", "--count", `${baseHead}..${sourceHead}`])).trim())
+			if (!Number.isSafeInteger(ahead) || ahead < 0) {
+				throw new Error("Cannot determine workspace commits; refusing to claim merge success.")
 			}
-			const head = await mergeGit.revparse(["--short", "HEAD"])
-			if (tmpMergeDir) {
-				await rootGit.raw(["worktree", "remove", "--force", tmpMergeDir])
+			if (ahead === 0) {
+				await this.registry.mark(entry.name, "merged")
+				return {
+					ok: true,
+					mergedCommits: "0",
+					reason: "Nothing to merge (source already contained in target).",
+				}
 			}
+
+			const worktreesDir = path.join(this.projectRoot, ...WORKTREES_DIR)
+			await fs.promises.mkdir(worktreesDir, { recursive: true })
+			tmpMergeDir = await fs.promises.mkdtemp(path.join(worktreesDir, ".tmp-merge-"))
+			await rootGit.raw(["worktree", "add", "--detach", tmpMergeDir, baseHead])
+			const mergeGit = this.git(tmpMergeDir)
+			await mergeGit.merge(["--no-ff", "--no-edit", "--no-autostash", sourceHead])
+			// Some Git wrappers parse only English conflict output. Verify repository
+			// state independently, including locales where merge() does not reject.
+			const unresolved = await mergeGit.raw(["diff", "--name-only", "--diff-filter=U", "-z"])
+			if (unresolved.length > 0) {
+				throw new Error("Merge has unresolved index conflicts; target branch was not updated.")
+			}
+			const mergedHead = (await mergeGit.revparse(["HEAD"])).trim()
+			const missingCommits = (await mergeGit.raw(["rev-list", "--count", `${mergedHead}..${sourceHead}`])).trim()
+			if (missingCommits !== "0") {
+				throw new Error("Prepared merge does not contain the source commits; refusing publication.")
+			}
+
+			// Locate the target's actual checkout, not the UI's current project root.
+			// NUL porcelain preserves paths containing spaces, quotes and newlines.
+			let fields: string[]
+			let quotedPaths = false
+			try {
+				fields = (await rootGit.raw(["worktree", "list", "--porcelain", "-z"])).split("\0")
+			} catch (nulListError) {
+				// Older supported Git versions lack worktree list -z. Do not parse
+				// localized error strings; a failed fallback still fails the merge.
+				console.debug("[WorkspaceService] retrying legacy worktree porcelain:", nulListError)
+				fields = (await rootGit.raw(["-c", "core.quotePath=false", "worktree", "list", "--porcelain"])).split(
+					"\n",
+				)
+				quotedPaths = true
+			}
+			let currentPath: string | undefined
+			let targetPath: string | undefined
+			for (const field of fields) {
+				if (field.startsWith("worktree ")) {
+					const value = field.slice(9)
+					// With quotePath=false, common escaped paths use JSON-compatible
+					// quoting. Unsupported encodings fail closed, never update the wrong tree.
+					currentPath = quotedPaths && value.startsWith('"') ? JSON.parse(value) : value
+				}
+				if (field === `branch ${targetRef}`) targetPath = currentPath
+			}
+			if ((await rootGit.revparse([targetRef])).trim() !== baseHead) {
+				throw new Error("Target branch changed during merge preparation; retry against its latest state.")
+			}
+			if (targetPath) {
+				const targetGit = this.git(targetPath)
+				if ((await targetGit.raw(["symbolic-ref", "HEAD"])).trim() !== targetRef) {
+					throw new Error("Target checkout switched branches; retry without moving the user's checkout.")
+				}
+				// Native Git preserves unrelated local changes and refuses overwrites.
+				// No stash/reset/force: staged state and untracked files remain user-owned.
+				await targetGit.merge(["--ff-only", "--no-autostash", mergedHead])
+			} else {
+				// No checkout to update: CAS prevents clobbering another publisher.
+				await rootGit.raw(["update-ref", "-m", `Deeptask merge ${entry.name}`, targetRef, mergedHead, baseHead])
+			}
+			if ((await rootGit.revparse([targetRef])).trim() !== mergedHead) {
+				throw new Error("Target branch verification failed; source workspace retained for inspection.")
+			}
+			published = true
 			if (params.removeAfter) {
 				await this.removeWorktree(entry.path)
 				await this.registry.remove(entry.name)
@@ -484,42 +518,32 @@ export class WorkspaceService {
 			return {
 				ok: true,
 				mergedCommits: String(ahead),
-				reason: `Merged ${entry.branch} into ${entry.baseBranch} (${head.trim()}).`,
+				reason: `Merged ${entry.branch} into ${entry.baseBranch} (${mergedHead.slice(0, 12)}); ${targetPath ? `checkout updated at ${targetPath}` : "target branch reference updated"}.`,
 			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error)
-			const conflicts: string[] = []
-			const conflictMatch = message.match(/CONFLICT: (.*)/)
-			if (conflictMatch) {
-				conflicts.push(...conflictMatch[1].split(", ").filter((f) => f && f !== "?"))
-			}
-			try {
-				const status = await this.git(mergeDir).status()
-				for (const file of status.files) {
-					if (file.index && file.index !== " " && file.index !== "?" && !conflicts.includes(file.path)) {
-						conflicts.push(file.path)
-					}
-				}
-			} catch {
-				// status unavailable; fall through with parsed list
-			}
-			try {
-				await this.git(mergeDir).merge(["--abort"])
-			} catch {
-				// merge already aborted or nothing to abort
-			}
+			let conflicts: string[] = []
 			if (tmpMergeDir) {
 				try {
-					await rootGit.raw(["worktree", "remove", "--force", tmpMergeDir])
-				} catch {
-					// best effort cleanup
+					const unmerged = await this.git(tmpMergeDir).raw(["diff", "--name-only", "--diff-filter=U", "-z"])
+					conflicts = unmerged.split("\0").filter(Boolean)
+				} catch (inspectionError) {
+					console.warn("[WorkspaceService] cannot inspect temporary merge:", inspectionError)
 				}
 			}
-			await this.registry.mark(entry.name, "conflicted")
+			if (conflicts.length > 0) await this.registry.mark(entry.name, "conflicted")
 			return {
 				ok: false,
 				conflicts: conflicts.length > 0 ? conflicts : undefined,
-				reason: `Merge conflict while merging ${entry.branch} into ${entry.baseBranch}. The merge was aborted; resolve conflicts in the workspace worktree (${entry.path}), commit, then retry the merge. ${message}`,
+				reason: `${published ? "Target updated but workspace bookkeeping failed" : "Merge could not be published to the target branch"}. No user changes were stashed or discarded; inspect the target and source workspace (${entry.path}) before retrying. ${message}`,
+			}
+		} finally {
+			if (tmpMergeDir) {
+				try {
+					await rootGit.raw(["worktree", "remove", "--force", tmpMergeDir])
+				} catch (cleanupError) {
+					console.warn(`[WorkspaceService] temporary merge retained at ${tmpMergeDir}:`, cleanupError)
+				}
 			}
 		}
 	}

@@ -2,6 +2,8 @@
  * Tool descriptions for parallel subagents & workspaces (kilocode_change - new files)
  */
 
+import { SUBAGENT_DEPENDENCY_REUSE_INSTRUCTIONS } from "../sections/subagent-workspace"
+
 export function getDispatchSubagentsDescription(enabled: boolean | undefined): string | undefined {
 	if (enabled === false) {
 		return undefined
@@ -15,6 +17,8 @@ Workspace rules (write-conflict prevention):
 - Decide by whether the subagent will WRITE files: writes → default (workspace); pure reads → needs_workspace:false.
 	- To reuse an existing workspace by name, set "workspace": "<name>". If that workspace is already occupied, a sibling git worktree is created automatically so two writers never share a directory.
 - After all subagents finish, merge their workspace branches into the main branch yourself with workspace_merge (resolve reported conflicts in the workspace worktree first, then retry the merge).
+- Subagent tools (including execute_command) use that subagent's assigned cwd, not the parent or UI global cwd. Subagents must not migrate themselves back to main; the parent merges.
+- ${SUBAGENT_DEPENDENCY_REUSE_INSTRUCTIONS}
 
 Parameters:
 - tasks: (required) JSON array of subagent specs (single-element array for one subtask — the default), each object:

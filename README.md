@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.2.7</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.2.8</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.2.7** 双主题更新：① 根除子代理"幽灵复活"（settle 后立即出栈、取消即销毁、僵尸会话一键清除、并行权限开关真正生效）；② **长上下文内存优化**——每条新消息不再克隆整个会话状态推送给 webview，改为单条增量推送（13,820 条消息的真实会话累计克隆流量从 424.86GB 降至 30.7MB，削减 99.99%），已结束任务与子代理会话的消息历史即时释放（每个 settled 任务约释放 40MB），并行广播按突发合并——长时间使用后 VSCodium 内存超 90%、Deeptask 面板灰屏的问题从根因上解决。
+> **Deeptask 9.2.8** 强化长任务可靠性：子代理结果先持久化再回传，恢复时去重补发；关窗后完成消息即写父 inbox，重启后从历史恢复子代理身份，父点继续才注入终态；长上下文压缩保留增量续跑状态，不再复述上一轮开场白。工具绑定分配工作区；工作区合并验证真实目标分支与文件落盘，保留无关本地修改；超长多行命令快速返回可恢复错误。默认优先复用兼容依赖，测试仍针对隔离源码。长会话资源优化持续以回归和压力测试验证，不以累计传输量代替峰值内存，也不承诺灰屏已被完全根治。
 
 ## 你可以怎样使用 Deeptask
 
@@ -146,17 +146,17 @@ Deeptask 选择寄生在 VSCodium 里而不是做成独立软件，是刻意为�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.2.7.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.2.8.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.2.7.vsix --force
+    codium --install-extension ./deeptask-9.2.8.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.2.7.vsix --force
+    code --install-extension ./deeptask-9.2.8.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

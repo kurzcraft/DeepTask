@@ -11,6 +11,7 @@ import { maybeRemoveImageBlocks } from "../../../api/transform/image-cleaning"
 import {
 	summarizeConversation,
 	buildLocalFallbackSummary,
+	compactBackgroundFacts,
 	getMessagesSinceLastSummary,
 	getKeepMessagesWithToolBlocks,
 	getEffectiveApiHistory,
@@ -78,6 +79,26 @@ describe("buildLocalFallbackSummary", () => {
 		expect(summary).toContain("Visible result")
 		expect(summary).not.toContain("private chain of thought")
 		expect(summary).not.toContain("huge private state")
+	})
+
+	it("does not recopy a prior opening mantra or nested Previous Conversation dump", () => {
+		const nested =
+			"1. Previous Conversation:\nMemory and token optimization for DeepTask 9.2.8\n\n2. Current Work:\nFixed inbox persistence\n\n3. Continuation State:\nContinue from the newest user request and preserve unfinished tasks"
+		const summary = buildLocalFallbackSummary(
+			[
+				{ role: "user", content: nested, ts: 1 },
+				{ role: "assistant", content: "关窗后会话会丢，所以完成消息必须立刻落盘。", ts: 2 },
+				{ role: "user", content: "Newest request: restore child inbox after restart", ts: 3 },
+			],
+			"Automatic context condense exceeded its 15 second fast-path budget",
+		)
+
+		expect(compactBackgroundFacts(nested)).toBe("Memory and token optimization for DeepTask 9.2.8")
+		expect(summary).toContain("Memory and token optimization for DeepTask 9.2.8")
+		expect(summary).toContain("Newest request: restore child inbox after restart")
+		expect(summary).not.toMatch(/1\. Previous Conversation:[\s\S]*1\. Previous Conversation:/)
+		expect(summary).not.toContain("Continue from the newest user request and preserve unfinished tasks")
+		expect(summary).toContain("Do not repeat this summary")
 	})
 })
 

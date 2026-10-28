@@ -267,15 +267,15 @@ describe("SYSTEM_PROMPT", () => {
 
 		expect(prompt).toContain("RELIABLE COMMAND EXECUTION")
 		expect(prompt).toContain("MANDATORY SCRIPT-FIRST RULE")
-		expect(prompt).toContain(
-			"must NEVER be sent directly to execute_command",
-		)
+		expect(prompt).toContain("must NEVER be sent directly to execute_command")
 		expect(prompt).toContain("VSCodium terminal integration")
 		expect(prompt).toContain("current workspace's `EXTRA/bash/` directory")
 		expect(prompt).toContain("current workspace's `EXTRA/output/` directory")
 		expect(prompt).toContain("persist complete stdout and stderr to a task-specific log file")
 		expect(prompt).toContain("use read_file to inspect the saved log")
 		expect(prompt).toContain("Do not use inline heredocs")
+		expect(prompt).toContain("HARD LIMIT")
+		expect(prompt).toContain("more than 2 physical lines")
 	})
 
 	it("should include browser actions when supportsImages is true", async () => {
@@ -965,7 +965,9 @@ describe("SYSTEM_PROMPT", () => {
 		expect(enabledPrompt).toContain("Keep one task's evolving checklist in its same Markdown file")
 		expect(enabledPrompt).toContain("every later executable request in the same conversation")
 		expect(enabledPrompt).toContain("reuse the focused active file and its exact marker")
-		expect(enabledPrompt).not.toContain("unique host-prefixed instance ID in the form host-task-id:work-instance-id")
+		expect(enabledPrompt).not.toContain(
+			"unique host-prefixed instance ID in the form host-task-id:work-instance-id",
+		)
 		expect(enabledPrompt).toContain("Canonical file format (mandatory; this is not YAML frontmatter)")
 		expect(enabledPrompt).toContain("<!-- deeptask-task-id:<instance-id> -->")
 		expect(enabledPrompt).toContain("example value is illustrative only and must never be copied")

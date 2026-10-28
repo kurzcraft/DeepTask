@@ -19,6 +19,11 @@ import { Terminal } from "../../integrations/terminal/Terminal"
 import { Package } from "../../shared/package"
 import { t } from "../../i18n"
 import { BaseTool, ToolCallbacks } from "./BaseTool"
+import {
+	countCommandPhysicalLines,
+	getExecuteCommandPhysicalLineLimitError,
+	isExecuteCommandOverPhysicalLineLimit,
+} from "./helpers/commandPhysicalLines" // kilocode_change: hard 2-line command guard
 
 const COMMAND_OUTPUT_PERSISTENCE_TIMEOUT_MS = 2_000 // kilocode_change
 
@@ -50,6 +55,16 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 				pushToolResult(await task.sayAndCreateMissingParamError("execute_command", "command"))
 				return
 			}
+
+			// kilocode_change start: reject >2 physical lines before approval/terminal
+			if (isExecuteCommandOverPhysicalLineLimit(command)) {
+				task.consecutiveMistakeCount++
+				task.recordToolError("execute_command")
+				const errorMessage = getExecuteCommandPhysicalLineLimitError(countCommandPhysicalLines(command))
+				pushToolResult(formatResponse.toolError(errorMessage, toolProtocol))
+				return
+			}
+			// kilocode_change end
 
 			const ignoredFileAttemptedToAccess = task.rooIgnoreController?.validateCommand(command)
 
@@ -128,8 +143,10 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 				await task.say("shell_integration_warning")
 				task.supersedePendingAsk()
 
-			const errorMessage = error instanceof Error ? error.message : String(error)
-				pushToolResult(`Command was not executed because the VS Code integrated terminal failed: ${errorMessage}`)
+				const errorMessage = error instanceof Error ? error.message : String(error)
+				pushToolResult(
+					`Command was not executed because the VS Code integrated terminal failed: ${errorMessage}`,
+				)
 			}
 
 			return
@@ -141,6 +158,11 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 
 	override async handlePartial(task: Task, block: ToolUse<"execute_command">): Promise<void> {
 		const command = block.params.command
+		// kilocode_change start: never open approval UI for over-limit streaming commands
+		if (isExecuteCommandOverPhysicalLineLimit(command)) {
+			return
+		}
+		// kilocode_change end
 		await task
 			.ask("command", this.removeClosingTag("command", command, block.partial), block.partial)
 			.catch(() => {})

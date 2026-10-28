@@ -1,6 +1,6 @@
 import type OpenAI from "openai"
 
-const EXECUTE_COMMAND_DESCRIPTION = `Request to execute a CLI command on the system. MANDATORY SCRIPT-FIRST RULE: every command, regardless of length, MUST first be written to a script file under the current workspace's EXTRA/bash/ directory (create the directory when needed) and then executed by running that script with a short one-line command — never send multi-line commands, heredocs, inline python -c / node -e programs, JSON/YAML/SQL payloads, or nested quoting directly to this tool. The script itself MUST stream the full execution process to the integrated terminal AND persist complete stdout and stderr (for example with tee and pipefail on bash) to a log file under the current workspace's EXTRA/output/ directory, then print the log file path and final exit status; afterwards inspect the saved log with read_file. Tailor commands to the user's environment and explain their purpose. Keep calls short and observable. Prefer relative paths for terminal consistency.
+const EXECUTE_COMMAND_DESCRIPTION = `Request to execute a CLI command on the system. MANDATORY SCRIPT-FIRST RULE: every command, regardless of length, MUST first be written to a script file under the current workspace's EXTRA/bash/ directory (create the directory when needed) and then executed by running that script with a short one-line command — never send multi-line commands, heredocs, inline python -c / node -e programs, JSON/YAML/SQL payloads, or nested quoting directly to this tool. HARD LIMIT: if command has more than 2 physical lines (real LF/CRLF/CR; trailing newline is not an extra line; escaped \\n is not a newline), this tool immediately returns a tool error with no approval wait, terminal, or execution — write EXTRA/bash/ and retry a one-line script invocation. The script itself MUST stream the full execution process to the integrated terminal AND persist complete stdout and stderr (for example with tee and pipefail on bash) to a log file under the current workspace's EXTRA/output/ directory, then print the log file path and final exit status; afterwards inspect the saved log with read_file. Tailor commands to the user's environment and explain their purpose. Keep calls short and observable. Prefer relative paths for terminal consistency.
 
 Parameters:
 - command: (required) The short one-line command that runs the prepared script. This should be valid for the current operating system. Ensure the command is properly formatted and does not contain any harmful instructions.
@@ -15,7 +15,7 @@ Example: Running the prepared script in a specific directory if directed
 Example: Using relative paths
 { "command": "bash ./scripts/verify.sh", "cwd": null }`
 
-const COMMAND_PARAMETER_DESCRIPTION = `Short one-line command that executes a prepared script file; all multi-line or complex work must be scripted under EXTRA/bash/ with durable logs under EXTRA/output/ first`
+const COMMAND_PARAMETER_DESCRIPTION = `Short one-line command that executes a prepared script file; more than 2 physical lines is an immediate tool error (no approval/terminal); all multi-line or complex work must be scripted under EXTRA/bash/ with durable logs under EXTRA/output/ first`
 
 const CWD_PARAMETER_DESCRIPTION = `Optional working directory for the command, relative or absolute`
 

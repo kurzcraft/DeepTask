@@ -90,6 +90,7 @@ import {
 	type ParallelStateStorage,
 } from "../kilocode/parallel/ParallelStateStore"
 import { WorkspaceService } from "../kilocode/parallel/WorkspaceService"
+import { resolveAssignedWorkspacePath, workspaceBindingDrifted } from "../kilocode/parallel/taskWorkspaceRouting"
 import { CodeIndexManager } from "../../services/code-index/manager"
 import type { IndexProgressUpdate } from "../../services/code-index/interfaces/manager"
 import { MdmService } from "../../services/mdm/MdmService"
@@ -581,9 +582,7 @@ export class ClineProvider
 		// kilocode_change end
 	}
 
-	private async rescuePendingContinuation(
-		parked: PendingCancelledTaskContinuation,
-	): Promise<void> {
+	private async rescuePendingContinuation(parked: PendingCancelledTaskContinuation): Promise<void> {
 		// kilocode_change start
 		// Consume atomically: only proceed if the parked payload is still current.
 		if (this.pendingCancelledTaskContinuation !== parked) {
@@ -806,9 +805,11 @@ export class ClineProvider
 		}
 		// kilocode_change end
 
-		const { name, ...providerSettings } = await this.providerSettingsManager.activateProfile({
-			name: profileToActivate.name,
-		}).catch(() => this.providerSettingsManager.activateProfile({ name: "default" }))
+		const { name, ...providerSettings } = await this.providerSettingsManager
+			.activateProfile({
+				name: profileToActivate.name,
+			})
+			.catch(() => this.providerSettingsManager.activateProfile({ name: "default" }))
 		const updatedProfiles = await this.providerSettingsManager.listConfig()
 
 		await Promise.all([
@@ -1243,8 +1244,9 @@ export class ClineProvider
 		const manager = this.parallelManager
 		await manager.getFolders()
 		const folderPath = params.folderPath ?? manager.folderPathForPath(params.workspacePath)
+		const exceptTaskId = params.task?.taskId ?? params.task?.subagent?.sessionId
 		const occupants = await manager.occupantsOf(params.workspacePath, {
-			taskId: params.task?.taskId,
+			taskId: exceptTaskId,
 			conversationId: params.conversationId,
 		})
 		if (occupants.length === 0) {
@@ -1284,6 +1286,30 @@ export class ClineProvider
 				`Workspace is already in use; could not create an isolated git worktree: ${detail}`,
 			)
 			return { path: params.workspacePath, occupants }
+		}
+	}
+
+	/**
+	 * Keep a live task on the workspace assigned at dispatch/restore.
+	 * Occupancy still isolates true conflicts; this only repairs identity drift
+	 * (history parent cwd, UI focus, leftover dispatch claims).
+	 */
+	private async bindTaskToAssignedWorkspace(task: Task): Promise<void> {
+		const session = this.parallelManager.getSession(task.taskId)
+		const conversation = this.parallelManager.conversationForSession(task.taskId)
+		const assigned = resolveAssignedWorkspacePath({
+			taskId: task.taskId,
+			isSubagent: Boolean(task.subagent),
+			taskCwd: task.cwd,
+			sessionWorkspacePath: session?.info.workspacePath,
+			conversationWorkspacePath: conversation?.workspacePath,
+			providerCwd: this.cwd,
+		})
+		if (!assigned || !workspaceBindingDrifted(task.cwd, assigned)) {
+			return
+		}
+		if (typeof task.switchWorkspace === "function") {
+			await task.switchWorkspace(assigned)
 		}
 	}
 	// kilocode_change end
@@ -1777,7 +1803,7 @@ export class ClineProvider
 							// overwrite the CLI's working API configuration with empty settings.
 							const fullProfile = await this.providerSettingsManager.getProfile({ name: profile.name })
 							const hasActualSettings = !!fullProfile.apiProvider
-	
+
 							if (hasActualSettings) {
 								// kilocode_change start: per-session profile stickiness
 								// Mode-default activation must not persist: at this point the new
@@ -1855,12 +1881,33 @@ export class ClineProvider
 		// subagent conversation lost isChildAgent (the parent-owned EXTRA/task
 		// completion gate locked its attempt_completion) and dropped subagent
 		// semantics entirely. The manager keeps the exact spawn-time descriptor.
-		const subagentDescriptor = this.parallelManager.getSession(historyItem.id)?.subagentMeta
+		const liveSubagentDescriptor = this.parallelManager.getSession(historyItem.id)?.subagentMeta
+		const restoredSubagentDescriptor =
+			liveSubagentDescriptor ??
+			(historyItem.parentTaskId
+				? this.parallelManager.restoreSessionFromHistory({
+						taskId: historyItem.id,
+						parentTaskId: historyItem.parentTaskId,
+						label: historyItem.task,
+						workspacePath: historyItem.workspace,
+					})
+				: undefined)
+		const subagentDescriptor = restoredSubagentDescriptor
 		if (subagentDescriptor) {
 			// Rebind routing to the rehydrated instance so messages land in the
 			// live conversation; keep the original depth/identity fields.
 			subagentDescriptor.manager ??= this.parallelManager
 		}
+		const sessionWorkspacePath = this.parallelManager.getSession(historyItem.id)?.info.workspacePath
+		const conversationWorkspacePath = this.parallelManager.conversationForSession(historyItem.id)?.workspacePath
+		const assignedWorkspacePath = resolveAssignedWorkspacePath({
+			taskId: historyItem.id,
+			isSubagent: Boolean(subagentDescriptor),
+			historyWorkspace: historyItem.workspace,
+			sessionWorkspacePath,
+			conversationWorkspacePath,
+			providerCwd: this.cwd,
+		})
 		// kilocode_change end
 		const task = new Task({
 			context: this.context, // kilocode_change
@@ -1876,7 +1923,7 @@ export class ClineProvider
 			rootTask: historyItem.rootTask,
 			parentTask: historyItem.parentTask,
 			taskNumber: historyItem.number,
-			workspacePath: historyItem.workspace,
+			workspacePath: assignedWorkspacePath ?? historyItem.workspace,
 			subagent: subagentDescriptor, // kilocode_change: restore subagent identity
 			onCreated: this.taskCreationCallback,
 			// kilocode_change start
@@ -1982,6 +2029,7 @@ export class ClineProvider
 		}
 		// kilocode_change end
 
+		await this.bindTaskToAssignedWorkspace(task)
 		return task
 	}
 
@@ -2993,9 +3041,7 @@ export class ClineProvider
 			// Keep any already-running conversation alive; history opens in parallel.
 			await this.focusTask(id)
 		} else {
-			await this.parallelManager.setActiveConversation(
-				this.parallelManager.conversationForSession(id)?.id,
-			)
+			await this.parallelManager.setActiveConversation(this.parallelManager.conversationForSession(id)?.id)
 			await this.postStateToWebview()
 		}
 		await this.parallelManager.broadcast()
@@ -4314,9 +4360,7 @@ export class ClineProvider
 
 	// kilocode_change start: parallel conversations
 	public async focusTask(taskId: string): Promise<void> {
-		const index = this.clineStack.findIndex(
-			(task) => task.taskId === taskId || task.subagent?.sessionId === taskId,
-		)
+		const index = this.clineStack.findIndex((task) => task.taskId === taskId || task.subagent?.sessionId === taskId)
 		if (index === -1) {
 			const { historyItem } = await this.getTaskWithId(taskId)
 			await this.createTaskWithHistoryItem(historyItem, { keepRunningTask: true })
@@ -4348,6 +4392,10 @@ export class ClineProvider
 			const [task] = this.clineStack.splice(index, 1)
 			this.clineStack.push(task)
 		}
+		const focusedTask = this.clineStack[this.clineStack.length - 1]
+		if (focusedTask) {
+			await this.bindTaskToAssignedWorkspace(focusedTask)
+		}
 		const bound = this.parallelManager.conversationForSession(taskId)
 		if (bound) {
 			await this.parallelManager.setActiveConversation(bound.id)
@@ -4373,14 +4421,14 @@ export class ClineProvider
 	}
 
 	/**
-		* kilocode_change start: per-session profile stickiness
-		*
-		* Re-activates the focused task's saved provider profile when it differs
-		* from the current global one, so each conversation keeps its own provider
-		* configuration. Uses the non-persisting restoration path (no mode config
-		* or task-history rewrite); only the runtime API handler and UI state
-		* follow the focused conversation.
-		*/
+	 * kilocode_change start: per-session profile stickiness
+	 *
+	 * Re-activates the focused task's saved provider profile when it differs
+	 * from the current global one, so each conversation keeps its own provider
+	 * configuration. Uses the non-persisting restoration path (no mode config
+	 * or task-history rewrite); only the runtime API handler and UI state
+	 * follow the focused conversation.
+	 */
 	private async restoreFocusedTaskProviderProfile(): Promise<void> {
 		// kilocode_change start: capture the focused task BEFORE any await.
 		// focusTask itself awaits; if focus drifted during those awaits this

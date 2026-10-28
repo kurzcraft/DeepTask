@@ -1,5 +1,17 @@
 # Deeptask
 
+## 9.2.8
+
+### Patch Changes
+
+- Persist settled subagent results before delivery and recover interrupted parent calls without respawning completed or cancelled work.
+- Parent interrupt no longer cancels still-running children; resume waits for durable inbox results and replaces the interrupted placeholder with the final tool result.
+- After a host restart, a finished child writes the parent inbox from its saved completion_result and restores child identity from history so Continue can inject the final result without the original runPromise.
+- Bind subagent tools to their assigned workspace; reuse compatible dependencies without modifying the shared environment or testing the wrong checkout.
+- Publish workspace merges to the actual target branch and checkout, preserve unrelated local changes, and reject overlapping edits and unresolved conflicts.
+- Reject execute-command parameters exceeding two physical lines before approval or terminal creation, with script-first recovery guidance.
+- Long-context condensation now keeps incremental continuation state instead of recopying a prior opening mantra or nested Previous Conversation dump; the 15-second local fast path still preserves the newest user request.
+
 ## 9.2.7
 
 ### Patch Changes
