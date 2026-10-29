@@ -84,10 +84,11 @@ export async function taskMetadata({
 
 		timestamp = lastRelevantMessage.ts
 
-		// Token usage only needs api_req_started/finished consolidation. Command
-		// sequence merging clones the entire transcript and concatenates output
-		// text that getApiMetrics never reads.
-		tokenUsage = getApiMetrics(combineApiRequests(messages.slice(1)))
+		// Token usage only needs api_req_started/finished consolidation. The
+		// leading task say is skipped by getApiMetrics, so scanning the original
+		// array avoids a per-save pointer copy. Command sequence merging still
+		// concatenates output text that getApiMetrics never reads.
+		tokenUsage = getApiMetrics(combineApiRequests(messages))
 
 		// Get task directory size
 		const cachedSize = taskSizeCache.get<number>(taskDir)

@@ -30,6 +30,10 @@
 - Bound iterator cleanup only after terminal completion, preserve long-running commands, and keep cancellation recovery actionable despite late output or repeated clicks.
 - Refresh focused-task identity for context-condensation events so previous conversations cannot clear the current indicator.
 - Release removed Agent Manager session payloads and atom-family keys only after both authoritative local and remote lists drop the session; preserve retained histories, drafts, images and full-snapshot restoration.
+- Record host and webview runtime snapshots to readable debug files so gray-panel failures can be diagnosed from heap, visibility, hydration and exception evidence.
+- Project historical command output to the webview as a short preview without rewriting stored transcripts or model I/O; keep the last streaming command full, leave collapsed rows without a full CodeBlock, and fetch the original text by timestamp only after expand.
+- Preserve interleaved assistant text when sanitizing unpaired native tool_use blocks, flatten nested Previous Conversation summaries before the next round, and accept only real tool_use/mcp_tool_use in native history.
+- Document post-install memory samples: peak RSS ~4.6GiB is the VSCodium zygote, extension host ~0.8–1.1GiB, webview heap ~0.3–0.5GiB; the 90% warning is a webview heap-limit ratio and this build does not claim unbounded sessions cannot overflow.
 
 ## 9.2.7
 

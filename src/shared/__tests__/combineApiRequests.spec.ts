@@ -158,6 +158,25 @@ describe("combineApiRequests", () => {
 			// Should have one message (the original start message)
 			expect(result).toHaveLength(1)
 			expect(result[0]).toEqual(startMessage)
+			// Modern transcripts write cost onto api_req_started and never emit
+			// api_req_finished, so metrics/auto-approval must reuse the original
+			// array instead of cloning the whole transcript every round.
+			expect(result).toBe(messages)
+		})
+
+		it("should reuse the original array when only api_req_started messages exist", () => {
+			const otherMessage = createOtherMessage("text", "Message 1", 999)
+			const messages: ClineMessage[] = [
+				otherMessage,
+				createStartMessage('{"tokensIn":10,"tokensOut":20,"cost":0.005}', 1000),
+				createStartMessage('{"tokensIn":30,"tokensOut":40,"cost":0.007}', 2000),
+			]
+
+			const result = combineApiRequests(messages)
+
+			expect(result).toBe(messages)
+			expect(result).toHaveLength(3)
+			expect(result[0]).toBe(otherMessage)
 		})
 
 		it("should handle missing text field in api_req_started", () => {

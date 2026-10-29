@@ -10,6 +10,7 @@ import { MarketplaceViewStateManager } from "./components/marketplace/Marketplac
 import { vscode } from "./utils/vscode"
 import { telemetryClient } from "./utils/TelemetryClient"
 import { initializeSourceMaps, exposeSourceMapsForDebugging } from "./utils/sourceMapInitializer"
+import { setWebviewSensorHydrated } from "./utils/runtimeSensor"
 import { ExtensionStateContextProvider, useExtensionState } from "./context/ExtensionStateContext"
 import ChatView, { ChatViewRef } from "./components/chat/ChatView"
 import HistoryView from "./components/history/HistoryView"
@@ -270,6 +271,10 @@ const App = () => {
 	// Tell the extension that we are ready to receive messages.
 	useEffect(() => vscode.postMessage({ type: "webviewDidLaunch" }), [])
 
+	useEffect(() => {
+		setWebviewSensorHydrated(didHydrateState)
+	}, [didHydrateState])
+
 	// Initialize source map support for better error reporting
 	useEffect(() => {
 		// Initialize source maps for better error reporting in production
@@ -316,7 +321,18 @@ const App = () => {
 	// kilocode_change end
 
 	if (!didHydrateState) {
-		return null
+		// Keep a visible shell while the first state snapshot arrives. Returning
+		// null leaves the activity-bar webview empty/gray even after the view is
+		// focused, which looks like a crashed panel.
+		return (
+			<div
+				data-testid="webview-hydration-placeholder"
+				className="flex h-full min-h-[120px] w-full items-center justify-center text-vscode-descriptionForeground"
+				role="status"
+				aria-live="polite">
+				Loading…
+			</div>
+		)
 	}
 
 	// kilocode_change start: Show provider-only onboarding for new users.

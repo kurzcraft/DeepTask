@@ -502,6 +502,34 @@ describe("ChatView - GitHub Star entry", () => {
 })
 // kilocode_change end
 
+describe("ChatView - leading task stays in header", () => {
+	beforeEach(() => vi.clearAllMocks())
+
+	it("keeps the leading task say out of the list while still rendering later messages", async () => {
+		const { getByText, getAllByTestId } = renderChatView()
+		mockPostMessage({
+			clineMessages: [
+				{ type: "say", say: "task", ts: 1, text: "Header-only task" },
+				{ type: "say", say: "user_feedback", ts: 2, text: "first user" },
+				{ type: "say", say: "text", ts: 3, text: "assistant reply" },
+			],
+		})
+
+		await waitFor(() => expect(getByText("Header-only task")).toBeInTheDocument())
+		await waitFor(() => expect(getAllByTestId("chat-row").length).toBeGreaterThan(0))
+
+		const rows = getAllByTestId("chat-row")
+		expect(
+			rows.some(
+				(row) =>
+					row.textContent?.includes('"say":"task"') && row.textContent?.includes("Header-only task"),
+			),
+		).toBe(false)
+		expect(rows.some((row) => row.textContent?.includes("first user"))).toBe(true)
+		expect(rows.some((row) => row.textContent?.includes("assistant reply"))).toBe(true)
+	})
+})
+
 describe("ChatView - Sound Playing Tests", () => {
 	beforeEach(() => vi.clearAllMocks())
 

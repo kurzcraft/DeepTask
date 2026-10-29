@@ -265,6 +265,7 @@ export interface ExtensionMessage {
 		| "skillsData"
 		| "askReviewScope" // kilocode_change: Review mode scope selection
 		| "openAiCodexRateLimits"
+		| "commandOutputFull" // kilocode_change: display-only full command output fetch
 	text?: string
 	// kilocode_change start
 	completionRequestId?: string // Correlation ID from request
@@ -996,6 +997,8 @@ export interface WebviewMessage {
 		| "debugSetting"
 		| "refreshSkills"
 		| "reviewScopeSelected" // kilocode_change: Review mode scope selection
+		| "runtimeSensor" // kilocode_change: gray-panel runtime sensor
+		| "requestCommandOutput" // kilocode_change: fetch full stored command output by ts
 	text?: string
 	archived?: boolean // kilocode_change: archive/unarchive target for parallel sidebar items
 	suggestionLength?: number // kilocode_change: Length of accepted suggestion for telemetry

@@ -315,6 +315,7 @@ export class DiffViewProvider {
 			// Store the results as class properties for formatFileWriteResponse to use
 			this.newProblemsMessage = newProblemsMessage
 			this.userEdits = userEdits
+			this.releasePostSaveBuffers()
 
 			return { newProblemsMessage, userEdits, finalContent: normalizedEditedContent }
 		} else {
@@ -322,6 +323,7 @@ export class DiffViewProvider {
 			// Store the results as class properties for formatFileWriteResponse to use
 			this.newProblemsMessage = newProblemsMessage
 			this.userEdits = undefined
+			this.releasePostSaveBuffers()
 
 			return { newProblemsMessage, userEdits: undefined, finalContent: normalizedEditedContent }
 		}
@@ -678,6 +680,20 @@ export class DiffViewProvider {
 		return result
 	}
 
+	/**
+	 * Drop large edit buffers after a successful save.
+	 * Keep relPath and result fields for pushToolWriteResult; reject still uses reset().
+	 */
+	private releasePostSaveBuffers(): void {
+		this.originalContent = undefined
+		this.streamedLines = []
+		this.preDiagnostics = []
+		this.activeDiffEditor = undefined
+		this.fadedOverlayController = undefined
+		this.activeLineController = undefined
+		this.isEditing = false
+	}
+
 	async reset(): Promise<void> {
 		await this.closeAllDiffViews()
 		this.editType = undefined
@@ -789,6 +805,7 @@ export class DiffViewProvider {
 		this.userEdits = undefined
 		this.relPath = relPath
 		this.newContent = content
+		this.releasePostSaveBuffers()
 
 		return {
 			newProblemsMessage,

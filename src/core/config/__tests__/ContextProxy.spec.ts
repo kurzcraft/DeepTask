@@ -5,6 +5,15 @@ import * as vscode from "vscode"
 import { GLOBAL_STATE_KEYS, SECRET_STATE_KEYS, GLOBAL_SECRET_KEYS } from "@roo-code/types"
 
 import { ContextProxy } from "../ContextProxy"
+import { GlobalFileNames } from "../../../shared/globalFileNames"
+
+const hoisted = vi.hoisted(() => ({
+	mkdir: vi.fn().mockResolvedValue(undefined),
+	readFile: vi.fn(),
+	unlink: vi.fn().mockResolvedValue(undefined),
+	safeWriteJson: vi.fn().mockResolvedValue(undefined),
+	getStorageBasePath: vi.fn().mockResolvedValue("/test/storage"),
+}))
 
 vi.mock("vscode", () => ({
 	Uri: {
@@ -17,6 +26,34 @@ vi.mock("vscode", () => ({
 	},
 }))
 
+vi.mock("fs/promises", () => ({
+	mkdir: hoisted.mkdir,
+	readFile: hoisted.readFile,
+	unlink: hoisted.unlink,
+}))
+
+vi.mock("../../../utils/safeWriteJson", () => ({
+	safeWriteJson: hoisted.safeWriteJson,
+}))
+
+vi.mock("../../../utils/storage", () => ({
+	getStorageBasePath: hoisted.getStorageBasePath,
+}))
+
+const enoent = () => Object.assign(new Error("ENOENT"), { code: "ENOENT" })
+
+const sampleHistory = [
+	{
+		id: "1",
+		number: 1,
+		ts: 1,
+		task: "test",
+		tokensIn: 1,
+		tokensOut: 1,
+		totalCost: 1,
+	},
+]
+
 describe("ContextProxy", () => {
 	let proxy: ContextProxy
 	let mockContext: any
@@ -26,6 +63,11 @@ describe("ContextProxy", () => {
 	beforeEach(async () => {
 		// Reset mocks
 		vi.clearAllMocks()
+		hoisted.mkdir.mockResolvedValue(undefined)
+		hoisted.readFile.mockRejectedValue(enoent())
+		hoisted.unlink.mockResolvedValue(undefined)
+		hoisted.safeWriteJson.mockResolvedValue(undefined)
+		hoisted.getStorageBasePath.mockResolvedValue("/test/storage")
 
 		// Mock globalState
 		mockGlobalState = {
@@ -71,13 +113,12 @@ describe("ContextProxy", () => {
 	describe("constructor", () => {
 		it("should initialize state cache with cached global state keys only", () => {
 			const cachedKeys = GLOBAL_STATE_KEYS.filter((key) => key !== "taskHistory")
-			// +1 for the migration check of old nested settings
-			expect(mockGlobalState.get).toHaveBeenCalledTimes(cachedKeys.length + 1)
+			// +1 nested image settings, +1 taskHistory disk migration probe
+			expect(mockGlobalState.get).toHaveBeenCalledTimes(cachedKeys.length + 2)
 			for (const key of cachedKeys) {
 				expect(mockGlobalState.get).toHaveBeenCalledWith(key)
 			}
-			expect(mockGlobalState.get).not.toHaveBeenCalledWith("taskHistory")
-			// Also check for migration call
+			expect(mockGlobalState.get).toHaveBeenCalledWith("taskHistory")
 			expect(mockGlobalState.get).toHaveBeenCalledWith("openRouterImageGenerationSettings")
 			expect((proxy as any).stateCache.taskHistory).toBeUndefined()
 		})
@@ -103,8 +144,8 @@ describe("ContextProxy", () => {
 			expect(result).toBe("deepseek")
 
 			const cachedKeys = GLOBAL_STATE_KEYS.filter((key) => key !== "taskHistory")
-			// Original context should be called once during initialization (+1 for migration check)
-			expect(mockGlobalState.get).toHaveBeenCalledTimes(cachedKeys.length + 1)
+			// Original context should be called once during initialization (+1 nested settings, +1 taskHistory probe)
+			expect(mockGlobalState.get).toHaveBeenCalledTimes(cachedKeys.length + 2)
 		})
 
 		it("should handle default values correctly", async () => {
@@ -113,64 +154,31 @@ describe("ContextProxy", () => {
 			expect(result).toBe("deepseek")
 		})
 
-		it("should bypass cache for pass-through state keys", async () => {
-			// Setup mock return value
-			mockGlobalState.get.mockReturnValue("pass-through-value")
+		it("should serve pass-through state keys from the disk-backed cache", async () => {
+			await proxy.updateGlobalState("taskHistory", sampleHistory)
 
-			// Use a pass-through key (taskHistory)
+			mockGlobalState.get.mockClear()
 			const result = proxy.getGlobalState("taskHistory")
 
-			// Should get value directly from original context
-			expect(result).toBe("pass-through-value")
-			expect(mockGlobalState.get).toHaveBeenCalledWith("taskHistory")
+			expect(result).toEqual(sampleHistory)
+			expect(mockGlobalState.get).not.toHaveBeenCalledWith("taskHistory")
 		})
 
 		it("should retain pass-through keys in public getValues snapshots", async () => {
-			const historyItems = [
-				{
-					id: "1",
-					number: 1,
-					ts: 1,
-					task: "test",
-					tokensIn: 1,
-					tokensOut: 1,
-					totalCost: 1,
-				},
-			]
-			mockGlobalState.get.mockImplementation((key: string) => (key === "taskHistory" ? historyItems : undefined))
+			await proxy.updateGlobalState("taskHistory", sampleHistory)
 			mockGlobalState.get.mockClear()
 
 			const values = proxy.getValues()
 
-			expect(values.taskHistory).toBe(historyItems)
-			expect(mockGlobalState.get).toHaveBeenCalledWith("taskHistory")
-
-			mockGlobalState.get.mockReturnValue(historyItems)
-			expect(proxy.getGlobalState("taskHistory")).toBe(historyItems)
-			expect(mockGlobalState.get).toHaveBeenCalledWith("taskHistory")
+			expect(values.taskHistory).toEqual(sampleHistory)
+			expect(mockGlobalState.get).not.toHaveBeenCalledWith("taskHistory")
+			expect(proxy.getGlobalState("taskHistory")).toEqual(sampleHistory)
 		})
 
 		it("should respect default values for pass-through state keys", async () => {
-			// Setup mock to return undefined
-			mockGlobalState.get.mockReturnValue(undefined)
+			const result = proxy.getGlobalState("taskHistory", sampleHistory)
 
-			// Use a pass-through key with default value
-			const historyItems = [
-				{
-					id: "1",
-					number: 1,
-					ts: 1,
-					task: "test",
-					tokensIn: 1,
-					tokensOut: 1,
-					totalCost: 1,
-				},
-			]
-
-			const result = proxy.getGlobalState("taskHistory", historyItems)
-
-			// Should return default value when original context returns undefined
-			expect(result).toBe(historyItems)
+			expect(result).toBe(sampleHistory)
 		})
 	})
 
@@ -186,31 +194,92 @@ describe("ContextProxy", () => {
 			expect(storedValue).toBe("deepseek")
 		})
 
-		it("should bypass cache for pass-through state keys", async () => {
-			const historyItems = [
-				{
-					id: "1",
-					number: 1,
-					ts: 1,
-					task: "test",
-					tokensIn: 1,
-					tokensOut: 1,
-					totalCost: 1,
-				},
-			]
+		it("should persist pass-through state keys to disk instead of globalState", async () => {
+			await proxy.updateGlobalState("taskHistory", sampleHistory)
 
-			await proxy.updateGlobalState("taskHistory", historyItems)
+			expect(mockGlobalState.update).not.toHaveBeenCalledWith("taskHistory", sampleHistory)
+			expect(hoisted.safeWriteJson).toHaveBeenCalledWith(
+				`/test/storage/${GlobalFileNames.taskHistory}`,
+				sampleHistory,
+				{ snapshot: true },
+			)
+			expect(proxy.getGlobalState("taskHistory")).toEqual(sampleHistory)
+		})
 
-			// Should update original context
-			expect(mockGlobalState.update).toHaveBeenCalledWith("taskHistory", historyItems)
+		it("should coalesce rapid taskHistory writes into one disk persist", async () => {
+			let releaseWrite: (() => void) | undefined
+			const firstWriteStarted = new Promise<void>((resolveStarted) => {
+				hoisted.safeWriteJson.mockImplementationOnce(
+					() =>
+						new Promise<void>((resolve) => {
+							resolveStarted()
+							releaseWrite = resolve
+						}),
+				)
+			})
 
-			// Setup mock for subsequent get
-			mockGlobalState.get.mockReturnValue(historyItems)
+			const first = proxy.updateGlobalState("taskHistory", sampleHistory)
+			await firstWriteStarted
+			expect(hoisted.safeWriteJson).toHaveBeenCalledTimes(1)
 
-			// Should get fresh value from original context
-			const storedValue = proxy.getGlobalState("taskHistory")
-			expect(storedValue).toBe(historyItems)
-			expect(mockGlobalState.get).toHaveBeenCalledWith("taskHistory")
+			const second = proxy.updateGlobalState("taskHistory", [{ ...sampleHistory[0], task: "later" }])
+			await Promise.resolve()
+			expect(hoisted.safeWriteJson).toHaveBeenCalledTimes(1)
+
+			releaseWrite?.()
+			await Promise.all([first, second])
+
+			expect(hoisted.safeWriteJson).toHaveBeenCalledTimes(2)
+			expect(hoisted.safeWriteJson).toHaveBeenLastCalledWith(
+				`/test/storage/${GlobalFileNames.taskHistory}`,
+				[{ ...sampleHistory[0], task: "later" }],
+				{ snapshot: true },
+			)
+			expect(mockGlobalState.update).not.toHaveBeenCalledWith("taskHistory", expect.anything())
+		})
+	})
+
+	describe("taskHistory disk migration", () => {
+		it("should migrate leftover globalState history onto disk and clear the IPC key", async () => {
+			vi.clearAllMocks()
+			hoisted.mkdir.mockResolvedValue(undefined)
+			hoisted.readFile.mockRejectedValue(enoent())
+			hoisted.unlink.mockResolvedValue(undefined)
+			hoisted.safeWriteJson.mockResolvedValue(undefined)
+			hoisted.getStorageBasePath.mockResolvedValue("/test/storage")
+			mockGlobalState.get.mockImplementation((key: string) => (key === "taskHistory" ? sampleHistory : undefined))
+			mockGlobalState.update.mockResolvedValue(undefined)
+
+			const migrating = new ContextProxy(mockContext)
+			await migrating.initialize()
+
+			expect(hoisted.safeWriteJson).toHaveBeenCalledWith(
+				`/test/storage/${GlobalFileNames.taskHistory}`,
+				sampleHistory,
+				{ snapshot: true },
+			)
+			expect(mockGlobalState.update).toHaveBeenCalledWith("taskHistory", undefined)
+			expect(migrating.getGlobalState("taskHistory")).toEqual(sampleHistory)
+		})
+
+		it("should prefer disk history and still clear leftover globalState", async () => {
+			vi.clearAllMocks()
+			hoisted.mkdir.mockResolvedValue(undefined)
+			hoisted.readFile.mockResolvedValue(JSON.stringify(sampleHistory))
+			hoisted.unlink.mockResolvedValue(undefined)
+			hoisted.safeWriteJson.mockResolvedValue(undefined)
+			hoisted.getStorageBasePath.mockResolvedValue("/test/storage")
+			mockGlobalState.get.mockImplementation((key: string) =>
+				key === "taskHistory" ? [{ ...sampleHistory[0], task: "stale-ipc" }] : undefined,
+			)
+			mockGlobalState.update.mockResolvedValue(undefined)
+
+			const migrating = new ContextProxy(mockContext)
+			await migrating.initialize()
+
+			expect(hoisted.safeWriteJson).not.toHaveBeenCalled()
+			expect(mockGlobalState.update).toHaveBeenCalledWith("taskHistory", undefined)
+			expect(migrating.getGlobalState("taskHistory")).toEqual(sampleHistory)
 		})
 	})
 
@@ -455,6 +524,17 @@ describe("ContextProxy", () => {
 
 			// Should reinitialize caches
 			expect(initializeSpy).toHaveBeenCalledTimes(1)
+		})
+
+		it("should clear disk-backed taskHistory during reset", async () => {
+			await proxy.updateGlobalState("taskHistory", sampleHistory)
+			hoisted.unlink.mockClear()
+			hoisted.safeWriteJson.mockClear()
+
+			await proxy.resetAllState()
+
+			expect(hoisted.unlink).toHaveBeenCalledWith(`/test/storage/${GlobalFileNames.taskHistory}`)
+			expect(proxy.getGlobalState("taskHistory")).toBeUndefined()
 		})
 	})
 

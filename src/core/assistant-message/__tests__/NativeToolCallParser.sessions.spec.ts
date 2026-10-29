@@ -76,4 +76,43 @@ describe("request owned native parsing", () => {
 			nativeArgs: { path: "retry.txt", content: "complete" },
 		})
 	})
+
+	it("releases request-owned raw chunk buffers after finish, finalize, or cancel", () => {
+		const finished = NativeToolCallParser.createSession()
+		finished.processRawChunk({
+			index: 0,
+			id: "done",
+			name: "write_to_file",
+			arguments: '{"path":"done.txt"}',
+		})
+		expect(finished.processFinishReason("tool_calls")).toEqual([{ type: "tool_call_end", id: "done" }])
+		expect(finished.processFinishReason("tool_calls")).toEqual([])
+		expect(finished.finalizeRawChunks()).toEqual([])
+
+		const leftover = NativeToolCallParser.createSession()
+		leftover.processRawChunk({
+			index: 0,
+			id: "stop",
+			name: "write_to_file",
+			arguments: '{"path":"stop.txt"}',
+		})
+		expect(leftover.processFinishReason("stop")).toEqual([])
+		expect(leftover.finalizeRawChunks()).toEqual([{ type: "tool_call_end", id: "stop" }])
+		expect(leftover.finalizeRawChunks()).toEqual([])
+
+		const cancelled = NativeToolCallParser.createSession()
+		cancelled.processRawChunk({
+			index: 0,
+			id: "cancelled",
+			name: "write_to_file",
+			arguments: '{"path":"cancelled.txt","content":"' + "x".repeat(2048) + '"}',
+		})
+		cancelled.startStreamingToolCall("cancelled", "write_to_file")
+		cancelled.processStreamingChunk("cancelled", '{"path":"cancelled.txt"}')
+		cancelled.clearAllStreamingToolCalls()
+		cancelled.clearRawChunkState()
+		expect(cancelled.hasActiveStreamingToolCalls()).toBe(false)
+		expect(cancelled.finalizeRawChunks()).toEqual([])
+		expect(cancelled.finalizeStreamingToolCall("cancelled")).toBeNull()
+	})
 })

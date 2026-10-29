@@ -7,6 +7,10 @@ import "../node_modules/@vscode/codicons/dist/codicon.css"
 import "./codicon-custom.css" // kilocode_change
 
 import { getHighlighter } from "./utils/highlighter"
+import { startWebviewRuntimeSensor } from "./utils/runtimeSensor"
+
+// Capture gray-panel evidence before React hydrates.
+startWebviewRuntimeSensor()
 
 // Initialize Shiki early to hide initialization latency (async)
 getHighlighter().catch((error: Error) => console.error("Failed to initialize Shiki highlighter:", error))

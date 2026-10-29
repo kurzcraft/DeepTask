@@ -256,6 +256,181 @@ describe("useMcpToolTool", () => {
 			expect(mockPushToolResult).toHaveBeenCalledWith("Tool result: Tool executed successfully")
 		})
 
+		it("omits completed-status payload after output while keeping history and tool results", async () => {
+			const block: ToolUse = {
+				type: "tool_use",
+				name: "use_mcp_tool",
+				params: {
+					server_name: "test_server",
+					tool_name: "test_tool",
+					arguments: '{"param": "value"}',
+				},
+				partial: false,
+			}
+
+			mockAskApproval.mockResolvedValue(true)
+
+			const postMessageToWebview = vi.fn()
+			mockProviderRef.deref.mockReturnValue({
+				getMcpHub: () => ({
+					callTool: vi.fn().mockResolvedValue({
+						content: [{ type: "text", text: "Tool executed successfully" }],
+						isError: false,
+					}),
+				}),
+				postMessageToWebview,
+				getState: vi.fn().mockResolvedValue({
+					allowVeryLargeReads: false,
+					maxReadFileLine: 1000,
+				}),
+			})
+
+			await useMcpToolTool.handle(mockTask as Task, block as any, {
+				askApproval: mockAskApproval,
+				handleError: mockHandleError,
+				pushToolResult: mockPushToolResult,
+				removeClosingTag: mockRemoveClosingTag,
+				toolProtocol: "xml",
+			})
+
+			const statuses = postMessageToWebview.mock.calls
+				.filter((call) => call[0]?.type === "mcpExecutionStatus")
+				.map((call) => JSON.parse(call[0].text))
+
+			expect(statuses).toEqual([
+				{
+					executionId: "123456789",
+					status: "started",
+					serverName: "test_server",
+					toolName: "test_tool",
+				},
+				{
+					executionId: "123456789",
+					status: "output",
+					response: "Tool executed successfully",
+				},
+				{
+					executionId: "123456789",
+					status: "completed",
+				},
+			])
+			expect(mockTask.say).toHaveBeenCalledWith("mcp_server_response", "Tool executed successfully")
+			expect(mockPushToolResult).toHaveBeenCalledWith("Tool result: Tool executed successfully")
+		})
+
+		it("keeps completed response when MCP returns no output text", async () => {
+			const block: ToolUse = {
+				type: "tool_use",
+				name: "use_mcp_tool",
+				params: {
+					server_name: "test_server",
+					tool_name: "test_tool",
+					arguments: "{}",
+				},
+				partial: false,
+			}
+
+			mockAskApproval.mockResolvedValue(true)
+
+			const postMessageToWebview = vi.fn()
+			mockProviderRef.deref.mockReturnValue({
+				getMcpHub: () => ({
+					callTool: vi.fn().mockResolvedValue({
+						content: [],
+						isError: false,
+					}),
+				}),
+				postMessageToWebview,
+				getState: vi.fn().mockResolvedValue({
+					allowVeryLargeReads: false,
+					maxReadFileLine: 1000,
+				}),
+			})
+
+			await useMcpToolTool.handle(mockTask as Task, block as any, {
+				askApproval: mockAskApproval,
+				handleError: mockHandleError,
+				pushToolResult: mockPushToolResult,
+				removeClosingTag: mockRemoveClosingTag,
+				toolProtocol: "xml",
+			})
+
+			const statuses = postMessageToWebview.mock.calls
+				.filter((call) => call[0]?.type === "mcpExecutionStatus")
+				.map((call) => JSON.parse(call[0].text))
+
+			expect(statuses).toContainEqual({
+				executionId: "123456789",
+				status: "completed",
+				response: "(No response)",
+			})
+			expect(mockTask.say).toHaveBeenCalledWith("mcp_server_response", "(No response)")
+			expect(mockPushToolResult).toHaveBeenCalledWith("Tool result: (No response)")
+		})
+
+		it("sends error status without repeating the tool payload", async () => {
+			const block: ToolUse = {
+				type: "tool_use",
+				name: "use_mcp_tool",
+				params: {
+					server_name: "test_server",
+					tool_name: "test_tool",
+					arguments: "{}",
+				},
+				partial: false,
+			}
+
+			mockAskApproval.mockResolvedValue(true)
+
+			const postMessageToWebview = vi.fn()
+			mockProviderRef.deref.mockReturnValue({
+				getMcpHub: () => ({
+					callTool: vi.fn().mockResolvedValue({
+						content: [{ type: "text", text: "boom" }],
+						isError: true,
+					}),
+				}),
+				postMessageToWebview,
+				getState: vi.fn().mockResolvedValue({
+					allowVeryLargeReads: false,
+					maxReadFileLine: 1000,
+				}),
+			})
+
+			await useMcpToolTool.handle(mockTask as Task, block as any, {
+				askApproval: mockAskApproval,
+				handleError: mockHandleError,
+				pushToolResult: mockPushToolResult,
+				removeClosingTag: mockRemoveClosingTag,
+				toolProtocol: "xml",
+			})
+
+			const statuses = postMessageToWebview.mock.calls
+				.filter((call) => call[0]?.type === "mcpExecutionStatus")
+				.map((call) => JSON.parse(call[0].text))
+
+			expect(statuses).toEqual([
+				{
+					executionId: "123456789",
+					status: "started",
+					serverName: "test_server",
+					toolName: "test_tool",
+				},
+				{
+					executionId: "123456789",
+					status: "output",
+					response: "boom",
+				},
+				{
+					executionId: "123456789",
+					status: "error",
+					error: "Error executing MCP tool",
+				},
+			])
+			expect(mockTask.say).toHaveBeenCalledWith("mcp_server_response", "Error:\nboom")
+			expect(mockPushToolResult).toHaveBeenCalledWith("Tool result: Error:\nboom")
+		})
+
 		it("should handle user rejection", async () => {
 			const block: ToolUse = {
 				type: "tool_use",

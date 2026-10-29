@@ -123,4 +123,31 @@ describe("BrowserSessionRow - action spinner", () => {
 
 		expect(screen.queryByTestId("browser-session-spinner")).toBeNull()
 	})
+
+	it("hides spinner when the latest api_req_started was cancelled", () => {
+		const messages = [
+			{
+				type: "say",
+				say: "api_req_started",
+				ts: 1,
+				text: JSON.stringify({ cancelReason: null }),
+			} as any,
+			{
+				type: "say",
+				say: "browser_action",
+				ts: 2,
+				text: JSON.stringify({ action: "click" }),
+			} as any,
+			{
+				type: "say",
+				say: "api_req_started",
+				ts: 3,
+				text: JSON.stringify({ cancelReason: "user_cancelled" }),
+			} as any,
+		]
+
+		render(<BrowserSessionRow {...baseProps} messages={messages} />)
+
+		expect(screen.queryByTestId("browser-session-spinner")).toBeNull()
+	})
 })

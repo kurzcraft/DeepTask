@@ -170,6 +170,9 @@ export class NativeToolCallParser {
 					id: tracked.id,
 				})
 			}
+			// End events already carry the ids; drop the request-owned tracker so
+			// a finished stream cannot keep argument buffers alive.
+			this.rawChunkTracker.clear()
 		}
 
 		return events

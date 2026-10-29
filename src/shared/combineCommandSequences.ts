@@ -1,3 +1,7 @@
-import { consolidateCommands as combineCommandSequences, COMMAND_OUTPUT_STRING } from "@roo-code/core/browser"
+import {
+	consolidateCommands as combineCommandSequences,
+	consolidateCommandsIncremental as combineCommandSequencesIncremental,
+	COMMAND_OUTPUT_STRING,
+} from "@roo-code/core/browser"
 
-export { combineCommandSequences, COMMAND_OUTPUT_STRING }
+export { combineCommandSequences, combineCommandSequencesIncremental, COMMAND_OUTPUT_STRING }

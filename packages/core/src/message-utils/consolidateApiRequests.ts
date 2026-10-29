@@ -27,10 +27,13 @@ export function consolidateApiRequests(messages: ClineMessage[]): ClineMessage[]
 		return messages
 	}
 
+	// Modern transcripts write cost onto api_req_started and no longer emit
+	// api_req_finished. Cloning the whole array is only required when a
+	// finished message still needs to be folded into its matching start.
 	let isMergeNecessary = false
 
 	for (const msg of messages) {
-		if (msg.type === "say" && (msg.say === "api_req_started" || msg.say === "api_req_finished")) {
+		if (msg.type === "say" && msg.say === "api_req_finished") {
 			isMergeNecessary = true
 			break
 		}

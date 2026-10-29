@@ -57,52 +57,42 @@ function hasToolUseBlocks(message: ApiMessage): boolean {
 	return getToolUseBlocks(message).length > 0
 }
 
-function hasMatchingToolResults(
-	toolUseBlocks: Anthropic.Messages.ToolUseBlock[],
-	message: ApiMessage | undefined,
-): boolean {
-	if (!message || message.role !== "user" || typeof message.content === "string") {
-		return false
-	}
-
-	const toolResultIds = new Set(getToolResultBlocks(message).map((block) => block.tool_use_id))
-	return toolUseBlocks.every((block) => toolResultIds.has(block.id))
-}
-
 export function sanitizeNativeToolHistory(messages: ApiMessage[]): ApiMessage[] {
 	const sanitized: ApiMessage[] = []
 
 	for (let index = 0; index < messages.length; index++) {
 		const message = messages[index]
 
-		if (hasToolResultBlocks(message)) {
-			const previousMessage = sanitized.at(-1)
+		if (hasToolResultBlocks(message) && typeof message.content !== "string") {
 			const previousToolUseIds = new Set(
-				getToolUseBlocks(previousMessage ?? ({} as ApiMessage)).map((block) => block.id),
+				getToolUseBlocks(sanitized.at(-1) ?? ({} as ApiMessage)).map((block) => block.id),
 			)
-			const validToolResults = getToolResultBlocks(message).filter((block) =>
-				previousToolUseIds.has(block.tool_use_id),
+			// A user turn may mix matching results, orphaned results, and prose.
+			// Drop only unmatched tool_result blocks so later user instructions survive.
+			const filteredContent = message.content.filter(
+				(block) => block.type !== "tool_result" || previousToolUseIds.has(block.tool_use_id),
 			)
-
-			if (validToolResults.length === 0) {
+			if (filteredContent.length === 0) {
 				continue
 			}
-
-			// kilocode_change start
-			// A user turn may contain both matching and orphaned results. Keeping the
-			// original message after finding one valid result leaks the orphaned blocks
-			// to strict providers, so filter block-by-block while preserving user text.
-			if (typeof message.content !== "string") {
-				const filteredContent = message.content.filter(
-					(block) => block.type !== "tool_result" || previousToolUseIds.has(block.tool_use_id),
-				)
-				sanitized.push({ ...message, content: filteredContent })
-				continue
-			}
-			// kilocode_change end
+			sanitized.push({ ...message, content: filteredContent })
+			continue
 		}
 
-		if (hasToolUseBlocks(message) && !hasMatchingToolResults(getToolUseBlocks(message), messages[index + 1])) {
+		if (hasToolUseBlocks(message) && typeof message.content !== "string") {
+			const nextToolResultIds = new Set(
+				getToolResultBlocks(messages[index + 1] ?? ({} as ApiMessage)).map((block) => block.tool_use_id),
+			)
+			// Unmatched tool_use must not leak to strict providers, but dropping the
+			// whole assistant turn also deletes interleaved text and corrupts the next
+			// request into reciting the opening sentence.
+			const filteredContent = message.content.filter(
+				(block) => block.type !== "tool_use" || nextToolResultIds.has(block.id),
+			)
+			if (filteredContent.length === 0) {
+				continue
+			}
+			sanitized.push({ ...message, content: filteredContent })
 			continue
 		}
 
@@ -342,7 +332,7 @@ function compactMessageForLocalSummary(message: ApiMessage): string {
 		.trim()
 
 	if (/1\.\s*Previous Conversation:|Continue from the newest user request/i.test(compacted)) {
-		return compactBackgroundFacts(compacted).slice(0, LOCAL_FALLBACK_MESSAGE_MAX_CHARS)
+		return flattenPriorSummary(compacted).slice(0, LOCAL_FALLBACK_MESSAGE_MAX_CHARS)
 	}
 
 	return compacted.slice(0, LOCAL_FALLBACK_MESSAGE_MAX_CHARS)
@@ -419,6 +409,69 @@ export function compactBackgroundFacts(text: string): string {
 	}
 
 	return trimmed.slice(0, 800)
+}
+
+/**
+ * Flatten a prior summary into facts. Nested "1. Previous Conversation" dumps
+ * make the next turn recite the opening sentence instead of continuing work.
+ */
+export function flattenPriorSummary(text: string): string {
+	const trimmed = text.trim()
+	if (!trimmed) {
+		return ""
+	}
+
+	if (!/1\.\s*Previous Conversation:|2\.\s*Current Work|3\.\s*Continuation State/i.test(trimmed)) {
+		return trimmed
+	}
+
+	const section = (label: string, next: string): string => {
+		const match = trimmed.match(new RegExp(`${label}:\\s*([\\s\\S]*?)(?=\\n\\s*${next}|$)`, "i"))
+		return match?.[1]?.replace(/\s+/g, " ").trim() ?? ""
+	}
+
+	const previous = section("1\\.\\s*Previous Conversation", "2\\.\\s*Current Work")
+	const current = section("2\\.\\s*Current Work(?: and (?:Recent )?Decisions)?", "3\\.\\s*Continuation State")
+	const continuation = section("3\\.\\s*Continuation State", "$")
+		.replace(/Continue from the newest user request[^.]*\.?/gi, "")
+		.replace(/Do not repeat this summary[^.]*\.?/gi, "")
+		.replace(/\s+/g, " ")
+		.trim()
+
+	if (previous || current || continuation) {
+		return [previous, current, continuation].filter(Boolean).join(" ").slice(0, 1_200)
+	}
+
+	return compactBackgroundFacts(trimmed)
+}
+
+function flattenSummaryMessage(message: ApiMessage): ApiMessage {
+	if (!message.isSummary) {
+		return message
+	}
+
+	if (typeof message.content === "string") {
+		const flattened = flattenPriorSummary(message.content)
+		return flattened ? { ...message, content: flattened } : message
+	}
+
+	const text = message.content
+		.filter((block): block is Anthropic.Messages.TextBlockParam => block.type === "text")
+		.map((block) => block.text)
+		.join("\n")
+	const flattened = flattenPriorSummary(text)
+	if (!flattened) {
+		return message
+	}
+
+	const content: Anthropic.Messages.ContentBlockParam[] = [{ type: "text", text: flattened }]
+	for (const block of message.content) {
+		if (block.type !== "text") {
+			content.push(block)
+		}
+	}
+
+	return { ...message, content }
 }
 // kilocode_change end
 
@@ -508,6 +561,10 @@ export async function summarizeConversation(
 		console.debug("[summarizeConversation] discarding tool_use", lastMessageToSummarizeContent)
 		messagesToSummarize = messagesToSummarize.slice(0, -1)
 	}
+
+	// Flatten nested prior summaries so the next condensation does not recopy
+	// "Previous Conversation" / opening mantras as if they were live chat.
+	messagesToSummarize = messagesToSummarize.map(flattenSummaryMessage)
 	// kilocode_change end
 
 	if (messagesToSummarize.length <= 1) {
@@ -786,7 +843,8 @@ export function getEffectiveApiHistory(messages: ApiMessage[], useNativeTools?: 
 		return true
 	})
 
-	return useNativeTools ? sanitizeNativeToolHistory(effectiveMessages) : effectiveMessages
+	const flattenedMessages = effectiveMessages.map(flattenSummaryMessage)
+	return useNativeTools ? sanitizeNativeToolHistory(flattenedMessages) : flattenedMessages
 }
 
 /**

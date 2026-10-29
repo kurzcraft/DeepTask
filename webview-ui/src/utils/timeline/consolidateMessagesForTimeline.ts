@@ -3,12 +3,31 @@ import { combineApiRequests } from "@roo/combineApiRequests"
 import { combineCommandSequences } from "@roo/combineCommandSequences"
 import { shouldShowInTimeline } from "../messageColors"
 
+function needsTimelineCombining(messages: readonly ClineMessage[]): boolean {
+	for (const message of messages) {
+		if (message.ask === "command_output" || message.say === "command_output") {
+			return true
+		}
+
+		if (message.say === "api_req_finished") {
+			return true
+		}
+	}
+
+	return false
+}
+
 /**
  * Processes grouped messages using the existing shared utilities:
  * 1. Flattens grouped messages to individual messages
  * 2. Combines related messages (API requests, command sequences) using existing utilities
  * 3. Filters out unwanted message types
  * 4. Returns processed messages with original index mapping
+ *
+ * ChatView already incrementally folds command sequences and API requests before
+ * grouping. Re-running those combiners on every streaming tick cloned the whole
+ * timeline. Skip them unless independent command_output / api_req_finished rows
+ * are still present.
  */
 export function consolidateMessagesForTimeline(groupedMessages: (ClineMessage | ClineMessage[])[]): {
 	processedMessages: ClineMessage[]
@@ -41,22 +60,21 @@ export function consolidateMessagesForTimeline(groupedMessages: (ClineMessage | 
 		}
 	}
 
-	// Apply existing shared utilities for message combination
-	const afterCommandCombining = combineCommandSequences(flatMessages)
-	const combinedMessages = combineApiRequests(afterCommandCombining)
+	const combinedMessages = needsTimelineCombining(flatMessages)
+		? combineApiRequests(combineCommandSequences(flatMessages))
+		: flatMessages
 
-	// For combined messages that aren't in the original mapping,
-	// find their original index by looking at their timestamp
-	const updatedMapping = new Map(messageToOriginalIndex)
-	combinedMessages.forEach((msg: ClineMessage) => {
-		if (!updatedMapping.has(msg)) {
-			// Find the original message with the same timestamp
-			const originalMsg = flatMessages.find((original) => original.ts === msg.ts)
-			if (originalMsg && messageToOriginalIndex.has(originalMsg)) {
-				updatedMapping.set(msg, messageToOriginalIndex.get(originalMsg)!)
+	const updatedMapping = combinedMessages === flatMessages ? messageToOriginalIndex : new Map(messageToOriginalIndex)
+	if (combinedMessages !== flatMessages) {
+		combinedMessages.forEach((msg: ClineMessage) => {
+			if (!updatedMapping.has(msg)) {
+				const originalMsg = flatMessages.find((original) => original.ts === msg.ts)
+				if (originalMsg && messageToOriginalIndex.has(originalMsg)) {
+					updatedMapping.set(msg, messageToOriginalIndex.get(originalMsg)!)
+				}
 			}
-		}
-	})
+		})
+	}
 	const processedMessages = combinedMessages.filter(shouldShowInTimeline)
 
 	return {

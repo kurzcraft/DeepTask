@@ -1,10 +1,14 @@
 // pnpm --filter @roo-code/vscode-webview test src/components/chat/__tests__/CommandExecution.spec.tsx
 
 import React from "react"
-import { render, screen, fireEvent } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { useEvent } from "react-use"
 
 import { CommandExecution } from "../CommandExecution"
-import { ExtensionStateContext } from "../../../context/ExtensionStateContext"
+import {
+	ExtensionStateContext,
+	ExtensionMessageSliceContext,
+} from "../../../context/ExtensionStateContext"
 
 // Mock dependencies
 vi.mock("react-use", () => ({
@@ -37,20 +41,36 @@ vi.mock("../CommandPatternSelector", () => ({
 
 // Mock ExtensionStateContext
 const mockExtensionState = {
-	terminalShellIntegrationDisabled: false,
+	terminalShellIntegrationDisabled: true,
 	allowedCommands: ["npm"],
 	deniedCommands: ["rm"],
 	setAllowedCommands: vi.fn(),
 	setDeniedCommands: vi.fn(),
 }
 
-const ExtensionStateWrapper = ({ children }: { children: React.ReactNode }) => (
-	<ExtensionStateContext.Provider value={mockExtensionState as any}>{children}</ExtensionStateContext.Provider>
+const mockMessageSlice = {
+	clineMessages: [],
+	parallelSessionMessages: {},
+}
+
+const ExtensionStateWrapper = ({
+	children,
+	value = mockExtensionState,
+}: {
+	children: React.ReactNode
+	value?: typeof mockExtensionState | Record<string, unknown>
+}) => (
+	<ExtensionStateContext.Provider value={value as any}>
+		<ExtensionMessageSliceContext.Provider value={mockMessageSlice as any}>
+			{children}
+		</ExtensionMessageSliceContext.Provider>
+	</ExtensionStateContext.Provider>
 )
 
 describe("CommandExecution", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
+		vi.mocked(useEvent).mockReset()
 	})
 
 	it("should render command without output", () => {
@@ -152,9 +172,9 @@ describe("CommandExecution", () => {
 		}
 
 		render(
-			<ExtensionStateContext.Provider value={stateWithNpmTest as any}>
+			<ExtensionStateWrapper value={stateWithNpmTest}>
 				<CommandExecution executionId="test-1" text="npm test" />
-			</ExtensionStateContext.Provider>,
+			</ExtensionStateWrapper>,
 		)
 
 		const allowButton = screen.getByText("Allow")
@@ -181,9 +201,9 @@ describe("CommandExecution", () => {
 		}
 
 		render(
-			<ExtensionStateContext.Provider value={stateWithRmRf as any}>
+			<ExtensionStateWrapper value={stateWithRmRf}>
 				<CommandExecution executionId="test-1" text="rm -rf" />
-			</ExtensionStateContext.Provider>,
+			</ExtensionStateWrapper>,
 		)
 
 		const denyButton = screen.getByText("Deny")
@@ -285,9 +305,9 @@ Output:
 Output here`
 
 		render(
-			<ExtensionStateContext.Provider value={disabledState as any}>
+			<ExtensionStateWrapper value={disabledState}>
 				<CommandExecution executionId="test-1" text={commandText} />
-			</ExtensionStateContext.Provider>,
+			</ExtensionStateWrapper>,
 		)
 
 		// Output should be visible when shell integration is disabled
@@ -304,9 +324,9 @@ Output here`
 		}
 
 		render(
-			<ExtensionStateContext.Provider value={stateWithUndefined as any}>
+			<ExtensionStateWrapper value={stateWithUndefined}>
 				<CommandExecution executionId="test-1" text="npm install" />
-			</ExtensionStateContext.Provider>,
+			</ExtensionStateWrapper>,
 		)
 
 		// Should show pattern selector when patterns are available
@@ -322,9 +342,9 @@ Output here`
 		}
 
 		render(
-			<ExtensionStateContext.Provider value={stateWithRmInDenied as any}>
+			<ExtensionStateWrapper value={stateWithRmInDenied}>
 				<CommandExecution executionId="test-1" text="rm file.txt" />
-			</ExtensionStateContext.Provider>,
+			</ExtensionStateWrapper>,
 		)
 
 		const allowButton = screen.getByText("Allow")
@@ -450,9 +470,9 @@ Running tests...
 			}
 
 			render(
-				<ExtensionStateContext.Provider value={conflictState as any}>
+				<ExtensionStateWrapper value={conflictState}>
 					<CommandExecution executionId="test-11" text="git push origin main" />
-				</ExtensionStateContext.Provider>,
+				</ExtensionStateWrapper>,
 			)
 
 			// Click to allow "git push origin main"
@@ -591,5 +611,116 @@ Output:
 			expect(codeBlocks.length).toBeGreaterThan(1)
 			expect(codeBlocks[1]).toHaveTextContent("0 total")
 		})
+	})
+
+	it("does not mount truncated historical output until expanded", () => {
+		render(
+			<ExtensionStateWrapper>
+				<CommandExecution
+					executionId="test-truncated"
+					text={"cat log\nOutput:\ntruncated preview"}
+					commandOutputTruncated
+					messageTs={42}
+				/>
+			</ExtensionStateWrapper>,
+		)
+
+		expect(screen.getAllByTestId("code-block")).toHaveLength(1)
+		expect(vscode.postMessage).not.toHaveBeenCalledWith(
+			expect.objectContaining({ type: "requestCommandOutput" }),
+		)
+	})
+
+	it("fetches and mounts full truncated output only after expand", async () => {
+		let messageHandler: ((event: MessageEvent) => void) | undefined
+		vi.mocked(useEvent).mockImplementation((_event: string, handler: any) => {
+			messageHandler = handler
+		})
+
+		render(
+			<ExtensionStateWrapper>
+				<CommandExecution
+					executionId="test-truncated-expand"
+					text={"cat log\nOutput:\ntruncated preview"}
+					commandOutputTruncated
+					messageTs={42}
+				/>
+			</ExtensionStateWrapper>,
+		)
+
+		const expandButton = screen.getAllByRole("button").find((button) => !["Allow", "Deny"].includes(button.textContent || ""))
+		expect(expandButton).toBeDefined()
+		fireEvent.click(expandButton!)
+
+		await waitFor(() => {
+			expect(vscode.postMessage).toHaveBeenCalledWith({ type: "requestCommandOutput", messageTs: 42 })
+		})
+
+		messageHandler?.({
+			data: {
+				type: "commandOutputFull",
+				messageTs: 42,
+				text: "cat log\nOutput:\nfull restored output",
+			},
+		} as MessageEvent)
+
+		await waitFor(() => {
+			const codeBlocks = screen.getAllByTestId("code-block")
+			expect(codeBlocks).toHaveLength(2)
+			expect(codeBlocks[1]).toHaveTextContent("full restored output")
+		})
+	})
+
+	it("drops fetched full output when the command identity changes", async () => {
+		let messageHandler: ((event: MessageEvent) => void) | undefined
+		vi.mocked(useEvent).mockImplementation((_event: string, handler: any) => {
+			messageHandler = handler
+		})
+
+		const { rerender } = render(
+			<ExtensionStateWrapper>
+				<CommandExecution
+					executionId="test-truncated-switch"
+					text={"cat log\nOutput:\ntruncated preview"}
+					commandOutputTruncated
+					messageTs={42}
+				/>
+			</ExtensionStateWrapper>,
+		)
+
+		const expandButton = screen
+			.getAllByRole("button")
+			.find((button) => !["Allow", "Deny"].includes(button.textContent || ""))
+		fireEvent.click(expandButton!)
+
+		await waitFor(() => {
+			expect(vscode.postMessage).toHaveBeenCalledWith({ type: "requestCommandOutput", messageTs: 42 })
+		})
+
+		messageHandler?.({
+			data: {
+				type: "commandOutputFull",
+				messageTs: 42,
+				text: "cat log\nOutput:\nfull restored output",
+			},
+		} as MessageEvent)
+
+		await waitFor(() => {
+			expect(screen.getAllByTestId("code-block")[1]).toHaveTextContent("full restored output")
+		})
+
+		rerender(
+			<ExtensionStateWrapper>
+				<CommandExecution
+					executionId="test-truncated-switch"
+					text={"cat other\nOutput:\nnext preview"}
+					commandOutputTruncated
+					messageTs={99}
+				/>
+			</ExtensionStateWrapper>,
+		)
+
+		expect(screen.getAllByTestId("code-block")).toHaveLength(1)
+		expect(screen.queryByText("full restored output")).not.toBeInTheDocument()
 	})
 })

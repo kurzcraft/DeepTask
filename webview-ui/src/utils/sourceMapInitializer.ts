@@ -1,9 +1,9 @@
 /**
  * Source Map Initializer
  *
- * This utility ensures source maps are properly loaded in production builds.
- * It attempts to preload source maps for all scripts on the page and
- * sets up global error handlers to enhance errors with source maps.
+ * Sets up global error handlers that enhance stacks with source maps on demand.
+ * Production webviews must not guess-preload every possible .map URL; mapping
+ * happens only when an error is actually thrown.
  *
  * This implementation is compatible with VSCode's Content Security Policy.
  */
@@ -53,60 +53,9 @@ export function initializeSourceMaps(): void {
 		}
 	})
 
-	// Preload source maps for all scripts
-	try {
-		const scripts = document.getElementsByTagName("script")
-		for (let i = 0; i < scripts.length; i++) {
-			const script = scripts[i]
-			if (script.src) {
-				// Try multiple source map locations
-				const possibleMapUrls = [
-					`${script.src}.map`,
-					`${script.src}?source-map=true`,
-					script.src.replace(/\.js$/, ".js.map"),
-					script.src.replace(/\.js$/, ".map.json"),
-					script.src.replace(/\.js$/, ".sourcemap"),
-				]
-
-				// Preload all possible source map locations
-				for (const mapUrl of possibleMapUrls) {
-					const link = document.createElement("link")
-					link.rel = "preload"
-					link.as = "fetch"
-					link.href = mapUrl
-					link.crossOrigin = "anonymous"
-					document.head.appendChild(link)
-				}
-
-				// Also check for inline sourceMappingURL comments
-				fetch(script.src)
-					.then((response) => response.text())
-					.then((content) => {
-						const sourceMappingURLMatch = content.match(/\/\/[#@]\s*sourceMappingURL=([^\s]+)/)
-						if (sourceMappingURLMatch && sourceMappingURLMatch[1]) {
-							const sourceMappingURL = sourceMappingURLMatch[1]
-
-							// If it's not a data: URL, preload it
-							if (!sourceMappingURL.startsWith("data:")) {
-								const scriptUrlObj = new URL(script.src)
-								const baseUrl = scriptUrlObj.href.substring(0, scriptUrlObj.href.lastIndexOf("/") + 1)
-								const fullUrl = new URL(sourceMappingURL, baseUrl).href
-
-								const link = document.createElement("link")
-								link.rel = "preload"
-								link.as = "fetch"
-								link.href = fullUrl
-								link.crossOrigin = "anonymous"
-								document.head.appendChild(link)
-							}
-						}
-					})
-					.catch((e) => console.debug("Error checking for inline sourceMappingURL:", e))
-			}
-		}
-	} catch (e) {
-		console.error("Error preloading source maps:", e)
-	}
+	// Do not guess-preload every possible .map URL. Production webviews already
+	// map stacks on demand in enhanceErrorWithSourceMaps; speculative fetches
+	// only add network and memory pressure during panel hydration.
 }
 
 /**

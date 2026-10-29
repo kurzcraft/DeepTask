@@ -9,6 +9,23 @@ export type ChatRowListMeta = {
 	nextBrowserActionResultByActionTs: Map<number, ClineMessage>
 }
 
+function isBrowserOrCheckpointMessage(message: ClineMessage | undefined): boolean {
+	return (
+		message?.say === "checkpoint_saved" ||
+		message?.say === "browser_action" ||
+		message?.say === "browser_action_result"
+	)
+}
+
+function findCommonPrefixLength(current: readonly ClineMessage[], previous: readonly ClineMessage[]): number {
+	const limit = Math.min(current.length, previous.length)
+	let index = 0
+	while (index < limit && current[index] === previous[index]) {
+		index++
+	}
+	return index
+}
+
 /**
  * Precompute ChatView list lookups once per modifiedMessages snapshot.
  * Preserves original per-row semantics:
@@ -56,16 +73,19 @@ export function buildChatRowListMeta(modifiedMessages: ClineMessage[]): ChatRowL
 	}
 }
 
-function isUpdateTodoListMessage(message: ClineMessage): boolean {
+function parseUpdateTodoList(message: ClineMessage): any[] | undefined {
 	if (message.type !== "ask" || message.ask !== "tool") {
-		return false
+		return undefined
 	}
 
 	try {
 		const tool = JSON.parse(message.text || "{}")
-		return tool.tool === "updateTodoList"
+		if (tool.tool !== "updateTodoList") {
+			return undefined
+		}
+		return tool.todos || []
 	} catch {
-		return false
+		return undefined
 	}
 }
 
@@ -77,15 +97,13 @@ function isUpdateTodoListMessage(message: ClineMessage): boolean {
 export function getPreviousTodos(messages: ClineMessage[], currentMessageTs: number): any[] {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i]
-		if (msg.ts >= currentMessageTs || !isUpdateTodoListMessage(msg)) {
+		if (msg.ts >= currentMessageTs) {
 			continue
 		}
 
-		try {
-			const tool = JSON.parse(msg.text || "{}")
-			return tool.todos || []
-		} catch {
-			return []
+		const todos = parseUpdateTodoList(msg)
+		if (todos !== undefined) {
+			return todos
 		}
 	}
 
@@ -94,11 +112,16 @@ export function getPreviousTodos(messages: ClineMessage[], currentMessageTs: num
 
 export function buildPreviousTodosByTs(messages: ClineMessage[]): Map<number, any[]> {
 	const previousTodosByTs = new Map<number, any[]>()
+	let lastTodos: any[] = []
 
 	for (const message of messages) {
-		if (isUpdateTodoListMessage(message)) {
-			previousTodosByTs.set(message.ts, getPreviousTodos(messages, message.ts))
+		const todos = parseUpdateTodoList(message)
+		if (todos === undefined) {
+			continue
 		}
+
+		previousTodosByTs.set(message.ts, lastTodos)
+		lastTodos = todos
 	}
 
 	return previousTodosByTs

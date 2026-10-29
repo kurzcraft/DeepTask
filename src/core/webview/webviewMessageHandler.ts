@@ -1736,6 +1736,21 @@ export const webviewMessageHandler = async (
 				// kilocode_change end
 			}
 			break
+		case "requestCommandOutput": {
+			const task = provider.getFocusedChatTask?.() ?? provider.getCurrentTask()
+			const ts = message.messageTs
+			const stored =
+				typeof ts === "number"
+					? (task?.findMessageByTimestamp?.(ts) ??
+						task?.clineMessages?.find((clineMessage) => clineMessage.ts === ts))
+					: undefined
+			await provider.postMessageToWebview({
+				type: "commandOutputFull",
+				messageTs: ts,
+				text: stored?.text,
+			})
+			break
+		}
 		case "clearTask":
 			// Clear task resets the current session. Delegation flows are
 			// handled via metadata; parent resumption occurs through
@@ -4139,6 +4154,11 @@ export const webviewMessageHandler = async (
 		// kilocode_change start
 		case "refreshSkills": {
 			await provider.postSkillsDataToWebview()
+			break
+		}
+
+		case "runtimeSensor": {
+			provider.ingestRuntimeSensor(message.values)
 			break
 		}
 		// kilocode_change end

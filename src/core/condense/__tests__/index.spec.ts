@@ -12,6 +12,7 @@ import {
 	summarizeConversation,
 	buildLocalFallbackSummary,
 	compactBackgroundFacts,
+	flattenPriorSummary,
 	getMessagesSinceLastSummary,
 	getKeepMessagesWithToolBlocks,
 	getEffectiveApiHistory,
@@ -102,8 +103,25 @@ describe("buildLocalFallbackSummary", () => {
 	})
 })
 
+describe("flattenPriorSummary", () => {
+	it("flattens nested summary sections into facts and drops continuation mantras", () => {
+		const nested =
+			"1. Previous Conversation:\nMemory and token optimization for DeepTask 9.2.8\n\n2. Current Work and Decisions:\nFixed inbox persistence\n\n3. Continuation State:\nContinue from the newest user request and preserve unfinished tasks. Restore child inbox after restart."
+
+		expect(flattenPriorSummary(nested)).toBe(
+			"Memory and token optimization for DeepTask 9.2.8 Fixed inbox persistence Restore child inbox after restart.",
+		)
+	})
+
+	it("leaves unstructured summaries unchanged so rewind history stays intact", () => {
+		expect(flattenPriorSummary("Summary: Built API with validation, working on tests")).toBe(
+			"Summary: Built API with validation, working on tests",
+		)
+	})
+})
+
 describe("sanitizeNativeToolHistory", () => {
-	it("should remove assistant tool_use messages that have no matching following tool_result", () => {
+	it("should drop unmatched tool_use blocks but keep interleaved assistant text", () => {
 		const messages: ApiMessage[] = [
 			{ role: "user", content: "Start", ts: 1 },
 			{
@@ -121,7 +139,51 @@ describe("sanitizeNativeToolHistory", () => {
 
 		expect(result).toEqual([
 			{ role: "user", content: "Start", ts: 1 },
+			{
+				role: "assistant",
+				content: [{ type: "text", text: "I'll inspect that." }],
+				ts: 2,
+			},
 			{ role: "user", content: "Continue without the result", ts: 3 },
+		])
+	})
+
+	it("should keep matched tool_use blocks and drop only the unmatched ones", () => {
+		const messages: ApiMessage[] = [
+			{ role: "user", content: "Start", ts: 1 },
+			{
+				role: "assistant",
+				content: [
+					{ type: "text" as const, text: "先读再改。" },
+					{ type: "tool_use" as const, id: "valid", name: "read_file", input: {} },
+					{ type: "tool_use" as const, id: "orphan", name: "write_to_file", input: {} },
+					{ type: "text" as const, text: "接着压缩。" },
+				],
+				ts: 2,
+			},
+			{
+				role: "user",
+				content: [{ type: "tool_result" as const, tool_use_id: "valid", content: "ok" }],
+				ts: 3,
+			},
+		]
+
+		expect(sanitizeNativeToolHistory(messages)).toEqual([
+			{ role: "user", content: "Start", ts: 1 },
+			{
+				role: "assistant",
+				content: [
+					{ type: "text", text: "先读再改。" },
+					{ type: "tool_use", id: "valid", name: "read_file", input: {} },
+					{ type: "text", text: "接着压缩。" },
+				],
+				ts: 2,
+			},
+			{
+				role: "user",
+				content: [{ type: "tool_result", tool_use_id: "valid", content: "ok" }],
+				ts: 3,
+			},
 		])
 	})
 

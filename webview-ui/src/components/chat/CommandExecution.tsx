@@ -1,4 +1,4 @@
-import { useCallback, useState, memo, useMemo } from "react"
+import { useCallback, useEffect, useState, memo, useMemo } from "react"
 import { useEvent } from "react-use"
 import { t } from "i18next"
 import { ChevronDown, OctagonX } from "lucide-react"
@@ -28,9 +28,18 @@ interface CommandExecutionProps {
 	text?: string
 	icon?: JSX.Element | null
 	title?: JSX.Element | null
+	commandOutputTruncated?: boolean
+	messageTs?: number
 }
 
-export const CommandExecution = ({ executionId, text, icon, title }: CommandExecutionProps) => {
+export const CommandExecution = ({
+	executionId,
+	text,
+	icon,
+	title,
+	commandOutputTruncated,
+	messageTs,
+}: CommandExecutionProps) => {
 	const {
 		terminalShellIntegrationDisabled = true, // kilocode_change: default
 		allowedCommands = [],
@@ -43,14 +52,15 @@ export const CommandExecution = ({ executionId, text, icon, title }: CommandExec
 
 	// If we aren't opening the VSCode terminal for this command then we default
 	// to expanding the command execution output.
-	const [isExpanded, setIsExpanded] = useState(terminalShellIntegrationDisabled)
+	const [isExpanded, setIsExpanded] = useState(commandOutputTruncated ? false : terminalShellIntegrationDisabled)
 	const [streamingOutput, setStreamingOutput] = useState("")
+	const [fullOutput, setFullOutput] = useState<string | undefined>(undefined)
 	const [status, setStatus] = useState<CommandExecutionStatus | null>(null)
 
 	// The command's output can either come from the text associated with the
 	// task message (this is the case for completed commands) or from the
 	// streaming output (this is the case for running commands).
-	const output = streamingOutput || parsedOutput
+	const output = streamingOutput || fullOutput || parsedOutput
 
 	// Extract command patterns from the actual command that was executed
 	const commandPatterns = useMemo<CommandPattern[]>(() => {
@@ -107,9 +117,30 @@ export const CommandExecution = ({ executionId, text, icon, title }: CommandExec
 		})
 	}
 
+	useEffect(() => {
+		setFullOutput(undefined)
+		if (commandOutputTruncated) {
+			setIsExpanded(false)
+		}
+	}, [text, commandOutputTruncated, messageTs])
+
+	useEffect(() => {
+		if (!isExpanded || !commandOutputTruncated || fullOutput !== undefined || typeof messageTs !== "number") {
+			return
+		}
+
+		vscode.postMessage({ type: "requestCommandOutput", messageTs })
+	}, [isExpanded, commandOutputTruncated, fullOutput, messageTs])
+
 	const onMessage = useCallback(
 		(event: MessageEvent) => {
 			const message: ExtensionMessage = event.data
+
+			if (message.type === "commandOutputFull" && message.messageTs === messageTs && typeof message.text === "string") {
+				const index = message.text.indexOf(COMMAND_OUTPUT_STRING)
+				setFullOutput(index === -1 ? message.text : message.text.slice(index + COMMAND_OUTPUT_STRING.length))
+				return
+			}
 
 			if (message.type === "commandExecutionStatus") {
 				const result = commandExecutionStatusSchema.safeParse(safeJsonParse(message.text, {}))
@@ -138,7 +169,7 @@ export const CommandExecution = ({ executionId, text, icon, title }: CommandExec
 				}
 			}
 		},
-		[executionId],
+		[executionId, messageTs],
 	)
 
 	useEvent("message", onMessage)
@@ -218,15 +249,17 @@ export const CommandExecution = ({ executionId, text, icon, title }: CommandExec
 
 CommandExecution.displayName = "CommandExecution"
 
-const OutputContainerInternal = ({ isExpanded, output }: { isExpanded: boolean; output: string }) => (
-	<div
-		className={cn("overflow-hidden", {
-			"max-h-0": !isExpanded,
-			"max-h-[100%] mt-1 pt-1 border-t border-border/25": isExpanded,
-		})}>
-		{output.length > 0 && <CodeBlock source={output} language="log" />}
-	</div>
-)
+const OutputContainerInternal = ({ isExpanded, output }: { isExpanded: boolean; output: string }) => {
+	if (!isExpanded || output.length === 0) {
+		return null
+	}
+
+	return (
+		<div className="overflow-hidden max-h-[100%] mt-1 pt-1 border-t border-border/25">
+			<CodeBlock source={output} language="log" />
+		</div>
+	)
+}
 
 const OutputContainer = memo(OutputContainerInternal)
 

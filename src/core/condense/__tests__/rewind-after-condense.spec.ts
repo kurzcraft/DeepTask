@@ -43,6 +43,37 @@ describe("Rewind After Condense - Issue #8295", () => {
 			expect(effective[3].content).toBe("Third response")
 		})
 
+		it("flattens nested Previous Conversation dumps so the next turn does not recite them", () => {
+			const condenseId = "summary-nested"
+			const nested =
+				"1. Previous Conversation:\nMemory and token optimization for DeepTask 9.2.8\n\n2. Current Work and Decisions:\nFixed inbox persistence\n\n3. Continuation State:\nContinue from the newest user request and preserve unfinished tasks."
+			const messages: ApiMessage[] = [
+				{ role: "user", content: "First message", ts: 1, condenseParent: condenseId },
+				{
+					role: "assistant",
+					content: [{ type: "text", text: nested }],
+					ts: 2,
+					isSummary: true,
+					condenseId,
+				},
+				{ role: "user", content: "Newest request: restore child inbox after restart", ts: 3 },
+			]
+
+			const effective = getEffectiveApiHistory(messages)
+
+			expect(effective).toHaveLength(2)
+			expect(effective[0].isSummary).toBe(true)
+			expect(effective[0].content).toEqual([
+				{
+					type: "text",
+					text: "Memory and token optimization for DeepTask 9.2.8 Fixed inbox persistence",
+				},
+			])
+			expect(JSON.stringify(effective[0].content)).not.toContain("1. Previous Conversation")
+			expect(JSON.stringify(effective[0].content)).not.toContain("Continue from the newest user request")
+			expect(effective[1].content).toBe("Newest request: restore child inbox after restart")
+		})
+
 		it("should include messages without condenseParent", () => {
 			const messages: ApiMessage[] = [
 				{ role: "user", content: "Hello", ts: 1 },

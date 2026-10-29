@@ -303,6 +303,9 @@ export const clineMessageSchema = z.object({
 	apiProtocol: z.union([z.literal("openai"), z.literal("anthropic")]).optional(),
 	isAnswered: z.boolean().optional(),
 	// kilocode_change start
+	/** Display-only: historical command output was shortened for the webview. Storage stays full. */
+	commandOutputTruncated: z.boolean().optional(),
+	commandOutputOriginalLength: z.number().optional(),
 	metadata: z
 		.object({
 			kiloCode: kiloCodeMetaDataSchema.optional(),

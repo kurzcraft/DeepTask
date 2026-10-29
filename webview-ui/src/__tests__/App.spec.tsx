@@ -339,4 +339,22 @@ describe("App", () => {
 		expect(chatView.getAttribute("data-hidden")).toBe("false")
 		expect(screen.queryByTestId("marketplace-view")).not.toBeInTheDocument()
 	})
+
+	it("shows a hydration placeholder instead of an empty webview before state arrives", () => {
+		mockUseExtensionState.mockReturnValue({
+			didHydrateState: false,
+			showWelcome: false,
+			shouldShowAnnouncement: false,
+			hasCompletedOnboarding: true,
+			taskHistoryFullLength: 1,
+			experiments: {},
+			language: "en",
+			telemetrySetting: "enabled",
+		})
+
+		render(<AppWithProviders />)
+
+		expect(screen.getByTestId("webview-hydration-placeholder")).toBeInTheDocument()
+		expect(screen.queryByTestId("chat-view")).not.toBeInTheDocument()
+	})
 })

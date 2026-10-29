@@ -324,13 +324,21 @@ export class UseMcpToolTool extends BaseTool<"use_mcp_tool"> {
 				toolResultPretty = (toolResult.isError ? "Error:\n" : "") + outputText
 			}
 
-			// Send completion status
-			await this.sendExecutionStatus(task, {
-				executionId,
-				status: toolResult.isError ? "error" : "completed",
-				response: toolResultPretty,
-				error: toolResult.isError ? "Error executing MCP tool" : undefined,
-			})
+			// Completion/error is a status signal only. The full payload already
+			// went out as `output` (and is persisted via say/pushToolResult).
+			if (toolResult.isError) {
+				await this.sendExecutionStatus(task, {
+					executionId,
+					status: "error",
+					error: "Error executing MCP tool",
+				})
+			} else {
+				await this.sendExecutionStatus(task, {
+					executionId,
+					status: "completed",
+					...(outputText ? {} : { response: toolResultPretty }),
+				})
+			}
 		} else {
 			// Send error status if no result
 			await this.sendExecutionStatus(task, {

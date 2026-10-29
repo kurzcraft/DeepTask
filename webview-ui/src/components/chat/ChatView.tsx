@@ -17,8 +17,9 @@ import { commandExecutionStatusSchema } from "@roo-code/types"
 import { findLast } from "@roo/array"
 import { SuggestionItem } from "@roo-code/types"
 import { combineApiRequests } from "@roo/combineApiRequests"
-import { combineCommandSequences } from "@roo/combineCommandSequences"
-import { getApiMetrics } from "@roo/getApiMetrics"
+import { combineCommandSequencesIncremental } from "@roo/combineCommandSequences"
+import { getApiMetricsIncremental, type TokenUsageIncrementalCache } from "@roo/getApiMetrics"
+import { filterVisibleMessagesIncremental } from "./visibleMessages"
 import { getAllModes } from "@roo/modes"
 import { ProfileValidator } from "@roo/ProfileValidator"
 import { getLatestTodo } from "@roo/todo"
@@ -234,10 +235,34 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	// kilocode_change: the host message history is the only rendered source of truth.
 	// Edited resends must not create a temporary local row because the rewind can make
 	// the pre-edit text look like a queued message before the accepted replacement arrives.
-	const modifiedMessages = useMemo(() => combineApiRequests(combineCommandSequences(messages.slice(1))), [messages])
+	// Combine the original transcript so no-op folds can reuse it. The leading
+	// task say is rendered by the task header and skipped in visibleMessages.
+	// Streaming messageUpdated keeps prefix object identity, so reuse the already
+	// folded command/MCP prefix instead of reallocating historical output strings.
+	const commandFoldInputRef = useRef<ClineMessage[]>([])
+	const commandFoldOutputRef = useRef<ClineMessage[]>([])
+	const visibleInputRef = useRef<ClineMessage[]>([])
+	const visibleOutputRef = useRef<ClineMessage[]>([])
+	const apiMetricsCacheRef = useRef<TokenUsageIncrementalCache | undefined>(undefined)
+	const modifiedMessages = useMemo(() => {
+		const folded = combineCommandSequencesIncremental(
+			messages,
+			commandFoldInputRef.current,
+			commandFoldOutputRef.current,
+		)
+		commandFoldInputRef.current = messages
+		commandFoldOutputRef.current = folded
+		return combineApiRequests(folded)
+	}, [messages])
 
 	// Has to be after api_req_finished are all reduced into api_req_started messages.
-	const apiMetrics = useMemo(() => getApiMetrics(modifiedMessages), [modifiedMessages])
+	// Streaming ticks keep prefix object identity, so freeze historical totals
+	// and only rescan the replaced/appended tail.
+	const apiMetrics = useMemo(() => {
+		const next = getApiMetricsIncremental(modifiedMessages, apiMetricsCacheRef.current)
+		apiMetricsCacheRef.current = next
+		return next.usage
+	}, [modifiedMessages])
 
 	const [inputValue, setInputValue] = useState("")
 	const inputValueRef = useRef(inputValue)
@@ -799,6 +824,11 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		// Reset UI states only when task changes
 		setExpandedRows({})
 		everVisibleMessagesTsRef.current.clear() // Clear for new task
+		commandFoldInputRef.current = []
+		commandFoldOutputRef.current = []
+		visibleInputRef.current = []
+		visibleOutputRef.current = []
+		apiMetricsCacheRef.current = undefined
 		setCurrentFollowUpTs(null) // Clear follow-up answered state for new task
 		setIsCondensing(false) // Reset condensing state when switching tasks
 		// kilocode_change start: ask/button state for a task switch is reset by
@@ -1853,105 +1883,25 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	useEvent("message", handleMessage)
 
 	const visibleMessages = useMemo(() => {
-		// Pre-compute checkpoint hashes that have associated user messages for O(1) lookup
-		const userMessageCheckpointHashes = new Set<string>()
-		modifiedMessages.forEach((msg) => {
-			if (
-				msg.say === "user_feedback" &&
-				msg.checkpoint &&
-				(msg.checkpoint as any).type === "user_message" &&
-				(msg.checkpoint as any).hash
-			) {
-				userMessageCheckpointHashes.add((msg.checkpoint as any).hash)
-			}
-		})
-
-		// Remove the 500-message limit to prevent array index shifting
-		// Virtuoso is designed to efficiently handle large lists through virtualization
-		const newVisibleMessages = modifiedMessages.filter((message) => {
-			// Filter out checkpoint_saved messages that should be suppressed
-			if (message.say === "checkpoint_saved") {
-				// Check if this checkpoint has the suppressMessage flag set
-				if (
-					message.checkpoint &&
-					typeof message.checkpoint === "object" &&
-					"suppressMessage" in message.checkpoint &&
-					message.checkpoint.suppressMessage
-				) {
-					return false
-				}
-				// Also filter out checkpoint messages associated with user messages (legacy behavior)
-				if (message.text && userMessageCheckpointHashes.has(message.text)) {
-					return false
-				}
-			}
-
-			if (everVisibleMessagesTsRef.current.has(message.ts)) {
-				const alwaysHiddenOnceProcessedAsk: ClineAsk[] = [
-					"api_req_failed",
-					"resume_task",
-					"resume_completed_task",
-				]
-				const alwaysHiddenOnceProcessedSay = [
-					"api_req_finished",
-					"api_req_retried",
-					"api_req_deleted",
-					"mcp_server_request_started",
-				]
-				if (message.ask && alwaysHiddenOnceProcessedAsk.includes(message.ask)) return false
-				if (message.say && alwaysHiddenOnceProcessedSay.includes(message.say)) return false
-				if (message.say === "text" && (message.text ?? "") === "" && (message.images?.length ?? 0) === 0) {
-					return false
-				}
-				return true
-			}
-
-			switch (message.ask) {
-				case "completion_result":
-					if (message.text === "") return false
-					break
-				case "api_req_failed":
-				case "resume_task":
-				case "resume_completed_task":
-					return false
-			}
-			switch (message.say) {
-				case "api_req_finished":
-				case "api_req_retried":
-				case "api_req_deleted":
-					return false
-				case "api_req_retry_delayed":
-				case "api_req_rate_limit_wait":
-					const last1 = modifiedMessages.at(-1)
-					const last2 = modifiedMessages.at(-2)
-					if (last1?.ask === "resume_task" && last2 === message) {
-						return true
-					} else if (message !== last1) {
-						return false
-					}
-					break
-				case "text":
-					if ((message.text ?? "") === "" && (message.images?.length ?? 0) === 0) return false
-					break
-				case "mcp_server_request_started":
-					return false
-			}
-			return true
-		})
-
-		const viewportStart = Math.max(0, newVisibleMessages.length - 100)
-		newVisibleMessages
-			.slice(viewportStart)
-			.forEach((msg: ClineMessage) => everVisibleMessagesTsRef.current.set(msg.ts, true))
-
-		return newVisibleMessages
-	}, [modifiedMessages])
+		const next = filterVisibleMessagesIncremental(
+			modifiedMessages,
+			visibleInputRef.current,
+			visibleOutputRef.current,
+			task?.ts,
+			everVisibleMessagesTsRef.current,
+		)
+		visibleInputRef.current = modifiedMessages
+		visibleOutputRef.current = next
+		return next
+	}, [modifiedMessages, task])
 
 	useEffect(() => {
 		const cleanupInterval = setInterval(() => {
 			const cache = everVisibleMessagesTsRef.current
-			const currentMessageIds = new Set(modifiedMessages.map((m: ClineMessage) => m.ts))
-			const viewportMessages = visibleMessages.slice(Math.max(0, visibleMessages.length - 100))
+			const current = visibleInputRef.current
+			const visible = visibleOutputRef.current
+			const currentMessageIds = new Set(current.map((m: ClineMessage) => m.ts))
+			const viewportMessages = visible.slice(Math.max(0, visible.length - 100))
 			const viewportMessageIds = new Set(viewportMessages.map((m: ClineMessage) => m.ts))
 
 			cache.forEach((_value: boolean, key: number) => {
@@ -1962,7 +1912,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		}, 60000)
 
 		return () => clearInterval(cleanupInterval)
-	}, [modifiedMessages, visibleMessages])
+	}, [])
 
 	useDebounceEffect(
 		() => {
@@ -2008,8 +1958,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		setWasStreaming(isStreaming)
 	}, [isStreaming, lastMessage, wasStreaming, messages.length])
 
-	// Compute current browser session messages for the top banner (not grouped into chat stream)
-	// Find the FIRST browser session from the beginning to show ALL sessions
+	// Find the FIRST browser session from the beginning to show ALL sessions.
 	const browserSessionStartIndex = useMemo(() => {
 		for (let i = 0; i < messages.length; i++) {
 			if (messages[i].ask === "browser_action_launch") {
@@ -2018,11 +1967,6 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		}
 		return -1
 	}, [messages])
-
-	const _browserSessionMessages = useMemo<ClineMessage[]>(() => {
-		if (browserSessionStartIndex === -1) return []
-		return messages.slice(browserSessionStartIndex)
-	}, [browserSessionStartIndex, messages])
 
 	// Show globe toggle only when in a task that has a browser session (active or inactive)
 	const showBrowserDockToggle = useMemo(
@@ -2043,16 +1987,23 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	}, [])
 
 	const groupedMessages = useMemo(() => {
-		// Only filter out the launch ask and result messages - browser actions appear in chat
-		const result: ClineMessage[] = visibleMessages.filter((msg) => !isBrowserSessionMessage(msg))
+		// Only filter out the launch ask and result messages - browser actions appear in chat.
+		// Reuse the visible list when nothing needs hiding so streaming updates keep the same array.
+		let result: ClineMessage[] = visibleMessages
+		if (visibleMessages.some(isBrowserSessionMessage)) {
+			result = visibleMessages.filter((msg) => !isBrowserSessionMessage(msg))
+		}
 
 		if (isCondensing) {
-			result.push({
-				type: "say",
-				say: "condense_context",
-				ts: Date.now(),
-				partial: true,
-			} as any)
+			return [
+				...result,
+				{
+					type: "say",
+					say: "condense_context",
+					ts: Date.now(),
+					partial: true,
+				} as ClineMessage,
+			]
 		}
 		return result
 	}, [isCondensing, visibleMessages, isBrowserSessionMessage])

@@ -450,6 +450,22 @@ describe("DiffViewProvider", () => {
 			expect((diffViewProvider as any).relPath).toBe("test.ts")
 			expect((diffViewProvider as any).newContent).toBe("new content")
 		})
+
+		it("should drop original content and stream buffers after a direct save", async () => {
+			;(diffViewProvider as any).originalContent = "a".repeat(2048)
+			;(diffViewProvider as any).streamedLines = ["line-1", "line-2"]
+			;(diffViewProvider as any).isEditing = true
+
+			const result = await diffViewProvider.saveDirectly("test.ts", "new content", true, false, 1000)
+
+			expect(result.finalContent).toBe("new content")
+			expect((diffViewProvider as any).originalContent).toBeUndefined()
+			expect((diffViewProvider as any).streamedLines).toEqual([])
+			expect((diffViewProvider as any).preDiagnostics).toEqual([])
+			expect((diffViewProvider as any).isEditing).toBe(false)
+			expect((diffViewProvider as any).relPath).toBe("test.ts")
+			expect((diffViewProvider as any).newContent).toBe("new content")
+		})
 	})
 
 	describe("saveChanges method with diagnostic settings", () => {
@@ -528,6 +544,39 @@ describe("DiffViewProvider", () => {
 			// Verify custom delay was used
 			expect(mockDelay).toHaveBeenCalledWith(5000)
 			expect(vscode.languages.getDiagnostics).toHaveBeenCalled()
+		})
+
+		it("should drop original content and stream buffers after a successful save", async () => {
+			;(diffViewProvider as any).closeAllDiffViews = vi.fn().mockResolvedValue(undefined)
+			;(diffViewProvider as any).originalContent = "a".repeat(2048)
+			;(diffViewProvider as any).streamedLines = ["line-1", "line-2"]
+			;(diffViewProvider as any).preDiagnostics = [[{ fsPath: "test.ts" }, []]]
+			;(diffViewProvider as any).isEditing = true
+
+			const result = await diffViewProvider.saveChanges(false)
+
+			expect(result.finalContent).toBe("new content")
+			expect(result.userEdits).toBeUndefined()
+			expect((diffViewProvider as any).originalContent).toBeUndefined()
+			expect((diffViewProvider as any).streamedLines).toEqual([])
+			expect((diffViewProvider as any).preDiagnostics).toEqual([])
+			expect((diffViewProvider as any).activeDiffEditor).toBeUndefined()
+			expect((diffViewProvider as any).isEditing).toBe(false)
+			expect((diffViewProvider as any).relPath).toBe("test.ts")
+			expect((diffViewProvider as any).newProblemsMessage).toBe("")
+			expect((diffViewProvider as any).userEdits).toBeUndefined()
+		})
+
+		it("should keep write-result fields after save so pushToolWriteResult can still format", async () => {
+			;(diffViewProvider as any).closeAllDiffViews = vi.fn().mockResolvedValue(undefined)
+			;(diffViewProvider as any).originalContent = "old content"
+			;(diffViewProvider as any).userEdits = undefined
+
+			await diffViewProvider.saveChanges(false)
+
+			expect((diffViewProvider as any).relPath).toBe("test.ts")
+			expect((diffViewProvider as any).newProblemsMessage).toBe("")
+			expect((diffViewProvider as any).userEdits).toBeUndefined()
 		})
 	})
 

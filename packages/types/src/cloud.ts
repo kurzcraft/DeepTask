@@ -470,7 +470,13 @@ export enum ExtensionBridgeEventName {
 	HeartbeatUpdated = "heartbeat_updated",
 }
 
-export const extensionBridgeEventSchema = z.discriminatedUnion("type", [
+export const extensionBridgeEventSchema: z.ZodType<{
+	type: ExtensionBridgeEventName
+	instance: z.infer<typeof extensionInstanceSchema>
+	timestamp: number
+	mode?: string
+	providerProfile?: { name: string; provider?: string }
+}> = z.discriminatedUnion("type", [
 	z.object({
 		type: z.literal(ExtensionBridgeEventName.TaskCreated),
 		instance: extensionInstanceSchema,

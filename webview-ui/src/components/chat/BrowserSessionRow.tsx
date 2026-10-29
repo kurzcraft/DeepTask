@@ -175,8 +175,14 @@ const BrowserSessionRow = memo((props: BrowserSessionRowProps) => {
 	const defaultMousePosition = `${Math.round(viewportWidth / 2)},${Math.round(viewportHeight / 2)}`
 
 	const isLastApiReqInterrupted = useMemo(() => {
-		// Check if last api_req_started is cancelled
-		const lastApiReqStarted = [...messages].reverse().find((m) => m.say === "api_req_started")
+		// Check if last api_req_started is cancelled without cloning the session list.
+		let lastApiReqStarted: (typeof messages)[number] | undefined
+		for (let i = messages.length - 1; i >= 0; i--) {
+			if (messages[i].say === "api_req_started") {
+				lastApiReqStarted = messages[i]
+				break
+			}
+		}
 		if (lastApiReqStarted?.text) {
 			const info = JSON.parse(lastApiReqStarted.text) as { cancelReason: string | null }
 			if (info && info.cancelReason !== null) {
@@ -408,8 +414,12 @@ const BrowserSessionRow = memo((props: BrowserSessionRowProps) => {
 	// Latest non-close browser_action for header summary (fallback)
 
 	const lastBrowserActionOverall = useMemo(() => {
-		const all = messages.filter((m) => m.say === "browser_action")
-		return all.at(-1)
+		for (let i = messages.length - 1; i >= 0; i--) {
+			if (messages[i].say === "browser_action") {
+				return messages[i]
+			}
+		}
+		return undefined
 	}, [messages])
 
 	// Use actual Playwright session state from extension (not message parsing)
@@ -422,7 +432,13 @@ const BrowserSessionRow = memo((props: BrowserSessionRowProps) => {
 		}
 
 		// Find the last browser_action_result (including empty text) to detect completion
-		const lastBrowserActionResult = [...messages].reverse().find((m) => m.say === "browser_action_result")
+		let lastBrowserActionResult: (typeof messages)[number] | undefined
+		for (let i = messages.length - 1; i >= 0; i--) {
+			if (messages[i].say === "browser_action_result") {
+				lastBrowserActionResult = messages[i]
+				break
+			}
+		}
 
 		if (!lastBrowserActionResult) {
 			// We have at least one action, but haven't seen any result yet

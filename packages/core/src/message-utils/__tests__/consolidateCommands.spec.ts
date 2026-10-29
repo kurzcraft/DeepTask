@@ -2,7 +2,7 @@
 
 import type { ClineMessage } from "@roo-code/types"
 
-import { consolidateCommands, COMMAND_OUTPUT_STRING } from "../consolidateCommands.js"
+import { consolidateCommands, consolidateCommandsIncremental, COMMAND_OUTPUT_STRING } from "../consolidateCommands.js"
 
 describe("consolidateCommands", () => {
 	describe("command sequences", () => {
@@ -138,8 +138,90 @@ describe("consolidateCommands", () => {
 		})
 
 		it("should handle empty array", () => {
-			const result = consolidateCommands([])
+			const messages: ClineMessage[] = []
+			const result = consolidateCommands(messages)
+			expect(result).toBe(messages)
 			expect(result).toEqual([])
+		})
+
+		it("should reuse the original array when there is nothing to fold", () => {
+			const messages: ClineMessage[] = [
+				{ type: "say", say: "text", text: "hello", ts: 1000 },
+				{ type: "ask", ask: "command", text: "ls", ts: 1001 },
+				{
+					type: "ask",
+					ask: "use_mcp_server",
+					text: JSON.stringify({ server: "test" }),
+					ts: 1002,
+				},
+			]
+
+			const result = consolidateCommands(messages)
+
+			expect(result).toBe(messages)
+			expect(result).toEqual(messages)
+		})
+	})
+
+	describe("incremental prefix reuse", () => {
+		const historyCommand: ClineMessage = { type: "ask", ask: "command", text: "ls", ts: 1000 }
+		const historyOutput: ClineMessage = { type: "ask", ask: "command_output", text: "old-output", ts: 1001 }
+		const laterText: ClineMessage = { type: "say", say: "text", text: "after", ts: 1002 }
+		const openCommand: ClineMessage = { type: "ask", ask: "command", text: "cat log", ts: 1003 }
+		const firstChunk: ClineMessage = { type: "say", say: "command_output", text: "line1", ts: 1004 }
+
+		it("reuses folded historical command objects when appending a new output chunk", () => {
+			const previousInput = [historyCommand, historyOutput, laterText, openCommand]
+			const previousOutput = consolidateCommands(previousInput)
+			const nextInput = [...previousInput, firstChunk]
+
+			const incremental = consolidateCommandsIncremental(nextInput, previousInput, previousOutput)
+			const full = consolidateCommands(nextInput)
+
+			expect(incremental).toEqual(full)
+			expect(incremental[0]).toBe(previousOutput[0])
+			expect(incremental[1]).toBe(previousOutput[1])
+			expect(incremental[2]).not.toBe(previousOutput[2])
+			expect(incremental[2]!.text).toBe(`cat log\n${COMMAND_OUTPUT_STRING}line1`)
+		})
+
+		it("reuses the folded prefix when replacing the last output object", () => {
+			const previousInput = [historyCommand, historyOutput, laterText, openCommand, firstChunk]
+			const previousOutput = consolidateCommands(previousInput)
+			const replacedChunk: ClineMessage = { type: "say", say: "command_output", text: "line1\nline2", ts: 1004 }
+			const nextInput = [...previousInput.slice(0, -1), replacedChunk]
+
+			const incremental = consolidateCommandsIncremental(nextInput, previousInput, previousOutput)
+			const full = consolidateCommands(nextInput)
+
+			expect(incremental).toEqual(full)
+			expect(incremental[0]).toBe(previousOutput[0])
+			expect(incremental[1]).toBe(previousOutput[1])
+			expect(incremental[2]!.text).toBe(`cat log\n${COMMAND_OUTPUT_STRING}line1\nline2`)
+		})
+
+		it("falls back to a full fold when the common prefix is empty", () => {
+			const previousInput = [historyCommand, historyOutput]
+			const previousOutput = consolidateCommands(previousInput)
+			const switched: ClineMessage[] = [
+				{ type: "ask", ask: "command", text: "pwd", ts: 2000 },
+				{ type: "ask", ask: "command_output", text: " /tmp", ts: 2001 },
+			]
+
+			const incremental = consolidateCommandsIncremental(switched, previousInput, previousOutput)
+			const full = consolidateCommands(switched)
+
+			expect(incremental).toEqual(full)
+			expect(incremental[0]!.text).toBe(`pwd\n${COMMAND_OUTPUT_STRING} /tmp`)
+		})
+
+		it("returns the previous output when the input array identity is unchanged", () => {
+			const previousInput = [historyCommand, historyOutput]
+			const previousOutput = consolidateCommands(previousInput)
+
+			const incremental = consolidateCommandsIncremental(previousInput, previousInput, previousOutput)
+
+			expect(incremental).toBe(previousOutput)
 		})
 	})
 })

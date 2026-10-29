@@ -67,7 +67,7 @@ import { maybeRemoveImageBlocks } from "../../api/transform/image-cleaning"
 import { VirtualQuotaFallbackHandler } from "../../api/providers/virtual-quota-fallback" // kilocode_change: Import VirtualQuotaFallbackHandler for model change notifications
 
 // shared
-import { findLastIndex } from "../../shared/array"
+import { findLast, findLastIndex } from "../../shared/array"
 import { combineApiRequests } from "../../shared/combineApiRequests"
 import { combineCommandSequences } from "../../shared/combineCommandSequences"
 import { t } from "../../i18n"
@@ -95,7 +95,6 @@ import { TerminalRegistry } from "../../integrations/terminal/TerminalRegistry"
 import { calculateApiCostAnthropic, calculateApiCostOpenAI } from "../../shared/cost"
 import { getWorkspacePath } from "../../utils/path"
 import { getGlobalRooDirectory } from "../../services/roo-config" // kilocode_change: unified config dir
-import { sanitizeToolUseId } from "../../utils/tool-id"
 
 // prompts
 import { formatResponse } from "../prompts/responses"
@@ -112,6 +111,8 @@ import { RooProtectedController } from "../protect/RooProtectedController"
 import { type AssistantMessageContent, presentAssistantMessage } from "../assistant-message"
 import { AssistantMessageParser } from "../assistant-message/AssistantMessageParser"
 import { NativeToolCallParser } from "../assistant-message/NativeToolCallParser"
+import { appendNativeStreamText, sealPrecedingPartialText } from "../assistant-message/nativeStreamText"
+import { buildNativeAssistantApiContent } from "../assistant-message/nativeAssistantHistory"
 import { manageContext, willManageContext, type ContextManagementResult } from "../context-management"
 import { ClineProvider } from "../webview/ClineProvider"
 import { MultiSearchReplaceDiffStrategy } from "../diff/strategies/multi-search-replace"
@@ -3520,19 +3521,22 @@ ${protocolHint}
 		}
 
 		if (partial !== undefined) {
-			const lastMessage = this.clineMessages.at(-1)
-
-			const isUpdatingPreviousPartial =
-				lastMessage && lastMessage.partial && lastMessage.type === "say" && lastMessage.say === type
+			// Reasoning and text can interleave. Updating only clineMessages.at(-1)
+			// would start a second text bubble and recopy the opening sentence.
+			const lastMatchingPartial = findLast(
+				this.clineMessages,
+				(message) => message.partial === true && message.type === "say" && message.say === type,
+			)
+			const isUpdatingPreviousPartial = lastMatchingPartial !== undefined
 
 			if (partial) {
 				if (isUpdatingPreviousPartial) {
 					// Existing partial message, so update it.
-					lastMessage.text = text
-					lastMessage.images = images
-					lastMessage.partial = partial
-					lastMessage.progressStatus = progressStatus
-					this.updateClineMessage(lastMessage)
+					lastMatchingPartial.text = text
+					lastMatchingPartial.images = images
+					lastMatchingPartial.partial = partial
+					lastMatchingPartial.progressStatus = progressStatus
+					this.updateClineMessage(lastMatchingPartial)
 				} else {
 					// This is a new partial message, so add it with partial state.
 					const sayTs = await this.nextClineMessageTimestamp_kilocode()
@@ -3558,16 +3562,16 @@ ${protocolHint}
 				// message, so replace the partial with the complete version.
 				if (isUpdatingPreviousPartial) {
 					if (!options.isNonInteractive) {
-						this.lastMessageTs = lastMessage.ts
+						this.lastMessageTs = lastMatchingPartial.ts
 					}
 
-					lastMessage.text = text
-					lastMessage.images = images
-					lastMessage.partial = false
-					lastMessage.progressStatus = progressStatus
+					lastMatchingPartial.text = text
+					lastMatchingPartial.images = images
+					lastMatchingPartial.partial = false
+					lastMatchingPartial.progressStatus = progressStatus
 					// kilocode_change start
 					if (options.metadata) {
-						lastMessage.metadata = Object.assign(lastMessage.metadata ?? {}, options.metadata)
+						lastMatchingPartial.metadata = Object.assign(lastMatchingPartial.metadata ?? {}, options.metadata)
 					}
 					// kilocode_change end
 
@@ -3576,7 +3580,7 @@ ${protocolHint}
 					await this.saveClineMessages()
 
 					// More performant than an entire `postStateToWebview`.
-					this.updateClineMessage(lastMessage)
+					this.updateClineMessage(lastMatchingPartial)
 				} else {
 					// This is a new and complete message, so add it like normal.
 					const sayTs = await this.nextClineMessageTimestamp_kilocode()
@@ -5038,11 +5042,7 @@ ${protocolHint}
 
 										// Before adding a new tool, finalize any preceding text block
 										// This prevents the text block from blocking tool presentation
-										const lastBlock =
-											this.assistantMessageContent[this.assistantMessageContent.length - 1]
-										if (lastBlock?.type === "text" && lastBlock.partial) {
-											lastBlock.partial = false
-										}
+										sealPrecedingPartialText(this.assistantMessageContent)
 
 										// Track the index where this tool will be stored
 										const toolUseIndex = this.assistantMessageContent.length
@@ -5142,6 +5142,10 @@ ${protocolHint}
 									arguments: chunk.arguments,
 								})
 
+								// Seal preceding text before the tool so later native text
+								// chunks do not recopy the opening sentence into a new block.
+								sealPrecedingPartialText(this.assistantMessageContent)
+
 								if (!toolUse) {
 									// Keep malformed native calls inside the normal tool-result path. Dropping
 									// the call here leaves userMessageContentReady false forever and makes the
@@ -5194,21 +5198,14 @@ ${protocolHint}
 									// Present content to user.
 									presentAssistantMessage(this)
 								} else {
-									// Native protocol: Text chunks are plain text, not XML tool calls
-									// Create or update a text content block directly
-									const lastBlock =
-										this.assistantMessageContent[this.assistantMessageContent.length - 1]
-
-									if (lastBlock?.type === "text" && lastBlock.partial) {
-										// Update existing partial text block
-										lastBlock.content = assistantMessage
-									} else {
-										// Create new text block
-										this.assistantMessageContent.push({
-											type: "text",
-											content: assistantMessage,
-											partial: true,
-										})
+									// Native protocol: Text chunks are plain text, not XML tool calls.
+									// After a tool the last block is no longer partial text, so assigning
+									// the full accumulated string would recopy the opening sentence.
+									const { created } = appendNativeStreamText(
+										this.assistantMessageContent,
+										assistantMessage,
+									)
+									if (created) {
 										this.userMessageContentReady = false
 									}
 
@@ -5660,83 +5657,20 @@ ${protocolHint}
 						})
 					}
 
-					// Build the assistant message content array
-					// kilocode_change start: preserve Anthropic reasoning
-					const assistantContent: Array<Anthropic.ContentBlockParam> = []
-					assistantContent.push(...antThinkingContent)
-					// kilocode_change end
-
-					// Add text content if present
-					if (assistantMessage) {
-						assistantContent.push({
-							type: "text" as const,
-							text: assistantMessage,
-						})
-					}
-
-					// Add tool_use blocks with their IDs for native protocol
-					// This handles both regular ToolUse and McpToolUse types
-					// IMPORTANT: Track seen IDs to prevent duplicates in the API request.
-					// Duplicate tool_use IDs cause Anthropic API 400 errors:
-					// "tool_use ids must be unique"
-					const seenToolUseIds = new Set<string>()
-					const toolUseBlocks = this.assistantMessageContent.filter(
-						(block) => block.type === "tool_use" || block.type === "mcp_tool_use",
-					)
-					for (const block of toolUseBlocks) {
-						if (block.type === "mcp_tool_use") {
-							// McpToolUse already has the original tool name (e.g., "mcp_serverName_toolName")
-							// The arguments are the raw tool arguments (matching the simplified schema)
-							const mcpBlock = block as import("../../shared/tools").McpToolUse
-							if (mcpBlock.id) {
-								const sanitizedId = sanitizeToolUseId(mcpBlock.id)
-								// Pre-flight deduplication: Skip if we've already added this ID
-								if (seenToolUseIds.has(sanitizedId)) {
-									console.warn(
-										`[Task#${this.taskId}] Pre-flight deduplication: Skipping duplicate MCP tool_use ID: ${sanitizedId} (tool: ${mcpBlock.name})`,
-									)
-									continue
-								}
-								seenToolUseIds.add(sanitizedId)
-								assistantContent.push({
-									type: "tool_use" as const,
-									id: sanitizedId,
-									name: mcpBlock.name, // Original dynamic name
-									input: mcpBlock.arguments, // Direct tool arguments
-								})
-							}
-						} else {
-							// Regular ToolUse
-							const toolUse = block as import("../../shared/tools").ToolUse
-							const toolCallId = toolUse.id
-							if (toolCallId) {
-								const sanitizedId = sanitizeToolUseId(toolCallId)
-								// Pre-flight deduplication: Skip if we've already added this ID
-								if (seenToolUseIds.has(sanitizedId)) {
-									console.warn(
-										`[Task#${this.taskId}] Pre-flight deduplication: Skipping duplicate tool_use ID: ${sanitizedId} (tool: ${toolUse.name})`,
-									)
-									continue
-								}
-								seenToolUseIds.add(sanitizedId)
-								// nativeArgs is already in the correct API format for all tools
-								const input = toolUse.nativeArgs || toolUse.params
-
-								// Use originalName (alias) if present for API history consistency.
-								// When tool aliases are used (e.g., "edit_file" -> "search_and_replace"),
-								// we want the alias name in the conversation history to match what the model
-								// was told the tool was named, preventing confusion in multi-turn conversations.
-								const toolNameForHistory = toolUse.originalName ?? toolUse.name
-
-								assistantContent.push({
-									type: "tool_use" as const,
-									id: sanitizedId,
-									name: toolNameForHistory,
-									input,
-								})
-							}
-						}
-					}
+					// Native protocol must keep text and tools in stream order.
+					// XML protocol still stores the raw assistant string because
+					// tools live in the text, not as native tool_use blocks.
+					const assistantContent = shouldUseXmlParser
+						? [
+								...antThinkingContent,
+								...(assistantMessage
+									? [{ type: "text" as const, text: assistantMessage }]
+									: []),
+							]
+						: buildNativeAssistantApiContent(
+								this.assistantMessageContent,
+								antThinkingContent,
+							)
 
 					await this.addToApiConversationHistory(
 						{ role: "assistant", content: assistantContent },
@@ -6725,10 +6659,14 @@ ${protocolHint}
 		const kiloConfig = this.providerRef.deref()?.getKiloConfig()
 		// kilocode_change end
 
-		// Check auto-approval limits
+		// Check auto-approval limits. Request counts and cost only read
+		// api_req_started/finished (plus condense/fast-apply). The leading task
+		// say is skipped by those filters, so scanning the original array avoids
+		// a per-turn pointer copy. Command sequence merging still concatenates
+		// terminal/MCP output that the handler never inspects.
 		const approvalResult = await this.autoApprovalHandler.checkAutoApprovalLimits(
 			state,
-			this.combineMessages(this.clineMessages.slice(1)),
+			combineApiRequests(this.clineMessages),
 			async (type, data) => this.ask(type, data),
 		)
 
@@ -7244,7 +7182,9 @@ ${protocolHint}
 
 	public getTokenUsage(): TokenUsage {
 		// kilocode_change: metrics do not read merged terminal/MCP text.
-		return getApiMetrics(combineApiRequests(this.clineMessages.slice(1)))
+		// The leading task say is skipped by getApiMetrics, so scanning the
+		// original array avoids a per-call pointer copy.
+		return getApiMetrics(combineApiRequests(this.clineMessages))
 	}
 
 	public recordToolUsage(toolName: ToolName) {

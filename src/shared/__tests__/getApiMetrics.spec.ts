@@ -330,6 +330,61 @@ describe("getApiMetrics", () => {
 		})
 	})
 
+	describe("modern transcript reuse", () => {
+		it("should ignore the leading task say without slicing the transcript", () => {
+			const taskSay = createOtherMessage("text", "the user task", 500)
+			const messages: ClineMessage[] = [
+				taskSay,
+				createApiReqStartedMessage(
+					'{"tokensIn":100,"tokensOut":200,"cacheWrites":5,"cacheReads":10,"cost":0.005}',
+					1000,
+				),
+				createApiReqStartedMessage(
+					'{"tokensIn":50,"tokensOut":150,"cacheWrites":3,"cacheReads":7,"cost":0.003}',
+					2000,
+				),
+			]
+
+			const combined = combineApiRequests(messages)
+			const result = getApiMetrics(combined)
+			const slicedResult = getApiMetrics(combineApiRequests(messages.slice(1)))
+
+			expect(combined).toBe(messages)
+			expect(result).toEqual(slicedResult)
+			expect(result.totalTokensIn).toBe(150)
+			expect(result.totalTokensOut).toBe(350)
+			expect(result.totalCacheWrites).toBe(8)
+			expect(result.totalCacheReads).toBe(17)
+			expect(result.totalCost).toBe(0.008)
+			expect(result.contextTokens).toBe(200)
+		})
+
+		it("should total cost from api_req_started without cloning finished pairs", () => {
+			const messages: ClineMessage[] = [
+				createApiReqStartedMessage(
+					'{"tokensIn":100,"tokensOut":200,"cacheWrites":5,"cacheReads":10,"cost":0.005}',
+					1000,
+				),
+				createOtherMessage("text", "intermediate", 1500),
+				createApiReqStartedMessage(
+					'{"tokensIn":50,"tokensOut":150,"cacheWrites":3,"cacheReads":7,"cost":0.003}',
+					2000,
+				),
+			]
+
+			const combined = combineApiRequests(messages)
+			const result = getApiMetrics(combined)
+
+			expect(combined).toBe(messages)
+			expect(result.totalTokensIn).toBe(150)
+			expect(result.totalTokensOut).toBe(350)
+			expect(result.totalCacheWrites).toBe(8)
+			expect(result.totalCacheReads).toBe(17)
+			expect(result.totalCost).toBe(0.008)
+			expect(result.contextTokens).toBe(200)
+		})
+	})
+
 	describe("command sequence independence", () => {
 		it("should ignore command output when totaling tokens", () => {
 			const messages: ClineMessage[] = [

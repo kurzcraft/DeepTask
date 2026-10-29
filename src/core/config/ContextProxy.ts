@@ -1,6 +1,12 @@
+import * as path from "path"
+import { mkdir, readFile, unlink } from "fs/promises"
 import * as vscode from "vscode"
 import { ZodError } from "zod"
 import { EventEmitter } from "events"
+
+import { safeWriteJson } from "../../utils/safeWriteJson"
+import { GlobalFileNames } from "../../shared/globalFileNames"
+import { getStorageBasePath } from "../../utils/storage"
 
 import {
 	PROVIDER_SETTINGS_KEYS,
@@ -38,6 +44,8 @@ const PASS_THROUGH_STATE_KEYS = ["taskHistory"]
 
 export const isPassThroughStateKey = (key: string) => PASS_THROUGH_STATE_KEYS.includes(key)
 
+const TASK_HISTORY_STATE_KEY = "taskHistory" as const
+
 const globalSettingsExportSchema = globalSettingsSchema.omit({
 	taskHistory: true,
 	listApiConfigMeta: true,
@@ -53,12 +61,21 @@ export class ContextProxy {
 	// kilocode_change start: Event emitter for configuration changes
 	private readonly configEmitter = new EventEmitter()
 	// kilocode_change end
+	// kilocode_change start: disk-backed taskHistory, never VS Code globalState IPC
+	private taskHistoryCache: GlobalState["taskHistory"]
+	private taskHistoryLoaded = false
+	private taskHistoryPersistChain: Promise<void> = Promise.resolve()
+	private taskHistoryPersistActive = false
+	private taskHistoryPersistAgain = false
+	// kilocode_change end
 
 	constructor(context: vscode.ExtensionContext) {
 		this.originalContext = context
 		this.stateCache = {}
 		this.secretCache = {}
 		this._isInitialized = false
+		this.taskHistoryCache = undefined
+		this.taskHistoryLoaded = false
 	}
 
 	public get isInitialized() {
@@ -104,6 +121,10 @@ export class ContextProxy {
 		]
 
 		await Promise.all(promises)
+
+		// kilocode_change start: migrate bulky taskHistory off VS Code globalState IPC
+		await this.migrateTaskHistoryToDisk()
+		// kilocode_change end
 
 		// Migration: Check for old nested image generation settings and migrate them
 		await this.migrateImageGenerationSettings()
@@ -177,6 +198,115 @@ export class ContextProxy {
 		}
 	}
 
+	// kilocode_change start: disk-backed taskHistory, never VS Code globalState IPC
+	private getTaskHistoryStorageRoot(): string {
+		const uri = this.originalContext.globalStorageUri as { fsPath?: string; path?: string } | undefined
+		return uri?.fsPath || uri?.path || ""
+	}
+
+	private async getTaskHistoryFilePath(): Promise<string> {
+		const basePath = await getStorageBasePath(this.getTaskHistoryStorageRoot())
+		if (basePath) {
+			await mkdir(basePath, { recursive: true })
+		}
+		return path.join(basePath, GlobalFileNames.taskHistory)
+	}
+
+	private async readTaskHistoryFromDisk(): Promise<GlobalState["taskHistory"]> {
+		try {
+			const filePath = await this.getTaskHistoryFilePath()
+			const raw = await readFile(filePath, "utf8")
+			const parsed = JSON.parse(raw) as unknown
+			return Array.isArray(parsed) ? (parsed as GlobalState["taskHistory"]) : undefined
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException)?.code
+			if (code !== "ENOENT") {
+				logger.error(
+					`Error reading taskHistory from disk: ${error instanceof Error ? error.message : String(error)}`,
+				)
+			}
+			return undefined
+		}
+	}
+
+	private async writeTaskHistoryToDisk(value: GlobalState["taskHistory"]): Promise<void> {
+		const filePath = await this.getTaskHistoryFilePath()
+		if (value === undefined) {
+			await unlink(filePath).catch((error) => {
+				if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+					throw error
+				}
+			})
+			return
+		}
+		await safeWriteJson(filePath, value, { snapshot: true })
+	}
+
+	private scheduleTaskHistoryPersist(): Promise<void> {
+		this.taskHistoryPersistAgain = true
+		if (this.taskHistoryPersistActive) {
+			return this.taskHistoryPersistChain
+		}
+
+		this.taskHistoryPersistActive = true
+		this.taskHistoryPersistChain = (async () => {
+			try {
+				while (this.taskHistoryPersistAgain) {
+					this.taskHistoryPersistAgain = false
+					try {
+						await this.writeTaskHistoryToDisk(this.taskHistoryCache)
+					} catch (error) {
+						logger.error(
+							`Error persisting taskHistory to disk: ${error instanceof Error ? error.message : String(error)}`,
+						)
+					}
+				}
+			} finally {
+				this.taskHistoryPersistActive = false
+				if (this.taskHistoryPersistAgain) {
+					await this.scheduleTaskHistoryPersist()
+				}
+			}
+		})()
+
+		return this.taskHistoryPersistChain
+	}
+
+	private async migrateTaskHistoryToDisk(): Promise<void> {
+		try {
+			const fromDisk = await this.readTaskHistoryFromDisk()
+			const fromState = this.originalContext.globalState.get<GlobalState["taskHistory"]>(TASK_HISTORY_STATE_KEY)
+
+			if (fromDisk !== undefined) {
+				this.taskHistoryCache = fromDisk
+				this.taskHistoryLoaded = true
+				if (fromState !== undefined) {
+					await this.originalContext.globalState.update(TASK_HISTORY_STATE_KEY, undefined)
+				}
+				return
+			}
+
+			this.taskHistoryCache = fromState
+			this.taskHistoryLoaded = true
+
+			if (fromState !== undefined) {
+				await this.writeTaskHistoryToDisk(fromState)
+				await this.originalContext.globalState.update(TASK_HISTORY_STATE_KEY, undefined)
+			}
+		} catch (error) {
+			logger.error(
+				`Error migrating taskHistory to disk: ${error instanceof Error ? error.message : String(error)}`,
+			)
+			if (!this.taskHistoryLoaded) {
+				this.taskHistoryCache = this.originalContext.globalState.get<GlobalState["taskHistory"]>(
+					TASK_HISTORY_STATE_KEY,
+				)
+				this.taskHistoryLoaded = true
+			}
+		}
+	}
+	// kilocode_change end
+
 	public get extensionUri() {
 		return this.originalContext.extensionUri
 	}
@@ -210,8 +340,10 @@ export class ContextProxy {
 	getGlobalState<K extends GlobalStateKey>(key: K, defaultValue: GlobalState[K]): GlobalState[K]
 	getGlobalState<K extends GlobalStateKey>(key: K, defaultValue?: GlobalState[K]): GlobalState[K] {
 		if (isPassThroughStateKey(key)) {
-			const value = this.originalContext.globalState.get<GlobalState[K]>(key)
-			return value === undefined || value === null ? defaultValue : value
+			const value = this.taskHistoryLoaded
+				? this.taskHistoryCache
+				: this.originalContext.globalState.get<GlobalState[K]>(key)
+			return value === undefined || value === null ? defaultValue : (value as GlobalState[K])
 		}
 
 		const value = this.stateCache[key]
@@ -220,7 +352,9 @@ export class ContextProxy {
 
 	updateGlobalState<K extends GlobalStateKey>(key: K, value: GlobalState[K]) {
 		if (isPassThroughStateKey(key)) {
-			return this.originalContext.globalState.update(key, value)
+			this.taskHistoryCache = value as GlobalState["taskHistory"]
+			this.taskHistoryLoaded = true
+			return this.scheduleTaskHistoryPersist()
 		}
 
 		this.stateCache[key] = value
@@ -473,11 +607,19 @@ export class ContextProxy {
 		// Clear in-memory caches
 		this.stateCache = {}
 		this.secretCache = {}
+		this.taskHistoryCache = undefined
+		this.taskHistoryLoaded = false
+		this.taskHistoryPersistAgain = false
 
 		await Promise.all([
 			...GLOBAL_STATE_KEYS.map((key) => this.originalContext.globalState.update(key, undefined)),
 			...SECRET_STATE_KEYS.map((key) => this.originalContext.secrets.delete(key)),
 			...GLOBAL_SECRET_KEYS.map((key) => this.originalContext.secrets.delete(key)),
+			this.writeTaskHistoryToDisk(undefined).catch((error) => {
+				logger.error(
+					`Error clearing taskHistory on disk during reset: ${error instanceof Error ? error.message : String(error)}`,
+				)
+			}),
 		])
 
 		await this.initialize()

@@ -1956,6 +1956,8 @@ export const ChatRowContent = ({
 							text={message.text}
 							icon={icon}
 							title={title}
+							commandOutputTruncated={message.commandOutputTruncated}
+							messageTs={message.ts}
 						/>
 					)
 				case "use_mcp_server":

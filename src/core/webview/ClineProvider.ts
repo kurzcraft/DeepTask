@@ -54,6 +54,7 @@ import {
 	modelIdKeys,
 	modelIdKeysByProvider,
 } from "@roo-code/types"
+import { projectClineMessagesForDisplay, projectCommandMessageForDisplay } from "@roo-code/core"
 import { aggregateTaskCostsRecursive, type AggregatedCosts } from "./aggregateTaskCosts"
 import { TelemetryService } from "@roo-code/telemetry"
 import { CloudService, BridgeOrchestrator, getRooCodeApiUrl } from "@roo-code/cloud"
@@ -81,6 +82,8 @@ import WorkspaceTracker from "../../integrations/workspace/WorkspaceTracker"
 import { McpHub } from "../../services/mcp/McpHub"
 import { McpServerManager } from "../../services/mcp/McpServerManager"
 import { MarketplaceManager } from "../../services/marketplace"
+import { RuntimeSensor, createFileWriter, defaultSensorDirectories } from "../../services/runtime-sensor" // kilocode_change: gray-panel runtime sensor
+
 import { ShadowCheckpointService } from "../../services/checkpoints/ShadowCheckpointService"
 import { ParallelManager } from "../kilocode/parallel/ParallelManager"
 import { LiveTaskCoordinator } from "../kilocode/parallel/LiveTaskCoordinator"
@@ -235,6 +238,7 @@ export class ClineProvider
 	private currentWorkspacePath: string | undefined
 	private autoPurgeScheduler?: any // kilocode_change - (Any) Prevent circular import
 	private deviceAuthHandler?: DeviceAuthHandler // kilocode_change - Device auth handler
+	private runtimeSensor?: RuntimeSensor // kilocode_change: gray-panel runtime sensor
 
 	// kilocode_change start - snapshot work is bounded; incremental events remain untouched.
 	private stateSnapshotDisposed = false
@@ -428,6 +432,10 @@ export class ClineProvider
 
 		// kilocode_change start - Initialize auto-purge scheduler
 		this.initializeAutoPurgeScheduler()
+		// kilocode_change end
+
+		// kilocode_change start: gray-panel runtime sensor
+		this.initializeRuntimeSensor()
 		// kilocode_change end
 	}
 
@@ -865,6 +873,36 @@ export class ClineProvider
 				`Failed to initialize auto-purge scheduler: ${error instanceof Error ? error.message : String(error)}`,
 			)
 		}
+	}
+
+	private initializeRuntimeSensor() {
+		if (this.runtimeSensor) {
+			return
+		}
+
+		try {
+			const writer = createFileWriter(
+				defaultSensorDirectories(this.contextProxy.globalStorageUri.fsPath, this.cwd),
+			)
+			this.runtimeSensor = new RuntimeSensor(writer, () => {
+				const task = this.getFocusedChatTask() ?? this.getCurrentTask()
+				return {
+					viewVisible: this.view?.visible,
+					renderContext: this.renderContext,
+					taskId: task?.taskId,
+					stackLength: this.clineStack.length,
+					messageCount: task?.clineMessages?.length,
+				}
+			})
+			this.runtimeSensor.start()
+			this.log("Runtime sensor initialized")
+		} catch (error) {
+			this.log(`Failed to initialize runtime sensor: ${error instanceof Error ? error.message : String(error)}`)
+		}
+	}
+
+	public ingestRuntimeSensor(values?: Record<string, unknown>) {
+		void this.runtimeSensor?.ingestWebview(values)
 	}
 	// kilocode_change end
 
@@ -1454,6 +1492,8 @@ export class ClineProvider
 			this.autoPurgeScheduler.stop()
 			this.autoPurgeScheduler = undefined
 		}
+		this.runtimeSensor?.dispose()
+		this.runtimeSensor = undefined
 		// kilocode_change end
 
 		this.log("Disposed all disposables")
@@ -2043,6 +2083,15 @@ export class ClineProvider
 
 	public async postMessageToWebview(message: ExtensionMessage) {
 		// NOTE: Changing this? Update effects.ts in the cli too.
+		if (message.type === "messageUpdated" && message.clineMessage) {
+			message = {
+				...message,
+				clineMessage: projectCommandMessageForDisplay(message.clineMessage, {
+					keepFull: message.clineMessage.partial === true,
+				}),
+			}
+		}
+
 		kilo_execIfExtension(() => {
 			if (message.type === "apiMessagesSaved" && message.payload) {
 				const [taskId, filePath] = message.payload as [string, string]
@@ -3539,7 +3588,9 @@ export class ClineProvider
 				: this.getFocusedChatTask()?.taskId
 					? (taskHistory || []).find((item: HistoryItem) => item.id === this.getFocusedChatTask()?.taskId)
 					: undefined,
-			clineMessages: this.pendingNewConversation ? [] : this.getFocusedChatTask()?.clineMessages || [],
+			clineMessages: this.pendingNewConversation
+				? []
+				: projectClineMessagesForDisplay(this.getFocusedChatTask()?.clineMessages || []),
 			currentTaskTodos: this.pendingNewConversation ? [] : this.getFocusedChatTask()?.todoList || [],
 			// kilocode_change start
 			// Visible message queues are disabled. Do not expose stale queue state to

@@ -136,6 +136,25 @@ describe("AutoApprovalHandler", () => {
 			expect(state.requestCount).toBe(3) // 2 messages + current request
 		})
 
+		it("should ignore the leading task say when counting requests", async () => {
+			const withTaskSay: ClineMessage[] = [
+				{ type: "say", say: "text", text: "the user task", ts: 500 },
+				{ type: "say", say: "api_req_started", text: "{}", ts: 1000 },
+				{ type: "say", say: "api_req_started", text: "{}", ts: 2000 },
+			]
+			const withoutTaskSay = withTaskSay.slice(1)
+
+			await handler.checkAutoApprovalLimits(mockState, withTaskSay, mockAskForApproval)
+			const withCount = handler.getApprovalState().requestCount
+
+			handler.resetRequestCount()
+			await handler.checkAutoApprovalLimits(mockState, withoutTaskSay, mockAskForApproval)
+			const withoutCount = handler.getApprovalState().requestCount
+
+			expect(withCount).toBe(withoutCount)
+			expect(withCount).toBe(3) // 2 api_req_started + current request
+		})
+
 		it("should ask for approval when limit is exceeded", async () => {
 			const messages: ClineMessage[] = []
 
@@ -207,7 +226,7 @@ describe("AutoApprovalHandler", () => {
 			mockGetApiMetrics.mockReturnValue({ totalCost: 3.5 })
 			const result = await handler.checkAutoApprovalLimits(mockState, messages, mockAskForApproval)
 
-			expect(mockGetApiMetrics).toHaveBeenCalledWith(messages)
+			expect(mockGetApiMetrics).toHaveBeenCalledWith(messages, 0)
 			expect(result.shouldProceed).toBe(true)
 			expect(result.requiresApproval).toBe(false)
 		})
@@ -278,7 +297,7 @@ describe("AutoApprovalHandler", () => {
 			expect(result2.requiresApproval).toBe(false)
 
 			// Verify it's only calculating cost from messages after reset point
-			expect(mockGetApiMetrics).toHaveBeenLastCalledWith(messages.slice(2))
+			expect(mockGetApiMetrics).toHaveBeenLastCalledWith(messages, 2)
 		})
 
 		it("should track multiple cost resets correctly", async () => {
@@ -309,7 +328,7 @@ describe("AutoApprovalHandler", () => {
 			const result = await handler.checkAutoApprovalLimits(mockState, messages, mockAskForApproval)
 
 			expect(result.requiresApproval).toBe(false)
-			expect(mockGetApiMetrics).toHaveBeenLastCalledWith(messages.slice(3))
+			expect(mockGetApiMetrics).toHaveBeenLastCalledWith(messages, 3)
 		})
 	})
 

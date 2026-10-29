@@ -59,11 +59,16 @@ export class AutoApprovalHandler {
 	): Promise<AutoApprovalResult> {
 		const maxRequests = state?.allowedMaxRequests || Infinity
 
-		// Calculate request count from messages after the last reset point
-		const messagesAfterReset = messages.slice(this.lastResetMessageIndex)
-		// Count API request messages (simplified - you may need to adjust based on your message structure)
-		this.consecutiveAutoApprovedRequestsCount =
-			messagesAfterReset.filter((msg) => msg.type === "say" && msg.say === "api_req_started").length + 1 // +1 for the current request being checked
+		// Count API requests after the last reset without copying the transcript.
+		// +1 accounts for the current request being checked.
+		let requestCount = 1
+		for (let i = this.lastResetMessageIndex; i < messages.length; i++) {
+			const msg = messages[i]
+			if (msg.type === "say" && msg.say === "api_req_started") {
+				requestCount++
+			}
+		}
+		this.consecutiveAutoApprovedRequestsCount = requestCount
 
 		if (this.consecutiveAutoApprovedRequestsCount > maxRequests) {
 			const { response } = await askForApproval(
@@ -107,9 +112,9 @@ export class AutoApprovalHandler {
 	): Promise<AutoApprovalResult> {
 		const maxCost = state?.allowedMaxCost || Infinity
 
-		// Calculate total cost from messages after the last reset point
-		const messagesAfterReset = messages.slice(this.lastResetMessageIndex)
-		this.consecutiveAutoApprovedCost = getApiMetrics(messagesAfterReset).totalCost
+		// Cost only needs api_req_started fields. Scan in place from the last
+		// reset instead of copying the transcript.
+		this.consecutiveAutoApprovedCost = getApiMetrics(messages, this.lastResetMessageIndex).totalCost
 
 		// Use epsilon for floating-point comparison to avoid precision issues
 		const EPSILON = 0.0001

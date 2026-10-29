@@ -65,4 +65,46 @@ describe("previous todos lookup", () => {
 		expect(byTs.get(4)).toEqual([{ id: "b", content: "second" }])
 		expect(byTs.has(2)).toBe(false)
 	})
+
+	it("keeps the forward scan identical to reverse lookup for every todo row", () => {
+		const messages: ClineMessage[] = [
+			todoAsk(1, [{ id: "a", content: "first" }]),
+			{
+				ts: 2,
+				type: "ask",
+				ask: "tool",
+				text: JSON.stringify({ tool: "readFile", path: "a.ts" }),
+			},
+			todoAsk(3, [{ id: "b", content: "second" }]),
+			say(4, "text"),
+			{
+				ts: 5,
+				type: "ask",
+				ask: "tool",
+				text: "{not-json",
+			},
+			todoAsk(6, [{ id: "c", content: "third" }]),
+		]
+
+		const byTs = buildPreviousTodosByTs(messages)
+		for (const message of messages) {
+			if (message.ask !== "tool") {
+				expect(byTs.has(message.ts)).toBe(false)
+				continue
+			}
+
+			try {
+				const tool = JSON.parse(message.text || "{}")
+				if (tool.tool !== "updateTodoList") {
+					expect(byTs.has(message.ts)).toBe(false)
+					continue
+				}
+			} catch {
+				expect(byTs.has(message.ts)).toBe(false)
+				continue
+			}
+
+			expect(byTs.get(message.ts)).toEqual(getPreviousTodos(messages, message.ts))
+		}
+	})
 })

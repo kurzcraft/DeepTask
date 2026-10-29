@@ -248,7 +248,10 @@ const getCommandsMap = ({ context, outputChannel }: RegisterCommandOptions): Rec
 	}, // kilocode_change begin
 	focusChatInput: async () => {
 		try {
-			await vscode.commands.executeCommand("kilo-code.SidebarProvider.focus")
+			// Focus this extension's sidebar. A hardcoded kilo-code view id
+			// steals the activity bar when both extensions are installed and
+			// leaves deeptask.SidebarProvider hidden in an otherwise active container.
+			await vscode.commands.executeCommand(`${ClineProvider.sideBarId}.focus`)
 			await delay(100)
 
 			let visibleProvider = getVisibleProviderOrLog(outputChannel)
