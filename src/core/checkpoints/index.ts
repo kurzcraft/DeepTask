@@ -10,6 +10,7 @@ import { getWorkspacePath } from "../../utils/path"
 import { checkGitInstalled } from "../../utils/git"
 import { t } from "../../i18n"
 
+import { combineApiRequests } from "../../shared/combineApiRequests"
 import { getApiMetrics } from "../../shared/getApiMetrics"
 
 import { DIFF_VIEW_URI_SCHEME } from "../../integrations/editor/DiffViewProvider"
@@ -285,7 +286,7 @@ export async function checkpointRestore(
 			const deletedMessages = task.clineMessages.slice(index)
 
 			const { totalTokensIn, totalTokensOut, totalCacheWrites, totalCacheReads, totalCost } = getApiMetrics(
-				task.combineMessages(deletedMessages),
+				combineApiRequests(deletedMessages),
 			)
 
 			// Use MessageManager to properly handle context-management events.

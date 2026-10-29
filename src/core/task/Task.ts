@@ -7243,7 +7243,8 @@ ${protocolHint}
 	}
 
 	public getTokenUsage(): TokenUsage {
-		return getApiMetrics(this.combineMessages(this.clineMessages.slice(1)))
+		// kilocode_change: metrics do not read merged terminal/MCP text.
+		return getApiMetrics(combineApiRequests(this.clineMessages.slice(1)))
 	}
 
 	public recordToolUsage(toolName: ToolName) {

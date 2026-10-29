@@ -69,14 +69,17 @@ describe("ContextProxy", () => {
 	})
 
 	describe("constructor", () => {
-		it("should initialize state cache with all global state keys", () => {
+		it("should initialize state cache with cached global state keys only", () => {
+			const cachedKeys = GLOBAL_STATE_KEYS.filter((key) => key !== "taskHistory")
 			// +1 for the migration check of old nested settings
-			expect(mockGlobalState.get).toHaveBeenCalledTimes(GLOBAL_STATE_KEYS.length + 1)
-			for (const key of GLOBAL_STATE_KEYS) {
+			expect(mockGlobalState.get).toHaveBeenCalledTimes(cachedKeys.length + 1)
+			for (const key of cachedKeys) {
 				expect(mockGlobalState.get).toHaveBeenCalledWith(key)
 			}
+			expect(mockGlobalState.get).not.toHaveBeenCalledWith("taskHistory")
 			// Also check for migration call
 			expect(mockGlobalState.get).toHaveBeenCalledWith("openRouterImageGenerationSettings")
+			expect((proxy as any).stateCache.taskHistory).toBeUndefined()
 		})
 
 		it("should initialize secret cache with all secret keys", () => {
@@ -99,8 +102,9 @@ describe("ContextProxy", () => {
 			const result = proxy.getGlobalState("apiProvider")
 			expect(result).toBe("deepseek")
 
-			// Original context should be called once during updateGlobalState (+1 for migration check)
-			expect(mockGlobalState.get).toHaveBeenCalledTimes(GLOBAL_STATE_KEYS.length + 1) // From initialization + migration check
+			const cachedKeys = GLOBAL_STATE_KEYS.filter((key) => key !== "taskHistory")
+			// Original context should be called once during initialization (+1 for migration check)
+			expect(mockGlobalState.get).toHaveBeenCalledTimes(cachedKeys.length + 1)
 		})
 
 		it("should handle default values correctly", async () => {
@@ -118,6 +122,31 @@ describe("ContextProxy", () => {
 
 			// Should get value directly from original context
 			expect(result).toBe("pass-through-value")
+			expect(mockGlobalState.get).toHaveBeenCalledWith("taskHistory")
+		})
+
+		it("should retain pass-through keys in public getValues snapshots", async () => {
+			const historyItems = [
+				{
+					id: "1",
+					number: 1,
+					ts: 1,
+					task: "test",
+					tokensIn: 1,
+					tokensOut: 1,
+					totalCost: 1,
+				},
+			]
+			mockGlobalState.get.mockImplementation((key: string) => (key === "taskHistory" ? historyItems : undefined))
+			mockGlobalState.get.mockClear()
+
+			const values = proxy.getValues()
+
+			expect(values.taskHistory).toBe(historyItems)
+			expect(mockGlobalState.get).toHaveBeenCalledWith("taskHistory")
+
+			mockGlobalState.get.mockReturnValue(historyItems)
+			expect(proxy.getGlobalState("taskHistory")).toBe(historyItems)
 			expect(mockGlobalState.get).toHaveBeenCalledWith("taskHistory")
 		})
 

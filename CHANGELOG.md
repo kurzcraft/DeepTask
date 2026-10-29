@@ -23,6 +23,10 @@
 - Queue agent startup handshakes without serializing active work; retain process ownership through exit, settle terminal events once, and bound termination cleanup.
 - Isolate streaming transcripts from settings context so historical chat rows no longer re-render on every messageUpdated; precompute list lookups and pass previous todos as props without scanning the full transcript per row.
 
+- Invalidate each asynchronous syntax-highlighting request independently so superseded or unmounted requests cannot resume expensive work or overwrite current content; preserve complete code and copy behavior.
+- Avoid terminal-text merging for token accounting, reuse unchanged image projections, skip redundant pass-through history caching, and reuse already-fetched settings without changing public snapshot or export fields.
+- Exclude unproven history-pruning and terminal-truncation candidates; retain model evidence, process identity, and existing transcript semantics.
+
 ## 9.2.7
 
 ### Patch Changes

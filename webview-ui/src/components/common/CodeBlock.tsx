@@ -186,15 +186,14 @@ const CodeBlock = memo(
 		const copyButtonWrapperRef = useRef<HTMLDivElement>(null)
 		const { showCopyFeedback, copyWithFeedback } = useCopyToClipboard()
 		const { t } = useAppTranslation()
-		const isMountedRef = useRef(true)
 		const buttonPositionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 		const collapseTimeout1Ref = useRef<NodeJS.Timeout | null>(null)
 		const collapseTimeout2Ref = useRef<NodeJS.Timeout | null>(null)
 
-		// Syntax highlighting with cached Shiki instance and mounted state management
+		// kilocode_change - each highlight effect owns its cancellation state; a new request cannot reactivate an old one.
 		useEffect(() => {
-			// Set mounted state at the beginning of this effect
-			isMountedRef.current = true
+			// Cleanup invalidates only this request, including StrictMode replay.
+			let active = true
 
 			// Create a safe fallback using React elements instead of HTML string
 			const fallback = (
@@ -206,13 +205,13 @@ const CodeBlock = memo(
 			const highlight = async () => {
 				// Show plain text if language needs to be loaded.
 				if (currentLanguage && !isLanguageLoaded(currentLanguage)) {
-					if (isMountedRef.current) {
+					if (active) {
 						setHighlightedCode(fallback)
 					}
 				}
 
 				const highlighter = await getHighlighter(currentLanguage)
-				if (!isMountedRef.current) return
+				if (!active) return
 
 				const hast = await highlighter.codeToHast(source || "", {
 					lang: currentLanguage || "txt",
@@ -236,7 +235,7 @@ const CodeBlock = memo(
 						},
 					] as ShikiTransformer[],
 				})
-				if (!isMountedRef.current) return
+				if (!active) return
 
 				// Convert HAST to React elements using hast-util-to-jsx-runtime
 				// This approach eliminates XSS vulnerabilities by avoiding dangerouslySetInnerHTML
@@ -249,12 +248,12 @@ const CodeBlock = memo(
 						// Don't override components - let them render as-is to maintain exact output
 					})
 
-					if (isMountedRef.current) {
+					if (active) {
 						setHighlightedCode(reactElement)
 					}
 				} catch (error) {
 					console.error("[CodeBlock] Error converting HAST to JSX:", error)
-					if (isMountedRef.current) {
+					if (active) {
 						setHighlightedCode(fallback)
 					}
 				}
@@ -262,14 +261,14 @@ const CodeBlock = memo(
 
 			highlight().catch((e) => {
 				console.error("[CodeBlock] Syntax highlighting error:", e, "\nStack trace:", e.stack)
-				if (isMountedRef.current) {
+				if (active) {
 					setHighlightedCode(fallback)
 				}
 			})
 
-			// Cleanup function - manage mounted state and clear all timeouts
+			// Invalidate this request and clear all timeouts.
 			return () => {
-				isMountedRef.current = false
+				active = false
 				if (buttonPositionTimeoutRef.current) {
 					clearTimeout(buttonPositionTimeoutRef.current)
 					buttonPositionTimeoutRef.current = null

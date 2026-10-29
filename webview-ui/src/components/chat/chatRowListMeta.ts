@@ -75,18 +75,14 @@ function isUpdateTodoListMessage(message: ClineMessage): boolean {
  * message whose payload is updateTodoList.
  */
 export function getPreviousTodos(messages: ClineMessage[], currentMessageTs: number): any[] {
-	const previousUpdateIndex = messages
-		.slice()
-		.reverse()
-		.findIndex((msg) => {
-			if (msg.ts >= currentMessageTs) return false
-			return isUpdateTodoListMessage(msg)
-		})
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i]
+		if (msg.ts >= currentMessageTs || !isUpdateTodoListMessage(msg)) {
+			continue
+		}
 
-	if (previousUpdateIndex !== -1) {
-		const previousMessage = messages.slice().reverse()[previousUpdateIndex]
 		try {
-			const tool = JSON.parse(previousMessage.text || "{}")
+			const tool = JSON.parse(msg.text || "{}")
 			return tool.todos || []
 		} catch {
 			return []

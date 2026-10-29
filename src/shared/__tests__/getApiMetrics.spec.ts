@@ -2,6 +2,8 @@
 
 import type { ClineMessage } from "@roo-code/types"
 
+import { combineApiRequests } from "../combineApiRequests"
+import { combineCommandSequences } from "../combineCommandSequences"
 import { getApiMetrics } from "../getApiMetrics"
 
 describe("getApiMetrics", () => {
@@ -325,6 +327,44 @@ describe("getApiMetrics", () => {
 
 			// Restore console.error
 			console.error = originalConsoleError
+		})
+	})
+
+	describe("command sequence independence", () => {
+		it("should ignore command output when totaling tokens", () => {
+			const messages: ClineMessage[] = [
+				createApiReqStartedMessage(
+					'{"tokensIn":100,"tokensOut":200,"cacheWrites":5,"cacheReads":10,"cost":0.005}',
+					1000,
+				),
+				{
+					type: "ask",
+					ask: "command",
+					text: "echo hello",
+					ts: 1100,
+				},
+				{
+					type: "ask",
+					ask: "command_output",
+					text: "hello\n".repeat(50),
+					ts: 1200,
+				},
+				createApiReqStartedMessage(
+					'{"tokensIn":50,"tokensOut":150,"cacheWrites":3,"cacheReads":7,"cost":0.003}',
+					2000,
+				),
+			]
+
+			const result = getApiMetrics(combineApiRequests(messages))
+			const mergedResult = getApiMetrics(combineApiRequests(combineCommandSequences(messages)))
+
+			expect(result).toEqual(mergedResult)
+			expect(result.totalTokensIn).toBe(150)
+			expect(result.totalTokensOut).toBe(350)
+			expect(result.totalCacheWrites).toBe(8)
+			expect(result.totalCacheReads).toBe(17)
+			expect(result.totalCost).toBe(0.008)
+			expect(result.contextTokens).toBe(200)
 		})
 	})
 })

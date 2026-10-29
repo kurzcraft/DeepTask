@@ -3445,6 +3445,13 @@ export class ClineProvider
 			isBrowserSessionActive,
 			agentSubagentDispatchEnabled, // kilocode_change: parallel subagents toggle
 			agentWorkspaceManagementEnabled, // kilocode_change: parallel workspaces toggle
+			// kilocode_change: reuse the same settings snapshot for auto-purge fields.
+			autoPurgeEnabled,
+			autoPurgeDefaultRetentionDays,
+			autoPurgeFavoritedTaskRetentionDays,
+			autoPurgeCompletedTaskRetentionDays,
+			autoPurgeIncompleteTaskRetentionDays,
+			autoPurgeLastRunTimestamp,
 		} = await this.getState()
 
 		// kilocode_change start: Get active model for virtual quota fallback UI display
@@ -3680,18 +3687,12 @@ export class ClineProvider
 			imageGenerationProvider,
 			openRouterImageApiKey,
 			// kilocode_change start - Auto-purge settings
-			autoPurgeEnabled: await this.getState().then((s) => s.autoPurgeEnabled),
-			autoPurgeDefaultRetentionDays: await this.getState().then((s) => s.autoPurgeDefaultRetentionDays),
-			autoPurgeFavoritedTaskRetentionDays: await this.getState().then(
-				(s) => s.autoPurgeFavoritedTaskRetentionDays,
-			),
-			autoPurgeCompletedTaskRetentionDays: await this.getState().then(
-				(s) => s.autoPurgeCompletedTaskRetentionDays,
-			),
-			autoPurgeIncompleteTaskRetentionDays: await this.getState().then(
-				(s) => s.autoPurgeIncompleteTaskRetentionDays,
-			),
-			autoPurgeLastRunTimestamp: await this.getState().then((s) => s.autoPurgeLastRunTimestamp),
+			autoPurgeEnabled,
+			autoPurgeDefaultRetentionDays,
+			autoPurgeFavoritedTaskRetentionDays,
+			autoPurgeCompletedTaskRetentionDays,
+			autoPurgeIncompleteTaskRetentionDays,
+			autoPurgeLastRunTimestamp,
 			selectedMicrophoneDevice, // kilocode_change: Selected microphone device for STT
 			// kilocode_change end
 			kiloCodeImageApiKey,

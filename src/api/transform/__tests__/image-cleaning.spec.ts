@@ -46,8 +46,8 @@ describe("maybeRemoveImageBlocks", () => {
 
 		const result = maybeRemoveImageBlocks(messages, apiHandler)
 
+		expect(result).toBe(messages)
 		expect(result).toEqual(messages)
-		// getModel is only called when content is an array, which is not the case here
 	})
 
 	it("should not modify messages with array content but no image blocks", () => {
@@ -70,6 +70,7 @@ describe("maybeRemoveImageBlocks", () => {
 
 		const result = maybeRemoveImageBlocks(messages, apiHandler)
 
+		expect(result).toBe(messages)
 		expect(result).toEqual(messages)
 		expect(apiHandler.getModel).toHaveBeenCalled()
 	})
@@ -99,6 +100,7 @@ describe("maybeRemoveImageBlocks", () => {
 		const result = maybeRemoveImageBlocks(messages, apiHandler)
 
 		// Should not modify the messages since the API handler supports images
+		expect(result).toBe(messages)
 		expect(result).toEqual(messages)
 		expect(apiHandler.getModel).toHaveBeenCalled()
 	})
@@ -285,6 +287,21 @@ describe("maybeRemoveImageBlocks", () => {
 						text: "[Referenced image in conversation]",
 					},
 				],
+			},
+		])
+		expect(result[1]).toBe(messages[1])
+		expect(messages[0].content).toEqual([
+			{
+				type: "text",
+				text: "Here's an image:",
+			},
+			{
+				type: "image",
+				source: {
+					type: "base64",
+					media_type: "image/jpeg",
+					data: "image-data-1",
+				},
 			},
 		])
 		expect(apiHandler.getModel).toHaveBeenCalled()
