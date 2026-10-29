@@ -1,6 +1,8 @@
 // kilocode_change - new file
 import { execFile } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { promisify } from "node:util"
+import { NativeToolCallParser } from "../../../assistant-message/NativeToolCallParser"
 import path from "node:path"
 import {
 	getCommandInputError,
@@ -111,6 +113,45 @@ describe.skipIf(process.platform === "win32" || !existsSync("/bin/bash"))("real 
 	])("accepts complete syntax without running it: %s", async (command) => {
 		expect(await getCommandSyntaxError(command, "/bin/bash")).toBeUndefined()
 	})
+	// kilocode_change: real file bytes and execution, not just a mocked write argument.
+	it("preserves native script bytes and literal escapes through execution", async () => {
+		const parent = path.resolve("../EXTRA/output")
+		mkdirSync(parent, { recursive: true })
+		const directory = mkdtempSync(path.join(parent, "native-script-fidelity-"))
+		const file = path.join(directory, "script with spaces.sh")
+		const payload = "中文 😀 literal " + slash + "n " + slash + "t " + slash + "d+ &lt; &quot; $HOME `not-executed`"
+		const script = [
+			"#!/bin/bash",
+			"set -eu",
+			"printf '%s" + slash + "n' '" + payload + "'",
+			"printf '%s" + slash + "n' 'stderr preserved' >&2",
+			"",
+		].join(newline)
+		try {
+			const parsed = NativeToolCallParser.parseToolCall({
+				id: "real-script-fidelity",
+				name: "write_to_file",
+				arguments: JSON.stringify({ path: file, content: script }),
+			})
+			if (!parsed || parsed.type !== "tool_use" || !parsed.nativeArgs) {
+				throw new Error("Native script arguments were not parsed")
+			}
+			writeFileSync(file, parsed.nativeArgs.content, "utf8")
+			expect(readFileSync(file)).toEqual(Buffer.from(script, "utf8"))
+			const command = 'bash "' + file + '"'
+			expect(await getCommandSyntaxError(command, "/bin/bash")).toBeUndefined()
+			const actual = await vi.importActual<typeof import("node:child_process")>("node:child_process")
+			const result = await promisify(actual.execFile)("/bin/bash", ["--noprofile", "--norc", file], {
+				timeout: 2_000,
+				env: { PATH: process.env.PATH, BASH_ENV: "", ENV: "" },
+			})
+			expect(result.stdout).toBe(payload + newline)
+			expect(result.stderr).toBe("stderr preserved" + newline)
+		} finally {
+			rmSync(directory, { recursive: true, force: true })
+		}
+	})
+
 	it("executes neither command substitution nor inherited startup code", async () => {
 		const parent = path.resolve("../EXTRA/output")
 		mkdirSync(parent, { recursive: true })

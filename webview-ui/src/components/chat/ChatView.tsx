@@ -162,6 +162,8 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const deadLetterLastMsgTsRef = useRef<number | undefined>(undefined)
 	const deadLetterArmedAskTsRef = useRef<number | undefined>(undefined)
 	const deadLetterCancelArmedRef = useRef(false)
+	// kilocode_change: refs alone do not schedule an effect on repeated clicks.
+	const [deadLetterGeneration, setDeadLetterGeneration] = useState(0)
 	const [deadLetterForceControls, setDeadLetterForceControls] = useState(false)
 	// kilocode_change: mirror force-controls in a ref so the arm callback can
 	// read the current verdict without re-subscribing handlers.
@@ -175,6 +177,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		deadLetterLastMsgTsRef.current = latest?.ts
 		deadLetterArmedAskTsRef.current = latest?.type === "ask" ? latest.ts : undefined
 		deadLetterCancelArmedRef.current = fromCancel
+		setDeadLetterGeneration((generation) => generation + 1)
 		// kilocode_change: a repeated cancel while a previous cancel is already
 		// stuck must NOT clear the already-forced fallback row — that made the
 		// row blink away and left a dead UI. Only a fresh non-cancel arm resets.
@@ -432,6 +435,14 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		setSecondaryButtonText(undefined)
 		setSendingDisabled(false)
 		currentAskTsRef.current = undefined
+		// kilocode_change: cancellation recovery belongs to this conversation only.
+		deadLetterArmedAtRef.current = undefined
+		deadLetterCancelArmedRef.current = false
+		deadLetterLastMsgTsRef.current = undefined
+		deadLetterArmedAskTsRef.current = undefined
+		deadLetterForceControlsRef.current = false
+		setDeadLetterForceControls(false)
+		setDidClickCancel(false)
 	}, [task?.ts])
 	// kilocode_change end
 
@@ -1014,8 +1025,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		// clineAsk is already undefined — excluding it by type alone hid every
 		// button for the entire dispatch wait (S4: no Cancel on the parent).
 		const lastVisibleRow = modifiedMessages.at(-1)
-		const isAnsweredAskRow =
-			!!lastVisibleRow && lastVisibleRow.type === "ask" && clineAsk === undefined
+		const isAnsweredAskRow = !!lastVisibleRow && lastVisibleRow.type === "ask" && clineAsk === undefined
 		const isToolExecutionWindow =
 			!!lastApiReqStarted &&
 			lastApiReqStarted.text !== null &&
@@ -1824,6 +1834,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			// not using its value but its reference.
 		},
 		[
+			currentTaskItem?.id, // kilocode_change: keep cross-conversation event guards current.
 			isCondensing,
 			isHidden,
 			sendingDisabled,
@@ -2565,16 +2576,15 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	// texts from the SAME lingering ask is NOT progress — the ask the user
 	// just answered must not disarm the watchdog; only the grace window
 	// rebasing keeps it honest, and true silence fires the fallback row.
-	// The cancel-click path is special: after the user cancels, a still-true
-	// isStreaming is the STUCK state itself, not progress — only streaming
-	// actually ending (or a new message/ask arriving) may disarm it.
+	// The cancel-click path is special: late output is not an acknowledgement.
+	// Keep recovery armed until streaming ends or the task settles.
 	useEffect(() => {
 		if (deadLetterArmedAtRef.current === undefined) {
 			return
 		}
 		const latest = messagesRef.current.at(-1)
 		const hostMadeProgress = deadLetterCancelArmedRef.current
-			? !isStreaming || lastMessageIsSettledCompletion || latest?.ts !== deadLetterLastMsgTsRef.current
+			? !isStreaming || lastMessageIsSettledCompletion
 			: isStreaming ||
 				lastMessageIsSettledCompletion ||
 				(latest?.type === "ask" && latest.ts !== deadLetterArmedAskTsRef.current)
@@ -2586,14 +2596,17 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			}
 			return
 		}
-		// Rebase: the reference is whatever the list looked like at the last
-		// effect run (click or message advance). Silence from here = dead letter.
+		if (deadLetterForceControls) return
 		deadLetterLastMsgTsRef.current = latest?.ts
+		// kilocode_change: late output must not postpone cancellation recovery.
+		const delay = deadLetterCancelArmedRef.current
+			? Math.max(0, DEAD_LETTER_GRACE_MS - (Date.now() - deadLetterArmedAtRef.current))
+			: DEAD_LETTER_GRACE_MS
 		const timer = setTimeout(() => {
 			const nowLatest = messagesRef.current.at(-1)
 			if (
-				nowLatest?.ts === deadLetterLastMsgTsRef.current &&
-				(deadLetterCancelArmedRef.current ? true : !isStreaming) &&
+				(deadLetterCancelArmedRef.current ||
+					(nowLatest?.ts === deadLetterLastMsgTsRef.current && !isStreaming)) &&
 				!lastMessageIsSettledCompletion
 			) {
 				setDeadLetterForceControls(true)
@@ -2603,9 +2616,17 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				setSendingDisabled(false)
 				setDidClickCancel(false)
 			}
-		}, DEAD_LETTER_GRACE_MS)
+		}, delay)
 		return () => clearTimeout(timer)
-	}, [hasVisibleControl, lastMessage?.ts, deadLetterForceControls, isStreaming, lastMessageIsSettledCompletion])
+	}, [
+		hasVisibleControl,
+		lastMessage?.ts,
+		deadLetterForceControls,
+		isStreaming,
+		lastMessageIsSettledCompletion,
+		deadLetterGeneration,
+		task?.ts,
+	])
 	const watchdogControlsVisible =
 		!lastMessageIsSettledCompletion &&
 		// deadLetterForceControls is the watchdog's verdict that the host died:
@@ -2894,9 +2915,9 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 										</Button>
 									</StandardTooltip>
 								)}
-							{!showScrollToBottom && (
-								<>
-									{/* kilocode_change start: DEFECT S5 — dispatch-wait Proceed
+								{!showScrollToBottom && (
+									<>
+										{/* kilocode_change start: DEFECT S5 — dispatch-wait Proceed
 									    fallback. While dispatch_subagents blocks, S4's
 									    answered-ask rule keeps isStreaming true (Cancel shows)
 									    but primaryButtonText was wiped by the answered-ask
@@ -2905,21 +2926,22 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 									    the last row is an ANSWERED ask with no button texts —
 									    exactly the tool-execution window. Skip when the
 									    dead-letter watchdog already forces its own row. */}
-									{dispatchProceedFallbackVisible && (
-										<StandardTooltip content={t("chat:proceedWhileRunning.tooltip")}>
-											<Button
-												data-testid="dispatch-proceed-fallback"
-												className="flex-1 mr-[6px]"
-												onClick={() => handleWatchdogProceed()}>
-												{t("chat:proceedWhileRunning.title")}
-											</Button>
-										</StandardTooltip>
-									)}
-									{/* kilocode_change end */}
-									{/* Keep Continue/Run visible even if a stale api_req_started
+										{dispatchProceedFallbackVisible && (
+											<StandardTooltip content={t("chat:proceedWhileRunning.tooltip")}>
+												<Button
+													data-testid="dispatch-proceed-fallback"
+													className="flex-1 mr-[6px]"
+													onClick={() => handleWatchdogProceed()}>
+													{t("chat:proceedWhileRunning.title")}
+												</Button>
+											</StandardTooltip>
+										)}
+										{/* kilocode_change end */}
+										{/* Keep Continue/Run visible even if a stale api_req_started
 								    still marks isStreaming true. Hiding the primary button
 								    leaves only Cancel during long commands. */}
-									{primaryButtonText && (!isStreaming || clineAsk === "command_output") && (<StandardTooltip
+										{primaryButtonText && (!isStreaming || clineAsk === "command_output") && (
+											<StandardTooltip
 												content={
 													primaryButtonText === t("chat:retry.title")
 														? t("chat:retry.tooltip")
@@ -2983,25 +3005,25 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 												!(isStreaming && !didClickCancel) &&
 												!cancelPendingStuck
 											}
-										className={
-											isStreaming
-												? showScrollToBottom
-													? "flex-1 ml-0"
-													: // kilocode_change: when the primary button also renders
-														// (command_output ask: Proceed-While-Running + Cancel),
-														// keep the pair symmetric 1:1 with the shared 6px gap.
-														// The old flex-[2] made Cancel twice as wide as the
-														// proceed button — the reported asymmetry.
-														// DEFECT S6: the S5 dispatch-wait Proceed fallback is
-														// the same situation (a flex-1 sibling rendering next
-														// to Cancel) — include it so the pair stays 1:1 there
-														// too instead of falling into the lone-wide-cancel
-														// flex-[2] branch.
-														primaryButtonText || dispatchProceedFallbackVisible
-													? "flex-1 ml-[6px]"
-													: "flex-[2] ml-0"
-												: "flex-1 ml-[6px]"
-										}
+											className={
+												isStreaming
+													? showScrollToBottom
+														? "flex-1 ml-0"
+														: // kilocode_change: when the primary button also renders
+															// (command_output ask: Proceed-While-Running + Cancel),
+															// keep the pair symmetric 1:1 with the shared 6px gap.
+															// The old flex-[2] made Cancel twice as wide as the
+															// proceed button — the reported asymmetry.
+															// DEFECT S6: the S5 dispatch-wait Proceed fallback is
+															// the same situation (a flex-1 sibling rendering next
+															// to Cancel) — include it so the pair stays 1:1 there
+															// too instead of falling into the lone-wide-cancel
+															// flex-[2] branch.
+															primaryButtonText || dispatchProceedFallbackVisible
+															? "flex-1 ml-[6px]"
+															: "flex-[2] ml-0"
+													: "flex-1 ml-[6px]"
+											}
 											onClick={() => handleSecondaryButtonClick(inputValue, selectedImages)}>
 											{isStreaming ? t("chat:cancel.title") : secondaryButtonText}
 										</Button>

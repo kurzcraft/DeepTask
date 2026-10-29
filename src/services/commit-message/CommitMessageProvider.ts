@@ -2,6 +2,7 @@
 import * as vscode from "vscode"
 import { ProviderSettingsManager } from "../../core/config/ProviderSettingsManager"
 import { t } from "../../i18n"
+import { registerNamespacedCommands } from "../../utils/registerNamespacedCommands"
 
 import { CommitMessageRequest, CommitMessageResult } from "./types/core"
 import { CommitMessageGenerator } from "./CommitMessageGenerator"
@@ -18,6 +19,7 @@ export class CommitMessageProvider implements vscode.Disposable {
 	private generator: CommitMessageGenerator
 	private vscodeAdapter: VSCodeCommitMessageAdapter
 	private jetbrainsAdapter: JetBrainsCommitMessageAdapter
+	private commandRegistration?: vscode.Disposable
 
 	constructor(
 		private context: vscode.ExtensionContext,
@@ -36,21 +38,19 @@ export class CommitMessageProvider implements vscode.Disposable {
 	public async activate(): Promise<void> {
 		this.outputChannel.appendLine(t("kilocode:commitMessage.activated"))
 
-		const disposables = [
-			vscode.commands.registerCommand("deeptask.vsc.generateCommitMessage", (...args: unknown[]) =>
-				this.handleVSCodeCommand(args),
-			),
-			vscode.commands.registerCommand("kilo-code.vsc.generateCommitMessage", (...args: unknown[]) =>
-				this.handleVSCodeCommand(args),
-			),
-			vscode.commands.registerCommand(
-				"kilo-code.jetbrains.generateCommitMessage",
-				(...args: JetbrainsGenerationRequest): Promise<CommitMessageResult> => {
-					return this.handleJetBrainsCommand(...args)
-				},
-			),
-		]
-		this.context.subscriptions.push(...disposables)
+		if (this.commandRegistration) return
+		this.commandRegistration = registerNamespacedCommands([
+			{
+				command: "deeptask.vsc.generateCommitMessage",
+				legacyCommand: "kilo-code.vsc.generateCommitMessage",
+				callback: (...args: unknown[]) => this.handleVSCodeCommand(args),
+			},
+			{
+				command: "deeptask.jetbrains.generateCommitMessage",
+				legacyCommand: "kilo-code.jetbrains.generateCommitMessage",
+				callback: (...args: JetbrainsGenerationRequest) => this.handleJetBrainsCommand(...args),
+			},
+		])
 	}
 
 	/**
@@ -133,9 +133,7 @@ export class CommitMessageProvider implements vscode.Disposable {
 		}
 		const repository = candidate.repository ?? candidate.repositories?.[0] ?? candidate.sourceControl
 		const inputBox =
-			candidate.inputBox ??
-			repository?.inputBox ??
-			(typeof candidate.value === "string" ? candidate : undefined)
+			candidate.inputBox ?? repository?.inputBox ?? (typeof candidate.value === "string" ? candidate : undefined)
 		if (!inputBox || typeof inputBox.value !== "string") {
 			return undefined
 		}
@@ -167,6 +165,8 @@ export class CommitMessageProvider implements vscode.Disposable {
 	 * Dispose resources and cleanup.
 	 */
 	public dispose(): void {
+		this.commandRegistration?.dispose()
+		this.commandRegistration = undefined
 		this.vscodeAdapter?.dispose()
 		this.jetbrainsAdapter?.dispose()
 	}

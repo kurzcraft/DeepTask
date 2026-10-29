@@ -151,9 +151,10 @@ const renderChatView = (props: Partial<ChatViewProps> = {}) => {
 // Micro-task drain so React commits + reducer updates settle between steps.
 // Must use fake-timer-aware flushing: a bare setTimeout(0) promise would never
 // resolve under vi.useFakeTimers().
-const settle = () => act(async () => {
-	await vi.advanceTimersByTimeAsync(0)
-})
+const settle = () =>
+	act(async () => {
+		await vi.advanceTimersByTimeAsync(0)
+	})
 
 describe("ChatView - control watchdog fallback row", () => {
 	beforeEach(() => {
@@ -209,6 +210,79 @@ describe("ChatView - control watchdog fallback row", () => {
 		const watchdog = document.querySelector('[data-testid="watchdog-controls"]')
 		expect(watchdog).not.toBeNull()
 	})
+
+	// kilocode_change start: cancellation must not be acknowledged by late output.
+	const streamingMessages = [
+		{ type: "say", ts: 100, say: "task", text: "Run the script" },
+		{ type: "say", ts: 200, say: "api_req_started", text: JSON.stringify({ request: "test" }) },
+		{ type: "say", ts: 300, say: "text", text: "working", partial: true },
+	]
+	const getCancel = () =>
+		Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+			(button) => button.textContent === "chat:cancel.title",
+		)!
+
+	it("keeps cancellation actionable when late output advances the timestamp", async () => {
+		renderChatView()
+		mockPostMessage({ clineMessages: streamingMessages })
+		await settle()
+		expect(getCancel()).toBeDefined()
+		fireEvent.click(getCancel())
+		await settle()
+		mockPostMessage({
+			clineMessages: [
+				...streamingMessages,
+				{ type: "say", ts: 400, say: "text", text: "late output", partial: true },
+			],
+		})
+		await settle()
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(DEAD_LETTER_GRACE_MS + 100)
+		})
+		const fallback = document.querySelector<HTMLButtonElement>('[data-testid="watchdog-cancel"]')
+		expect(fallback).not.toBeNull()
+		expect(fallback!.disabled).toBe(false)
+		fireEvent.click(fallback!)
+		await settle()
+		expect(document.querySelector('[data-testid="watchdog-controls"]')).not.toBeNull()
+		expect(
+			vi.mocked(vscode.postMessage).mock.calls.filter(([message]) => message.type === "cancelTask"),
+		).toHaveLength(2)
+	})
+
+	it("arms cancellation recovery without needing a fresh host message", async () => {
+		renderChatView()
+		mockPostMessage({ clineMessages: streamingMessages })
+		await settle()
+		fireEvent.click(getCancel())
+		await settle()
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(DEAD_LETTER_GRACE_MS + 100)
+		})
+		expect(document.querySelector('[data-testid="watchdog-cancel"]')).not.toBeNull()
+	})
+
+	it("does not carry an armed cancellation into another conversation", async () => {
+		renderChatView()
+		mockPostMessage({ clineMessages: streamingMessages })
+		await settle()
+		fireEvent.click(getCancel())
+		await settle()
+		mockPostMessage({
+			clineMessages: [
+				{ type: "say", ts: 500, say: "task", text: "Different conversation" },
+				{ type: "say", ts: 600, say: "api_req_started", text: JSON.stringify({ request: "other" }) },
+				{ type: "say", ts: 700, say: "text", text: "still working", partial: true },
+			],
+		})
+		await settle()
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(DEAD_LETTER_GRACE_MS * 2)
+		})
+		expect(document.querySelector('[data-testid="watchdog-controls"]')).toBeNull()
+		expect(getCancel().disabled).toBe(false)
+	})
+	// kilocode_change end
 
 	it("does not render the watchdog when regular controls are visible", async () => {
 		renderChatView()

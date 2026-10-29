@@ -165,9 +165,7 @@ export const webviewMessageHandler = async (
 		try {
 			await Promise.race([
 				provider.cancelTask(),
-				new Promise<void>((resolve) =>
-					setTimeout(resolve, CANCEL_STATE_BROADCAST_TIMEOUT_MS).unref?.(),
-				),
+				new Promise<void>((resolve) => setTimeout(resolve, CANCEL_STATE_BROADCAST_TIMEOUT_MS).unref?.()),
 			])
 		} catch (error) {
 			provider.log(
@@ -650,7 +648,10 @@ export const webviewMessageHandler = async (
 			)
 			await currentCline.overwriteClineMessages(
 				appendEditableContinuePrompt(
-					[...currentCline.clineMessages.slice(0, messageIndex), { ...targetMessage, text: editedContent, images }],
+					[
+						...currentCline.clineMessages.slice(0, messageIndex),
+						{ ...targetMessage, text: editedContent, images },
+					],
 					images,
 				),
 				{ force: true },
@@ -676,7 +677,10 @@ export const webviewMessageHandler = async (
 			)
 			await currentCline.overwriteClineMessages(
 				appendEditableContinuePrompt(
-					[...currentCline.clineMessages.slice(0, messageIndex), { ...targetMessage, text: editedContent, images }],
+					[
+						...currentCline.clineMessages.slice(0, messageIndex),
+						{ ...targetMessage, text: editedContent, images },
+					],
 					images,
 				),
 				{ force: true },
@@ -719,7 +723,10 @@ export const webviewMessageHandler = async (
 				)
 				await currentCline.overwriteClineMessages(
 					appendEditableContinuePrompt(
-						[...currentCline.clineMessages.slice(0, messageIndex), { ...targetMessage, text: editedContent, images }],
+						[
+							...currentCline.clineMessages.slice(0, messageIndex),
+							{ ...targetMessage, text: editedContent, images },
+						],
 						images,
 					),
 					{ force: true },
@@ -741,7 +748,10 @@ export const webviewMessageHandler = async (
 
 		await currentCline.overwriteClineMessages(
 			appendEditableContinuePrompt(
-				[...currentCline.clineMessages.slice(0, messageIndex), { ...targetMessage, text: editedContent, images }],
+				[
+					...currentCline.clineMessages.slice(0, messageIndex),
+					{ ...targetMessage, text: editedContent, images },
+				],
 				images,
 			),
 			{ force: true },
@@ -1436,46 +1446,46 @@ export const webviewMessageHandler = async (
 					task.messageQueueService.clear()
 					provider.setPendingCancelledTaskContinuation?.(resolved.text ?? "", resolved.images)
 					await provider.postStateToWebview()
-			} else if (task && isCompletionContinuation && completionMessage?.ts !== undefined) {
-				// A post-completion message is a resend from the final stable boundary. Use
-				// the exact strict edit/resend transaction: rewind the completion tail,
-				// persist the prefix, park an edited_resend continuation, then replace the
-				// old Task. Keeping a separate completion rehydrate path allowed late
-				// finalization to consume the human message without starting a model turn.
-				// kilocode_change start
-				// The rewind transaction is reused for state integrity, but the payload is
-				// a NEW user message after a completed boundary, not an edit of an older
-				// message. Tag it as a plain continuation so the model classifies the
-				// message semantically (discussion vs. actionable work) instead of being
-				// forced into "answer directly, no task work" edited_resend semantics that
-				// ended the turn with an empty attempt_completion.
-				await handleEditMessageConfirm(
-					completionMessage.ts,
-					resolved.text ?? "",
-					false,
-					resolved.images,
-					true,
-					"continuation",
-				)
-				// kilocode_change end
-			} else if (task && hasPendingAsk && isAskResponseForCurrentAsk) {
+				} else if (task && isCompletionContinuation && completionMessage?.ts !== undefined) {
+					// A post-completion message is a resend from the final stable boundary. Use
+					// the exact strict edit/resend transaction: rewind the completion tail,
+					// persist the prefix, park an edited_resend continuation, then replace the
+					// old Task. Keeping a separate completion rehydrate path allowed late
+					// finalization to consume the human message without starting a model turn.
+					// kilocode_change start
+					// The rewind transaction is reused for state integrity, but the payload is
+					// a NEW user message after a completed boundary, not an edit of an older
+					// message. Tag it as a plain continuation so the model classifies the
+					// message semantically (discussion vs. actionable work) instead of being
+					// forced into "answer directly, no task work" edited_resend semantics that
+					// ended the turn with an empty attempt_completion.
+					await handleEditMessageConfirm(
+						completionMessage.ts,
+						resolved.text ?? "",
+						false,
+						resolved.images,
+						true,
+						"continuation",
+					)
+					// kilocode_change end
+				} else if (task && hasPendingAsk && isAskResponseForCurrentAsk) {
 					task.handleWebviewAskResponse(message.askResponse!, resolved.text, resolved.images)
 				} else if (
-				// kilocode_change start
-				// A blocking ask whose broadcast was lost (focus race / pending-new-
-				// conversation window / hidden webview) never updated the webview's
-				// currentAskTsRef, so typed text arrives with a stale askTs and used to
-				// fall through to dead-end branches that cleared the queue and dropped
-				// the payload entirely — chat froze with no buttons and no recovery.
-				// When a blocking ask IS pending and the payload carries real content,
-				// answer that ask instead of discarding the message. Empty clicks keep
-				// the old protective semantics (drop-only-for-auto-approved-tool-ask).
-				task &&
-				hasPendingAsk &&
-				!isAskResponseForCurrentAsk &&
-				hasMessagePayload &&
-				message.askResponse === "messageResponse"
-			) {
+					// kilocode_change start
+					// A blocking ask whose broadcast was lost (focus race / pending-new-
+					// conversation window / hidden webview) never updated the webview's
+					// currentAskTsRef, so typed text arrives with a stale askTs and used to
+					// fall through to dead-end branches that cleared the queue and dropped
+					// the payload entirely — chat froze with no buttons and no recovery.
+					// When a blocking ask IS pending and the payload carries real content,
+					// answer that ask instead of discarding the message. Empty clicks keep
+					// the old protective semantics (drop-only-for-auto-approved-tool-ask).
+					task &&
+					hasPendingAsk &&
+					!isAskResponseForCurrentAsk &&
+					hasMessagePayload &&
+					message.askResponse === "messageResponse"
+				) {
 					task.handleWebviewAskResponse(message.askResponse!, resolved.text, resolved.images)
 				} else if (
 					task &&
@@ -1897,12 +1907,12 @@ export const webviewMessageHandler = async (
 						kilocode: {},
 						gemini: {},
 						deepseek: {},
-					groq: {},
-					mistral: {},
-					cerebras: {},
-					zai: {},
-					xai: {}, // kilocode_change: xAI discoverable vendor
-					// kilocode_change end
+						groq: {},
+						mistral: {},
+						cerebras: {},
+						zai: {},
+						xai: {}, // kilocode_change: xAI discoverable vendor
+						// kilocode_change end
 						openrouter: {},
 						"vercel-ai-gateway": {},
 						huggingface: {},
@@ -2954,18 +2964,18 @@ export const webviewMessageHandler = async (
 			}
 			break
 		}
-	case "submitEditedMessage": {
-		if (typeof message.value === "number" && message.value && message.editedMessageContent) {
-			// A user-message edit replaces the original branch. Reuse the strict edit
-			// path so the original message and every later response are removed before
-			// the replacement request is started. Pass isInlineResend=true so an
-			// explicit edit whose target row was already rewound away still delivers
-			// the edited text as an edited_resend continuation instead of vanishing
-			// silently (the delayed editMessageConfirm dialog callback stays excluded).
-			await handleEditMessageConfirm(message.value, message.editedMessageContent, false, message.images, true)
+		case "submitEditedMessage": {
+			if (typeof message.value === "number" && message.value && message.editedMessageContent) {
+				// A user-message edit replaces the original branch. Reuse the strict edit
+				// path so the original message and every later response are removed before
+				// the replacement request is started. Pass isInlineResend=true so an
+				// explicit edit whose target row was already rewound away still delivers
+				// the edited text as an edited_resend continuation instead of vanishing
+				// silently (the delayed editMessageConfirm dialog callback stays excluded).
+				await handleEditMessageConfirm(message.value, message.editedMessageContent, false, message.images, true)
+			}
+			break
 		}
-		break
-	}
 
 		case "hasOpenedModeSelector":
 			await updateGlobalState("hasOpenedModeSelector", message.bool ?? true)
@@ -3061,7 +3071,7 @@ export const webviewMessageHandler = async (
 			const ghostServiceSettings = ghostServiceSettingsSchema.parse(message.values)
 			await updateGlobalState("ghostServiceSettings", ghostServiceSettings)
 			await provider.postStateToWebview()
-			vscode.commands.executeCommand("kilo-code.ghost.reload")
+			vscode.commands.executeCommand("deeptask.ghost.reload" /* kilocode_change: isolate the owning extension */)
 			break
 		case "snoozeAutocomplete":
 			if (typeof message.value === "number" && message.value > 0) {
@@ -3318,7 +3328,9 @@ export const webviewMessageHandler = async (
 					// Chat profile edits must not restart the independent autocomplete service.
 					// Reload Ghost only when the edited profile explicitly belongs to it.
 					if (message.apiConfiguration.profileType === "autocomplete") {
-						void vscode.commands.executeCommand("kilo-code.ghost.reload")
+						void vscode.commands.executeCommand(
+							"deeptask.ghost.reload" /* kilocode_change: isolate the owning extension */,
+						)
 					}
 					// kilocode_change end
 				} catch (error) {
@@ -3385,7 +3397,9 @@ export const webviewMessageHandler = async (
 				const isActiveProfile = message.text === currentApiConfigName
 				await provider.upsertProviderProfile(message.text, configToSave, isActiveProfile)
 				if (configToSave.profileType === "autocomplete") {
-					void vscode.commands.executeCommand("kilo-code.ghost.reload")
+					void vscode.commands.executeCommand(
+						"deeptask.ghost.reload" /* kilocode_change: isolate the owning extension */,
+					)
 				}
 				// kilocode_change end
 
@@ -3422,7 +3436,9 @@ export const webviewMessageHandler = async (
 					// Renaming an ordinary chat profile must not restart the independent
 					// autocomplete service or disturb an active conversation.
 					if (message.apiConfiguration.profileType === "autocomplete") {
-						void vscode.commands.executeCommand("kilo-code.ghost.reload")
+						void vscode.commands.executeCommand(
+							"deeptask.ghost.reload" /* kilocode_change: isolate the owning extension */,
+						)
 					}
 					// kilocode_change end
 				} catch (error) {
@@ -3503,7 +3519,9 @@ export const webviewMessageHandler = async (
 					// Ghost only owns autocomplete profiles. Deleting a chat profile must
 					// not restart that service or interfere with the active task loop.
 					if (deletedProfile?.profileType === "autocomplete") {
-						void vscode.commands.executeCommand("kilo-code.ghost.reload")
+						void vscode.commands.executeCommand(
+							"deeptask.ghost.reload" /* kilocode_change: isolate the owning extension */,
+						)
 					}
 					// kilocode_change end
 				} catch (error) {
@@ -3627,21 +3645,24 @@ export const webviewMessageHandler = async (
 				// Determine the scope based on source (project or global)
 				const scope = modeToDelete.source || "global"
 
-			// Determine the rules folder path
-			// kilocode_change: use unified config-dir resolvers (.deeptask > .kilocode > .roo)
-			let rulesFolderPath: string
-			if (scope === "project") {
-				const workspacePath = getWorkspacePath()
-				if (workspacePath) {
-					rulesFolderPath = path.join(getProjectRooDirectoryForCwd(workspacePath), `rules-${message.slug}`)
+				// Determine the rules folder path
+				// kilocode_change: use unified config-dir resolvers (.deeptask > .kilocode > .roo)
+				let rulesFolderPath: string
+				if (scope === "project") {
+					const workspacePath = getWorkspacePath()
+					if (workspacePath) {
+						rulesFolderPath = path.join(
+							getProjectRooDirectoryForCwd(workspacePath),
+							`rules-${message.slug}`,
+						)
+					} else {
+						// kilocode_change: unified config dir name
+						rulesFolderPath = path.join(".deeptask", `rules-${message.slug}`)
+					}
 				} else {
-					// kilocode_change: unified config dir name
-					rulesFolderPath = path.join(".deeptask", `rules-${message.slug}`)
+					// Global scope - use OS home directory
+					rulesFolderPath = path.join(getGlobalRooDirectory(), `rules-${message.slug}`)
 				}
-			} else {
-				// Global scope - use OS home directory
-				rulesFolderPath = path.join(getGlobalRooDirectory(), `rules-${message.slug}`)
-			}
 
 				// Check if the rules folder exists
 				const rulesFolderExists = await fileExistsAtPath(rulesFolderPath)
@@ -5144,24 +5165,24 @@ export const webviewMessageHandler = async (
 					break
 				}
 
-			// Determine the commands directory based on source
-			// kilocode_change: use unified config-dir resolvers (.deeptask > .kilocode > .roo)
-			let commandsDir: string
-			if (source === "global") {
-				commandsDir = path.join(getGlobalRooDirectory(), "commands")
-			} else {
-				if (!vscode.workspace.workspaceFolders?.length) {
-					vscode.window.showErrorMessage(t("common:errors.no_workspace"))
-					return
+				// Determine the commands directory based on source
+				// kilocode_change: use unified config-dir resolvers (.deeptask > .kilocode > .roo)
+				let commandsDir: string
+				if (source === "global") {
+					commandsDir = path.join(getGlobalRooDirectory(), "commands")
+				} else {
+					if (!vscode.workspace.workspaceFolders?.length) {
+						vscode.window.showErrorMessage(t("common:errors.no_workspace"))
+						return
+					}
+					// Project commands
+					const workspaceRoot = getCurrentCwd()
+					if (!workspaceRoot) {
+						vscode.window.showErrorMessage(t("common:errors.no_workspace_for_project_command"))
+						break
+					}
+					commandsDir = path.join(getProjectRooDirectoryForCwd(workspaceRoot), "commands")
 				}
-				// Project commands
-				const workspaceRoot = getCurrentCwd()
-				if (!workspaceRoot) {
-					vscode.window.showErrorMessage(t("common:errors.no_workspace_for_project_command"))
-					break
-				}
-				commandsDir = path.join(getProjectRooDirectoryForCwd(workspaceRoot), "commands")
-			}
 
 				// Ensure the commands directory exists
 				await fs.mkdir(commandsDir, { recursive: true })

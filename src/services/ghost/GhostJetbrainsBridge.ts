@@ -9,8 +9,9 @@ import { GhostContextProvider } from "./types"
 import { FimPromptBuilder } from "./classic-auto-complete/FillInTheMiddle"
 import { HoleFiller } from "./classic-auto-complete/HoleFiller"
 import { MockTextDocument } from "../mocking/MockTextDocument"
+import { registerNamespacedCommands } from "../../utils/registerNamespacedCommands"
 
-const GET_INLINE_COMPLETIONS_COMMAND = "kilo-code.jetbrains.getInlineCompletions"
+const GET_INLINE_COMPLETIONS_COMMAND = "deeptask.jetbrains.getInlineCompletions"
 
 // Zod schemas for validation
 const PositionSchema = z.object({
@@ -286,6 +287,12 @@ export const registerGhostJetbrainsBridge = (
 
 	// Register JetBrains inline completion command
 	context.subscriptions.push(
-		vscode.commands.registerCommand(GET_INLINE_COMPLETIONS_COMMAND, bridge.getInlineCompletions.bind(bridge)),
+		registerNamespacedCommands([
+			{
+				command: GET_INLINE_COMPLETIONS_COMMAND,
+				legacyCommand: "kilo-code.jetbrains.getInlineCompletions",
+				callback: bridge.getInlineCompletions.bind(bridge),
+			},
+		]),
 	)
 }

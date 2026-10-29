@@ -2367,6 +2367,49 @@ describe("ChatView - Context Condensing Indicator Tests", () => {
 		)
 	})
 
+	// kilocode_change start: refresh task identity after a conversation switch.
+	it("uses the newly focused task for condense start and completion events", async () => {
+		const { container } = renderChatView()
+		const messages = [
+			{ type: "say" as const, say: "task" as const, ts: 100, text: "Task" },
+			{
+				type: "say" as const,
+				say: "api_req_started" as const,
+				ts: 200,
+				text: JSON.stringify({ apiProtocol: "anthropic" }),
+			},
+		]
+		const hydrate = async (id: string) => {
+			await act(async () => {
+				mockPostMessage({ currentTaskItem: { id, number: 1, ts: 100 }, clineMessages: messages })
+				await new Promise((resolve) => setTimeout(resolve, 20))
+			})
+		}
+		const send = async (type: string, text: string) => {
+			await act(async () => {
+				window.dispatchEvent(new MessageEvent("message", { data: { type, text } }))
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+		}
+		const condensingRow = () =>
+			Array.from(container.querySelectorAll('[data-testid="chat-row"]')).find((row) => {
+				const text = row.textContent || ""
+				return text.includes('"say":"condense_context"') && text.includes('"partial":true')
+			})
+
+		await hydrate("previous-task")
+		await hydrate("current-task")
+		await send("condenseTaskContextStarted", "previous-task")
+		expect(condensingRow()).toBeUndefined()
+		await send("condenseTaskContextStarted", "current-task")
+		await waitFor(() => expect(condensingRow()).toBeTruthy())
+		await send("condenseTaskContextResponse", "previous-task")
+		expect(condensingRow()).toBeTruthy()
+		await send("condenseTaskContextResponse", "current-task")
+		await waitFor(() => expect(condensingRow()).toBeUndefined())
+	})
+	// kilocode_change end
+
 	// kilocode_change start: cross-conversation condense leak regression (9.2.7
 	// defect D). A background conversation's condenseTaskContextStarted must
 	// NOT light the condensing indicator in the focused conversation, and its

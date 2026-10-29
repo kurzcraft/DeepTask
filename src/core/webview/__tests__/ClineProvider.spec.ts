@@ -2427,7 +2427,9 @@ describe("ClineProvider", () => {
 			expect(updateGlobalStateSpy).toHaveBeenCalledWith("listApiConfigMeta", [
 				{ name: "test-config", id: "test-id", apiProvider: "anthropic" },
 			])
-			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith("kilo-code.ghost.reload")
+			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith(
+				"deeptask.ghost.reload" /* kilocode_change: namespaced autocomplete reload */,
+			)
 			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith("workbench.action.reloadWindow")
 		})
 
@@ -2452,7 +2454,9 @@ describe("ClineProvider", () => {
 			})
 
 			expect(vscode.commands.executeCommand).toHaveBeenCalledTimes(1)
-			expect(vscode.commands.executeCommand).toHaveBeenCalledWith("kilo-code.ghost.reload")
+			expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+				"deeptask.ghost.reload" /* kilocode_change: namespaced autocomplete reload */,
+			)
 			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith("workbench.action.reloadWindow")
 		})
 
@@ -2478,7 +2482,9 @@ describe("ClineProvider", () => {
 				apiKey: "test-key",
 				id: "chat-id",
 			})
-			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith("kilo-code.ghost.reload")
+			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith(
+				"deeptask.ghost.reload" /* kilocode_change: namespaced autocomplete reload */,
+			)
 			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith("workbench.action.reloadWindow")
 		})
 
@@ -2502,7 +2508,9 @@ describe("ClineProvider", () => {
 
 			expect(provider.providerSettingsManager.deleteConfig).toHaveBeenCalledWith("old-chat")
 			expect(provider.activateProviderProfile).toHaveBeenCalledWith({ name: "remaining-chat" })
-			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith("kilo-code.ghost.reload")
+			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith(
+				"deeptask.ghost.reload" /* kilocode_change: namespaced autocomplete reload */,
+			)
 			expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith("workbench.action.reloadWindow")
 		})
 	})

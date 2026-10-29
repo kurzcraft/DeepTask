@@ -26,6 +26,10 @@
 - Invalidate each asynchronous syntax-highlighting request independently so superseded or unmounted requests cannot resume expensive work or overwrite current content; preserve complete code and copy behavior.
 - Avoid terminal-text merging for token accounting, reuse unchanged image projections, skip redundant pass-through history caching, and reuse already-fetched settings without changing public snapshot or export fields.
 - Exclude unproven history-pruning and terminal-truncation candidates; retain model evidence, process identity, and existing transcript semantics.
+- Isolate DeepTask completion and commit-message commands from co-installed Kilo Code while retaining safe legacy aliases and disposal ownership.
+- Bound iterator cleanup only after terminal completion, preserve long-running commands, and keep cancellation recovery actionable despite late output or repeated clicks.
+- Refresh focused-task identity for context-condensation events so previous conversations cannot clear the current indicator.
+- Release removed Agent Manager session payloads and atom-family keys only after both authoritative local and remote lists drop the session; preserve retained histories, drafts, images and full-snapshot restoration.
 
 ## 9.2.7
 

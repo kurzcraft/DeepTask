@@ -251,48 +251,68 @@ export class TerminalProcess extends BaseTerminalProcess {
 		// commands. Once completion is known, bound the remaining drain window so the
 		// agent cannot stay stuck waiting for a stream close that never arrives.
 		const streamIterator = stream[Symbol.asyncIterator]()
+		// kilocode_change start: return() may queue behind an unresolved next().
+		// This deadline applies only after a terminal boundary, never to live work.
 		const closeStreamIterator = async () => {
-			if (typeof streamIterator.return === "function") {
-				try {
-					await streamIterator.return()
-				} catch (error) {
+			if (typeof streamIterator.return !== "function") {
+				return
+			}
+			let cleanupTimer: ReturnType<typeof setTimeout> | undefined
+			try {
+				const cleanup = Promise.resolve(streamIterator.return()).catch((error) => {
 					console.debug("[TerminalProcess] Failed to close shell execution stream:", error)
+				})
+				await Promise.race([
+					cleanup,
+					new Promise<void>((resolve) => {
+						cleanupTimer = setTimeout(() => {
+							console.warn("[TerminalProcess] Stream cleanup exceeded 1000ms after terminal completion.")
+							resolve()
+						}, 1_000)
+					}),
+				])
+			} catch (error) {
+				console.debug("[TerminalProcess] Failed to close shell execution stream:", error)
+			} finally {
+				if (cleanupTimer !== undefined) {
+					clearTimeout(cleanupTimer)
 				}
 			}
 		}
+		// kilocode_change end
 		const shellCompletionDeadline = shellExecutionComplete.then(
 			() =>
 				new Promise<"deadline">((resolve) => {
 					setTimeout(() => resolve("deadline"), 1_000)
 				}),
 		)
-	// If VS Code closes the backing terminal shell, neither the shell execution
-	// end event nor the output iterator is guaranteed to resolve. Poll the
-	// terminal close state so a failed/terminated bash cannot leave the command
-	// tool waiting forever on an abandoned stream.
-	let terminalClosePollId: NodeJS.Timeout | undefined
-	const terminalClosed = new Promise<"terminal_closed">((resolve) => {
-		terminalClosePollId = setInterval(() => {
-			// kilocode_change: the terminal reference can be garbage-collected
-			// while a retained process still polls; dereference defensively so the
-			// poll itself can never crash the extension host.
-			try {
-				if (this.terminal.isClosed()) {
+		// If VS Code closes the backing terminal shell, neither the shell execution
+		// end event nor the output iterator is guaranteed to resolve. Poll the
+		// terminal close state so a failed/terminated bash cannot leave the command
+		// tool waiting forever on an abandoned stream.
+		let terminalClosePollId: NodeJS.Timeout | undefined
+		const terminalClosed = new Promise<"terminal_closed">((resolve) => {
+			terminalClosePollId = setInterval(() => {
+				// kilocode_change: the terminal reference can be garbage-collected
+				// while a retained process still polls; dereference defensively so the
+				// poll itself can never crash the extension host.
+				try {
+					if (this.terminal.isClosed()) {
+						if (terminalClosePollId) {
+							clearInterval(terminalClosePollId)
+							terminalClosePollId = undefined
+						}
+						resolve("terminal_closed")
+					}
+				} catch {
 					if (terminalClosePollId) {
 						clearInterval(terminalClosePollId)
 						terminalClosePollId = undefined
 					}
 					resolve("terminal_closed")
 				}
-			} catch {
-				if (terminalClosePollId) {
-					clearInterval(terminalClosePollId)
-					terminalClosePollId = undefined
-				}
-				resolve("terminal_closed")
-			}
-		}, 100)
-	})
+			}, 100)
+		})
 		while (true) {
 			const next = await Promise.race([
 				streamIterator.next().then((result) => ({ kind: "item" as const, result })),
@@ -462,41 +482,41 @@ export class TerminalProcess extends BaseTerminalProcess {
 				return
 			}
 
-		// kilocode_change start: echo-only stream recovery
-		// When the C marker is missing, VS Code can hand us a stream that only
-		// ever carried the echoed command line while the real command output
-		// went straight to the terminal buffer. Preserving that echo as the
-		// "output" shows the model the command text instead of its results and
-		// made users report the output as swallowed. Strip the echo first; if
-		// nothing meaningful remains, recover the visible terminal transcript.
-		const preservedRaw = this.removeEscapeSequences(preOutput).trim()
-		const strippedEcho = this.removeEscapeSequences(this.stripLeadingEchoAndPrompt(preOutput, command)).trim()
+			// kilocode_change start: echo-only stream recovery
+			// When the C marker is missing, VS Code can hand us a stream that only
+			// ever carried the echoed command line while the real command output
+			// went straight to the terminal buffer. Preserving that echo as the
+			// "output" shows the model the command text instead of its results and
+			// made users report the output as swallowed. Strip the echo first; if
+			// nothing meaningful remains, recover the visible terminal transcript.
+			const preservedRaw = this.removeEscapeSequences(preOutput).trim()
+			const strippedEcho = this.removeEscapeSequences(this.stripLeadingEchoAndPrompt(preOutput, command)).trim()
 
-		// A marker-less stream whose only real content was the command echo (or
-		// that carried no data at all) cannot satisfy any output requirement:
-		// recover from the visible terminal transcript instead.
-		if (preservedRaw.length === 0 || strippedEcho.length === 0) {
-			let screenFallback = ""
+			// A marker-less stream whose only real content was the command echo (or
+			// that carried no data at all) cannot satisfy any output requirement:
+			// recover from the visible terminal transcript instead.
+			if (preservedRaw.length === 0 || strippedEcho.length === 0) {
+				let screenFallback = ""
 
-			try {
-				// Note: this reads the *active* terminal panel; it is a last-resort
-				// recovery path only, because no stream data survived to reuse.
-				screenFallback = (await Terminal.getTerminalContents(1)).trim()
-			} catch (error) {
-				console.warn("[TerminalProcess] Terminal screen fallback failed:", error)
+				try {
+					// Note: this reads the *active* terminal panel; it is a last-resort
+					// recovery path only, because no stream data survived to reuse.
+					screenFallback = (await Terminal.getTerminalContents(1)).trim()
+				} catch (error) {
+					console.warn("[TerminalProcess] Terminal screen fallback failed:", error)
+				}
+
+				const recovered = screenFallback.length > 0 ? screenFallback : preservedRaw
+				this.fullOutput = recovered
+
+				this.emit(
+					"completed",
+					`${recovered}\n<VSCE shell integration start marker missing; stream carried only the command echo or no data; terminal screen content used to recover the command output.>`,
+				)
+				this.continue()
+				return
 			}
-
-			const recovered = screenFallback.length > 0 ? screenFallback : preservedRaw
-			this.fullOutput = recovered
-
-			this.emit(
-				"completed",
-				`${recovered}\n<VSCE shell integration start marker missing; stream carried only the command echo or no data; terminal screen content used to recover the command output.>`,
-			)
-			this.continue()
-			return
-		}
-		// kilocode_change end
+			// kilocode_change end
 
 			this.fullOutput = this.removeEscapeSequences(preOutput)
 			this.emit(
@@ -538,7 +558,8 @@ export class TerminalProcess extends BaseTerminalProcess {
 			if (screenFallback.length > 0) {
 				this.fullOutput = screenFallback
 				output = screenFallback
-				output += "\n<VSCE command stream produced no data; terminal screen content used to recover the command output.>"
+				output +=
+					"\n<VSCE command stream produced no data; terminal screen content used to recover the command output.>"
 			}
 		}
 
@@ -734,11 +755,7 @@ export class TerminalProcess extends BaseTerminalProcess {
 		}
 	}
 
-	private stringIndexMatch(
-		data: string,
-		prefix?: string,
-		suffix?: string,
-	): string | undefined {
+	private stringIndexMatch(data: string, prefix?: string, suffix?: string): string | undefined {
 		let startIndex: number
 		let endIndex: number
 		let prefixLength: number
@@ -812,11 +829,7 @@ export class TerminalProcess extends BaseTerminalProcess {
 		// which VSCodium can emit instead of BEL (\x07). BEL-only matching left
 		// raw ]633;... sequences visible in command output.
 		// eslint-disable-next-line no-control-regex
-		return stripAnsi(
-			str
-				.replace(/\x1b\]633;[^\x07\x1b]*(?:\x07|\x1b\\)/gs, "")
-				.replace(/\x1b\]133;[^\x07\x1b]*(?:\x07|\x1b\\)/gs, ""),
-		)
+		return stripAnsi(str.replace(/\x1b\](?:633|133);[^\x07\x1b]*(?:\x07|\x1b\\)/gs, ""))
 	}
 
 	/**

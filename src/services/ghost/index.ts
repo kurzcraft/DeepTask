@@ -3,6 +3,7 @@ import * as vscode from "vscode"
 import { GhostServiceManager } from "./GhostServiceManager"
 import { ClineProvider } from "../../core/webview/ClineProvider"
 import { registerGhostJetbrainsBridge } from "./GhostJetbrainsBridge"
+import { registerNamespacedCommands } from "../../utils/registerNamespacedCommands"
 
 export const registerGhostProvider = (context: vscode.ExtensionContext, cline: ClineProvider) => {
 	const ghost = new GhostServiceManager(context, cline)
@@ -11,31 +12,31 @@ export const registerGhostProvider = (context: vscode.ExtensionContext, cline: C
 	// Register JetBrains Bridge if applicable
 	registerGhostJetbrainsBridge(context, cline, ghost)
 
-	// Register GhostServiceManager Commands
+	// Keep primary commands and legacy aliases under one disposable owner.
 	context.subscriptions.push(
-		vscode.commands.registerCommand("kilo-code.ghost.reload", async () => {
-			await ghost.load()
-		}),
-	)
-	context.subscriptions.push(
-		vscode.commands.registerCommand("kilo-code.ghost.codeActionQuickFix", async () => {
-			return
-		}),
-	)
-	context.subscriptions.push(
-		vscode.commands.registerCommand("kilo-code.ghost.generateSuggestions", async () => {
-			ghost.codeSuggestion()
-		}),
-	)
-	context.subscriptions.push(
-		vscode.commands.registerCommand("kilo-code.ghost.showIncompatibilityExtensionPopup", async () => {
-			await ghost.showIncompatibilityExtensionPopup()
-		}),
-	)
-	context.subscriptions.push(
-		vscode.commands.registerCommand("kilo-code.ghost.disable", async () => {
-			await ghost.disable()
-		}),
+		registerNamespacedCommands([
+			{ command: "deeptask.ghost.reload", legacyCommand: "kilo-code.ghost.reload", callback: () => ghost.load() },
+			{
+				command: "deeptask.ghost.codeActionQuickFix",
+				legacyCommand: "kilo-code.ghost.codeActionQuickFix",
+				callback: async () => undefined,
+			},
+			{
+				command: "deeptask.ghost.generateSuggestions",
+				legacyCommand: "kilo-code.ghost.generateSuggestions",
+				callback: () => ghost.codeSuggestion(),
+			},
+			{
+				command: "deeptask.ghost.showIncompatibilityExtensionPopup",
+				legacyCommand: "kilo-code.ghost.showIncompatibilityExtensionPopup",
+				callback: () => ghost.showIncompatibilityExtensionPopup(),
+			},
+			{
+				command: "deeptask.ghost.disable",
+				legacyCommand: "kilo-code.ghost.disable",
+				callback: () => ghost.disable(),
+			},
+		]),
 	)
 
 	// Register GhostServiceManager Code Actions

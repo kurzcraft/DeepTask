@@ -96,8 +96,12 @@ export const resetSessionMachineAtom = atom(null, (get, set, sessionId: string) 
 /**
  * Clean up a session's state machine (e.g., when session is removed).
  */
-export const cleanupSessionMachineAtom = atom(null, (_get, _set, sessionId: string) => {
+export const cleanupSessionMachineAtom = atom(null, (get, set, sessionId: string) => {
 	sessionStateMachines.delete(sessionId)
+	const { [sessionId]: _state, ...states } = get(sessionMachineStateAtom)
+	const { [sessionId]: _uiState, ...uiStates } = get(sessionMachineUiStateAtom)
+	set(sessionMachineStateAtom, states)
+	set(sessionMachineUiStateAtom, uiStates)
 })
 
 /**

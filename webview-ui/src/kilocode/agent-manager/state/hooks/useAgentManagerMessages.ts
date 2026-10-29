@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react"
-import { useAtomValue, useSetAtom } from "jotai"
+import { useSetAtom, useStore } from "jotai"
 import type { ClineMessage } from "@roo-code/types"
 import { updateSessionMessagesAtom } from "../atoms/messages"
 import { updateSessionTodosAtom } from "../atoms/todos"
@@ -21,7 +21,8 @@ import {
 	type RemoteSession,
 	type PendingSession,
 } from "../atoms/sessions"
-import { sendSessionEventAtom, cleanupSessionMachineAtom } from "../atoms/stateMachine"
+import { sendSessionEventAtom } from "../atoms/stateMachine"
+import { releaseRemovedSessionAtom } from "../atoms/sessionLifecycle"
 import type { SessionEvent } from "../sessionStateMachine"
 
 interface AgentManagerState {
@@ -174,9 +175,9 @@ export function useAgentManagerMessages() {
 	const setPendingSession = useSetAtom(pendingSessionAtom)
 	const setIsRefreshingRemoteSessions = useSetAtom(isRefreshingRemoteSessionsAtom)
 	const sendSessionEvent = useSetAtom(sendSessionEventAtom)
-	const cleanupSessionMachine = useSetAtom(cleanupSessionMachineAtom)
+	const releaseRemovedSession = useSetAtom(releaseRemovedSessionAtom)
 	const updateSessionMode = useSetAtom(updateSessionModeAtom)
-	const sessionOrder = useAtomValue(sessionOrderAtom)
+	const store = useStore()
 	const hasInitializedSelection = useRef(false)
 	const knownSessionsRef = useRef(new Set<string>())
 
@@ -226,10 +227,10 @@ export function useAgentManagerMessages() {
 						}
 					}
 					const extensionSessionIds = new Set(state.sessions.map((s) => s.sessionId))
-					for (const sessionId of sessionOrder) {
+					for (const sessionId of store.get(sessionOrderAtom)) {
 						if (!extensionSessionIds.has(sessionId)) {
 							removeSession(sessionId)
-							cleanupSessionMachine(sessionId)
+							releaseRemovedSession(sessionId)
 							knownSessionsRef.current.delete(sessionId)
 						}
 					}
@@ -250,7 +251,14 @@ export function useAgentManagerMessages() {
 
 				case "agentManager.remoteSessions": {
 					const { sessions } = message as RemoteSessionsMessage
+					const previousSessions = store.get(remoteSessionsAtom)
 					setRemoteSessions(sessions)
+					const retainedIds = new Set(sessions.map((session) => session.session_id))
+					for (const session of previousSessions) {
+						if (!retainedIds.has(session.session_id)) {
+							releaseRemovedSession(session.session_id)
+						}
+					}
 					setIsRefreshingRemoteSessions(false)
 					break
 				}
@@ -320,8 +328,8 @@ export function useAgentManagerMessages() {
 		setPendingSession,
 		setIsRefreshingRemoteSessions,
 		sendSessionEvent,
-		cleanupSessionMachine,
+		releaseRemovedSession,
 		updateSessionMode,
-		sessionOrder,
+		store,
 	])
 }

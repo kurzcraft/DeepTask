@@ -26,6 +26,7 @@ import { shouldSkipAutocomplete } from "./contextualSkip"
 import { RooIgnoreController } from "../../../core/ignore/RooIgnoreController"
 import { ClineProvider } from "../../../core/webview/ClineProvider"
 import { AutocompleteTelemetry } from "./AutocompleteTelemetry"
+import { registerNamespacedCommands } from "../../../utils/registerNamespacedCommands"
 
 const MAX_SUGGESTIONS_HISTORY = 20
 
@@ -169,7 +170,7 @@ export function applyFirstLineOnly(
  * Command ID for tracking inline completion acceptance.
  * This command is executed after the user accepts an inline completion.
  */
-export const INLINE_COMPLETION_ACCEPTED_COMMAND = "kilocode.ghost.inline-completion.accepted"
+export const INLINE_COMPLETION_ACCEPTED_COMMAND = "deeptask.ghost.inline-completion.accepted"
 
 /**
  * Counts the number of lines in a text string.
@@ -310,9 +311,13 @@ export class GhostInlineCompletionProvider implements vscode.InlineCompletionIte
 		this.recentlyVisitedRangesService = new RecentlyVisitedRangesService(ide)
 		this.recentlyEditedTracker = new RecentlyEditedTracker(ide)
 
-		this.acceptedCommand = vscode.commands.registerCommand(INLINE_COMPLETION_ACCEPTED_COMMAND, () =>
-			this.telemetry?.captureAcceptSuggestion(this.lastSuggestion?.length),
-		)
+		this.acceptedCommand = registerNamespacedCommands([
+			{
+				command: INLINE_COMPLETION_ACCEPTED_COMMAND,
+				legacyCommand: "kilocode.ghost.inline-completion.accepted",
+				callback: () => this.telemetry?.captureAcceptSuggestion(this.lastSuggestion?.length),
+			},
+		])
 	}
 
 	public updateSuggestions(fillInAtCursor: FillInAtCursorSuggestion): void {

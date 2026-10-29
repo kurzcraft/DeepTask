@@ -924,7 +924,7 @@ describe("GhostInlineCompletionProvider", () => {
 			expect(result[0].range).toEqual(new vscode.Range(mockPosition, mockPosition))
 			// Command is attached to track acceptance telemetry
 			expect(result[0].command).toEqual({
-				command: "kilocode.ghost.inline-completion.accepted",
+				command: "deeptask.ghost.inline-completion.accepted",
 				title: "Autocomplete Accepted",
 			})
 		})
@@ -2419,7 +2419,7 @@ describe("GhostInlineCompletionProvider", () => {
 			let acceptCallback: (() => void) | undefined
 			const originalMock = vi.mocked(vscode.commands.registerCommand)
 			originalMock.mockImplementation((cmd, callback) => {
-				if (cmd === "kilocode.ghost.inline-completion.accepted") {
+				if (cmd === "deeptask.ghost.inline-completion.accepted") {
 					acceptCallback = callback as () => void
 				}
 				return { dispose: vi.fn() }

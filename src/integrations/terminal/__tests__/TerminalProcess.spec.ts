@@ -340,9 +340,11 @@ describe("TerminalProcess", () => {
 			})
 			terminalProcess.on("continue", continueSpy)
 
-			const screenContentsSpy = vi.spyOn(Terminal, "getTerminalContents").mockResolvedValue(
-				"user@host:~/proj$ grep -rn 'match' src\nsrc/foo.ts:42:const match = 7\nsrc/bar.ts:7:match found",
-			)
+			const screenContentsSpy = vi
+				.spyOn(Terminal, "getTerminalContents")
+				.mockResolvedValue(
+					"user@host:~/proj$ grep -rn 'match' src\nsrc/foo.ts:42:const match = 7\nsrc/bar.ts:7:match found",
+				)
 			mockTerminal.shellIntegration.executeCommand.mockReturnValue({
 				read: vi.fn().mockReturnValue(echoOnlyStream),
 			})
@@ -390,6 +392,38 @@ describe("TerminalProcess", () => {
 			expect(completedOutput).not.toContain("output is unknown")
 			expect(continueSpy).toHaveBeenCalledTimes(1)
 		}, 3_000)
+
+		// kilocode_change start: a real generator queues return() behind pending next().
+		it("finishes after shell exit even when generator cleanup is blocked", async () => {
+			vi.useFakeTimers()
+			let release: (() => void) | undefined
+			const blocked = new Promise<void>((resolve) => {
+				release = resolve
+			})
+			const completed = vi.fn()
+			const stream = (async function* () {
+				yield String.fromCharCode(27) + " ]633;C".trimStart() + String.fromCharCode(7)
+				yield "preserved command output" + String.fromCharCode(10)
+				await blocked
+			})()
+			mockTerminal.shellIntegration.executeCommand.mockReturnValue({ read: () => stream })
+			terminalProcess.on("completed", completed)
+			const running = terminalProcess.run("bash EXTRA/bash/finite.sh")
+			try {
+				await vi.advanceTimersByTimeAsync(0)
+				expect(completed).not.toHaveBeenCalled()
+				terminalProcess.emit("shell_execution_complete", { exitCode: 0 })
+				await vi.advanceTimersByTimeAsync(2_500)
+				expect(completed).toHaveBeenCalledTimes(1)
+				expect(completed.mock.calls[0][0]).toBe("preserved command output" + String.fromCharCode(10))
+			} finally {
+				release?.()
+				await vi.advanceTimersByTimeAsync(2_000)
+				await running
+				vi.useRealTimers()
+			}
+		})
+		// kilocode_change end
 
 		it("reports unknown output when shell execution exposes no readable stream", async () => {
 			let completedOutput = ""
