@@ -6,7 +6,7 @@ import type { ExtensionContext, Uri } from "vscode"
 import type { ClineProvider } from "../../../core/webview/ClineProvider"
 
 import type { McpHub as McpHubType, McpConnection, ConnectedMcpConnection, DisconnectedMcpConnection } from "../McpHub"
-import { ServerConfigSchema, McpHub } from "../McpHub"
+import { ServerConfigSchema, McpHub, projectMcpWatchTargets } from "../McpHub"
 
 // Mock fs/promises before importing anything that uses it
 vi.mock("fs/promises", () => ({
@@ -2339,6 +2339,24 @@ describe("watcher ownership regression", () => {
 		} finally {
 			log.mockRestore()
 		}
+	})
+})
+
+describe("projectMcpWatchTargets", () => {
+	it("watches mcp.json as a direct child of config directories, never a slash glob on the repo root", () => {
+		const targets = projectMcpWatchTargets("/media/kurz/aleber/vscode/deeptask")
+		expect(targets).toEqual([
+			{
+				watchBase: "/media/kurz/aleber/vscode/deeptask/.deeptask",
+				pattern: "mcp.json",
+			},
+			{
+				watchBase: "/media/kurz/aleber/vscode/deeptask/.kilocode",
+				pattern: "mcp.json",
+			},
+		])
+		expect(targets.every((target) => !target.pattern.includes("/") && !target.pattern.includes("**"))).toBe(true)
+		expect(targets.every((target) => !target.watchBase.endsWith("/deeptask"))).toBe(true)
 	})
 })
 // kilocode_change end

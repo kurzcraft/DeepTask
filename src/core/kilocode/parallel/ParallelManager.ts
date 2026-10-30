@@ -101,6 +101,26 @@ const CONVERSATIONS_STORAGE_KEY = "parallelConversations"
 const ACTIVE_CONVERSATION_STORAGE_KEY = "parallelActiveConversationId"
 const ARCHIVED_FOLDERS_STORAGE_KEY = "parallelArchivedFolders"
 
+/** Direct-child glob under `.kilocode/worktrees`; never a slash-containing recursive glob. */
+export const WORKTREE_WATCH_GLOB = "*"
+
+/**
+ * Watch bases for parallel worktree discovery. Archived roots are omitted so
+ * stale folders such as `vscode/` do not keep a recursive inotify tree alive.
+ */
+export function worktreeWatchTargets(
+	folders: ParallelFolder[],
+	archivedFolders?: Set<string>,
+): Array<{ folderPath: string; watchBase: string; pattern: string }> {
+	return folders
+		.filter((folder) => !folder.archivedAt && !archivedFolders?.has(folder.path))
+		.map((folder) => ({
+			folderPath: folder.path,
+			watchBase: path.join(folder.path, ".kilocode", "worktrees"),
+			pattern: WORKTREE_WATCH_GLOB,
+		}))
+}
+
 export class ParallelManager {
 	private sessions: Map<string, SessionState> = new Map()
 	private mainFolders: ParallelFolder[] | undefined
@@ -772,31 +792,45 @@ export class ParallelManager {
 		this.watchWorktreeFolders()
 	}
 
+	/**
+	 * Watch only `.kilocode/worktrees/*` as direct children of that directory.
+	 *
+	 * A RelativePattern whose glob contains `/` (e.g. `.kilocode/worktrees/*`)
+	 * is compiled as a recursive tree watch of `base`. When `base` is a string
+	 * repo root, VS Code also skips `files.watcherExclude`, so archived parallel
+	 * roots such as `vscode/` and `AgentMCPS` used to pin hundreds of thousands
+	 * of inotify watches (node_modules included) and grow the fileWatcher RSS
+	 * until the webview went grey.
+	 *
+	 * Keep the vscode 1.84 three-boolean overload. An options object is treated
+	 * as a truthy `ignoreCreateEvents` on that API and would drop worktree
+	 * create notifications.
+	 */
 	private watchWorktreeFolders(): void {
 		if (process.env.NODE_ENV === "test" || typeof vscode.workspace?.createFileSystemWatcher !== "function") {
 			return
 		}
-		const folders = this.mainFolders ?? []
-		const keep = new Set(folders.map((folder) => folder.path))
+		const targets = worktreeWatchTargets(this.mainFolders ?? [], this.archivedFolders)
+		const keep = new Set(targets.map((target) => target.folderPath))
 		for (const [folderPath, disposable] of this.worktreeWatchers) {
 			if (!keep.has(folderPath)) {
 				disposable.dispose()
 				this.worktreeWatchers.delete(folderPath)
 			}
 		}
-		for (const folder of folders) {
-			if (this.worktreeWatchers.has(folder.path)) {
+		for (const target of targets) {
+			if (this.worktreeWatchers.has(target.folderPath)) {
 				continue
 			}
 			try {
-				const pattern = new vscode.RelativePattern(folder.path, ".kilocode/worktrees/*")
+				const pattern = new vscode.RelativePattern(vscode.Uri.file(target.watchBase), target.pattern)
 				const watcher = vscode.workspace.createFileSystemWatcher(pattern, false, true, false)
 				const refresh = () => this.queueWorktreeRefresh()
 				watcher.onDidCreate(refresh)
 				watcher.onDidDelete(refresh)
-				this.worktreeWatchers.set(folder.path, watcher)
+				this.worktreeWatchers.set(target.folderPath, watcher)
 			} catch (error) {
-				console.error(`[ParallelManager] failed to watch worktrees for ${folder.path}:`, error)
+				console.error(`[ParallelManager] failed to watch worktrees for ${target.folderPath}:`, error)
 			}
 		}
 	}
@@ -837,6 +871,7 @@ export class ParallelManager {
 		this.mainFolders = (this.mainFolders ?? []).map((folder) =>
 			folder.path === path ? { ...folder, archivedAt: archived ? Date.now() : undefined } : folder,
 		)
+		this.watchWorktreeFolders()
 		try {
 			await this.stateStore.write(FOLDERS_STORAGE_KEY, this.mainFolders)
 		} catch (error) {

@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.2.8</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.2.9</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.2.8** 强化长任务可靠性：子代理结果先持久化再回传，恢复时去重补发；关窗后完成消息即写父 inbox，重启后从历史恢复子代理身份，父点继续才注入终态；长上下文压缩保留增量续跑状态，不再复述上一轮开场白。工具绑定分配工作区；工作区合并验证真实目标分支与文件落盘，保留无关本地修改；超长多行命令快速返回可恢复错误。默认优先复用兼容依赖，测试仍针对隔离源码。长会话资源优化持续以回归和压力测试验证，不以累计传输量代替峰值内存，也不承诺灰屏已被完全根治。 本次追加辅助文本缓存预算、主题按需加载、全量快照请求合并、重复IPC去除和宿主提示词去重，保留完整显示内容与必要模型信息。 后续结构审计补强了取消后的历史保存、任务级工具解析隔离、MCP与索引监听释放，以及子进程启动和退出结算；原生工具参数保持原文，命令预检不执行用户程序。 2026-10-29追加修复代码块异步高亮的过期请求恢复，并减少用量统计和设置读取中的重复分配；只纳入经过保真审查与1067项回归验证的修改，未证明等价的历史删减与终端截断不入包。 历史命令输出仅在面板投影短预览，磁盘存储与模型输入仍保留全文；折叠行不挂全文代码块，展开后再按时间戳取回原文。清洗未配对 native 工具调用时保留交错文本，压缩摘要压平嵌套 Previous Conversation，原生历史只接受真正的 tool_use/mcp_tool_use。安装后瞬时最高 RSS 约 4.6GiB 属于 VSCodium zygote，扩展宿主约 0.8–1.1GiB、webview 堆约 0.3–0.5GiB；90% 告警是 webview 堆上限比，本版不保证永不溢出。
+> **Deeptask 9.2.9** 给聊天列表真正的有界虚拟化：Virtuoso 视口高度约束后，屏外 ChatRow 不再整树挂载；仅末条保留 ResizeObserver；用户消息轨道改为单例悬停预览。工作区文件列表、代码索引与过期上下文检测改用编辑器文件事件，不再自建递归 `**` 监视去绕过 `files.watcherExclude`；任务进度只监视 `EXTRA/task` 下的 `*.md`。扩展还贡献 `files.watcherExclude` 默认值，堵住 VS Code 内置 `**/node_modules/*/**` 匹配不到点目录的洞，避免 `.pnpm` / `.bun` / `.yarn/cache`、构建缓存、Git LFS 与 `EXTRA/output` 被默认监视钉进 inotify；源码、`EXTRA/task` 与 MCP 配置仍被监视。磁盘存储与模型输入仍保留全文，历史命令输出继续用 9.2.8 的展示投影。9.2.8 的长任务可靠性与资源优化仍在：子代理结果先持久化再回传，恢复时去重补发；关窗后完成消息即写父 inbox，重启后从历史恢复子代理身份，父点继续才注入终态；长上下文压缩保留增量续跑状态，不再复述上一轮开场白。工具绑定分配工作区；工作区合并验证真实目标分支与文件落盘，保留无关本地修改；超长多行命令快速返回可恢复错误。默认优先复用兼容依赖，测试仍针对隔离源码。长会话资源优化持续以回归和压力测试验证，不以累计传输量代替峰值内存，也不承诺灰屏已被完全根治。 本次追加辅助文本缓存预算、主题按需加载、全量快照请求合并、重复IPC去除和宿主提示词去重，保留完整显示内容与必要模型信息。 后续结构审计补强了取消后的历史保存、任务级工具解析隔离、MCP与索引监听释放，以及子进程启动和退出结算；原生工具参数保持原文，命令预检不执行用户程序。 2026-10-29追加修复代码块异步高亮的过期请求恢复，并减少用量统计和设置读取中的重复分配；只纳入经过保真审查与1067项回归验证的修改，未证明等价的历史删减与终端截断不入包。 历史命令输出仅在面板投影短预览，磁盘存储与模型输入仍保留全文；折叠行不挂全文代码块，展开后再按时间戳取回原文。清洗未配对 native 工具调用时保留交错文本，压缩摘要压平嵌套 Previous Conversation，原生历史只接受真正的 tool_use/mcp_tool_use。安装后瞬时最高 RSS 约 4.6GiB 属于 VSCodium zygote，扩展宿主约 0.8–1.1GiB、webview 堆约 0.3–0.5GiB；90% 告警是 webview 堆上限比，本版不保证永不溢出。
 
 > 同日追加：隔离与Kilo Code共存时的命令所有权，修复命令结束后的清理等待和取消恢复。定向回归425项通过；长期灰屏与人工父中断恢复仍未现场验收。
 
@@ -150,17 +150,17 @@ Deeptask 选择寄生在 VSCodium 里而不是做成独立软件，是刻意为�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.2.8.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.2.9.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.2.8.vsix --force
+    codium --install-extension ./deeptask-9.2.9.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.2.8.vsix --force
+    code --install-extension ./deeptask-9.2.9.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

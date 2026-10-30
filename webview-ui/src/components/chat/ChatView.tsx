@@ -2799,16 +2799,20 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 						<div className="grow flex flex-row min-h-0">
 							<UserMessageRail messages={groupedMessages} onJump={handleMessageClick} />
 							<div className="grow flex flex-col min-h-0" ref={scrollContainerRef}>
-								<div className="flex-auto min-h-0">
+								{/* kilocode_change: Virtuoso only virtualizes when its viewport is height-bounded.
+								    A non-flex flex-auto wrapper lets the list grow with content and mounts every ChatRow. */}
+								<div className="flex-1 min-h-0 overflow-hidden">
 									<Virtuoso
 										ref={virtuosoRef}
 										scrollerRef={(element) => {
 											chatScrollerRef.current = element instanceof HTMLElement ? element : null
 										}}
 										key={task.ts}
-										className="scrollable grow overflow-y-scroll mb-1"
-										increaseViewportBy={{ top: 400, bottom: 400 }} // kilocode_change: use more modest numbers to see if they reduce gray screen incidence
+										className="scrollable h-full overflow-y-scroll mb-1"
+										style={{ height: "100%" }}
+										increaseViewportBy={{ top: 240, bottom: 240 }}
 										data={groupedMessages}
+										computeItemKey={(_index, message) => message.ts}
 										itemContent={itemContent}
 										followOutput={(isAtBottom: boolean) =>
 											pinnedJumpTsRef.current != null

@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events"
 import type { ExtensionMessage, ParallelConversation } from "@roo-code/types"
 
 import { Task } from "../../../task/Task"
-import { ParallelManager } from "../ParallelManager"
+import { ParallelManager, worktreeWatchTargets } from "../ParallelManager"
 import { WorkspaceRegistry } from "../WorkspaceRegistry"
 
 const makeStorage = (store: Map<string, unknown>) => ({
@@ -1032,5 +1032,28 @@ describe("ParallelManager conversations", () => {
 		expect(session?.info.status).toBe("completed")
 		expect(session?.inboxPersistError).toMatch(/parent storage path missing/)
 		createSpy.mockRestore()
+	})
+
+	test("worktreeWatchTargets watches only unarchived .kilocode/worktrees children", () => {
+		const targets = worktreeWatchTargets(
+			[
+				{ name: "deeptask", path: "/media/kurz/aleber/vscode/deeptask", kind: "main", createdAt: 1 },
+				{ name: "vscode", path: "/media/kurz/aleber/vscode", kind: "main", createdAt: 1, archivedAt: 2 },
+				{ name: "AgentMCPS", path: "/media/kurz/aleber/AgentMCPS", kind: "main", createdAt: 1 },
+			],
+			new Set(["/media/kurz/aleber/AgentMCPS"]),
+		)
+
+		expect(targets).toEqual([
+			{
+				folderPath: "/media/kurz/aleber/vscode/deeptask",
+				watchBase: "/media/kurz/aleber/vscode/deeptask/.kilocode/worktrees",
+				pattern: "*",
+			},
+		])
+		expect(targets.every((target) => !target.pattern.includes("/") && !target.watchBase.endsWith("/deeptask"))).toBe(
+			true,
+		)
+		expect(targets[0].watchBase.endsWith("/.kilocode/worktrees")).toBe(true)
 	})
 })

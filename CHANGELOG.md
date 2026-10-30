@@ -1,5 +1,21 @@
 # Deeptask
 
+## 9.2.9
+
+### Patch Changes
+
+- Bound the chat Virtuoso viewport so off-screen ChatRows unmount instead of growing the webview heap with every historical Markdown/code/command subtree.
+- Measure only the live last row with ResizeObserver; historical rows no longer each keep a size observer.
+- Keep message identity keys on `message.ts` so expand/collapse and recycle stay aligned across append and condensation.
+- Replace per-tick user-message-rail tooltips with a single hover preview overlay; jump ticks remain complete.
+- Give the parallel-session panel the same bounded Virtuoso viewport. Stored transcripts and model I/O stay full; historical command output still uses the 9.2.8 display projection.
+- Stop DeepTask from attaching recursive `**` file watchers. Workspace listing and code-index updates reuse editor file events (`onDidCreateFiles` / `onDidDeleteFiles` / `onDidRenameFiles` / save), so VS Code's `files.watcherExclude` is not bypassed and node_modules/.git are not pinned into inotify.
+- Stop FileContextTracker from attaching a recursive `**` change watcher. Tracked files use basename watchers plus `onDidSaveTextDocument`, so node_modules/.git/EXTRA churn no longer floods the fileWatcher process.
+- Watch parallel worktrees as direct children of `.kilocode/worktrees` and skip archived folder roots, so slash-containing globs no longer recursively pin node_modules on stale parallel folders.
+- Watch task-progress Markdown as direct `*.md` children of `EXTRA/task` instead of a slash-containing glob that compiled as a full-tree watch of the workspace.
+- Watch project MCP configs as `mcp.json` inside `.deeptask` and `.kilocode` instead of a slash-containing glob on the repo root, so VS Code no longer recursively pins `node_modules` for MCP file changes.
+- Contribute `files.watcherExclude` defaults for growth directories that VS Code still recursively pins after DeepTask stopped attaching its own recursive watchers: package stores (`.pnpm`, `.bun`, `.yarn/cache`), build caches (`.vite`, `.cache`, `.turbo`, `.next`), Git object/LFS stores, and command-log trees (`EXTRA/output`). Source files, `EXTRA/task` progress Markdown, and MCP configs stay watched. VS Code's built-in `**/node_modules/*/**` does not match dot directories, so those trees were still pinned into inotify. Directory-only keys (`**/.git/objects`, `**/node_modules/.pnpm`, `**/EXTRA/output`, `**/artifacts`) are required in addition to `/**` globs, because the watcher matcher does not treat a recursive glob as covering the directory inode itself.
+
 ## 9.2.8
 
 ### Patch Changes

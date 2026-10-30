@@ -53,4 +53,26 @@ describe("UserMessageRail", () => {
 		expect(line).toHaveClass("h-px")
 		expect(line).toHaveClass("w-full")
 	})
+
+	test("mounts a single preview overlay only while a tick is hovered", () => {
+		const messages = [
+			msg(1, "user_feedback", "first question"),
+			msg(2, "text", "assistant"),
+			msg(3, "user_feedback", "second question"),
+		]
+		render(<UserMessageRail messages={messages} onJump={onJump} />)
+
+		expect(screen.queryByTestId("user-message-rail-preview")).not.toBeInTheDocument()
+
+		const ticks = screen.getAllByTestId("user-message-rail-tick")
+		fireEvent.mouseEnter(ticks[0])
+		expect(screen.getByTestId("user-message-rail-preview")).toHaveTextContent("first question")
+
+		fireEvent.mouseEnter(ticks[1])
+		expect(screen.getAllByTestId("user-message-rail-preview")).toHaveLength(1)
+		expect(screen.getByTestId("user-message-rail-preview")).toHaveTextContent("second question")
+
+		fireEvent.mouseLeave(screen.getByTestId("user-message-rail"))
+		expect(screen.queryByTestId("user-message-rail-preview")).not.toBeInTheDocument()
+	})
 })

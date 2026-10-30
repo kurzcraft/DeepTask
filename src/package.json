@@ -3,7 +3,7 @@
 	"displayName": "%extension.displayName%",
 	"description": "%extension.description%",
 	"publisher": "deeptask",
-	"version": "9.2.8",
+	"version": "9.2.9",
 	"icon": "assets/icons/logo-outline-black.png",
 	"galleryBanner": {
 		"color": "#FFFFFF",
@@ -56,6 +56,43 @@
 	],
 	"main": "./dist/extension.js",
 	"contributes": {
+		"configurationDefaults": {
+			"files.watcherExclude": {
+				"**/node_modules/.pnpm/**": true,
+				"**/node_modules/.pnpm": true,
+				"**/.pnpm/**": true,
+				"**/.pnpm-store/**": true,
+				"**/.bun/**": true,
+				"**/node_modules/.bun/**": true,
+				"**/node_modules/.vite/**": true,
+				"**/node_modules/.cache/**": true,
+				"**/.vite/**": true,
+				"**/.cache/**": true,
+				"**/.turbo/**": true,
+				"**/.parcel-cache/**": true,
+				"**/.yarn/cache/**": true,
+				"**/.yarn/unplugged/**": true,
+				"**/.npm/**": true,
+				"**/.next/**": true,
+				"**/.nuxt/**": true,
+				"**/.svelte-kit/**": true,
+				"**/coverage/**": true,
+				"**/__pycache__/**": true,
+				"**/.venv/**": true,
+				"**/.tox/**": true,
+				"**/.mypy_cache/**": true,
+				"**/.ruff_cache/**": true,
+				"**/.pytest_cache/**": true,
+				"**/.git/objects": true,
+				"**/.git/objects/**": true,
+				"**/.git/lfs": true,
+				"**/.git/lfs/**": true,
+				"**/EXTRA/output": true,
+				"**/EXTRA/output/**": true,
+				"**/artifacts": true,
+				"**/artifacts/**": true
+			}
+		},
 		"walkthroughs": [
 			{
 				"id": "deeptaskWalkthrough",

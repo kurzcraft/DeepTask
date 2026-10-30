@@ -4,7 +4,6 @@ import * as vscode from "vscode"
 
 import { FileWatcher } from "../file-watcher"
 
-// Mock TelemetryService
 vi.mock("../../../../../packages/telemetry/src/TelemetryService", () => ({
 	TelemetryService: {
 		instance: {
@@ -13,9 +12,8 @@ vi.mock("../../../../../packages/telemetry/src/TelemetryService", () => ({
 	},
 }))
 
-// Mock dependencies
 vi.mock("../../cache-manager")
-vi.mock("../../../core/ignore/RooIgnoreController", () => ({
+vi.mock("../../../../core/ignore/RooIgnoreController", () => ({
 	RooIgnoreController: vi.fn().mockImplementation(() => ({
 		validateAccess: vi.fn().mockReturnValue(true),
 	})),
@@ -26,14 +24,33 @@ vi.mock("../parser", () => ({
 		parseFile: vi.fn().mockResolvedValue([]),
 	},
 }))
-vi.mock("../../../glob/ignore-utils", () => ({
-	isPathInIgnoredDirectory: vi.fn().mockReturnValue(false),
-}))
 
-// Mock vscode module
+let createFilesCallback: ((event: { files: Array<{ scheme: string; fsPath: string }> }) => void) | null = null
+let deleteFilesCallback: ((event: { files: Array<{ scheme: string; fsPath: string }> }) => void) | null = null
+let saveDocumentCallback: ((document: { uri: { scheme: string; fsPath: string } }) => void) | null = null
+const mockWorkspaceDispose = vi.fn()
+
 vi.mock("vscode", () => ({
 	workspace: {
-		createFileSystemWatcher: vi.fn(),
+		createFileSystemWatcher: vi.fn().mockReturnValue({
+			onDidCreate: vi.fn(() => ({ dispose: vi.fn() })),
+			onDidChange: vi.fn(() => ({ dispose: vi.fn() })),
+			onDidDelete: vi.fn(() => ({ dispose: vi.fn() })),
+			dispose: vi.fn(),
+		}),
+		onDidCreateFiles: vi.fn((callback) => {
+			createFilesCallback = callback
+			return { dispose: mockWorkspaceDispose }
+		}),
+		onDidDeleteFiles: vi.fn((callback) => {
+			deleteFilesCallback = callback
+			return { dispose: mockWorkspaceDispose }
+		}),
+		onDidRenameFiles: vi.fn(() => ({ dispose: mockWorkspaceDispose })),
+		onDidSaveTextDocument: vi.fn((callback) => {
+			saveDocumentCallback = callback
+			return { dispose: mockWorkspaceDispose }
+		}),
 		workspaceFolders: [
 			{
 				uri: {
@@ -48,7 +65,7 @@ vi.mock("vscode", () => ({
 	},
 	RelativePattern: vi.fn().mockImplementation((base, pattern) => ({ base, pattern })),
 	Uri: {
-		file: vi.fn().mockImplementation((path) => ({ fsPath: path })),
+		file: vi.fn().mockImplementation((path) => ({ fsPath: path, scheme: "file" })),
 	},
 	EventEmitter: vi.fn().mockImplementation(() => ({
 		event: vi.fn(),
@@ -60,10 +77,6 @@ vi.mock("vscode", () => ({
 
 describe("FileWatcher", () => {
 	let fileWatcher: FileWatcher
-	let mockWatcher: any
-	let mockOnDidCreate: any
-	let mockOnDidChange: any
-	let mockOnDidDelete: any
 	let mockContext: any
 	let mockCacheManager: any
 	let mockEmbedder: any
@@ -71,35 +84,11 @@ describe("FileWatcher", () => {
 	let mockIgnoreInstance: any
 
 	beforeEach(() => {
-		// Reset all mocks
 		vi.clearAllMocks()
+		createFilesCallback = null
+		deleteFilesCallback = null
+		saveDocumentCallback = null
 
-		// Create mock event handlers
-		mockOnDidCreate = vi.fn()
-		mockOnDidChange = vi.fn()
-		mockOnDidDelete = vi.fn()
-
-		// Create mock watcher
-		mockWatcher = {
-			onDidCreate: vi.fn().mockImplementation((handler) => {
-				mockOnDidCreate = handler
-				return { dispose: vi.fn() }
-			}),
-			onDidChange: vi.fn().mockImplementation((handler) => {
-				mockOnDidChange = handler
-				return { dispose: vi.fn() }
-			}),
-			onDidDelete: vi.fn().mockImplementation((handler) => {
-				mockOnDidDelete = handler
-				return { dispose: vi.fn() }
-			}),
-			dispose: vi.fn(),
-		}
-
-		// Mock createFileSystemWatcher to return our mock watcher
-		vi.mocked(vscode.workspace.createFileSystemWatcher).mockReturnValue(mockWatcher)
-
-		// Create mock dependencies
 		mockContext = {
 			subscriptions: [],
 		}
@@ -124,6 +113,10 @@ describe("FileWatcher", () => {
 			ignores: vi.fn().mockReturnValue(false),
 		}
 
+		const mockIgnoreController = {
+			validateAccess: vi.fn().mockReturnValue(true),
+		}
+
 		fileWatcher = new FileWatcher(
 			"/mock/workspace",
 			mockContext,
@@ -131,15 +124,29 @@ describe("FileWatcher", () => {
 			mockEmbedder,
 			mockVectorStore,
 			mockIgnoreInstance,
+			mockIgnoreController as any,
 		)
+	})
+
+	describe("workspace file events", () => {
+		it("should use workspace file events instead of a recursive RelativePattern watcher", async () => {
+			await fileWatcher.initialize()
+
+			expect(vscode.workspace.createFileSystemWatcher).not.toHaveBeenCalled()
+			expect(vscode.workspace.onDidCreateFiles).toHaveBeenCalled()
+			expect(vscode.workspace.onDidDeleteFiles).toHaveBeenCalled()
+			expect(vscode.workspace.onDidRenameFiles).toHaveBeenCalled()
+			expect(vscode.workspace.onDidSaveTextDocument).toHaveBeenCalled()
+			expect(createFilesCallback).not.toBeNull()
+			expect(deleteFilesCallback).not.toBeNull()
+			expect(saveDocumentCallback).not.toBeNull()
+		})
 	})
 
 	describe("file filtering", () => {
 		it("should ignore files in hidden directories on create events", async () => {
-			// Initialize the file watcher
 			await fileWatcher.initialize()
 
-			// Spy on the vector store to see which files are actually processed
 			const processedFiles: string[] = []
 			mockVectorStore.upsertPoints.mockImplementation(async (points: any[]) => {
 				points.forEach((point) => {
@@ -149,7 +156,6 @@ describe("FileWatcher", () => {
 				})
 			})
 
-			// Simulate file creation events
 			const testCases = [
 				{ path: "/mock/workspace/src/file.ts", shouldProcess: true },
 				{ path: "/mock/workspace/.git/config", shouldProcess: false },
@@ -159,25 +165,20 @@ describe("FileWatcher", () => {
 				{ path: "/mock/workspace/normal/file.js", shouldProcess: true },
 			]
 
-			// Trigger file creation events
-			for (const { path } of testCases) {
-				await mockOnDidCreate({ fsPath: path })
-			}
+			createFilesCallback!({
+				files: testCases.map(({ path }) => ({ scheme: "file", fsPath: path })),
+			})
 
-			// Wait for batch processing
 			await new Promise((resolve) => setTimeout(resolve, 600))
 
-			// Check that files in hidden directories were not processed
 			expect(processedFiles).not.toContain("src/.next/static/file.js")
 			expect(processedFiles).not.toContain(".git/config")
 			expect(processedFiles).not.toContain(".hidden/file.ts")
 		})
 
 		it("should ignore files in hidden directories on change events", async () => {
-			// Initialize the file watcher
 			await fileWatcher.initialize()
 
-			// Track which files are processed
 			const processedFiles: string[] = []
 			mockVectorStore.upsertPoints.mockImplementation(async (points: any[]) => {
 				points.forEach((point) => {
@@ -187,7 +188,6 @@ describe("FileWatcher", () => {
 				})
 			})
 
-			// Simulate file change events
 			const testCases = [
 				{ path: "/mock/workspace/src/file.ts", shouldProcess: true },
 				{ path: "/mock/workspace/.vscode/settings.json", shouldProcess: false },
@@ -195,30 +195,24 @@ describe("FileWatcher", () => {
 				{ path: "/mock/workspace/dist/bundle.js", shouldProcess: false },
 			]
 
-			// Trigger file change events
 			for (const { path } of testCases) {
-				await mockOnDidChange({ fsPath: path })
+				saveDocumentCallback!({ uri: { scheme: "file", fsPath: path } })
 			}
 
-			// Wait for batch processing
 			await new Promise((resolve) => setTimeout(resolve, 600))
 
-			// Check that files in hidden directories were not processed
 			expect(processedFiles).not.toContain(".vscode/settings.json")
 			expect(processedFiles).not.toContain("src/.cache/data.json")
 		})
 
 		it("should ignore files in hidden directories on delete events", async () => {
-			// Initialize the file watcher
 			await fileWatcher.initialize()
 
-			// Track which files are deleted
 			const deletedFiles: string[] = []
 			mockVectorStore.deletePointsByFilePath.mockImplementation(async (filePath: string) => {
 				deletedFiles.push(filePath)
 			})
 
-			// Simulate file deletion events
 			const testCases = [
 				{ path: "/mock/workspace/src/file.ts", shouldProcess: true },
 				{ path: "/mock/workspace/.git/objects/abc123", shouldProcess: false },
@@ -226,25 +220,20 @@ describe("FileWatcher", () => {
 				{ path: "/mock/workspace/build/.cache/temp.js", shouldProcess: false },
 			]
 
-			// Trigger file deletion events
-			for (const { path } of testCases) {
-				await mockOnDidDelete({ fsPath: path })
-			}
+			deleteFilesCallback!({
+				files: testCases.map(({ path }) => ({ scheme: "file", fsPath: path })),
+			})
 
-			// Wait for batch processing
 			await new Promise((resolve) => setTimeout(resolve, 600))
 
-			// Check that files in hidden directories were not processed
 			expect(deletedFiles).not.toContain(".git/objects/abc123")
 			expect(deletedFiles).not.toContain(".DS_Store")
 			expect(deletedFiles).not.toContain("build/.cache/temp.js")
 		})
 
 		it("should handle nested hidden directories correctly", async () => {
-			// Initialize the file watcher
 			await fileWatcher.initialize()
 
-			// Track which files are processed
 			const processedFiles: string[] = []
 			mockVectorStore.upsertPoints.mockImplementation(async (points: any[]) => {
 				points.forEach((point) => {
@@ -254,7 +243,6 @@ describe("FileWatcher", () => {
 				})
 			})
 
-			// Test deeply nested hidden directories
 			const testCases = [
 				{ path: "/mock/workspace/src/components/Button.tsx", shouldProcess: true },
 				{ path: "/mock/workspace/src/.hidden/components/Button.tsx", shouldProcess: false },
@@ -262,15 +250,12 @@ describe("FileWatcher", () => {
 				{ path: "/mock/workspace/src/components/.hidden/Button.tsx", shouldProcess: false },
 			]
 
-			// Trigger file creation events
-			for (const { path } of testCases) {
-				await mockOnDidCreate({ fsPath: path })
-			}
+			createFilesCallback!({
+				files: testCases.map(({ path }) => ({ scheme: "file", fsPath: path })),
+			})
 
-			// Wait for batch processing
 			await new Promise((resolve) => setTimeout(resolve, 600))
 
-			// Check that files in hidden directories were not processed
 			expect(processedFiles).not.toContain("src/.hidden/components/Button.tsx")
 			expect(processedFiles).not.toContain(".hidden/src/components/Button.tsx")
 			expect(processedFiles).not.toContain("src/components/.hidden/Button.tsx")
@@ -278,11 +263,12 @@ describe("FileWatcher", () => {
 	})
 
 	describe("dispose", () => {
-		it("should dispose of the watcher when disposed", async () => {
+		it("should dispose workspace listeners when disposed", async () => {
 			await fileWatcher.initialize()
 			fileWatcher.dispose()
 
-			expect(mockWatcher.dispose).toHaveBeenCalled()
+			expect(mockWorkspaceDispose).toHaveBeenCalled()
+			expect(vscode.workspace.createFileSystemWatcher).not.toHaveBeenCalled()
 		})
 	})
 })

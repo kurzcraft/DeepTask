@@ -85,6 +85,10 @@ const mockVirtuosoScrollToIndex = vi.fn()
 let latestVirtuosoProps: {
 	atBottomStateChange?: (isAtBottom: boolean) => void
 	totalListHeightChanged?: (height: number) => void
+	className?: string
+	style?: React.CSSProperties
+	increaseViewportBy?: { top: number; bottom: number }
+	computeItemKey?: (index: number, item: ClineMessage) => React.Key
 }
 
 // Mock react-virtuoso to render items directly without virtualization while
@@ -97,12 +101,18 @@ vi.mock("react-virtuoso", () => ({
 			atBottomStateChange,
 			totalListHeightChanged,
 			className,
+			style,
+			increaseViewportBy,
+			computeItemKey,
 		}: {
 			data: ClineMessage[]
 			itemContent: (index: number, item: ClineMessage) => React.ReactNode
 			atBottomStateChange?: (isAtBottom: boolean) => void
 			totalListHeightChanged?: (height: number) => void
 			className?: string
+			style?: React.CSSProperties
+			increaseViewportBy?: { top: number; bottom: number }
+			computeItemKey?: (index: number, item: ClineMessage) => React.Key
 		},
 		ref: React.ForwardedRef<{
 			scrollTo: typeof mockVirtuosoScrollTo
@@ -115,7 +125,14 @@ vi.mock("react-virtuoso", () => ({
 		}))
 		const isChatList = className?.includes("scrollable") ?? false
 		if (isChatList) {
-			latestVirtuosoProps = { atBottomStateChange, totalListHeightChanged }
+			latestVirtuosoProps = {
+				atBottomStateChange,
+				totalListHeightChanged,
+				className,
+				style,
+				increaseViewportBy,
+				computeItemKey,
+			}
 		}
 
 		return (
@@ -368,6 +385,14 @@ describe("ChatView - streaming output following", () => {
 		expect(callback).toBeDefined()
 		act(() => callback?.(0))
 	}
+
+	it("gives Virtuoso a bounded viewport so off-screen ChatRows are not mounted", async () => {
+		await renderActiveTask()
+		expect(latestVirtuosoProps.className).toContain("h-full")
+		expect(latestVirtuosoProps.style).toEqual(expect.objectContaining({ height: "100%" }))
+		expect(latestVirtuosoProps.increaseViewportBy).toEqual({ top: 240, bottom: 240 })
+		expect(latestVirtuosoProps.computeItemKey?.(0, { ts: 42 } as ClineMessage)).toBe(42)
+	})
 
 	it("keeps following when streaming content growth temporarily reports away from bottom", async () => {
 		await renderActiveTask()

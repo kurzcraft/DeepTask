@@ -1,4 +1,5 @@
 import * as vscode from "vscode"
+import * as path from "path"
 import {
 	QDRANT_CODE_BLOCK_NAMESPACE,
 	MAX_FILE_SIZE_BYTES,
@@ -33,9 +34,16 @@ import { Package } from "../../../shared/package"
  */
 export class FileWatcher implements IFileWatcher {
 	private ignoreInstance?: Ignore
-	private fileWatcher?: vscode.FileSystemWatcher
+	private workspaceDisposables: vscode.Disposable[] = []
 	private ignoreController: RooIgnoreController
 	private accumulatedEvents: Map<string, { uri: vscode.Uri; type: "create" | "change" | "delete" }> = new Map()
+	private readonly indexableExtensions = new Set(scannerExtensions.map((ext) => ext.toLowerCase()))
+	private static readonly IGNORED_PATH_MARKERS = [
+		`${path.sep}node_modules${path.sep}`,
+		`${path.sep}.git${path.sep}`,
+		`${path.sep}.pnpm${path.sep}`,
+		`${path.sep}__pycache__${path.sep}`,
+	]
 	private batchProcessDebounceTimer?: NodeJS.Timeout
 	private readonly BATCH_DEBOUNCE_DELAY_MS = 500
 	private readonly FILE_PROCESSING_CONCURRENCY_LIMIT = 10
@@ -110,17 +118,36 @@ export class FileWatcher implements IFileWatcher {
 	 * Initializes the file watcher
 	 */
 	async initialize(): Promise<void> {
-		// Create file watcher
-		const filePattern = new vscode.RelativePattern(
-			this.workspacePath,
-			`**/*{${scannerExtensions.map((e) => e.substring(1)).join(",")}}`,
-		)
-		this.fileWatcher = vscode.workspace.createFileSystemWatcher(filePattern)
+		this.disposeWorkspaceListeners()
 
-		// Register event handlers
-		this.fileWatcher.onDidCreate(this.handleFileCreated.bind(this))
-		this.fileWatcher.onDidChange(this.handleFileChanged.bind(this))
-		this.fileWatcher.onDidDelete(this.handleFileDeleted.bind(this))
+		// kilocode_change start: never attach a recursive RelativePattern
+		// watcher. A glob containing `**` or `/` is compiled as a second
+		// full-tree inotify that ignores files.watcherExclude and pins
+		// node_modules until the fileWatcher process OOMs. Workspace file
+		// events reuse the editor's existing watches; ignored directories and
+		// non-indexable extensions are filtered in-process.
+		this.workspaceDisposables = [
+			vscode.workspace.onDidCreateFiles((event) => {
+				for (const uri of event.files) {
+					void this.handleFileCreated(uri)
+				}
+			}),
+			vscode.workspace.onDidDeleteFiles((event) => {
+				for (const uri of event.files) {
+					void this.handleFileDeleted(uri)
+				}
+			}),
+			vscode.workspace.onDidRenameFiles((event) => {
+				for (const file of event.files) {
+					void this.handleFileDeleted(file.oldUri)
+					void this.handleFileCreated(file.newUri)
+				}
+			}),
+			vscode.workspace.onDidSaveTextDocument((document) => {
+				void this.handleFileChanged(document.uri)
+			}),
+		]
+		// kilocode_change end
 	}
 
 	// kilocode_change start
@@ -133,11 +160,18 @@ export class FileWatcher implements IFileWatcher {
 	}
 	// kilocode_change end
 
+	private disposeWorkspaceListeners(): void {
+		for (const disposable of this.workspaceDisposables) {
+			disposable.dispose()
+		}
+		this.workspaceDisposables = []
+	}
+
 	/**
 	 * Disposes the file watcher
 	 */
 	dispose(): void {
-		this.fileWatcher?.dispose()
+		this.disposeWorkspaceListeners()
 		if (this.batchProcessDebounceTimer) {
 			clearTimeout(this.batchProcessDebounceTimer)
 		}
@@ -147,11 +181,37 @@ export class FileWatcher implements IFileWatcher {
 		this.accumulatedEvents.clear()
 	}
 
+	private isIndexableUri(uri: vscode.Uri, allowMissingExtension = false): boolean {
+		if (uri.scheme !== "file") {
+			return false
+		}
+		const filePath = path.normalize(uri.fsPath)
+		const workspaceRoot = path.normalize(this.workspacePath)
+		if (filePath !== workspaceRoot && !filePath.startsWith(workspaceRoot + path.sep)) {
+			return false
+		}
+		const wrapped = `${path.sep}${path.normalize(filePath)}${path.sep}`
+		if (FileWatcher.IGNORED_PATH_MARKERS.some((marker) => wrapped.includes(marker))) {
+			return false
+		}
+		if (isPathInIgnoredDirectory(filePath)) {
+			return false
+		}
+		const extension = path.extname(filePath).toLowerCase()
+		if (!extension) {
+			return allowMissingExtension
+		}
+		return this.indexableExtensions.has(extension)
+	}
+
 	/**
 	 * Handles file creation events
 	 * @param uri URI of the created file
 	 */
 	private async handleFileCreated(uri: vscode.Uri): Promise<void> {
+		if (!this.isIndexableUri(uri)) {
+			return
+		}
 		this.accumulatedEvents.set(uri.fsPath, { uri, type: "create" })
 		this.scheduleBatchProcessing()
 	}
@@ -161,6 +221,9 @@ export class FileWatcher implements IFileWatcher {
 	 * @param uri URI of the changed file
 	 */
 	private async handleFileChanged(uri: vscode.Uri): Promise<void> {
+		if (!this.isIndexableUri(uri)) {
+			return
+		}
 		this.accumulatedEvents.set(uri.fsPath, { uri, type: "change" })
 		this.scheduleBatchProcessing()
 	}
@@ -170,6 +233,9 @@ export class FileWatcher implements IFileWatcher {
 	 * @param uri URI of the deleted file
 	 */
 	private async handleFileDeleted(uri: vscode.Uri): Promise<void> {
+		if (!this.isIndexableUri(uri, true)) {
+			return
+		}
 		this.accumulatedEvents.set(uri.fsPath, { uri, type: "delete" })
 		this.scheduleBatchProcessing()
 	}

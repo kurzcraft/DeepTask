@@ -15,6 +15,22 @@ class WorkspaceTracker {
 	private updateTimer: NodeJS.Timeout | null = null
 	private prevWorkSpacePath: string | undefined
 	private resetTimer: NodeJS.Timeout | null = null
+	private pendingPathUpdates = 0
+	private pendingUpdateAfterPaths = false
+	private lastWorkspaceUpdateKey: string | undefined
+	private lastWorkspaceUpdateAt = 0
+	private disposed = false
+	private static readonly WORKSPACE_UPDATE_DEDUP_MS = 300
+	private static readonly WORKSPACE_FILE_EVENT_CONCURRENCY = 8
+	private static readonly WORKSPACE_FILE_EVENT_MAX_URIS = MAX_INITIAL_FILES * 2
+	private static readonly WORKSPACE_UPDATE_MAX_TABS = 64
+	private static readonly WORKSPACE_UPDATE_MAX_PATHS = MAX_INITIAL_FILES * 2
+	private static readonly IGNORED_PATH_MARKERS = [
+		`${path.sep}node_modules${path.sep}`,
+		`${path.sep}.git${path.sep}`,
+		`${path.sep}.pnpm${path.sep}`,
+		`${path.sep}.kilocode${path.sep}worktrees${path.sep}`,
+	]
 
 	get cwd() {
 		return this.providerRef?.deref()?.cwd ?? getWorkspacePath()
@@ -35,30 +51,49 @@ class WorkspaceTracker {
 			return
 		}
 		this.filePaths.clear() // kilocode_change: initializeFilePaths is called multiple times, clear to avoid exceeding MAX_INITIAL_FILES
-		files.slice(0, MAX_INITIAL_FILES).forEach((file) => this.filePaths.add(this.normalizeFilePath(file)))
+		files
+			.slice(0, MAX_INITIAL_FILES)
+			.filter((file) => !this.shouldIgnorePath(file))
+			.forEach((file) => this.filePaths.add(this.normalizeFilePath(file)))
 		this.workspaceDidUpdate()
 	}
 
 	private registerListeners() {
-		const watcher = vscode.workspace.createFileSystemWatcher("**")
 		this.prevWorkSpacePath = this.cwd
-		this.disposables.push(
-			watcher.onDidCreate(async (uri) => {
-				await this.addFilePath(uri.fsPath)
-				this.workspaceDidUpdate()
-			}),
-		)
 
-		// Renaming files triggers a delete and create event
+		// kilocode_change start: do not create a recursive RelativePattern "**"
+		// watcher. VS Code compiles that glob as a second full-tree inotify that
+		// ignores files.watcherExclude, pinning node_modules/.git until the
+		// fileWatcher process OOMs and the webview goes grey. Workspace file
+		// events reuse the editor's existing watchers and still cover agent
+		// writes that go through vscode.workspace.fs / TextDocument save.
 		this.disposables.push(
-			watcher.onDidDelete(async (uri) => {
-				if (await this.removeFilePath(uri.fsPath)) {
-					this.workspaceDidUpdate()
+			vscode.workspace.onDidCreateFiles((event) => {
+				void this.handleCreatedUris(event.files)
+			}),
+			vscode.workspace.onDidDeleteFiles((event) => {
+				void this.handleDeletedUris(event.files)
+			}),
+			vscode.workspace.onDidRenameFiles((event) => {
+				void this.handleRenamedFiles(event.files)
+			}),
+			vscode.workspace.onDidSaveTextDocument((document) => {
+				if (document.uri.scheme !== "file") {
+					return
 				}
+				void this.handleCreatedUris([document.uri])
+			}),
+			vscode.workspace.onDidOpenTextDocument((document) => {
+				if (document.uri.scheme !== "file") {
+					return
+				}
+				void this.handleCreatedUris([document.uri])
+			}),
+			vscode.workspace.onDidChangeWorkspaceFolders(() => {
+				this.workspaceDidReset()
 			}),
 		)
-
-		this.disposables.push(watcher)
+		// kilocode_change end
 
 		// Listen for tab changes and call workspaceDidUpdate directly
 		this.disposables.push(
@@ -74,8 +109,98 @@ class WorkspaceTracker {
 		)
 	}
 
+	private shouldIgnorePath(filePath: string): boolean {
+		const normalized = path.normalize(filePath)
+		const wrapped = `${path.sep}${normalized}${path.sep}`
+		return WorkspaceTracker.IGNORED_PATH_MARKERS.some((marker) => wrapped.includes(marker))
+	}
+
+	private async mapUrisWithLimit<T>(uris: readonly vscode.Uri[], mapper: (uri: vscode.Uri) => Promise<T>): Promise<T[]> {
+		const limited = uris.slice(0, WorkspaceTracker.WORKSPACE_FILE_EVENT_MAX_URIS)
+		const results: T[] = []
+		for (let i = 0; i < limited.length; i += WorkspaceTracker.WORKSPACE_FILE_EVENT_CONCURRENCY) {
+			const chunk = limited.slice(i, i + WorkspaceTracker.WORKSPACE_FILE_EVENT_CONCURRENCY)
+			results.push(...(await Promise.all(chunk.map((uri) => mapper(uri)))))
+		}
+		return results
+	}
+
+	private beginPathUpdate(): void {
+		this.pendingPathUpdates++
+	}
+
+	private endPathUpdate(): void {
+		this.pendingPathUpdates = Math.max(0, this.pendingPathUpdates - 1)
+		if (this.pendingPathUpdates === 0 && this.pendingUpdateAfterPaths) {
+			this.pendingUpdateAfterPaths = false
+			this.workspaceDidUpdate()
+		}
+	}
+
+	private async handleCreatedUris(uris: readonly vscode.Uri[]): Promise<void> {
+		if (this.disposed) {
+			return
+		}
+		this.beginPathUpdate()
+		try {
+			const relevant = uris.filter((uri) => uri.scheme === "file" && !this.shouldIgnorePath(uri.fsPath))
+			if (relevant.length === 0) {
+				return
+			}
+			await this.mapUrisWithLimit(relevant, (uri) => this.addFilePath(uri.fsPath))
+			if (!this.disposed) {
+				this.workspaceDidUpdate()
+			}
+		} finally {
+			this.endPathUpdate()
+		}
+	}
+
+	private async handleDeletedUris(uris: readonly vscode.Uri[]): Promise<void> {
+		if (this.disposed) {
+			return
+		}
+		this.beginPathUpdate()
+		try {
+			const relevant = uris.filter((uri) => uri.scheme === "file" && !this.shouldIgnorePath(uri.fsPath))
+			if (relevant.length === 0) {
+				return
+			}
+			const removed = await this.mapUrisWithLimit(relevant, (uri) => this.removeFilePath(uri.fsPath))
+			if (!this.disposed && removed.some(Boolean)) {
+				this.workspaceDidUpdate()
+			}
+		} finally {
+			this.endPathUpdate()
+		}
+	}
+
+	private async handleRenamedFiles(files: readonly { oldUri: vscode.Uri; newUri: vscode.Uri }[]): Promise<void> {
+		if (this.disposed) {
+			return
+		}
+		this.beginPathUpdate()
+		try {
+			const oldUris = files.map((file) => file.oldUri)
+			const newUris = files.map((file) => file.newUri)
+			await this.mapUrisWithLimit(
+				oldUris.filter((uri) => uri.scheme === "file" && !this.shouldIgnorePath(uri.fsPath)),
+				(uri) => this.removeFilePath(uri.fsPath),
+			)
+			await this.mapUrisWithLimit(
+				newUris.filter((uri) => uri.scheme === "file" && !this.shouldIgnorePath(uri.fsPath)),
+				(uri) => this.addFilePath(uri.fsPath),
+			)
+			if (!this.disposed) {
+				this.workspaceDidUpdate()
+			}
+		} finally {
+			this.endPathUpdate()
+		}
+	}
+
 	private getOpenedTabsInfo() {
-		return vscode.window.tabGroups.all.reduce(
+		const tabs = vscode.window.tabGroups.all.reduce(
 			(acc, group) => {
 				const groupTabs = group.tabs
 					.filter((tab) => tab.input instanceof vscode.TabInputText)
@@ -90,6 +215,7 @@ class WorkspaceTracker {
 			},
 			[] as Array<{ label: string; isActive: boolean; path: string }>,
 		)
+		return tabs.slice(0, WorkspaceTracker.WORKSPACE_UPDATE_MAX_TABS)
 	}
 
 	private async workspaceDidReset() {
@@ -104,6 +230,8 @@ class WorkspaceTracker {
 					openedTabs: this.getOpenedTabsInfo(),
 				})
 				this.filePaths.clear()
+				this.lastWorkspaceUpdateKey = undefined
+				this.lastWorkspaceUpdateAt = 0
 				this.prevWorkSpacePath = this.cwd
 				this.initializeFilePaths()
 			}
@@ -111,6 +239,13 @@ class WorkspaceTracker {
 	}
 
 	private workspaceDidUpdate() {
+		if (this.disposed) {
+			return
+		}
+		if (this.pendingPathUpdates > 0) {
+			this.pendingUpdateAfterPaths = true
+			return
+		}
 		if (this.updateTimer) {
 			clearTimeout(this.updateTimer)
 		}
@@ -119,11 +254,25 @@ class WorkspaceTracker {
 				return
 			}
 
-			const relativeFilePaths = Array.from(this.filePaths).map((file) => toRelativePath(file, this.cwd))
+			const relativeFilePaths = Array.from(this.filePaths)
+				.slice(0, WorkspaceTracker.WORKSPACE_UPDATE_MAX_PATHS)
+				.map((file) => toRelativePath(file, this.cwd))
+			const openedTabs = this.getOpenedTabsInfo()
+			const updateKey = JSON.stringify({ filePaths: relativeFilePaths, openedTabs })
+			const now = Date.now()
+			if (
+				updateKey === this.lastWorkspaceUpdateKey &&
+				now - this.lastWorkspaceUpdateAt < WorkspaceTracker.WORKSPACE_UPDATE_DEDUP_MS
+			) {
+				this.updateTimer = null
+				return
+			}
+			this.lastWorkspaceUpdateKey = updateKey
+			this.lastWorkspaceUpdateAt = now
 			this.providerRef.deref()?.postMessageToWebview({
 				type: "workspaceUpdated",
 				filePaths: relativeFilePaths,
-				openedTabs: this.getOpenedTabsInfo(),
+				openedTabs,
 			})
 			this.updateTimer = null
 		}, 300) // Debounce for 300ms
@@ -140,13 +289,9 @@ class WorkspaceTracker {
 			return filePath
 		}
 
-		// kilocode_change start: parallel agent worktrees live under
-		// .kilocode/worktrees/ inside the workspace; their churn must not spam
-		// workspace file listings used for context.
-		if (filePath.includes(`${path.sep}.kilocode${path.sep}worktrees${path.sep}`)) {
+		if (this.shouldIgnorePath(filePath)) {
 			return filePath
 		}
-		// kilocode_change end
 
 		const normalizedPath = this.normalizeFilePath(filePath)
 		try {
@@ -168,6 +313,7 @@ class WorkspaceTracker {
 	}
 
 	public dispose() {
+		this.disposed = true
 		if (this.updateTimer) {
 			clearTimeout(this.updateTimer)
 			this.updateTimer = null
@@ -176,6 +322,10 @@ class WorkspaceTracker {
 			clearTimeout(this.resetTimer)
 			this.resetTimer = null
 		}
+		this.pendingPathUpdates = 0
+		this.pendingUpdateAfterPaths = false
+		this.lastWorkspaceUpdateKey = undefined
+		this.lastWorkspaceUpdateAt = 0
 		this.disposables.forEach((d) => d.dispose())
 		this.disposables = [] // Clear the array
 	}

@@ -111,43 +111,65 @@ interface ChatRowProps {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface ChatRowContentProps extends Omit<ChatRowProps, "onHeightChange"> {}
 
+const chatRowShellClassName = (highlighted?: boolean) =>
+	`px-[15px] py-[10px] pr-[6px] relative ${highlighted ? "animate-message-highlight" : ""}`
+
+const ChatRowShell = ({
+	highlighted,
+	showTaskTimeline,
+	message,
+	children,
+}: {
+	highlighted?: boolean
+	showTaskTimeline?: boolean
+	message: ClineMessage
+	children: React.ReactNode
+}) => (
+	<div className={cn(chatRowShellClassName(highlighted))}>
+		{showTaskTimeline && <KiloChatRowGutterBar message={message} />}
+		{children}
+	</div>
+)
+
+/** ResizeObserver is only needed for the live last row that drives follow-output. */
+const MeasuredLastChatRow = (props: ChatRowProps & { showTaskTimeline?: boolean }) => {
+	const { highlighted, showTaskTimeline, onHeightChange, message } = props
+	const prevHeightRef = useRef(0)
+
+	const [chatrow, { height }] = useSize(
+		<ChatRowShell highlighted={highlighted} showTaskTimeline={showTaskTimeline} message={message}>
+			<ChatRowContent {...props} />
+		</ChatRowShell>,
+	)
+
+	useEffect(() => {
+		const isInitialRender = prevHeightRef.current === 0
+		if (height !== 0 && height !== Infinity && height !== prevHeightRef.current) {
+			if (!isInitialRender) {
+				onHeightChange(height > prevHeightRef.current)
+			}
+			prevHeightRef.current = height
+		}
+	}, [height, onHeightChange, message])
+
+	return chatrow
+}
+
 const ChatRow = memo(
 	(props: ChatRowProps) => {
-		const { highlighted } = props // kilocode_change: Add highlighted prop
-		const { showTaskTimeline } = useExtensionSettings() // kilocode_change: Used by KiloChatRowGutterBar
-		const { isLast, onHeightChange, message } = props
-		// Store the previous height to compare with the current height
-		// This allows us to detect changes without causing re-renders
-		const prevHeightRef = useRef(0)
+		const { highlighted, isLast, message } = props
+		const { showTaskTimeline } = useExtensionSettings()
 
-		const [chatrow, { height }] = useSize(
-			<div
-				// kilocode_change: add highlighted className
-				className={cn(
-					`px-[15px] py-[10px] pr-[6px] relative ${highlighted ? "animate-message-highlight" : ""}`,
-				)}>
-				{showTaskTimeline && <KiloChatRowGutterBar message={message} />}
+		if (isLast) {
+			return <MeasuredLastChatRow {...props} showTaskTimeline={showTaskTimeline} />
+		}
+
+		return (
+			<ChatRowShell highlighted={highlighted} showTaskTimeline={showTaskTimeline} message={message}>
 				<ChatRowContent {...props} />
-			</div>,
+			</ChatRowShell>
 		)
-
-		useEffect(() => {
-			// used for partials, command output, etc.
-			// NOTE: it's important we don't distinguish between partial or complete here since our scroll effects in chatview need to handle height change during partial -> complete
-			const isInitialRender = prevHeightRef.current === 0 // prevents scrolling when new element is added since we already scroll for that
-			// height starts off at Infinity
-			if (isLast && height !== 0 && height !== Infinity && height !== prevHeightRef.current) {
-				if (!isInitialRender) {
-					onHeightChange(height > prevHeightRef.current)
-				}
-				prevHeightRef.current = height
-			}
-		}, [height, isLast, onHeightChange, message])
-
-		// we cannot return null as virtuoso does not support it, so we use a separate visibleMessages array to filter out messages that should not be rendered
-		return chatrow
 	},
-	// memo does shallow comparison of props, so we need to do deep comparison of arrays/objects whose properties might change
 	deepEqual,
 )
 

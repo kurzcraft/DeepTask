@@ -106,40 +106,45 @@ export const ParallelSessionPanel = ({ selectedId, onClose }: ParallelSessionPan
 						onJump={handleJump}
 						className="border-r border-vscode-panel-border"
 					/>
-					<Virtuoso
-						ref={virtuosoRef}
-						className="flex-1 overflow-y-auto"
-						data={messages}
-						initialTopMostItemIndex={Math.max(0, messages.length - 1)}
-						followOutput={pinnedJumpTs != null ? false : "smooth"}
-						totalListHeightChanged={() => {
-							if (pinnedJumpTsRef.current != null) {
-								scrollToPinnedMessage()
-							}
-						}}
-						itemContent={(index, message) => (
-							<ChatRow
-								key={message.ts}
-								message={message}
-								isExpanded={expanded.has(message.ts)}
-								isLast={index === messages.length - 1}
-								isStreaming={index === messages.length - 1 && session.status === "running"}
-								onToggleExpand={(ts: number) =>
-									setExpanded((prev) => {
-										const next = new Set(prev)
-										if (next.has(ts)) {
-											next.delete(ts)
-										} else {
-											next.add(ts)
-										}
-										return next
-									})
+					<div className="flex-1 min-h-0 min-w-0 overflow-hidden">
+						<Virtuoso
+							ref={virtuosoRef}
+							className="h-full overflow-y-auto"
+							style={{ height: "100%" }}
+							increaseViewportBy={{ top: 240, bottom: 240 }}
+							data={messages}
+							computeItemKey={(_index, message) => message.ts}
+							initialTopMostItemIndex={Math.max(0, messages.length - 1)}
+							followOutput={pinnedJumpTs != null ? false : "smooth"}
+							totalListHeightChanged={() => {
+								if (pinnedJumpTsRef.current != null) {
+									scrollToPinnedMessage()
 								}
-								onHeightChange={() => {}}
-								editable={false}
-							/>
-						)}
-					/>
+							}}
+							itemContent={(index, message) => (
+								<ChatRow
+									key={message.ts}
+									message={message}
+									isExpanded={expanded.has(message.ts)}
+									isLast={index === messages.length - 1}
+									isStreaming={index === messages.length - 1 && session.status === "running"}
+									onToggleExpand={(ts: number) =>
+										setExpanded((prev) => {
+											const next = new Set(prev)
+											if (next.has(ts)) {
+												next.delete(ts)
+											} else {
+												next.add(ts)
+											}
+											return next
+										})
+									}
+									onHeightChange={() => {}}
+									editable={false}
+								/>
+							)}
+						/>
+					</div>
 				</div>
 			) : workspace ? (
 				<div className="flex-1 overflow-y-auto p-3 text-xs space-y-2">

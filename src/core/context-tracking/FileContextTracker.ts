@@ -24,8 +24,17 @@ export class FileContextTracker {
 	readonly taskId: string
 	private providerRef: WeakRef<ClineProvider>
 
-	// File tracking and watching
+	// File tracking and watching.
+	// Never attach a recursive `**` change watcher: on a large repo that
+	// floods the VS Code fileWatcher process (node_modules/.git/EXTRA churn)
+	// even when we ignore unmatched paths. Tracked files are a small set, so
+	// watch each one by basename. Editor saves also arrive via
+	// onDidSaveTextDocument, which uses no extra inotify.
+	// kilocode_change start
+	private trackedFilesByAbs = new Map<string, string>()
 	private fileWatchers = new Map<string, vscode.FileSystemWatcher>()
+	private saveListener: vscode.Disposable | undefined
+	// kilocode_change end
 	private recentlyModifiedFiles = new Set<string>()
 	private recentlyEditedByRoo = new Set<string>()
 	private checkpointPossibleFiles = new Set<string>()
@@ -44,37 +53,60 @@ export class FileContextTracker {
 		return cwd
 	}
 
-	// File watchers are set up for each file that is tracked in the task metadata.
-	async setupFileWatcher(filePath: string) {
-		// Only setup watcher if it doesn't already exist for this file
-		if (this.fileWatchers.has(filePath)) {
+	private handleTrackedFileChange(filePath: string): void {
+		if (this.recentlyEditedByRoo.has(filePath)) {
+			this.recentlyEditedByRoo.delete(filePath) // This was an edit by Roo, no need to inform Roo
 			return
 		}
 
+		// Save events and basename watchers can both fire for one edit.
+		if (this.recentlyModifiedFiles.has(filePath)) {
+			return
+		}
+
+		this.recentlyModifiedFiles.add(filePath) // This was a user edit, we will inform Roo
+		void this.trackFileContext(filePath, "user_edited") // Update the task metadata with file tracking
+	}
+
+	// kilocode_change start
+	private ensureSaveListener(): void {
+		if (this.saveListener || typeof vscode.workspace.onDidSaveTextDocument !== "function") {
+			return
+		}
+
+		this.saveListener = vscode.workspace.onDidSaveTextDocument((document) => {
+			const tracked = this.trackedFilesByAbs.get(path.normalize(document.uri.fsPath))
+			if (tracked) {
+				this.handleTrackedFileChange(tracked)
+			}
+		})
+	}
+
+	// File watchers are set up for each file that is tracked in the task metadata.
+	async setupFileWatcher(filePath: string) {
 		const cwd = this.getCwd()
 		if (!cwd) {
 			return
 		}
 
-		// Create a file system watcher for this specific file
-		const fileUri = vscode.Uri.file(path.resolve(cwd, filePath))
+		const absPath = path.normalize(path.resolve(cwd, filePath))
+		if (this.trackedFilesByAbs.has(absPath) || this.fileWatchers.has(absPath)) {
+			return
+		}
+
+		this.trackedFilesByAbs.set(absPath, filePath)
+		this.ensureSaveListener()
+
 		const watcher = vscode.workspace.createFileSystemWatcher(
-			new vscode.RelativePattern(path.dirname(fileUri.fsPath), path.basename(fileUri.fsPath)),
+			new vscode.RelativePattern(path.dirname(absPath), path.basename(absPath)),
+			true,
+			false,
+			true,
 		)
-
-		// Track file changes
-		watcher.onDidChange(() => {
-			if (this.recentlyEditedByRoo.has(filePath)) {
-				this.recentlyEditedByRoo.delete(filePath) // This was an edit by Roo, no need to inform Roo
-			} else {
-				this.recentlyModifiedFiles.add(filePath) // This was a user edit, we will inform Roo
-				this.trackFileContext(filePath, "user_edited") // Update the task metadata with file tracking
-			}
-		})
-
-		// Store the watcher so we can dispose it later
-		this.fileWatchers.set(filePath, watcher)
+		watcher.onDidChange(() => this.handleTrackedFileChange(filePath))
+		this.fileWatchers.set(absPath, watcher)
 	}
+	// kilocode_change end
 
 	// Tracks a file operation in metadata and sets up a watcher for the file
 	// This is the main entry point for FileContextTracker and is called when a file is passed to Roo via a tool, mention, or edit.
@@ -230,9 +262,12 @@ export class FileContextTracker {
 
 	// Disposes all file watchers
 	dispose(): void {
+		this.saveListener?.dispose()
+		this.saveListener = undefined
 		for (const watcher of this.fileWatchers.values()) {
 			watcher.dispose()
 		}
 		this.fileWatchers.clear()
+		this.trackedFilesByAbs.clear()
 	}
 }

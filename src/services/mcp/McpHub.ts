@@ -171,12 +171,30 @@ const McpSettingsSchema = z.object({
 	mcpServers: z.record(ServerConfigSchema),
 })
 
+/** Direct-child glob under a config directory; never a slash-containing recursive glob. */
+export const PROJECT_MCP_WATCH_GLOB = "mcp.json"
+
+/**
+ * Watch bases for project MCP config files.
+ *
+ * A RelativePattern whose glob contains `/` (e.g. `{.deeptask,.kilocode}/mcp.json`)
+ * is compiled as a recursive tree watch of `base`. When `base` is the repo root,
+ * VS Code also skips `files.watcherExclude`, pinning node_modules/.pnpm into
+ * inotify until the fileWatcher process OOMs and the webview goes grey.
+ */
+export function projectMcpWatchTargets(workspacePath: string): Array<{ watchBase: string; pattern: string }> {
+	return [
+		{ watchBase: path.join(workspacePath, ".deeptask"), pattern: PROJECT_MCP_WATCH_GLOB },
+		{ watchBase: path.join(workspacePath, ".kilocode"), pattern: PROJECT_MCP_WATCH_GLOB },
+	]
+}
+
 export class McpHub {
 	private providerRef: WeakRef<ClineProvider>
 	private disposables: vscode.Disposable[] = []
 	private settingsWatcher?: vscode.FileSystemWatcher
 	private fileWatchers: Map<string, FSWatcher[]> = new Map()
-	private projectMcpWatcher?: vscode.FileSystemWatcher
+	private projectMcpWatchers: vscode.FileSystemWatcher[] = []
 	private isDisposed: boolean = false
 	connections: McpConnection[] = []
 	isConnecting: boolean = false
@@ -792,50 +810,46 @@ export class McpHub {
 		}
 	}
 
+	private disposeProjectMcpWatchers(): void {
+		for (const watcher of this.projectMcpWatchers) {
+			watcher.dispose()
+		}
+		this.projectMcpWatchers = []
+	}
+
 	private async watchProjectMcpFile(): Promise<void> {
 		// Skip if test environment is detected or VSCode APIs are not available
 		if (process.env.NODE_ENV === "test" || !vscode.workspace.createFileSystemWatcher) {
 			return
 		}
 
-		// Clean up existing project MCP watcher if it exists
-		if (this.projectMcpWatcher) {
-			this.projectMcpWatcher.dispose()
-			this.projectMcpWatcher = undefined
-		}
+		this.disposeProjectMcpWatchers()
 
 		if (!vscode.workspace.workspaceFolders?.length) {
 			return
 		}
 
 		const workspaceFolder = this.providerRef.deref()?.cwd ?? getWorkspacePath()
-		// kilocode_change: watch unified .deeptask/mcp.json plus legacy paths
-		const projectMcpPattern = new vscode.RelativePattern(workspaceFolder, "{.deeptask,.kilocode}/mcp.json")
-
-		// Create a file system watcher for the project MCP file pattern
-		this.projectMcpWatcher = vscode.workspace.createFileSystemWatcher(projectMcpPattern)
-
-		// Watch for file changes
-		const changeDisposable = this.projectMcpWatcher.onDidChange((uri) => {
-			this.debounceConfigChange(uri.fsPath, "project")
-		})
-
-		// Watch for file creation
-		const createDisposable = this.projectMcpWatcher.onDidCreate((uri) => {
-			this.debounceConfigChange(uri.fsPath, "project")
-		})
-
-		// Watch for file deletion
-		const deleteDisposable = this.projectMcpWatcher.onDidDelete(async () => {
-			// Clean up all project MCP servers when the file is deleted
-			await this.cleanupProjectMcpServers()
-			await this.notifyWebviewOfServerChanges()
-			vscode.window.showInformationMessage(t("mcp:info.project_config_deleted"))
-		})
-
-		this.disposables.push(
-			vscode.Disposable.from(changeDisposable, createDisposable, deleteDisposable, this.projectMcpWatcher),
-		)
+		// kilocode_change: watch .deeptask/mcp.json and legacy .kilocode/mcp.json
+		// as direct children of those directories. Never use a slash-containing
+		// glob on the repo root — that compiles as a full-tree inotify that
+		// ignores files.watcherExclude and pins node_modules.
+		for (const target of projectMcpWatchTargets(workspaceFolder)) {
+			const pattern = new vscode.RelativePattern(vscode.Uri.file(target.watchBase), target.pattern)
+			const watcher = vscode.workspace.createFileSystemWatcher(pattern, false, false, false)
+			watcher.onDidChange((uri) => {
+				this.debounceConfigChange(uri.fsPath, "project")
+			})
+			watcher.onDidCreate((uri) => {
+				this.debounceConfigChange(uri.fsPath, "project")
+			})
+			watcher.onDidDelete(async () => {
+				await this.cleanupProjectMcpServers()
+				await this.notifyWebviewOfServerChanges()
+				vscode.window.showInformationMessage(t("mcp:info.project_config_deleted"))
+			})
+			this.projectMcpWatchers.push(watcher)
+		}
 	}
 
 	private async updateProjectMcpServers(): Promise<void> {
@@ -2621,10 +2635,7 @@ export class McpHub {
 			this.settingsWatcher = undefined
 		}
 
-		if (this.projectMcpWatcher) {
-			this.projectMcpWatcher.dispose()
-			this.projectMcpWatcher = undefined
-		}
+		this.disposeProjectMcpWatchers()
 
 		this.disposables.forEach((d) => d.dispose())
 	}

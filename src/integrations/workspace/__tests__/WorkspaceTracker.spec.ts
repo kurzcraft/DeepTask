@@ -6,12 +6,22 @@ import { listFiles } from "../../../services/glob/list-files"
 import { getWorkspacePath } from "../../../utils/path"
 
 // Mock functions - must be defined before vitest.mock calls
-const mockOnDidCreate = vitest.fn()
-const mockOnDidDelete = vitest.fn()
+const mockOnDidCreateFiles = vitest.fn()
+const mockOnDidDeleteFiles = vitest.fn()
+const mockOnDidRenameFiles = vitest.fn()
+const mockOnDidSaveTextDocument = vitest.fn()
+const mockOnDidOpenTextDocument = vitest.fn()
 const mockDispose = vitest.fn()
 
 // Store registered tab change callback
 let registeredTabChangeCallback: (() => Promise<void>) | null = null
+let createFilesCallback: ((event: { files: Array<{ scheme: string; fsPath: string }> }) => Promise<void>) | null = null
+let deleteFilesCallback: ((event: { files: Array<{ scheme: string; fsPath: string }> }) => Promise<void>) | null = null
+let renameFilesCallback:
+	| ((event: { files: Array<{ oldUri: { scheme: string; fsPath: string }; newUri: { scheme: string; fsPath: string } }> }) => Promise<void>)
+	| null = null
+let saveDocumentCallback: ((document: { uri: { scheme: string; fsPath: string } }) => Promise<void>) | null = null
+let openDocumentCallback: ((document: { uri: { scheme: string; fsPath: string } }) => Promise<void>) | null = null
 
 // Mock workspace path
 vitest.mock("../../../utils/path", () => ({
@@ -25,13 +35,6 @@ vitest.mock("../../../utils/path", () => ({
 		return path.endsWith("/") ? normalizedPath + "/" : normalizedPath
 	}),
 }))
-
-// Mock watcher - must be defined after mockDispose but before vitest.mock("vscode")
-const mockWatcher = {
-	onDidCreate: mockOnDidCreate.mockReturnValue({ dispose: mockDispose }),
-	onDidDelete: mockOnDidDelete.mockReturnValue({ dispose: mockDispose }),
-	dispose: mockDispose,
-}
 
 // Mock vscode
 vitest.mock("vscode", () => ({
@@ -53,12 +56,37 @@ vitest.mock("vscode", () => ({
 				index: 0,
 			},
 		],
-		createFileSystemWatcher: vitest.fn(() => mockWatcher),
+		createFileSystemWatcher: vitest.fn(),
+		onDidCreateFiles: vitest.fn((callback) => {
+			createFilesCallback = callback
+			return { dispose: mockDispose }
+		}),
+		onDidDeleteFiles: vitest.fn((callback) => {
+			deleteFilesCallback = callback
+			return { dispose: mockDispose }
+		}),
+		onDidRenameFiles: vitest.fn((callback) => {
+			renameFilesCallback = callback
+			return { dispose: mockDispose }
+		}),
+		onDidSaveTextDocument: vitest.fn((callback) => {
+			saveDocumentCallback = callback
+			return { dispose: mockDispose }
+		}),
+		onDidOpenTextDocument: vitest.fn((callback) => {
+			openDocumentCallback = callback
+			return { dispose: mockDispose }
+		}),
+		onDidChangeWorkspaceFolders: vitest.fn(() => ({ dispose: mockDispose })),
 		fs: {
 			stat: vitest.fn().mockResolvedValue({ type: 1 }), // FileType.File = 1
 		},
 	},
+	Uri: {
+		file: vitest.fn((fsPath: string) => ({ scheme: "file", fsPath })),
+	},
 	FileType: { File: 1, Directory: 2 },
+	RelativePattern: vitest.fn((base: unknown, pattern: string) => ({ base, pattern })),
 }))
 
 vitest.mock("../../../services/glob/list-files", () => ({
@@ -75,6 +103,11 @@ describe("WorkspaceTracker", () => {
 
 		// Reset all mock implementations
 		registeredTabChangeCallback = null
+		createFilesCallback = null
+		deleteFilesCallback = null
+		renameFilesCallback = null
+		saveDocumentCallback = null
+		openDocumentCallback = null
 
 		// Reset workspace path mock
 		;(getWorkspacePath as Mock).mockReturnValue("/test/workspace")
@@ -87,8 +120,30 @@ describe("WorkspaceTracker", () => {
 		// Create tracker instance
 		workspaceTracker = new WorkspaceTracker(mockProvider)
 
-		// Ensure the tab change callback was registered
 		expect(registeredTabChangeCallback).not.toBeNull()
+		expect(createFilesCallback).not.toBeNull()
+		expect(deleteFilesCallback).not.toBeNull()
+		expect(renameFilesCallback).not.toBeNull()
+		expect(saveDocumentCallback).not.toBeNull()
+		expect(openDocumentCallback).not.toBeNull()
+	})
+
+	afterEach(() => {
+		workspaceTracker.dispose()
+		vitest.useRealTimers()
+	})
+
+	const flushWorkspaceUpdate = async () => {
+		await vitest.runAllTimersAsync()
+	}
+
+	it("should use workspace file events instead of a recursive RelativePattern watcher", () => {
+		expect(vscode.workspace.createFileSystemWatcher).not.toHaveBeenCalled()
+		expect(vscode.workspace.onDidCreateFiles).toHaveBeenCalled()
+		expect(vscode.workspace.onDidDeleteFiles).toHaveBeenCalled()
+		expect(vscode.workspace.onDidRenameFiles).toHaveBeenCalled()
+		expect(vscode.workspace.onDidSaveTextDocument).toHaveBeenCalled()
+		expect(vscode.workspace.onDidOpenTextDocument).toHaveBeenCalled()
 	})
 
 	it("should initialize with workspace files", async () => {
@@ -107,10 +162,8 @@ describe("WorkspaceTracker", () => {
 	})
 
 	it("should handle file creation events", async () => {
-		// Get the creation callback and call it
-		const [[callback]] = mockOnDidCreate.mock.calls
-		await callback({ fsPath: "/test/workspace/newfile.ts" })
-		vitest.runAllTimers()
+		await createFilesCallback!({ files: [{ scheme: "file", fsPath: "/test/workspace/newfile.ts" }] })
+		await flushWorkspaceUpdate()
 
 		expect(mockProvider.postMessageToWebview).toHaveBeenCalledWith({
 			type: "workspaceUpdated",
@@ -120,17 +173,12 @@ describe("WorkspaceTracker", () => {
 	})
 
 	it("should handle file deletion events", async () => {
-		// First add a file
-		const [[createCallback]] = mockOnDidCreate.mock.calls
-		await createCallback({ fsPath: "/test/workspace/file.ts" })
-		vitest.runAllTimers()
+		await createFilesCallback!({ files: [{ scheme: "file", fsPath: "/test/workspace/file.ts" }] })
+		await flushWorkspaceUpdate()
 
-		// Then delete it
-		const [[deleteCallback]] = mockOnDidDelete.mock.calls
-		await deleteCallback({ fsPath: "/test/workspace/file.ts" })
-		vitest.runAllTimers()
+		await deleteFilesCallback!({ files: [{ scheme: "file", fsPath: "/test/workspace/file.ts" }] })
+		await flushWorkspaceUpdate()
 
-		// The last call should have empty filePaths
 		expect(mockProvider.postMessageToWebview).toHaveBeenLastCalledWith({
 			type: "workspaceUpdated",
 			filePaths: [],
@@ -139,20 +187,74 @@ describe("WorkspaceTracker", () => {
 	})
 
 	it("should handle directory paths correctly", async () => {
-		// Mock stat to return directory type
-		;(vscode.workspace.fs.stat as Mock).mockResolvedValueOnce({ type: 2 }) // FileType.Directory = 2
+		;(vscode.workspace.fs.stat as Mock).mockResolvedValueOnce({ type: 2 })
 
-		const [[callback]] = mockOnDidCreate.mock.calls
-		await callback({ fsPath: "/test/workspace/newdir" })
-		vitest.runAllTimers()
+		await createFilesCallback!({ files: [{ scheme: "file", fsPath: "/test/workspace/newdir" }] })
+		await flushWorkspaceUpdate()
 
 		expect(mockProvider.postMessageToWebview).toHaveBeenCalledWith({
 			type: "workspaceUpdated",
-			filePaths: expect.arrayContaining(["newdir"]),
+			filePaths: expect.arrayContaining(["newdir/"]),
 			openedTabs: [],
 		})
 		const lastCall = (mockProvider.postMessageToWebview as Mock).mock.calls.slice(-1)[0]
 		expect(lastCall[0].filePaths).toHaveLength(1)
+	})
+
+	it("should treat saved and opened documents as created files", async () => {
+		await saveDocumentCallback!({ uri: { scheme: "file", fsPath: "/test/workspace/saved.ts" } })
+		await flushWorkspaceUpdate()
+
+		expect((mockProvider.postMessageToWebview as Mock).mock.calls.at(-1)?.[0].filePaths).toEqual(
+			expect.arrayContaining(["saved.ts"]),
+		)
+
+		await openDocumentCallback!({ uri: { scheme: "file", fsPath: "/test/workspace/opened.ts" } })
+		await flushWorkspaceUpdate()
+
+		expect((mockProvider.postMessageToWebview as Mock).mock.calls.at(-1)?.[0].filePaths).toEqual(
+			expect.arrayContaining(["saved.ts", "opened.ts"]),
+		)
+	})
+
+	it("should ignore node_modules, git, pnpm, and worktree paths", async () => {
+		await createFilesCallback!({
+			files: [
+				{ scheme: "file", fsPath: "/test/workspace/node_modules/pkg/index.js" },
+				{ scheme: "file", fsPath: "/test/workspace/.git/HEAD" },
+				{ scheme: "file", fsPath: "/test/workspace/.pnpm/store/file" },
+				{ scheme: "file", fsPath: "/test/workspace/.kilocode/worktrees/agent-1/src/a.ts" },
+				{ scheme: "file", fsPath: "/test/workspace/src/keep.ts" },
+			],
+		})
+		await flushWorkspaceUpdate()
+
+		expect(mockProvider.postMessageToWebview).toHaveBeenCalledWith({
+			type: "workspaceUpdated",
+			filePaths: ["src/keep.ts"],
+			openedTabs: [],
+		})
+	})
+
+	it("should handle rename events as delete plus create", async () => {
+		await createFilesCallback!({ files: [{ scheme: "file", fsPath: "/test/workspace/old.ts" }] })
+		await flushWorkspaceUpdate()
+
+		await renameFilesCallback!({
+			files: [
+				{
+					oldUri: { scheme: "file", fsPath: "/test/workspace/old.ts" },
+					newUri: { scheme: "file", fsPath: "/test/workspace/new.ts" },
+				},
+			],
+		})
+		await flushWorkspaceUpdate()
+
+		expect(mockProvider.postMessageToWebview).toHaveBeenLastCalledWith({
+			type: "workspaceUpdated",
+			filePaths: ["new.ts"],
+			openedTabs: [],
+		})
 	})
 
 	it("should respect file limits", async () => {
@@ -174,34 +276,31 @@ describe("WorkspaceTracker", () => {
 		})
 		expect(calls[0][0].filePaths).toHaveLength(1000)
 
-		// Should allow adding up to 2000 total files
-		const [[callback]] = mockOnDidCreate.mock.calls
-		for (let i = 0; i < 1000; i++) {
-			await callback({ fsPath: `/test/workspace/extra${i}.ts` })
-		}
-		vitest.runAllTimers()
+		await createFilesCallback!({
+			files: Array.from({ length: 1000 }, (_, i) => ({
+				scheme: "file",
+				fsPath: `/test/workspace/extra${i}.ts`,
+			})),
+		})
+		await flushWorkspaceUpdate()
 
 		const lastCall = (mockProvider.postMessageToWebview as Mock).mock.calls.slice(-1)[0]
 		expect(lastCall[0].filePaths).toHaveLength(2000)
 
-		// Adding one more file beyond 2000 should not increase the count
-		await callback({ fsPath: "/test/workspace/toomany.ts" })
-		vitest.runAllTimers()
+		await createFilesCallback!({ files: [{ scheme: "file", fsPath: "/test/workspace/toomany.ts" }] })
+		await flushWorkspaceUpdate()
 
 		const finalCall = (mockProvider.postMessageToWebview as Mock).mock.calls.slice(-1)[0]
 		expect(finalCall[0].filePaths).toHaveLength(2000)
 	})
 
-	it("should clean up watchers and timers on dispose", () => {
-		// Set up updateTimer
-		const [[callback]] = mockOnDidCreate.mock.calls
-		callback({ fsPath: "/test/workspace/file.ts" })
-
+	it("should clean up listeners and timers on dispose", async () => {
+		const pending = createFilesCallback!({ files: [{ scheme: "file", fsPath: "/test/workspace/file.ts" }] })
 		workspaceTracker.dispose()
+		await pending
 		expect(mockDispose).toHaveBeenCalled()
-		vitest.runAllTimers() // Ensure any pending timers are cleared
+		vitest.runAllTimers()
 
-		// No more updates should happen after dispose
 		expect(mockProvider.postMessageToWebview).not.toHaveBeenCalled()
 	})
 

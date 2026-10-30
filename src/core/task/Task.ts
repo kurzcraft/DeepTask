@@ -7306,12 +7306,17 @@ ${protocolHint}
 	}
 
 	private setupTaskProgressFileWatcher(): void {
-		const pattern = new vscode.RelativePattern(this.cwd, "EXTRA/task/*.md")
-		this.taskProgressFileWatcher = vscode.workspace.createFileSystemWatcher(pattern)
+		// kilocode_change start: a RelativePattern glob that contains `/`
+		// (e.g. EXTRA/task/*.md) is compiled as a recursive tree watch of
+		// `this.cwd`. Watch only the task-progress directory's direct *.md
+		// children so node_modules/.git are not pinned into inotify.
+		const pattern = new vscode.RelativePattern(path.join(this.cwd, "EXTRA", "task"), "*.md")
+		this.taskProgressFileWatcher = vscode.workspace.createFileSystemWatcher(pattern, false, false, false)
 		const refresh = () => this.queueTaskProgressFileRefresh()
 		this.taskProgressFileWatcher.onDidCreate(refresh)
 		this.taskProgressFileWatcher.onDidChange(refresh)
 		this.taskProgressFileWatcher.onDidDelete(refresh)
+		// kilocode_change end
 	}
 
 	private queueTaskProgressFileRefresh(): void {
