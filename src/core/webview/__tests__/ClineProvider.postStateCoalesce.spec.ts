@@ -98,6 +98,14 @@ vi.mock("../../task/Task", () => ({
 	Task: vi.fn(),
 }))
 
+vi.mock("../../kilocode/parallel/ParallelManager", () => ({
+	ParallelManager: vi.fn().mockImplementation(() => ({
+		broadcast: vi.fn().mockResolvedValue(undefined),
+		registerMainFolder: vi.fn().mockResolvedValue(false),
+		hydrateRegisteredWorkspaces: vi.fn().mockResolvedValue(undefined),
+	})),
+}))
+
 vi.mock("@roo-code/cloud", () => ({
 	CloudService: {
 		hasInstance: vi.fn().mockReturnValue(true),
@@ -186,6 +194,8 @@ describe("ClineProvider postStateToWebview coalesce", () => {
 		}
 		;(provider as any)._parallelManager = {
 			broadcast: vi.fn().mockResolvedValue(undefined),
+			registerMainFolder: vi.fn().mockResolvedValue(false),
+			hydrateRegisteredWorkspaces: vi.fn().mockResolvedValue(undefined),
 		}
 		;(provider as any)._parallelInit = Promise.resolve()
 	})
@@ -341,5 +351,95 @@ describe("ClineProvider postStateToWebview coalesce", () => {
 		await delay(10)
 
 		expect(broadcast).toHaveBeenCalledTimes(1)
+	})
+
+	function mockFocusedTask(overrides?: { taskId?: string; instanceId?: string; epoch?: number }) {
+		vi.spyOn(provider, "getFocusedChatTask").mockReturnValue({
+			taskId: overrides?.taskId ?? "task-a",
+			instanceId: overrides?.instanceId ?? "inst-1",
+			clineMessagesEpoch: overrides?.epoch ?? 3,
+			clineMessages: [{ ts: 1, type: "say", say: "text", text: "hello" }],
+		} as any)
+	}
+
+	it("omits clineMessages on an incremental post when the transcript cursor is unchanged", async () => {
+		mockFocusedTask()
+		const includes: Array<boolean | undefined> = []
+		vi.spyOn(provider, "getStateToPostToWebview").mockImplementation(async (options) => {
+			includes.push(options?.includeClineMessages)
+			return options?.includeClineMessages === false
+				? ({ soundEnabled: false } as any)
+				: ({ clineMessages: [{ ts: 1, type: "say", say: "text", text: "hello" }] } as any)
+		})
+		const posted: unknown[] = []
+		vi.spyOn(provider, "postMessageToWebview").mockImplementation(async (message) => {
+			posted.push(message)
+		})
+
+		await provider.postStateToWebview()
+		await provider.postStateToWebview()
+
+		expect(includes).toEqual([true, false])
+		expect(posted).toEqual([
+			{
+				type: "state",
+				state: { clineMessages: [{ ts: 1, type: "say", say: "text", text: "hello" }] },
+			},
+			{ type: "state", state: { soundEnabled: false } },
+		])
+	})
+
+	it("posts clineMessages on force even when a later non-force request shares the coalesced batch", async () => {
+		mockFocusedTask()
+		const includes: Array<boolean | undefined> = []
+		let releaseFirst!: () => void
+		const firstGate = new Promise<void>((resolve) => {
+			releaseFirst = resolve
+		})
+		let builds = 0
+		vi.spyOn(provider, "getStateToPostToWebview").mockImplementation(async (options) => {
+			builds += 1
+			includes.push(options?.includeClineMessages)
+			if (builds === 1) {
+				await firstGate
+			}
+			return { clineMessages: [{ ts: builds, type: "say", say: "text", text: "hello" }] } as any
+		})
+		vi.spyOn(provider, "postMessageToWebview").mockResolvedValue(undefined)
+
+		const first = provider.postStateToWebview()
+		await delay(5)
+		const tail = provider.postStateToWebview({ force: true })
+		const dropped = provider.postStateToWebview()
+		releaseFirst()
+		await Promise.all([first, tail, dropped])
+
+		expect(includes).toEqual([true, true])
+	})
+
+	it("posts an empty transcript after abort clears the posted cursor", async () => {
+		mockFocusedTask()
+		const includes: Array<boolean | undefined> = []
+		vi.spyOn(provider, "getStateToPostToWebview").mockImplementation(async (options) => {
+			includes.push(options?.includeClineMessages)
+			return options?.includeClineMessages === false
+				? ({ soundEnabled: false } as any)
+				: ({ clineMessages: [{ ts: 1, type: "say", say: "text", text: "hello" }] } as any)
+		})
+		vi.spyOn(provider, "postMessageToWebview").mockResolvedValue(undefined)
+
+		await provider.postStateToWebview()
+		vi.spyOn(provider, "getFocusedChatTask").mockReturnValue(undefined)
+		await provider.postStateToWebview()
+		expect(includes).toEqual([true, true])
+
+		includes.length = 0
+		await provider.postStateToWebview()
+		expect(includes).toEqual([false])
+
+		provider.invalidatePostedClineMessagesCursor()
+		includes.length = 0
+		await provider.postStateToWebview()
+		expect(includes).toEqual([true])
 	})
 })

@@ -151,6 +151,10 @@ vi.mock("vscode", () => {
 				stat: vi.fn().mockResolvedValue({ type: 1 }), // FileType.File = 1
 			},
 			onDidSaveTextDocument: vi.fn(() => mockDisposable),
+			onDidOpenTextDocument: vi.fn(() => mockDisposable),
+			onDidCreateFiles: vi.fn(() => mockDisposable),
+			onDidDeleteFiles: vi.fn(() => mockDisposable),
+			onDidRenameFiles: vi.fn(() => mockDisposable),
 			onDidChangeWorkspaceFolders: vi.fn(() => mockDisposable),
 			getConfiguration: vi.fn(() => ({ get: (key: string, defaultValue: any) => defaultValue })),
 		},
@@ -2607,7 +2611,7 @@ describe("Queued message processing after condense", () => {
 		)
 	})
 
-	it("keeps a condensed summary without injecting latest feedback as a user message", async () => {
+	it("pins host EXTRA/task state onto the condensed summary without a user-role capsule", async () => {
 		const provider = createProvider()
 		const task = new Task({
 			provider,
@@ -2645,11 +2649,17 @@ describe("Queued message processing after condense", () => {
 		expect(history).toHaveLength(1)
 		expect(history[0]).toEqual(expect.objectContaining({ role: "assistant", isSummary: true }))
 		expect(JSON.stringify(history)).not.toContain("current_task_focus")
-		expect(JSON.stringify(history)).not.toContain("修复压缩后新拓展任务失焦并完成真实验收")
+		expect(history.some((message) => message.role === "user")).toBe(false)
+		expect(String(history[0].content)).toContain("current_task_state")
+		expect(String(history[0].content)).toContain("修复压缩后新拓展任务失焦并完成真实验收")
+		expect(String(history[0].content)).toContain("验证新的压缩聚焦")
 	})
 
-	it("removes legacy continuation capsules without adding a replacement user message", () => {
+	it("removes legacy continuation capsules and pins host state onto the live summary", async () => {
 		const task = Object.create(Task.prototype) as Task
+		;(task as any).latestUserContinuationFocus = "continue the live EXTRA/task checklist"
+		task.todoList = [{ id: "active", content: "do not roll progress back", status: "in_progress" }]
+		;(task as any).parentTaskId = "parent-task"
 		const messages = [
 			{ role: "assistant", content: "summary", isSummary: true },
 			{
@@ -2659,10 +2669,15 @@ describe("Queued message processing after condense", () => {
 			},
 		] as any
 
-		const result = (task as any).preserveLatestContinuationFocus(messages) as any[]
+		const result = (await (task as any).preserveLatestContinuationFocus(messages)) as any[]
 
-		expect(result).toEqual([messages[0]])
+		expect(result).toHaveLength(1)
+		expect(result[0].role).toBe("assistant")
+		expect(result[0].isSummary).toBe(true)
 		expect(result.some((message) => String(message.content).includes("current_task_focus"))).toBe(false)
+		expect(String(result[0].content)).toContain("current_task_state")
+		expect(String(result[0].content)).toContain("continue the live EXTRA/task checklist")
+		expect(String(result[0].content)).toContain("do not roll progress back")
 	})
 
 	it("discards a manual condense result when history changes while summarizing", async () => {
@@ -3070,6 +3085,59 @@ describe("Queued message processing after condense", () => {
 		expect(task.didFinishAbortingStream).toBe(false)
 		expect(initiateSpy).toHaveBeenCalledTimes(1)
 		expect(JSON.stringify(initiateSpy.mock.calls[0]?.[0])).toContain("latest user message")
+	})
+
+	it("hydrates mirror windows from ui_messages without parsing api_conversation_history", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context,
+		})
+		const uiMessages = [{ type: "say", say: "text", text: "mirror transcript", ts: 1 }]
+		const savedCline = vi.spyOn(task as any, "getSavedClineMessages").mockResolvedValue(uiMessages)
+		const savedApi = vi.spyOn(task as any, "getSavedApiConversationHistory").mockResolvedValue([
+			{ role: "user", content: [{ type: "text", text: "must not load for hydrate" }], ts: 1 },
+		])
+
+		await task.hydratePersistedMessages()
+
+		expect(savedCline).toHaveBeenCalledTimes(1)
+		expect(savedApi).not.toHaveBeenCalled()
+		expect((task as any).clineMessages).toEqual(uiMessages)
+		expect((task as any).apiConversationHistory).toEqual([])
+		expect((task as any).clineMessagesEpoch).toBeGreaterThan(0)
+	})
+
+	it("still loads api_conversation_history when resume starts with empty in-memory history", async () => {
+		const provider = createProvider()
+		const task = new Task({
+			provider,
+			apiConfiguration: apiConfig,
+			task: "initial task",
+			startTask: false,
+			context: provider.context,
+		})
+		;(provider as any).clineStack = [task]
+		const persistedApi = [
+			{ role: "user", content: [{ type: "text", text: "model I/O context" }], ts: 1 },
+			{ role: "assistant", content: [{ type: "text", text: "prior model turn" }], ts: 2 },
+		]
+		vi.spyOn(task as any, "getSavedClineMessages").mockResolvedValue([])
+		const savedApi = vi.spyOn(task as any, "getSavedApiConversationHistory").mockResolvedValue(persistedApi)
+		vi.spyOn(task as any, "overwriteClineMessages").mockResolvedValue(undefined)
+		const overwriteApi = vi.spyOn(task, "overwriteApiConversationHistory").mockResolvedValue(undefined)
+		const initiateSpy = vi.spyOn(task as any, "initiateTaskLoop").mockResolvedValue(undefined)
+
+		await task.resumeTaskFromHistory({ text: "continue with full history", images: [] })
+
+		expect(savedApi).toHaveBeenCalledTimes(1)
+		expect(overwriteApi).toHaveBeenCalledTimes(1)
+		expect(overwriteApi.mock.calls[0]?.[0]).toEqual(persistedApi)
+		expect(initiateSpy).toHaveBeenCalledTimes(1)
+		expect(JSON.stringify(initiateSpy.mock.calls[0]?.[0])).toContain("continue with full history")
 	})
 
 	it("clears inherited cancellation before an ordinary resume response", async () => {

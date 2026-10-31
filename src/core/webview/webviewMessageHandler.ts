@@ -804,7 +804,7 @@ export const webviewMessageHandler = async (
 			const { refreshWorkflowToggles } = await import("../context/instructions/workflows") // kilocode_change
 			await refreshWorkflowToggles(provider.context, provider.cwd) // kilocode_change
 
-			provider.postStateToWebview()
+			provider.postStateToWebview({ force: true })
 			provider.postRulesDataToWebview() // kilocode_change: send workflows and rules immediately
 			provider.workspaceTracker?.initializeFilePaths() // Don't await.
 
@@ -2935,13 +2935,7 @@ export const webviewMessageHandler = async (
 				const existingPrompts = getGlobalState("customModePrompts") ?? {}
 				const updatedPrompts = { ...existingPrompts, [message.promptMode]: message.customPrompt }
 				await updateGlobalState("customModePrompts", updatedPrompts)
-				const currentState = await provider.getStateToPostToWebview()
-				const stateWithPrompts = {
-					...currentState,
-					customModePrompts: updatedPrompts,
-					hasOpenedModeSelector: currentState.hasOpenedModeSelector ?? false,
-				}
-				provider.postMessageToWebview({ type: "state", state: stateWithPrompts })
+				await provider.postStateToWebview()
 
 				if (TelemetryService.hasInstance()) {
 					// Determine which setting was changed by comparing objects

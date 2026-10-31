@@ -344,36 +344,62 @@ export function historyContainsInboxMarker(historyText: string, childSessionId: 
 	return historyText.includes(inboxMarker(childSessionId))
 }
 
+function visitApiHistoryStrings(content: unknown, visit: (text: string) => boolean): boolean {
+	if (typeof content === "string") {
+		return visit(content)
+	}
+	if (!Array.isArray(content)) {
+		return false
+	}
+	for (const block of content) {
+		if (typeof block === "string") {
+			if (visit(block)) {
+				return true
+			}
+			continue
+		}
+		if (!block || typeof block !== "object") {
+			continue
+		}
+		const record = block as Record<string, unknown>
+		if (typeof record.text === "string" && visit(record.text)) {
+			return true
+		}
+		if (typeof record.content === "string" && visit(record.content)) {
+			return true
+		}
+		if (Array.isArray(record.content) && visitApiHistoryStrings(record.content, visit)) {
+			return true
+		}
+	}
+	return false
+}
+
+/**
+ * Scan API history for an inbox marker without concatenating the transcript.
+ * Long-running tasks persist ~100MB histories; joining them on every save
+ * doubled extensionHost heap for a needle that is almost always absent.
+ */
+export function messagesContainInboxMarker(
+	messages: Array<{ content?: unknown }>,
+	childSessionId: string,
+): boolean {
+	const marker = inboxMarker(childSessionId)
+	for (const message of messages) {
+		if (visitApiHistoryStrings(message.content, (text) => text.includes(marker))) {
+			return true
+		}
+	}
+	return false
+}
+
 export function flattenApiHistoryText(messages: Array<{ content?: unknown }>): string {
 	const chunks: string[] = []
 	for (const message of messages) {
-		const content = message.content
-		if (typeof content === "string") {
-			chunks.push(content)
-			continue
-		}
-		if (!Array.isArray(content)) {
-			continue
-		}
-		for (const block of content) {
-			if (!block || typeof block !== "object") {
-				continue
-			}
-			const record = block as Record<string, unknown>
-			if (typeof record.text === "string") {
-				chunks.push(record.text)
-			}
-			if (typeof record.content === "string") {
-				chunks.push(record.content)
-			}
-			if (Array.isArray(record.content)) {
-				for (const inner of record.content) {
-					if (inner && typeof inner === "object" && typeof (inner as { text?: unknown }).text === "string") {
-						chunks.push((inner as { text: string }).text)
-					}
-				}
-			}
-		}
+		visitApiHistoryStrings(message.content, (text) => {
+			chunks.push(text)
+			return false
+		})
 	}
 	return chunks.join("\n")
 }
@@ -445,9 +471,8 @@ export async function confirmInboxDeliveryFromMessages(options: {
 	if (entries.length === 0) {
 		return confirmed
 	}
-	const historyText = flattenApiHistoryText(options.messages)
 	for (const entry of entries) {
-		if (!historyContainsInboxMarker(historyText, entry.childSessionId)) {
+		if (!messagesContainInboxMarker(options.messages, entry.childSessionId)) {
 			continue
 		}
 		await markInboxEntryDelivered({
@@ -542,9 +567,16 @@ export function isInterruptedToolResultText(text: string | undefined): boolean {
 	return typeof text === "string" && text.includes(INTERRUPTED_TOOL_RESULT_TEXT)
 }
 
-export function shouldRedeliverInboxEntry(entry: SubagentInboxEntry, historyText: string): boolean {
+export function shouldRedeliverInboxEntry(
+	entry: SubagentInboxEntry,
+	historyText: string,
+	messages?: Array<{ content?: unknown }>,
+): boolean {
 	if (entry.deliveryState === "delivered") {
 		return false
+	}
+	if (messages) {
+		return !messagesContainInboxMarker(messages, entry.childSessionId)
 	}
 	return !historyContainsInboxMarker(historyText, entry.childSessionId)
 }
@@ -557,12 +589,15 @@ export function shouldRedeliverInboxEntry(entry: SubagentInboxEntry, historyText
  */
 export function buildInboxResumeInjection(options: {
 	entries: SubagentInboxEntry[]
-	historyText: string
+	historyText?: string
+	messages?: Array<{ content?: unknown }>
 	assistantToolUses?: AssistantToolUseRef[]
 	existingToolResultIds?: string[]
 	existingToolResultTextById?: Record<string, string>
 }): InboxResumeInjection {
-	const redeliver = options.entries.filter((entry) => shouldRedeliverInboxEntry(entry, options.historyText))
+	const redeliver = options.entries.filter((entry) =>
+		shouldRedeliverInboxEntry(entry, options.historyText ?? "", options.messages),
+	)
 	if (redeliver.length === 0) {
 		return { nativeResults: [], childSessionIds: [] }
 	}

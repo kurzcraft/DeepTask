@@ -118,4 +118,23 @@ describe("bounded snapshot coalescer", () => {
 		await tail
 		expect(runs).toBe(2)
 	})
+	it("ORs force onto the shared trailing batch so a later non-force request cannot drop it", async () => {
+		const firstGate = gate()
+		const started = gate()
+		const forces: boolean[] = []
+		const work = new CoalesceLatestWork(async (force) => {
+			forces.push(force)
+			if (forces.length === 1) {
+				started.resolve()
+				await firstGate.promise
+			}
+		})
+		const first = work.request()
+		await started.promise
+		const tail = work.request({ force: true })
+		expect(work.request()).toBe(tail)
+		firstGate.resolve()
+		await Promise.all([first, tail])
+		expect(forces).toEqual([false, true])
+	})
 })

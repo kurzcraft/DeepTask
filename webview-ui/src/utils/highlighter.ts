@@ -109,6 +109,21 @@ export function normalizeLanguage(language: string | undefined): ExtendedLanguag
 	return "txt"
 }
 
+// kilocode_change start - skip Shiki token trees for logs and oversized blocks.
+// codeToHast → React nodes amplified a 8k–MB command log into gigabytes of renderer heap.
+export const SHIKI_HIGHLIGHT_CHAR_LIMIT = 4_000
+const PLAIN_HIGHLIGHT_LANGUAGES = new Set(["log", "text", "plaintext", "plain", "txt"])
+
+export function shouldSkipShikiHighlight(source: string | undefined, language?: string): boolean {
+	const text = source ?? ""
+	if (text.length === 0 || text.length > SHIKI_HIGHLIGHT_CHAR_LIMIT) {
+		return true
+	}
+
+	return PLAIN_HIGHLIGHT_LANGUAGES.has((language ?? "").toLowerCase())
+}
+// kilocode_change end
+
 // Export function to check if a language is loaded
 export const isLanguageLoaded = (language: string): boolean => {
 	return state.loadedLanguages.has(normalizeLanguage(language))

@@ -58,3 +58,13 @@ describe("highlighter resource loading", () => {
 		expect(highlighter.loadTheme).toHaveBeenCalledTimes(2)
 	})
 })
+
+describe("shouldSkipShikiHighlight", () => {
+	it("skips logs, empty sources, and oversized blocks without touching Shiki", async () => {
+		const { shouldSkipShikiHighlight, SHIKI_HIGHLIGHT_CHAR_LIMIT } = await import("../highlighter")
+		expect(shouldSkipShikiHighlight("short log", "log")).toBe(true)
+		expect(shouldSkipShikiHighlight("const x = 1", "typescript")).toBe(false)
+		expect(shouldSkipShikiHighlight("a".repeat(SHIKI_HIGHLIGHT_CHAR_LIMIT + 1), "typescript")).toBe(true)
+		expect(shouldSkipShikiHighlight("", "typescript")).toBe(true)
+	})
+})

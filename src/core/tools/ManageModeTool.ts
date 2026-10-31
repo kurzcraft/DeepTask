@@ -4,6 +4,7 @@ import { formatResponse } from "../prompts/responses"
 import { BaseTool, ToolCallbacks } from "./BaseTool"
 import type { ToolUse } from "../../shared/tools"
 import { getAllModes, getModeBySlug, defaultModeSlug } from "../../shared/modes"
+import { evolveDisplayName, isEvolveSlug } from "../../shared/evolve-upgrade"
 import type { ModeConfig, GroupEntry } from "@roo-code/types"
 import { toolGroups } from "@roo-code/types"
 import os from "os"
@@ -160,7 +161,8 @@ function nextCopySlug(baseSlug: string, existingSlugs: Set<string>): string {
 	// kilocode_change start: numbered series continue the series instead of
 	// appending a second suffix. Copying/forking "evolve-3" must produce
 	// "evolve-4" (the next number of the SAME series), never "evolve-3-1".
-	const seriesMatch = baseSlug.match(/^(.*)-(\d+)$/)
+	// Bare "evolve" is series member 0 of the same family.
+	const seriesMatch = baseSlug.match(/^(.*)-(\d+)$/) || (baseSlug === "evolve" ? (["evolve", "evolve", "0"] as const) : null)
 	if (seriesMatch) {
 		const seriesBase = seriesMatch[1]
 		const existingLower = new Set([...existingSlugs].map((s) => s.toLowerCase()))
@@ -338,8 +340,11 @@ export class ManageModeTool extends BaseTool<"manage_mode"> {
 						const base = sanitizeSlug(slugRaw || params.copy_from || "mode")
 						const existing = new Set([...customModes.map((m) => m.slug), ...allModes.map((m) => m.slug)])
 						finalSlug = nextCopySlug(base, existing)
-						// Default name suffix mirrors the slug suffix unless the user provided a name.
-						if (!params.name?.trim() && name && !name.match(/-\d+$/)) {
+						// Evolve copies: display name MUST match the new slug digit.
+						// Never inherit Evolve-N from the source (that produced dual numbering).
+						if (isEvolveSlug(finalSlug)) {
+							name = evolveDisplayName(finalSlug)
+						} else if (!params.name?.trim() && name && !name.match(/-\d+$/)) {
 							name = `${name}-${finalSlug.split("-").pop()}`
 						}
 					// kilocode_change: copying a numbered series member records the
@@ -484,11 +489,10 @@ export class ManageModeTool extends BaseTool<"manage_mode"> {
 				if (isEvolveSeries) {
 					const existingSlugs = new Set([...customModes.map((m) => m.slug), ...allModes.map((m) => m.slug)])
 					const forkSlug = nextCopySlug("evolve", existingSlugs)
-				const forkNumber = forkSlug.split("-").pop()
 				const forked: ModeConfig = {
 					...merged,
 					slug: forkSlug,
-					name: params.name?.trim() || `Evolve-${forkNumber}`,
+					name: evolveDisplayName(forkSlug),
 					// kilocode_change: the fork's description records what changed
 					// vs its predecessor so the mode dropdown subtitle shows the
 					// delta ("相比 evolve-3 的更新: ...") instead of a generic blurb.

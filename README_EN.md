@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.2.9</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.3.0</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.2.9** gives the chat list a real bounded viewport: off-screen ChatRows unmount instead of keeping every historical Markdown/code/command subtree alive; only the live last row keeps a ResizeObserver; the user-message rail uses a single hover preview. Workspace listing, code-index updates, and stale-context detection reuse editor file events instead of attaching recursive `**` watchers that bypass `files.watcherExclude`; task-progress files are watched only as `*.md` children of `EXTRA/task`. DeepTask also contributes `files.watcherExclude` defaults that close VS Code's built-in `**/node_modules/*/**` hole for dot directories, so `.pnpm` / `.bun` / `.yarn/cache`, build caches, Git LFS, and `EXTRA/output` are not recursively pinned into inotify; source files, `EXTRA/task`, and MCP configs stay watched. Stored transcripts and model I/O stay full; historical command output still uses the 9.2.8 display projection. 9.2.8 long-task reliability and resource work remain: child results are persisted before delivery and recovered without duplicate replay; a finished child writes the parent inbox from its saved completion after a host restart, then Continue injects the final result; long-context condensation keeps incremental continuation state instead of recopying a prior opening mantra. Tools follow their assigned workspace; merges verify the real target branch and checkout while preserving unrelated edits; oversized multiline commands fail fast with recovery guidance. Compatible dependencies are reused by default while tests still target isolated sources. Long-session resource work is validated with regression and stress tests; cumulative traffic is not peak memory, and a permanent gray-panel fix is not claimed. This revision adds payload-budgeted auxiliary caching, on-demand themes, coalesced full-state requests, paired IPC deduplication, and host-prompt deduplication while preserving complete displayed content and necessary model information. Follow-up structural hardening protects final history saves, isolates per-task tool parsing, releases owned MCP/index watchers, and settles queued process startup and exit reliably; native tool arguments remain literal and command preflight does not execute user programs. The October 29 revision invalidates stale asynchronous highlighting requests and reduces redundant accounting and settings allocations; 1,067 regression tests pass. Unproven history pruning and additional terminal truncation are excluded. Historical command output is projected to the panel as a short preview; stored transcripts and model I/O stay full, collapsed rows omit the full CodeBlock, and expand fetches the original text by timestamp. Unpaired native tool_use sanitization now keeps interleaved assistant text, nested Previous Conversation summaries are flattened before the next round, and native history accepts only real tool_use/mcp_tool_use. After install, peak RSS ~4.6GiB belongs to the VSCodium zygote, not DeepTask alone; the extension host sits around 0.8–1.1GiB and the webview heap around 0.3–0.5GiB. The 90% warning is a webview heap-limit ratio. This build does not guarantee the process can never overflow.
+> **Deeptask 9.3.0** forces evolve slug and display name to share one number (`evolve-N` displays as `Evolve-N`) and requires oversized task checklists to first create a top-level `EXTRA/task/<short-title>/` directory before splitting light files that must not carry a task-id. Long-session gray-panel work follows the measured holder chain: skip Shiki token trees for logs and oversized blocks; omit unchanged `clineMessages` from incremental `postState`; hydrate mirror windows from `ui_messages` only, while resume still loads full API history. After reload on 2026-10-31 the renderer dropped from ~1986MB to 366MB RSS; later same-window crawl stayed under the gray-screen thresholds (render RSS ≥1500MB or anon ≥1200MB). `Committed_AS` over CommitLimit is not treated as physical overflow. Stored transcripts and model I/O stay full. 9.2.9 gives the chat list a real bounded viewport: off-screen ChatRows unmount instead of keeping every historical Markdown/code/command subtree alive; only the live last row keeps a ResizeObserver; the user-message rail uses a single hover preview. Workspace listing, code-index updates, and stale-context detection reuse editor file events instead of attaching recursive `**` watchers that bypass `files.watcherExclude`; task-progress files are watched only as `*.md` children of `EXTRA/task`. DeepTask also contributes `files.watcherExclude` defaults that close VS Code's built-in `**/node_modules/*/**` hole for dot directories, so `.pnpm` / `.bun` / `.yarn/cache`, build caches, Git LFS, and `EXTRA/output` are not recursively pinned into inotify; source files, `EXTRA/task`, and MCP configs stay watched. Historical command output still uses the display projection. 9.2.8 long-task reliability and resource work remain: child results are persisted before delivery and recovered without duplicate replay; a finished child writes the parent inbox from its saved completion after a host restart, then Continue injects the final result; long-context condensation keeps incremental continuation state instead of recopying a prior opening mantra. Tools follow their assigned workspace; merges verify the real target branch and checkout while preserving unrelated edits; oversized multiline commands fail fast with recovery guidance. Compatible dependencies are reused by default while tests still target isolated sources. Long-session resource work is validated with regression tests and live RSS/PSS/anon samples; cumulative traffic is not peak memory, and a permanent gray-panel fix is not claimed.
 
 > Same-day follow-up: isolate command ownership when Kilo Code is co-installed, bound post-completion terminal cleanup, and restore cancellation controls. 425 targeted tests pass; long-duration gray-panel and manual parent-interruption validation remain outstanding.
 
@@ -150,17 +150,17 @@ Apart from "the model's own conversation handling that commands cannot do" (work
 
 ## Start in three minutes
 
-1. Download `deeptask-9.2.9.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.3.0.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.2.9.vsix --force
+    codium --install-extension ./deeptask-9.3.0.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.2.9.vsix --force
+    code --install-extension ./deeptask-9.3.0.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

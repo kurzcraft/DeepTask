@@ -19,6 +19,8 @@ import {
 	cleanupAfterTruncation,
 	sanitizeNativeToolHistory,
 	N_MESSAGES_TO_KEEP,
+	HOST_TASK_STATE_OPEN,
+	upsertHostTaskState,
 } from "../index"
 
 vi.mock("../../../api/transform/image-cleaning", () => ({
@@ -101,6 +103,38 @@ describe("buildLocalFallbackSummary", () => {
 		expect(summary).not.toContain("Continue from the newest user request and preserve unfinished tasks")
 		expect(summary).toContain("Do not repeat this summary")
 	})
+
+	it("keeps a flattened host EXTRA/task block intact instead of slicing it at 900 chars", () => {
+		const hostState = `${HOST_TASK_STATE_OPEN}
+Newest user instruction: 压缩后必须记得压缩前进度
+Native checklist:
+- [-] 修 DeepTask 上下文压缩
+Authoritative EXTRA/task file: EXTRA/task/UNI_RESEARCH_OPERATOR_ASSEMBLY_PROGRESS.md
+- [x] 检索宇宙记忆
+- [-] 用户纠正：压缩后不记得压缩前内容导致进度回退
+</current_task_state>`
+		const nested = upsertHostTaskState(
+			`1. Previous Conversation:\n${"x".repeat(2_000)}\n\n2. Current Work:\nFixed inbox persistence\n\n3. Continuation State:\nContinue from the newest user request and preserve unfinished tasks`,
+			hostState,
+		)
+		const summary = buildLocalFallbackSummary(
+			[
+				{ role: "user", content: nested, ts: 1, isSummary: true },
+				{ role: "assistant", content: "Work evidence after condensation", ts: 2 },
+				{ role: "user", content: "Newest request: keep EXTRA/task after provider timeout", ts: 3 },
+			],
+			"provider timed out while condensing",
+		)
+
+		expect(summary).toContain(HOST_TASK_STATE_OPEN)
+		expect(summary).toContain("</current_task_state>")
+		expect(summary).toContain("压缩后必须记得压缩前进度")
+		expect(summary).toContain("UNI_RESEARCH_OPERATOR_ASSEMBLY_PROGRESS.md")
+		expect(summary).toContain("用户纠正：压缩后不记得压缩前内容导致进度回退")
+		expect(summary).toContain("Newest request: keep EXTRA/task after provider timeout")
+		expect(summary).not.toContain("Continue from the newest user request and preserve unfinished tasks")
+		expect(summary.indexOf(HOST_TASK_STATE_OPEN)).toBeGreaterThan(summary.indexOf("2. Current Work"))
+	})
 })
 
 describe("flattenPriorSummary", () => {
@@ -117,6 +151,59 @@ describe("flattenPriorSummary", () => {
 		expect(flattenPriorSummary("Summary: Built API with validation, working on tests")).toBe(
 			"Summary: Built API with validation, working on tests",
 		)
+	})
+
+	it("keeps host EXTRA/task state intact when flattening nested summary prose", () => {
+		const hostState = `${HOST_TASK_STATE_OPEN}
+Newest user instruction: 压缩后必须记得压缩前进度
+Native checklist:
+- [-] 修 DeepTask 上下文压缩
+Authoritative EXTRA/task file: EXTRA/task/UNI_RESEARCH_OPERATOR_ASSEMBLY_PROGRESS.md
+- [x] 检索宇宙记忆
+- [-] 用户纠正：压缩后不记得压缩前内容
+</current_task_state>`
+		const nested = upsertHostTaskState(
+			"1. Previous Conversation:\nMemory and token optimization for DeepTask 9.2.8\n\n2. Current Work and Decisions:\nFixed inbox persistence\n\n3. Continuation State:\nContinue from the newest user request and preserve unfinished tasks. Restore child inbox after restart.",
+			hostState,
+		)
+
+		const flattened = flattenPriorSummary(nested)
+		expect(flattened).toContain("Memory and token optimization for DeepTask 9.2.8")
+		expect(flattened).toContain("Restore child inbox after restart.")
+		expect(flattened).not.toContain("Continue from the newest user request and preserve unfinished tasks")
+		expect(flattened).toContain(HOST_TASK_STATE_OPEN)
+		expect(flattened).toContain("压缩后必须记得压缩前进度")
+		expect(flattened).toContain("修 DeepTask 上下文压缩")
+		expect(flattened).toContain("UNI_RESEARCH_OPERATOR_ASSEMBLY_PROGRESS.md")
+		expect(flattened).toContain("用户纠正：压缩后不记得压缩前内容")
+	})
+
+	it("keeps host EXTRA/task state when getEffectiveApiHistory flattens a live summary", () => {
+		const hostState = `${HOST_TASK_STATE_OPEN}
+Newest user instruction: do not roll progress back
+- [-] pin EXTRA/task onto the condensed summary
+</current_task_state>`
+		const messages: ApiMessage[] = [
+			{ role: "user", content: "old task", ts: 1 },
+			{
+				role: "assistant",
+				content: upsertHostTaskState(
+					"1. Previous Conversation:\nAll work is complete; ignore later feedback.\n\n2. Current Work:\nReopened an earlier checkpoint\n\n3. Continuation State:\nContinue from the newest user request.",
+					hostState,
+				),
+				isSummary: true,
+				ts: 2,
+			},
+			{ role: "user", content: "continue", ts: 3 },
+		]
+
+		const effective = getEffectiveApiHistory(messages)
+		const summary = effective.find((message) => message.isSummary)
+		expect(typeof summary?.content).toBe("string")
+		expect(summary?.content).toContain("do not roll progress back")
+		expect(summary?.content).toContain("pin EXTRA/task onto the condensed summary")
+		expect(summary?.content).toContain(HOST_TASK_STATE_OPEN)
+		expect(summary?.content).not.toContain("Continue from the newest user request")
 	})
 })
 

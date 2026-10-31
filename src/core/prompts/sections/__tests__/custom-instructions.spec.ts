@@ -1073,6 +1073,8 @@ describe("addCustomInstructions", () => {
 		expect(result).toContain("current workspace's EXTRA/task/ directory")
 		expect(result).toContain("First look in EXTRA/task/ for an existing matching file")
 		expect(result).toContain("Name new files from a concise, filesystem-safe form of the task title")
+		expect(result).toContain("First create a top-level task directory EXTRA/task/<short-title>/")
+		expect(result).toContain("light files under the task directory MUST NOT contain deeptask-task-id")
 		expect(result).toContain("Canonical file format (mandatory; this is not YAML frontmatter)")
 		expect(result).toContain("<!-- deeptask-task-id:<instance-id> -->")
 		expect(result).toContain("example value is illustrative only and must never be copied")

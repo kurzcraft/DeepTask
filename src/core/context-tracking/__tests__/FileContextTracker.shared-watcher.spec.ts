@@ -11,7 +11,10 @@ const mockWatcher = {
 	dispose: mockDispose,
 }
 
-const mockOnDidSaveTextDocument = vi.fn(() => ({ dispose: mockDispose }))
+type SavedDocument = { uri: { fsPath: string } }
+const mockOnDidSaveTextDocument = vi.fn<(listener: (e: SavedDocument) => void) => { dispose: typeof mockDispose }>(
+	() => ({ dispose: mockDispose }),
+)
 
 vi.mock("vscode", () => ({
 	workspace: {
@@ -23,7 +26,7 @@ vi.mock("vscode", () => ({
 			},
 		],
 		createFileSystemWatcher: vi.fn(() => mockWatcher),
-		onDidSaveTextDocument: (...args: unknown[]) => mockOnDidSaveTextDocument(...args),
+		onDidSaveTextDocument: (listener: (e: SavedDocument) => void) => mockOnDidSaveTextDocument(listener),
 	},
 	RelativePattern: vi.fn((base: unknown, pattern: string) => ({ base, pattern })),
 	Uri: {
@@ -94,8 +97,9 @@ describe("FileContextTracker targeted watchers", () => {
 		const tracker = new FileContextTracker({} as ClineProvider, "task-1")
 		await tracker.setupFileWatcher("src/a.ts")
 
-		const [[saveCallback]] = mockOnDidSaveTextDocument.mock.calls
-		saveCallback({ uri: { fsPath: "/test/workspace/src/a.ts" } })
+		const saveCallback = mockOnDidSaveTextDocument.mock.calls[0]?.[0]
+		expect(saveCallback).toEqual(expect.any(Function))
+		saveCallback?.({ uri: { fsPath: "/test/workspace/src/a.ts" } })
 
 		expect(tracker.getAndClearRecentlyModifiedFiles()).toEqual(["src/a.ts"])
 		expect(tracker.getAndClearRecentlyModifiedFiles()).toEqual([])

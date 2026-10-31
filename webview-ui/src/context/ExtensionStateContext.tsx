@@ -43,6 +43,9 @@ import { convertTextMateToHljs } from "@src/utils/textMateToHljs"
 import { ClineRulesToggles } from "@roo/cline-rules" // kilocode_change
 
 export interface ExtensionStateContextType extends ExtensionState {
+	// The host may omit clineMessages on incremental state posts. The webview
+	// slice always keeps an array so ChatView never sees undefined.
+	clineMessages: ClineMessage[]
 	// kilocode_change start: parallel subagents & workspaces (webview-maintained)
 	parallelSessions?: Record<string, ParallelSession>
 	parallelSessionMessages?: Record<string, ClineMessage[]>
@@ -493,7 +496,12 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 					const newState = message.state!
 					// kilocode_change: preserve parallel slices through merges
 					setState((prevState) => mergeExtensionState(prevState, newState))
-					setClineMessages(newState.clineMessages ?? [])
+					// kilocode_change: incremental state posts omit clineMessages when
+					// the host transcript cursor is unchanged. Do not treat a missing
+					// field as an empty conversation.
+					if (newState.clineMessages !== undefined) {
+						setClineMessages(newState.clineMessages)
+					}
 					setShowWelcome(!checkExistKey(newState.apiConfiguration))
 					setDidHydrateState(true)
 					// Update alwaysAllowFollowupQuestions if present in state message

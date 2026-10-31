@@ -15,6 +15,13 @@ vi.mock("@src/utils/highlighter", () => ({
 	normalizeLanguage: (language?: string) => language || "txt",
 	isLanguageLoaded: () => true,
 	getHighlighter: mocks.getHighlighter,
+	shouldSkipShikiHighlight: (source?: string, language?: string) => {
+		const text = source ?? ""
+		if (text.length === 0 || text.length > 4_000) {
+			return true
+		}
+		return ["log", "text", "plaintext", "plain", "txt"].includes((language ?? "").toLowerCase())
+	},
 }))
 vi.mock("shiki", () => ({ bundledLanguages: { typescript: {}, javascript: {}, txt: {} } }))
 vi.mock("@src/i18n/TranslationContext", () => ({ useAppTranslation: () => ({ t: (key: string) => key }) }))
@@ -173,5 +180,18 @@ describe.each([
 		await act(async () => undefined)
 		expect(view.container.querySelector("code")?.textContent).toBe(source)
 		expect(view.container.querySelector("script")).toBeNull()
+	})
+
+	it("does not tokenize logs or oversized blocks", async () => {
+		const logView = render(<CodeBlock source="command output line" language="log" />)
+		await act(async () => undefined)
+		expect(mocks.codeToHast).not.toHaveBeenCalled()
+		expect(logView.container.querySelector("code")?.textContent).toBe("command output line")
+
+		const oversized = `payload${"x".repeat(4001)}END`
+		const largeView = render(<CodeBlock source={oversized} language="typescript" />)
+		await act(async () => undefined)
+		expect(mocks.codeToHast).not.toHaveBeenCalled()
+		expect(largeView.container.querySelector("code")?.textContent).toBe(oversized)
 	})
 })

@@ -3,6 +3,7 @@ import * as path from "path"
 import fs from "fs/promises"
 import EventEmitter from "events"
 import { CoalesceLatestWork } from "./helpers/coalesceLatestWork" // kilocode_change
+import { clineMessagesSnapshotCursor, shouldPostClineMessages } from "./helpers/clineMessagesSnapshot" // kilocode_change
 
 import { Anthropic } from "@anthropic-ai/sdk"
 import delay from "delay"
@@ -54,7 +55,11 @@ import {
 	modelIdKeys,
 	modelIdKeysByProvider,
 } from "@roo-code/types"
-import { projectClineMessagesForDisplay, projectCommandMessageForDisplay } from "@roo-code/core"
+import {
+	projectClineMessagesForDisplay,
+	projectCommandExecutionStatusTextForDisplay,
+	projectCommandMessageForDisplay,
+} from "@roo-code/core"
 import { aggregateTaskCostsRecursive, type AggregatedCosts } from "./aggregateTaskCosts"
 import { TelemetryService } from "@roo-code/telemetry"
 import { CloudService, BridgeOrchestrator, getRooCodeApiUrl } from "@roo-code/cloud"
@@ -242,7 +247,13 @@ export class ClineProvider
 
 	// kilocode_change start - snapshot work is bounded; incremental events remain untouched.
 	private stateSnapshotDisposed = false
-	private readonly stateSnapshotWork = new CoalesceLatestWork(() => this.flushStateToWebview())
+	private lastPostedClineMessagesCursor: string | undefined
+	private readonly stateSnapshotWork = new CoalesceLatestWork((force) => this.flushStateToWebview(force))
+
+	/** Abort/overwrite must not let a later omit post keep a stale webview transcript. */
+	public invalidatePostedClineMessagesCursor(): void {
+		this.lastPostedClineMessagesCursor = undefined
+	}
 	// kilocode_change end
 	private recentTasksCache?: string[]
 	private pendingOperations: Map<string, PendingEditOperation> = new Map()
@@ -1807,11 +1818,9 @@ export class ClineProvider
 
 			// kilocode_change start: evolve lineage auto-upgrade on history
 			// restore. An old evolve-N conversation must land on the newest
-			// installed evolve mode, ranked by NAME version ("Evolve-12"), not
-			// by slug digit (slug digits drifted from the lineage: slug
-			// evolve-11 = name "Evolve-10" is OLDER than slug evolve-10 =
-			// name "Evolve-12"). Root conversations only — subagent/child
-			// history keeps its dispatcher-assigned mode.
+			// installed evolve mode, ranked by slug digit (evolve-N displays as
+			// Evolve-N; dual numbering was a bug). Root conversations only —
+			// subagent/child history keeps its dispatcher-assigned mode.
 			if (!historyItem.rootTask && !historyItem.parentTask && isEvolveSlug(historyItem.mode)) {
 				const latest = resolveLatestEvolve(customModes)
 				const currentVersion = parseEvolveVersion(
@@ -2083,12 +2092,22 @@ export class ClineProvider
 
 	public async postMessageToWebview(message: ExtensionMessage) {
 		// NOTE: Changing this? Update effects.ts in the cli too.
-		if (message.type === "messageUpdated" && message.clineMessage) {
+		// Display-only projection: never persist these rewritten payloads.
+		// commandOutputFull stays intact so expand can still fetch storage.
+		if (
+			(message.type === "messageUpdated" ||
+				message.type === "parallelSessionMessage" ||
+				message.type === "parallelSessionMessageUpdated") &&
+			message.clineMessage
+		) {
 			message = {
 				...message,
-				clineMessage: projectCommandMessageForDisplay(message.clineMessage, {
-					keepFull: message.clineMessage.partial === true,
-				}),
+				clineMessage: projectCommandMessageForDisplay(message.clineMessage),
+			}
+		} else if (message.type === "commandExecutionStatus" && typeof message.text === "string") {
+			message = {
+				...message,
+				text: projectCommandExecutionStatusTextForDisplay(message.text),
 			}
 		}
 
@@ -2991,6 +3010,7 @@ export class ClineProvider
 	async getTaskWithId(
 		id: string,
 		kilo_withMessage = true, // kilocode_change session manager uses this method in the background
+		options: { includeApiConversationHistory?: boolean } = {},
 	): Promise<{
 		historyItem: HistoryItem
 		taskDirPath: string
@@ -3010,7 +3030,16 @@ export class ClineProvider
 			const fileExists = await fileExistsAtPath(apiConversationHistoryFilePath)
 
 			if (fileExists) {
-				const apiConversationHistory = JSON.parse(await fs.readFile(apiConversationHistoryFilePath, "utf8"))
+				// kilocode_change start
+				// Long-running tasks persist ~100MB API transcripts. Metadata
+				// and path callers (history open, cancel, fork, cost rollup)
+				// must not JSON.parse that file on every lookup. Export is the
+				// only in-process consumer of the parsed array; the on-disk
+				// file remains the source of truth for model I/O.
+				const apiConversationHistory = options.includeApiConversationHistory
+					? JSON.parse(await fs.readFile(apiConversationHistoryFilePath, "utf8"))
+					: []
+				// kilocode_change end
 
 				return {
 					historyItem,
@@ -3105,7 +3134,9 @@ export class ClineProvider
 	}
 
 	async exportTaskWithId(id: string) {
-		const { historyItem, apiConversationHistory } = await this.getTaskWithId(id)
+		const { historyItem, apiConversationHistory } = await this.getTaskWithId(id, true, {
+			includeApiConversationHistory: true,
+		})
 		await downloadTask(historyItem.ts, apiConversationHistory)
 	}
 
@@ -3213,15 +3244,24 @@ export class ClineProvider
 	}
 
 	// kilocode_change start - share a pending promise instead of retaining N full states.
-	postStateToWebview(): Promise<void> {
-		return this.stateSnapshotWork.request()
+	postStateToWebview(options?: { force?: boolean }): Promise<void> {
+		return this.stateSnapshotWork.request(options)
 	}
 
-	private async flushStateToWebview(): Promise<void> {
+	private async flushStateToWebview(force = false): Promise<void> {
 		if (this.stateSnapshotDisposed) return
-		const state = await this.getStateToPostToWebview()
+		const focused = this.getFocusedChatTask()
+		const cursor = clineMessagesSnapshotCursor({
+			pendingNewConversation: Boolean(this.pendingNewConversation),
+			taskId: focused?.taskId,
+			instanceId: focused?.instanceId,
+			epoch: focused?.clineMessagesEpoch,
+		})
+		const includeClineMessages = shouldPostClineMessages(force, cursor, this.lastPostedClineMessagesCursor)
+		const state = await this.getStateToPostToWebview({ includeClineMessages })
 		if (this.stateSnapshotDisposed) return
 		await this.postMessageToWebview({ type: "state", state })
+		this.lastPostedClineMessagesCursor = cursor
 		// kilocode_change end
 
 		// kilocode_change start: construct manager on startup and restore folders/conversations
@@ -3370,7 +3410,7 @@ export class ClineProvider
 		}
 	}
 
-	async getStateToPostToWebview(): Promise<ExtensionState> {
+	async getStateToPostToWebview(options?: { includeClineMessages?: boolean }): Promise<ExtensionState> {
 		const {
 			apiConfiguration,
 			customInstructions,
@@ -3588,9 +3628,13 @@ export class ClineProvider
 				: this.getFocusedChatTask()?.taskId
 					? (taskHistory || []).find((item: HistoryItem) => item.id === this.getFocusedChatTask()?.taskId)
 					: undefined,
-			clineMessages: this.pendingNewConversation
-				? []
-				: projectClineMessagesForDisplay(this.getFocusedChatTask()?.clineMessages || []),
+			...(options?.includeClineMessages === false
+				? {}
+				: {
+						clineMessages: this.pendingNewConversation
+							? []
+							: projectClineMessagesForDisplay(this.getFocusedChatTask()?.clineMessages || []),
+					}),
 			currentTaskTodos: this.pendingNewConversation ? [] : this.getFocusedChatTask()?.todoList || [],
 			// kilocode_change start
 			// Visible message queues are disabled. Do not expose stale queue state to
@@ -4878,6 +4922,7 @@ export class ClineProvider
 		const originalInstanceId = task.instanceId
 		task.cancelCurrentRequest()
 		await task.abortTask()
+		this.invalidatePostedClineMessagesCursor()
 		// kilocode_change end
 
 		// kilocode_change start

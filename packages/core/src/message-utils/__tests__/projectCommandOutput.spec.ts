@@ -38,7 +38,7 @@ describe("projectCommandOutput", () => {
 		expect(projected.text!.startsWith("cat log\n")).toBe(true)
 	})
 
-	it("keeps the last streaming command full in a transcript projection", () => {
+	it("truncates the last streaming command in a transcript projection", () => {
 		const output = "b".repeat(COMMAND_OUTPUT_DISPLAY_CHAR_LIMIT + 20)
 		const historical = commandMessage({
 			ts: 1,
@@ -53,8 +53,11 @@ describe("projectCommandOutput", () => {
 		const projected = projectClineMessagesForDisplay([historical, streaming])
 
 		expect(projected[0]!.commandOutputTruncated).toBe(true)
-		expect(projected[1]).toBe(streaming)
-		expect(projected[1]!.text).toBe(streaming.text)
+		expect(projected[1]).not.toBe(streaming)
+		expect(projected[1]!.commandOutputTruncated).toBe(true)
+		expect(projected[1]!.text).not.toBe(streaming.text)
+		expect(projected[1]!.text!.length).toBeLessThan(streaming.text!.length)
+		expect(streaming.text).toContain(output)
 	})
 
 	it("does not rewrite non-command messages", () => {

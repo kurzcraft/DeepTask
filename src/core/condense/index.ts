@@ -331,11 +331,13 @@ function compactMessageForLocalSummary(message: ApiMessage): string {
 		.replace(/\n{3,}/g, "\n\n")
 		.trim()
 
-	if (/1\.\s*Previous Conversation:|Continue from the newest user request/i.test(compacted)) {
-		return flattenPriorSummary(compacted).slice(0, LOCAL_FALLBACK_MESSAGE_MAX_CHARS)
-	}
-
-	return compacted.slice(0, LOCAL_FALLBACK_MESSAGE_MAX_CHARS)
+	const processed = /1\.\s*Previous Conversation:|Continue from the newest user request/i.test(compacted)
+		? flattenPriorSummary(compacted)
+		: compacted
+	const { body, hostState } = extractHostTaskStateBlock(processed)
+	// The 900-char cap is for recap prose only. Slicing the flattened string would
+	// cut the host EXTRA/task block that flattenPriorSummary appends at the end.
+	return upsertHostTaskState(body.slice(0, LOCAL_FALLBACK_MESSAGE_MAX_CHARS), hostState)
 }
 
 /**
@@ -344,15 +346,25 @@ function compactMessageForLocalSummary(message: ApiMessage): string {
  * user goals and implementation evidence instead of dropping half the turns.
  */
 export function buildLocalFallbackSummary(messages: ApiMessage[], providerError: string): string {
+	let collectedHostState = ""
 	const entries = messages
-		.map((message, index) => ({
-			index,
-			role: message.role,
-			text: compactMessageForLocalSummary(message),
-		}))
+		.map((message, index) => {
+			const compacted = compactMessageForLocalSummary(message)
+			const { body, hostState } = extractHostTaskStateBlock(compacted)
+			if (hostState) {
+				collectedHostState = hostState
+			}
+			return {
+				index,
+				role: message.role,
+				text: body,
+			}
+		})
 		.filter((entry) => entry.text)
 
-	if (entries.length === 0) return ""
+	if (entries.length === 0) {
+		return collectedHostState
+	}
 
 	const first = entries[0]
 	const latestUser = [...entries].reverse().find((entry) => entry.role === "user")
@@ -385,8 +397,63 @@ export function buildLocalFallbackSummary(messages: ApiMessage[], providerError:
 
 	const footer = `\n\n3. Continuation State:\nNewest user request, unfinished work, modified files, test results, and acceptance criteria are listed above. Continue that work. Do not repeat this summary, any prior opening sentence, or a status mantra as chat.\n\n[Fast local summary used because the configured condense provider failed: ${providerError.slice(0, 300)}]`
 	const header = `1. Previous Conversation:\n${compactBackgroundFacts(first.text)}\n\n2. Current Work and Recent Decisions:\n`
-	const timelineBudget = Math.max(0, LOCAL_FALLBACK_SUMMARY_MAX_CHARS - header.length - footer.length)
-	return header + timeline.slice(Math.max(0, timeline.length - timelineBudget)) + footer
+	const hostBudget = collectedHostState ? collectedHostState.length + 2 : 0
+	const timelineBudget = Math.max(0, LOCAL_FALLBACK_SUMMARY_MAX_CHARS - header.length - footer.length - hostBudget)
+	const summary = header + timeline.slice(Math.max(0, timeline.length - timelineBudget)) + footer
+	// Pin host state after the timeline slice so a mid-string budget cut cannot
+	// bisect <current_task_state> and drop the EXTRA/task snapshot.
+	return upsertHostTaskState(summary, collectedHostState)
+}
+
+export const HOST_TASK_STATE_OPEN = '<current_task_state authority="host">'
+export const HOST_TASK_STATE_CLOSE = "</current_task_state>"
+
+/**
+ * Host-owned compressed task state must survive flattening. The 1,200-character
+ * fact squash is for LLM recap prose, not the authoritative EXTRA/task snapshot.
+ */
+export function extractHostTaskStateBlock(text: string): { body: string; hostState: string } {
+	const start = text.indexOf(HOST_TASK_STATE_OPEN)
+	if (start === -1) {
+		return { body: text, hostState: "" }
+	}
+
+	const end = text.indexOf(HOST_TASK_STATE_CLOSE, start)
+	if (end === -1) {
+		return { body: text, hostState: "" }
+	}
+
+	const hostState = text.slice(start, end + HOST_TASK_STATE_CLOSE.length).trim()
+	const body = `${text.slice(0, start)}\n${text.slice(end + HOST_TASK_STATE_CLOSE.length)}`
+		.replace(/\n{3,}/g, "\n\n")
+		.trim()
+	return { body, hostState }
+}
+
+export function upsertHostTaskState(text: string, hostState: string): string {
+	const { body } = extractHostTaskStateBlock(text)
+	const nextState = hostState.trim()
+	if (!nextState) {
+		return body
+	}
+
+	return body ? `${body}\n\n${nextState}` : nextState
+}
+
+export function applyHostTaskStateToMessage(message: ApiMessage, hostState: string): ApiMessage {
+	if (typeof message.content === "string") {
+		return { ...message, content: upsertHostTaskState(message.content, hostState) }
+	}
+
+	const text = message.content
+		.filter((block): block is Anthropic.Messages.TextBlockParam => block.type === "text")
+		.map((block) => block.text)
+		.join("\n")
+	const otherBlocks = message.content.filter((block) => block.type !== "text")
+	return {
+		...message,
+		content: [{ type: "text", text: upsertHostTaskState(text, hostState) }, ...otherBlocks],
+	}
 }
 
 /** Brief background only — never dump a nested summary or a prior opening mantra. */
@@ -421,12 +488,18 @@ export function flattenPriorSummary(text: string): string {
 		return ""
 	}
 
-	if (!/1\.\s*Previous Conversation:|2\.\s*Current Work|3\.\s*Continuation State/i.test(trimmed)) {
-		return trimmed
+	const { body, hostState } = extractHostTaskStateBlock(trimmed)
+	const source = body.trim()
+	if (!source) {
+		return hostState
+	}
+
+	if (!/1\.\s*Previous Conversation:|2\.\s*Current Work|3\.\s*Continuation State/i.test(source)) {
+		return upsertHostTaskState(source, hostState)
 	}
 
 	const section = (label: string, next: string): string => {
-		const match = trimmed.match(new RegExp(`${label}:\\s*([\\s\\S]*?)(?=\\n\\s*${next}|$)`, "i"))
+		const match = source.match(new RegExp(`${label}:\\s*([\\s\\S]*?)(?=\\n\\s*${next}|$)`, "i"))
 		return match?.[1]?.replace(/\s+/g, " ").trim() ?? ""
 	}
 
@@ -438,11 +511,12 @@ export function flattenPriorSummary(text: string): string {
 		.replace(/\s+/g, " ")
 		.trim()
 
-	if (previous || current || continuation) {
-		return [previous, current, continuation].filter(Boolean).join(" ").slice(0, 1_200)
-	}
+	const flattened =
+		previous || current || continuation
+			? [previous, current, continuation].filter(Boolean).join(" ").slice(0, 1_200)
+			: compactBackgroundFacts(source)
 
-	return compactBackgroundFacts(trimmed)
+	return upsertHostTaskState(flattened, hostState)
 }
 
 function flattenSummaryMessage(message: ApiMessage): ApiMessage {

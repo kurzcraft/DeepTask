@@ -1,5 +1,18 @@
 # Deeptask
 
+## 9.3.0
+
+### Minor Changes
+
+- Force evolve slug and display name to share one number: `evolve-N` always displays as `Evolve-N`. `manage_mode` copy/update no longer inherits a predecessor name, so dual numbering cannot recur.
+- Rank the newest evolve mode by slug digit. Dual numbering (name Evolve-12 vs slug evolve-10) is treated as a bug, not a ranking feature.
+- When an EXTRA/task checklist grows too large, first create a top-level task directory `EXTRA/task/<short-title>/`, then split light subtask files inside it. The conversation still has exactly one authoritative `EXTRA/task/*.md` checklist (the only file allowed to contain `deeptask-task-id`); light files must not carry a task-id.
+- Keep host EXTRA/task state intact across condensation: flatten and local fallback may squash recap prose, but they must not slice the `<current_task_state>` snapshot. Child-agent detection for that snapshot uses `parentTaskId` / `isChildAgent`, not a hardcoded flag.
+- Bound the agent-panel renderer heap on long transcripts: skip Shiki token trees for logs and oversized code blocks (plain `pre` fallback; copy still uses the raw source), and project streaming command output to an 8k preview. Expanding a command still fetches the full log; stored transcripts and model I/O stay complete. This targets the measured 9.3.0 renderer (~4 GB anonymous heap) rather than file watchers.
+- Stop incremental `postState` from JSON-cloning the full `clineMessages` array on every tick. Host uses `taskId` + `instanceId` + `clineMessagesEpoch`; unchanged snapshots omit the field, `force` still ships a full transcript, and abort clears the posted epoch. The webview replaces messages only when the field is present.
+- Skip parsing `api_conversation_history` on mirror-window hydrate (`hydratePersistedMessages` reads `ui_messages` only). Resume still loads API history when the in-memory copy is empty so model I/O stays complete. `getTaskWithId` defaults to skipping the 97MB API parse except export paths.
+- Field samples after reload (2026-10-31 14:54+08): renderer zygote RSS 366MB / anon 248MB versus the earlier 1986MB overflow; extensionHost 618MB. Later same-window crawl stayed under the gray-screen thresholds (render RSS ≥1500MB or anon ≥1200MB). `Committed_AS` over CommitLimit is not treated as renderer overflow.
+
 ## 9.2.9
 
 ### Patch Changes

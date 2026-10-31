@@ -10,6 +10,7 @@ import {
 	inboxMarker,
 	listInboxEntries,
 	markInboxEntryDelivered,
+	messagesContainInboxMarker,
 	persistSubagentResult,
 	shouldRedeliverInboxEntry,
 	SubagentResultInboxError,
@@ -221,6 +222,29 @@ describe("subagentResultInbox", () => {
 		})
 		expect(injection.childSessionIds).toEqual([])
 		expect(undeliveredEntries([delivered, pending])).toEqual([pending])
+	})
+
+	test("resume injection scans messages without concatenating history text", () => {
+		const pending = makeEntry({
+			childSessionId: "child-scan",
+			status: "completed",
+			result: "done",
+		})
+		const messages = [
+			{ content: [{ type: "text", text: "unrelated" }] },
+			{ content: [{ type: "text", text: inboxMarker("child-scan") }] },
+		]
+		expect(messagesContainInboxMarker(messages, "child-scan")).toBe(true)
+		expect(shouldRedeliverInboxEntry(pending, "", messages)).toBe(false)
+		const injection = buildInboxResumeInjection({
+			entries: [pending],
+			messages,
+			assistantToolUses: [{ id: "call-1", name: "dispatch_subagents" }],
+		})
+		expect(injection.childSessionIds).toEqual([])
+		expect(
+			shouldRedeliverInboxEntry(pending, "", [{ content: [{ type: "text", text: "no marker" }] }]),
+		).toBe(true)
 	})
 
 	test("persist failure is logged as a recoverable error", async () => {

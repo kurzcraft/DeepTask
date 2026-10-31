@@ -2,17 +2,10 @@
 /**
  * Shared evolve-mode lineage helpers.
  *
- * The evolve family has TWO numbering schemes that have drifted apart:
- * - the NAME, e.g. "Evolve-12" — the real lineage version (source of truth)
- * - the SLUG, e.g. "evolve-10" — a filesystem-safe id whose digit comes from
- *   whatever slug the copy chain happened to produce (manage_mode appends
- *   -1/-2 suffixes when a slug collides, so slug digits can go DOWN while the
- *   name version goes UP).
- *
- * Consequence: picking the "latest" evolve mode by max(slug digit) silently
- * picks an OLDER mode (slug evolve-11 = name "Evolve-10" outranks slug
- * evolve-10 = name "Evolve-12"). Always rank by the NAME's version first and
- * only fall back to the slug digit when the name carries no number.
+ * One number, two surfaces: slug `evolve-N` MUST display as `Evolve-N`.
+ * Dual numbering (name Evolve-12 vs slug evolve-10) was a bug, not a design.
+ * Ranking and display both use the slug digit. `manage_mode` copy/update
+ * must force the display name to match; never inherit a predecessor name.
  */
 
 export interface EvolveVersionInfo {
@@ -20,17 +13,22 @@ export interface EvolveVersionInfo {
 	version: number
 }
 
+/** Display name that matches the slug digit: evolve -> Evolve, evolve-14 -> Evolve-14. */
+export function evolveDisplayName(slug: string): string {
+	const match = /^evolve(?:-(\d+))?$/.exec(slug)
+	if (!match) {
+		return slug
+	}
+	return match[1] ? `Evolve-${match[1]}` : "Evolve"
+}
+
 /** Parse the lineage version of one evolve mode. Returns -1 for non-evolve slugs. */
 export function parseEvolveVersion(name: string | undefined, slug: string): number {
 	if (!/^evolve(?:-(\d+))?$/.test(slug)) {
 		return -1
 	}
-	// Prefer the name's "Evolve-N" digit — that is the real version.
-	const nameMatch = /evolve[\s_-]*(\d+)/i.exec(name ?? "")
-	if (nameMatch) {
-		return Number(nameMatch[1])
-	}
-	// Fall back to the slug digit (base "evolve" counts as 0).
+	// Slug digit is the only version. Ignore a drifted display name.
+	void name
 	const slugMatch = /^evolve(?:-(\d+))?$/.exec(slug)
 	return Number(slugMatch?.[1] ?? 0)
 }

@@ -14,8 +14,10 @@ export { consolidateCommands, consolidateCommandsIncremental, COMMAND_OUTPUT_STR
 export {
 	COMMAND_OUTPUT_DISPLAY_CHAR_LIMIT,
 	isCommandDisplayMessage,
+	truncateDisplayOutput,
 	truncateCommandOutputText,
 	projectCommandMessageForDisplay,
+	projectCommandExecutionStatusTextForDisplay,
 	projectClineMessagesForDisplay,
 } from "./projectCommandOutput.js"
 

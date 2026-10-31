@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useCallback, useState } from "react"
 import styled from "styled-components"
 import { useCopyToClipboard } from "@src/utils/clipboard"
-import { getHighlighter, isLanguageLoaded, normalizeLanguage } from "@src/utils/highlighter"
+import { getHighlighter, isLanguageLoaded, normalizeLanguage, shouldSkipShikiHighlight } from "@src/utils/highlighter"
 import type { ShikiTransformer } from "shiki"
 import { toJsxRuntime } from "hast-util-to-jsx-runtime"
 import { Fragment, jsx, jsxs } from "react/jsx-runtime"
@@ -203,6 +203,14 @@ const CodeBlock = memo(
 			)
 
 			const highlight = async () => {
+				// kilocode_change: logs and oversized blocks stay as one text node.
+				if (shouldSkipShikiHighlight(source, currentLanguage)) {
+					if (active) {
+						setHighlightedCode(fallback)
+					}
+					return
+				}
+
 				// Show plain text if language needs to be loaded.
 				if (currentLanguage && !isLanguageLoaded(currentLanguage)) {
 					if (active) {

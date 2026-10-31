@@ -69,6 +69,34 @@ function makeProvider(customModes: ModeConfig[], stateMode = "evolve-1") {
 const evolveBuiltIn = getAllModes([]).find((m) => m.slug === "evolve") as ModeConfig
 
 describe("manage_mode evolve-series fork-on-update chain", () => {
+	it("updating evolve-1 with a drifted name still forks evolve-2 named Evolve-2", async () => {
+		const evolve1: ModeConfig = {
+			...evolveBuiltIn,
+			slug: "evolve-1",
+			name: "Evolve-99",
+			source: "global",
+		}
+		const { provider, updated, switched } = makeProvider([evolve1])
+		const callbacks = makeCallbacks()
+
+		await manageModeTool.execute(
+			{
+				action: "update",
+				slug: "evolve-1",
+				name: "Evolve-100",
+				custom_instructions: "v2 improvement: always verify builds before release",
+				reason: "validated improvement from evolution log",
+			},
+			makeTask(provider),
+			callbacks as unknown as ToolCallbacks,
+		)
+
+		expect(updated).toHaveLength(1)
+		expect(updated[0].slug).toBe("evolve-2")
+		expect(updated[0].config.name).toBe("Evolve-2")
+		expect(switched).toEqual(["evolve-2"])
+	})
+
 	it("updating evolve-1 forks evolve-2 (never mutates evolve-1) and switches to it", async () => {
 		const evolve1: ModeConfig = {
 			...evolveBuiltIn,

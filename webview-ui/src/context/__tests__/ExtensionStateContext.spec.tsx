@@ -20,6 +20,7 @@ const TestComponent = () => {
 		autoApprovalEnabled,
 		alwaysAllowReadOnly,
 		alwaysAllowWrite,
+		clineMessages,
 	} = useExtensionState()
 	return (
 		<div>
@@ -29,6 +30,7 @@ const TestComponent = () => {
 			<div data-testid="auto-approval-enabled">{JSON.stringify(autoApprovalEnabled)}</div>
 			<div data-testid="always-allow-read-only">{JSON.stringify(alwaysAllowReadOnly)}</div>
 			<div data-testid="always-allow-write">{JSON.stringify(alwaysAllowWrite)}</div>
+			<div data-testid="cline-messages">{JSON.stringify(clineMessages)}</div>
 			<button data-testid="update-button" onClick={() => setAllowedCommands(["npm install", "git status"])}>
 				Update Commands
 			</button>
@@ -220,6 +222,89 @@ describe("ExtensionStateContext", () => {
 				modelTemperature: 0.7, // Should add this from partial update
 			}),
 		)
+	})
+
+	it("keeps the transcript when an incremental state post omits clineMessages", () => {
+		render(
+			<ExtensionStateContextProvider>
+				<TestComponent />
+			</ExtensionStateContextProvider>,
+		)
+
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: {
+						type: "state",
+						state: {
+							apiConfiguration: { apiProvider: "anthropic" },
+							clineMessages: [{ ts: 1, type: "say", say: "text", text: "keep-me" }],
+						},
+					},
+				}),
+			)
+		})
+
+		expect(JSON.parse(screen.getByTestId("cline-messages").textContent!)).toEqual([
+			{ ts: 1, type: "say", say: "text", text: "keep-me" },
+		])
+
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: {
+						type: "state",
+						state: {
+							apiConfiguration: { apiProvider: "anthropic" },
+							soundEnabled: true,
+						},
+					},
+				}),
+			)
+		})
+
+		expect(JSON.parse(screen.getByTestId("cline-messages").textContent!)).toEqual([
+			{ ts: 1, type: "say", say: "text", text: "keep-me" },
+		])
+		expect(JSON.parse(screen.getByTestId("sound-enabled").textContent!)).toBe(true)
+	})
+
+	it("replaces the transcript when the host posts an empty clineMessages array", () => {
+		render(
+			<ExtensionStateContextProvider>
+				<TestComponent />
+			</ExtensionStateContextProvider>,
+		)
+
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: {
+						type: "state",
+						state: {
+							apiConfiguration: { apiProvider: "anthropic" },
+							clineMessages: [{ ts: 1, type: "say", say: "text", text: "keep-me" }],
+						},
+					},
+				}),
+			)
+		})
+
+		act(() => {
+			window.dispatchEvent(
+				new MessageEvent("message", {
+					data: {
+						type: "state",
+						state: {
+							apiConfiguration: { apiProvider: "anthropic" },
+							clineMessages: [],
+						},
+					},
+				}),
+			)
+		})
+
+		expect(JSON.parse(screen.getByTestId("cline-messages").textContent!)).toEqual([])
 	})
 })
 

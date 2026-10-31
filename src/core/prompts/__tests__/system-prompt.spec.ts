@@ -985,6 +985,8 @@ describe("SYSTEM_PROMPT", () => {
 		expect(enabledPrompt).toContain("exact top-to-bottom projection of the saved file")
 		expect(enabledPrompt).toContain("Preserve item order, text, status, and indentation-derived depth")
 		expect(enabledPrompt).toContain("use clearly visible hierarchical indentation")
+		expect(enabledPrompt).toContain("First create a top-level task directory EXTRA/task/<short-title>/")
+		expect(enabledPrompt).toContain("light files under the task directory MUST NOT contain deeptask-task-id")
 		expect(enabledPrompt).toContain("Before completion, check every checklist item in the task Markdown")
 		expect(enabledPrompt).toContain("creating the directory when needed")
 		expect(enabledPrompt).toContain("Do not create task progress files in the workspace root")

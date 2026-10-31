@@ -78,6 +78,13 @@ vi.mock("../../../utils/highlighter", () => {
 		normalizeLanguage: vi.fn((lang) => lang || "txt"),
 		isLanguageLoaded: vi.fn().mockReturnValue(true),
 		getHighlighter: vi.fn().mockResolvedValue(mockHighlighter),
+		shouldSkipShikiHighlight: (source?: string, language?: string) => {
+			const text = source ?? ""
+			if (text.length === 0 || text.length > 4_000) {
+				return true
+			}
+			return ["log", "text", "plaintext", "plain", "txt"].includes((language ?? "").toLowerCase())
+		},
 	}
 })
 

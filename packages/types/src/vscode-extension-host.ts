@@ -592,7 +592,9 @@ export type ExtensionState = Pick<
 	| "selectedMicrophoneDevice" // kilocode_change: Selected microphone device for STT
 > & {
 	version: string
-	clineMessages: ClineMessage[]
+	// kilocode_change: omitted on incremental state posts when the transcript
+	// cursor is unchanged; the webview keeps its existing slice.
+	clineMessages?: ClineMessage[]
 	currentTaskItem?: HistoryItem
 	currentTaskTodos?: TodoItem[] // Initial todos for the current task
 	apiConfiguration: ProviderSettings

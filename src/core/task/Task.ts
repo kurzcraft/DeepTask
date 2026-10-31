@@ -130,10 +130,9 @@ import {
 	buildInboxResumeInjection,
 	confirmInboxDeliveryFromMessages,
 	extractAssistantToolUses,
-	flattenApiHistoryText,
-	historyContainsInboxMarker,
 	isInterruptedToolResultText,
 	listInboxEntries,
+	messagesContainInboxMarker,
 	persistSubagentResult,
 	SubagentResultInboxError,
 	toolResultText,
@@ -156,7 +155,14 @@ import { parseKiloSlashCommands } from "../slash-commands/kilo" // kilocode_chan
 import { GlobalFileNames } from "../../shared/globalFileNames" // kilocode_change
 import { ensureLocalKilorulesDirExists } from "../context/instructions/kilo-rules" // kilocode_change
 import { processUserContentMentions } from "../mentions/processUserContentMentions"
-import { getMessagesSinceLastSummary, summarizeConversation, getEffectiveApiHistory } from "../condense"
+import {
+	getMessagesSinceLastSummary,
+	summarizeConversation,
+	getEffectiveApiHistory,
+	applyHostTaskStateToMessage,
+	HOST_TASK_STATE_OPEN,
+	HOST_TASK_STATE_CLOSE,
+} from "../condense"
 import { MessageQueueService } from "../message-queue/MessageQueueService"
 
 import {
@@ -317,6 +323,15 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	pendingNewTaskToolCallId?: string
 
 	readonly instanceId: string
+	/**
+	 * Structural transcript generation. Incremented on overwrite/hydrate/abort
+	 * so the webview snapshot can omit unchanged clineMessages; incremental
+	 * rows still travel through messageUpdated. Abort must bump this after
+	 * releasing the array, or an incremental postState would omit the empty
+	 * snapshot and leave the renderer holding the previous 7k-row transcript.
+	 * Same taskId with a new instance must not reuse a stale epoch.
+	 */
+	clineMessagesEpoch = 0
 	readonly metadata: TaskMetadata
 	// kilocode_change start: parallel subagent routing
 	readonly subagent?: {
@@ -1120,9 +1135,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			// mode, so the latest evolved prompt is always active from the first
 			// message. Child agents (subtasks / subagents / delegated child
 			// processes) are excluded: their mode is dictated by the dispatcher.
-			// Ranking uses the NAME version ("Evolve-12") because slug digits have
-			// drifted from the lineage (slug evolve-11 = name "Evolve-10" is OLDER
-			// than slug evolve-10 = name "Evolve-12").
+			// Ranking uses the slug digit; evolve-N must display as Evolve-N.
 			if (!this.subagent && !this.parentTaskId && !this.isDelegatedChildProcess) {
 				const { isEvolveSlug, resolveLatestEvolve, parseEvolveVersion } = await import(
 					"../../shared/evolve-upgrade"
@@ -1827,9 +1840,8 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	// the inbox marker is on disk. Never confirm from in-memory pushToolResult.
 	private async confirmPendingSubagentInboxDelivery(messages: Array<{ content?: unknown }>): Promise<void> {
 		const pending = this.pendingSubagentInboxDelivery
-		const historyText = flattenApiHistoryText(messages)
 		const pendingConfirmed =
-			pending?.childSessionIds.filter((id) => historyContainsInboxMarker(historyText, id)) ?? []
+			pending?.childSessionIds.filter((id) => messagesContainInboxMarker(messages, id)) ?? []
 		if (pendingConfirmed.length === 0 && !this.globalStoragePath) {
 			return
 		}
@@ -1933,7 +1945,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		if (entries.length === 0) {
 			return userContent
 		}
-		const historyText = flattenApiHistoryText([...history, { content: userContent }])
+		const scanMessages = [...history, { content: userContent }]
 		const lastAssistant = [...history].reverse().find((message) => message.role === "assistant")
 		const existingToolResultIds = userContent
 			.filter((block) => block.type === "tool_result")
@@ -1948,7 +1960,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		}
 		const injection = buildInboxResumeInjection({
 			entries,
-			historyText,
+			messages: scanMessages,
 			assistantToolUses: extractAssistantToolUses(lastAssistant),
 			existingToolResultIds,
 			existingToolResultTextById,
@@ -2000,8 +2012,11 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 	/** Load persisted chat without starting inference. Used by extra windows that only mirror a live task. */
 	public async hydratePersistedMessages(): Promise<void> {
+		// Mirror windows only need the UI transcript. Parsing api_conversation_history
+		// here clones ~100MB into a non-inference host and is the remaining amplifier
+		// after postState omit. Resume still loads the API transcript for model I/O.
 		this.clineMessages = await this.getSavedClineMessages()
-		this.apiConversationHistory = await this.getSavedApiConversationHistory()
+		this.clineMessagesEpoch += 1
 	}
 
 	private async addToClineMessages(message: ClineMessage) {
@@ -2057,6 +2072,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		}
 
 		this.clineMessages = newMessages
+		this.clineMessagesEpoch += 1
 		restoreTodoListForTask(this)
 		await this.saveClineMessages(options)
 
@@ -3112,20 +3128,76 @@ ${protocolHint}
 		// kilocode_change end
 	}
 
-	private preserveLatestContinuationFocus(messages: ApiMessage[]): ApiMessage[] {
+	private static readonly MAX_HOST_TASK_STATE_CHARS = 12_000
+
+	private async buildHostTaskStateSnapshot(): Promise<string> {
+		const lines: string[] = []
+		const focus = this.latestUserContinuationFocus?.trim()
+		if (focus) {
+			lines.push(`Newest user instruction: ${focus}`)
+		}
+
+		if (this.todoList && this.todoList.length > 0) {
+			lines.push("Native checklist:")
+			lines.push(this.serializeTaskProgressChecklist(this.todoList))
+		}
+
+		if (!this.isChildAgent) {
+			try {
+				const progressPath = await this.findOwnedTaskProgressFilePath()
+				if (progressPath) {
+					const relative = path.relative(this.cwd, progressPath)
+					const content = (await fsp.readFile(progressPath, "utf8")).trim()
+					lines.push(`Authoritative EXTRA/task file: ${relative}`)
+					lines.push(content)
+				}
+			} catch (error) {
+				console.error(
+					`[Task#${this.taskId}] Failed to snapshot EXTRA/task for condensation:`,
+					error instanceof Error ? error.message : String(error),
+				)
+			}
+		}
+
+		if (lines.length === 0) {
+			return ""
+		}
+
+		let body = lines.join("\n").trim()
+		if (body.length > Task.MAX_HOST_TASK_STATE_CHARS) {
+			body = `${body.slice(0, Task.MAX_HOST_TASK_STATE_CHARS)}\n[truncated; read the EXTRA/task file for the rest]`
+		}
+
+		return `${HOST_TASK_STATE_OPEN}\n${body}\n${HOST_TASK_STATE_CLOSE}`
+	}
+
+	private async preserveLatestContinuationFocus(messages: ApiMessage[]): Promise<ApiMessage[]> {
 		// kilocode_change start
 		// Older builds appended the full latest feedback as a synthetic role:user
 		// message after each context rewrite. "visibility=silent" was only prose:
 		// providers still treated that newest user message as an instruction to answer,
 		// which caused the agent to repeat the same focus on later turns. Real feedback
-		// already persists as user_feedback and as the host-owned in-progress todo that
-		// is emitted in environment_details for every request. Remove legacy capsules
-		// during any rewrite, but never add a new user-role control message.
+		// already persists as user_feedback. Remove those capsules, then pin the
+		// host-owned EXTRA/task snapshot onto the live summary so flattening cannot
+		// squash pre-compression progress back to an earlier checkpoint.
 		const marker = '<current_task_focus source="latest_user_continuation">'
-		return messages.filter(
+		const withoutCapsules = messages.filter(
 			(message) =>
 				!(message.role === "user" && typeof message.content === "string" && message.content.startsWith(marker)),
 		)
+		const hostState = await this.buildHostTaskStateSnapshot()
+		if (!hostState) {
+			return withoutCapsules
+		}
+
+		const summaryIndex = findLastIndex(withoutCapsules, (message) => message.isSummary === true)
+		if (summaryIndex === -1) {
+			return withoutCapsules
+		}
+
+		const next = [...withoutCapsules]
+		next[summaryIndex] = applyHostTaskStateToMessage(next[summaryIndex], hostState)
+		return next
 		// kilocode_change end
 	}
 
@@ -3462,7 +3534,7 @@ ${protocolHint}
 			cost,
 		})
 
-		await this.overwriteApiConversationHistory(this.preserveLatestContinuationFocus(messages))
+		await this.overwriteApiConversationHistory(await this.preserveLatestContinuationFocus(messages))
 
 		const contextCondense: ContextCondense = {
 			summary,
@@ -3677,6 +3749,7 @@ ${protocolHint}
 		// we create a new Cline client (otherwise webview would show stale
 		// messages from previous session).
 		this.clineMessages = []
+		this.clineMessagesEpoch += 1
 		this.apiConversationHistory = []
 
 		// kilocode_change start: make cold-start state deterministic before the first request.
@@ -4319,6 +4392,7 @@ ${protocolHint}
 			}
 			this.clineMessages.length = 0
 			this.apiConversationHistory.length = 0
+			this.clineMessagesEpoch += 1
 		}
 		// kilocode_change end
 	}
@@ -6265,7 +6339,7 @@ ${protocolHint}
 				truncateResult.messages !== this.apiConversationHistory
 			) {
 				await this.overwriteApiConversationHistory(
-					this.preserveLatestContinuationFocus(truncateResult.messages),
+					await this.preserveLatestContinuationFocus(truncateResult.messages),
 				)
 			}
 
@@ -6562,7 +6636,7 @@ ${protocolHint}
 					truncateResult.messages !== this.apiConversationHistory
 				) {
 					await this.overwriteApiConversationHistory(
-						this.preserveLatestContinuationFocus(truncateResult.messages),
+						await this.preserveLatestContinuationFocus(truncateResult.messages),
 					)
 				}
 				if (invalidSummaryTokenError) {
