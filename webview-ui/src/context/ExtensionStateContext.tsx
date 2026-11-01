@@ -41,11 +41,19 @@ import { McpMarketplaceCatalog } from "../../../src/shared/kilocode/mcp" // kilo
 import { vscode } from "@src/utils/vscode"
 import { convertTextMateToHljs } from "@src/utils/textMateToHljs"
 import { ClineRulesToggles } from "@roo/cline-rules" // kilocode_change
+// kilocode_change start: bounded transcript projection
+import {
+	createBoundTranscriptProjector,
+	type BoundTranscriptProjector,
+} from "./boundTranscript"
+// kilocode_change end
 
 export interface ExtensionStateContextType extends ExtensionState {
 	// The host may omit clineMessages on incremental state posts. The webview
 	// slice always keeps an array so ChatView never sees undefined.
 	clineMessages: ClineMessage[]
+	// kilocode_change: rows tombstoned by the bound-transcript projector (0 = below window).
+	clineMessagesTombstoned?: number
 	// kilocode_change start: parallel subagents & workspaces (webview-maintained)
 	parallelSessions?: Record<string, ParallelSession>
 	parallelSessionMessages?: Record<string, ClineMessage[]>
@@ -267,14 +275,25 @@ export type WebviewState = Omit<ExtensionState, "clineMessages"> & {
 // need settings do not re-render on every streaming messageUpdated.
 export type ExtensionSettingsContextType = Omit<ExtensionStateContextType, "clineMessages" | "parallelSessionMessages">
 
-export type ExtensionMessageSlice = {
+export interface ExtensionMessageSlice {
 	clineMessages: ClineMessage[]
 	parallelSessionMessages?: Record<string, ClineMessage[]>
+	// kilocode_change start: bounded transcript diagnostics
+	/** Rows currently tombstoned by the bound-transcript projector (0 = below window). */
+	clineMessagesTombstoned?: number
+	// kilocode_change end
 }
 
 export const ExtensionStateContext = createContext<ExtensionSettingsContextType | undefined>(undefined)
 
 export const ExtensionMessageSliceContext = createContext<ExtensionMessageSlice | undefined>(undefined)
+// kilocode_change end
+
+// kilocode_change start: bounded transcript projection
+// Module-level singleton: the webview renders one focused conversation; the
+// projector's identity cache must survive across provider re-mounts (StrictMode
+// double-render in dev) and must be shared by both ingest paths below.
+const boundTranscriptProjector: BoundTranscriptProjector = createBoundTranscriptProjector()
 // kilocode_change end
 
 export const mergeExtensionState = (prevState: ExtensionState | WebviewState, newState: ExtensionState): WebviewState => {
@@ -496,12 +515,15 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 					const newState = message.state!
 					// kilocode_change: preserve parallel slices through merges
 					setState((prevState) => mergeExtensionState(prevState, newState))
-					// kilocode_change: incremental state posts omit clineMessages when
-					// the host transcript cursor is unchanged. Do not treat a missing
-					// field as an empty conversation.
-					if (newState.clineMessages !== undefined) {
-						setClineMessages(newState.clineMessages)
-					}
+				// kilocode_change: incremental state posts omit clineMessages when
+				// the host transcript cursor is unchanged. Do not treat a missing
+				// field as an empty conversation.
+				if (newState.clineMessages !== undefined) {
+					// kilocode_change: bound the resident transcript (tombstone
+					// rows older than the tail window) so the renderer heap no
+					// longer grows linearly with conversation length.
+					setClineMessages(boundTranscriptProjector.project(newState.clineMessages))
+				}
 					setShowWelcome(!checkExistKey(newState.apiConfiguration))
 					setDidHydrateState(true)
 					// Update alwaysAllowFollowupQuestions if present in state message
@@ -635,7 +657,10 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 						// stays a no-op so the full-state snapshot remains authoritative.
 						const tail = prevMessages.at(-1)
 						if (!tail || clineMessage.ts > tail.ts) {
-							return [...prevMessages, clineMessage]
+							// kilocode_change: bound the resident transcript on the
+							// streaming append path too; tombstoned rows keep stable
+							// object identity so downstream incremental caches hold.
+							return boundTranscriptProjector.project([...prevMessages, clineMessage])
 						}
 						// kilocode_change end
 						return prevMessages
@@ -745,6 +770,8 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		() => ({
 			clineMessages,
 			parallelSessionMessages,
+			// kilocode_change: bounded transcript diagnostics
+			clineMessagesTombstoned: boundTranscriptProjector.tombstonedCount,
 		}),
 		[clineMessages, parallelSessionMessages],
 	)
@@ -1027,6 +1054,8 @@ export const useExtensionState = (): ExtensionStateContextType => {
 			...settings,
 			clineMessages: messages.clineMessages,
 			parallelSessionMessages: messages.parallelSessionMessages,
+			// kilocode_change: bounded transcript diagnostics
+			clineMessagesTombstoned: messages.clineMessagesTombstoned,
 		}),
 		[settings, messages],
 	)

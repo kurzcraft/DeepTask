@@ -45,6 +45,11 @@ function shouldShowMessage(
 	userMessageCheckpointHashes: Set<string>,
 	everVisible: EverVisibleCache,
 ): boolean {
+	// kilocode_change: tombstoned rows (bound transcript) never render; the
+	// ChatView banner communicates that older messages are collapsed.
+	if ((message as { webviewTombstone?: boolean }).webviewTombstone === true) {
+		return false
+	}
 	if (taskTs !== undefined && message.ts === taskTs) {
 		return false
 	}

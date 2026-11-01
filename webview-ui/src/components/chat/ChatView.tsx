@@ -129,6 +129,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 
 	const {
 		clineMessages: messages,
+		clineMessagesTombstoned, // kilocode_change: bounded transcript diagnostics
 		currentTaskItem,
 		currentTaskTodos,
 		taskHistoryFullLength, // kilocode_change
@@ -2799,6 +2800,17 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 						<div className="grow flex flex-row min-h-0">
 							<UserMessageRail messages={groupedMessages} onJump={handleMessageClick} />
 							<div className="grow flex flex-col min-h-0" ref={scrollContainerRef}>
+								{/* kilocode_change: bounded transcript — tombstoned rows collapsed to a banner */}
+								{!!clineMessagesTombstoned && (
+									<div
+										data-testid="transcript-collapsed-banner"
+										className="flex-none px-3 py-1 text-xs text-vscode-descriptionForeground border-b border-vscode-panel-border/60">
+										<Trans i18nKey="chat:transcript.collapsedBanner" count={clineMessagesTombstoned}>
+											Earlier messages ({{ count: clineMessagesTombstoned }}) are collapsed to keep
+											memory bounded. Full history stays saved.
+										</Trans>
+									</div>
+								)}
 								{/* kilocode_change: Virtuoso only virtualizes when its viewport is height-bounded.
 								    A non-flex flex-auto wrapper lets the list grow with content and mounts every ChatRow. */}
 								<div className="flex-1 min-h-0 overflow-hidden">

@@ -36,6 +36,9 @@
 	},
 	"unpin": "Unpin",
 	"pin": "Pin",
+	"transcript": {
+		"collapsedBanner": "Earlier messages ({{count}}) are collapsed to keep memory bounded. Full history stays saved."
+	},
 	"retry": {
 		"title": "Retry",
 		"tooltip": "Try the operation again"

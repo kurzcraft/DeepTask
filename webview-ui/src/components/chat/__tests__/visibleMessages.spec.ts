@@ -76,6 +76,17 @@ describe("filterVisibleMessages", () => {
 		expect(filterVisibleMessages([delayed, resume], undefined, createEverVisible())).toEqual([delayed])
 	})
 
+	it("never shows tombstoned rows even if previously visible", () => {
+		// kilocode_change: bound-transcript tombstones must stay hidden; the
+		// ChatView banner communicates that older messages are collapsed.
+		const tombstone = { ts: 1, type: "say", say: "text", webviewTombstone: true } as unknown as ClineMessage
+		const live = say({ ts: 2, text: "current" })
+		const everVisible = createEverVisible()
+		everVisible.set(1)
+
+		expect(filterVisibleMessages([tombstone, live], undefined, everVisible)).toEqual([live])
+	})
+
 	it("keeps a delayed row after it has already been marked visible", () => {
 		const delayed = say({ ts: 1, say: "api_req_retry_delayed", text: "wait" })
 		const later = say({ ts: 2, text: "next" })

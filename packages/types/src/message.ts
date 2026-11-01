@@ -306,6 +306,8 @@ export const clineMessageSchema = z.object({
 	/** Display-only: historical command output was shortened for the webview. Storage stays full. */
 	commandOutputTruncated: z.boolean().optional(),
 	commandOutputOriginalLength: z.number().optional(),
+	/** Display-only: row was tombstoned by the webview bound-transcript projector (text/images dropped). Host never sets this. */
+	webviewTombstone: z.boolean().optional(),
 	metadata: z
 		.object({
 			kiloCode: kiloCodeMetaDataSchema.optional(),

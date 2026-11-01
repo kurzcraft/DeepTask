@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.3.0</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.3.1</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,11 +35,11 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.3.0** 强制 evolve slug 与显示名同号（`evolve-N` 显示为 `Evolve-N`），并规定过大任务先建 `EXTRA/task/<短标题>/` 顶目录再拆无 task-id 的轻文件。长会话灰屏按实测持有链修：日志/大块跳过 Shiki token 树；增量 `postState` 在 `clineMessages` 未变时省略整包 JSON；镜像窗口 hydrate 只读 `ui_messages`，resume 仍加载 API 全文。2026-10-31 重载后渲染进程从约 1986MB 回到 366MB RSS，后续同窗爬升仍低于灰屏阈值（渲染 RSS≥1500MB 或 anon≥1200MB）。`Committed_AS` 超限不等于物理溢出。磁盘存储与模型输入仍保留全文。9.2.9 给聊天列表真正的有界虚拟化：Virtuoso 视口高度约束后，屏外 ChatRow 不再整树挂载；仅末条保留 ResizeObserver；用户消息轨道改为单例悬停预览。工作区文件列表、代码索引与过期上下文检测改用编辑器文件事件，不再自建递归 `**` 监视去绕过 `files.watcherExclude`；任务进度只监视 `EXTRA/task` 下的 `*.md`。扩展还贡献 `files.watcherExclude` 默认值，堵住 VS Code 内置 `**/node_modules/*/**` 匹配不到点目录的洞，避免 `.pnpm` / `.bun` / `.yarn/cache`、构建缓存、Git LFS 与 `EXTRA/output` 被默认监视钉进 inotify；源码、`EXTRA/task` 与 MCP 配置仍被监视。历史命令输出继续用展示投影。9.2.8 的长任务可靠性与资源优化仍在：子代理结果先持久化再回传，恢复时去重补发；关窗后完成消息即写父 inbox，重启后从历史恢复子代理身份，父点继续才注入终态；长上下文压缩保留增量续跑状态，不再复述上一轮开场白。工具绑定分配工作区；工作区合并验证真实目标分支与文件落盘，保留无关本地修改；超长多行命令快速返回可恢复错误。默认优先复用兼容依赖，测试仍针对隔离源码。长会话资源优化持续以回归和现场 RSS/PSS/anon 验证，不以累计传输量代替峰值内存，也不承诺灰屏已被完全根治。
+> **Deeptask 9.3.1** 根治长会话灰屏的最后一环：给 webview 转录本身做有界持有。`boundTranscript` 投影器保留一条逐字尾部窗口（800 行 + 256 行迟滞），更早的行替换为轻量墓碑（丢弃 text/images/reasoning 大负载；保留 ts/类型/ask/say/partial/isAnswered/checkpoint 与 `api_req_started` 成本 JSON、`contextCondense`，token/成本统计不受损）。全量 state 快照与流式 `messageUpdated` 追加两条摄取路径都过投影器，渲染进程对 7k 行会话的常驻副本不再随消息数线性增长（9.3.0 现场实测：渲染 heap 卡在 jsHeapSizeLimit ~4.2GB 而 host 仅 873MB）。墓碑身份按 ts 稳定缓存、按引用返回，逐字/墓碑边界只在越过 TAIL+迟滞后分批推进，任务切换/回卷会重置投影器，增量缓存持续命中。墓碑行不渲染，转录顶部一条紧凑横幅报告已折叠的更早消息数并说明完整历史仍在磁盘。存储转录与模型 I/O 完全不动：host 仍全量持久化与回放，只有 webview 常驻副本有界。9.3.0 的 evolve 同号、Shiki 跳过、增量 `postState` 省略、镜像窗口只读 `ui_messages`、9.2.9 有界虚拟化与 inotify 修复仍在。
 
-> 同日追加：隔离与Kilo Code共存时的命令所有权，修复命令结束后的清理等待和取消恢复。定向回归425项通过；长期灰屏与人工父中断恢复仍未现场验收。
+> 9.3.1 现场验收（2026-11-01）：装入 VSCodium 重启后连续采样，渲染进程 360-560MB / host 520-673MB 区间波动且出现 GC 回落，零灰屏告警；旧实例（9.3.0 无界持有）同期曾达 4432MB。长会话证伪条件：渲染 anon 仍随消息数线性增长即推翻此修复。
 
-> 代理管理页追加回收已移除会话的界面缓存，保留仍存续会话和模型输入。同转录12轮删除后实际堆由278.491MiB降至22.614MiB；这是受控页面对照，不是整机降幅。最终定向677项通过，长期灰屏与人工父中断恢复仍未现场验收。
+> 此前版本摘要：9.3.0 强制 evolve slug 与显示名同号并规定任务清单拆分；长会话灰屏按实测持有链修（Shiki 跳过、增量 `postState` 省略、镜像窗口只读 `ui_messages`）。9.2.9 给聊天列表真正的有界虚拟化并堵住 inotify 递归监视。9.2.8 子代理结果先持久化再回传、长上下文压缩保留增量续跑状态。详细条目见 [CHANGELOG](./CHANGELOG.md)。
 
 ## 你可以怎样使用 Deeptask
 

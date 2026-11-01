@@ -1,5 +1,14 @@
 # Deeptask
 
+## 9.3.1
+
+### Patch Changes
+
+- Bound the webview transcript itself: a `boundTranscript` projector keeps a verbatim tail window (800 rows + 256 hysteresis) and replaces older rows with lightweight tombstones (text/images/reasoning dropped; ts/type/ask/say/partial/isAnswered/checkpoint preserved, `api_req_started` cost JSON and `contextCondense` kept for token/cost accounting). Both ingest paths — full-state snapshots and streaming `messageUpdated` appends — pass through the projector, so the renderer's resident copy of a 7k-row session no longer grows linearly (measured 9.3.0 field state: renderer pinned at jsHeapSizeLimit ~4.2GB while the host stayed at 873MB).
+- Tombstone identity is stable: cached per-ts and returned by reference, the verbatim/tombstone boundary advances in batches only past TAIL+HYSTERESIS, and task switches / rewinds reset the projector, so the incremental caches in `consolidateCommandsIncremental` / `getApiMetricsIncremental` / `filterVisibleMessagesIncremental` keep hitting.
+- Tombstoned rows never render; a compact banner at the top of the transcript reports how many earlier messages are collapsed and that full history stays saved. `visibleMessages` filters tombstones before the everVisible cache, and `consolidateCommands` / `consolidateApiRequests` spread-clone rows so the tombstone marker survives command/MCP folding.
+- Stored transcripts and model I/O remain untouched: the host still persists and replays full transcripts; only the webview's resident copy is bounded. Falsification condition: a long session whose renderer anon memory still grows linearly with message count after 9.3.1 refutes this fix.
+
 ## 9.3.0
 
 ### Minor Changes
