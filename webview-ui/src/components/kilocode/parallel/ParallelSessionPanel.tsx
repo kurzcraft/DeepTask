@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react"
 import { Virtuoso } from "react-virtuoso"
+import { Trans } from "react-i18next"
 
 import { useAppTranslation } from "@/i18n/TranslationContext"
 import { useExtensionState } from "@/context/ExtensionStateContext"
@@ -32,10 +33,23 @@ export const ParallelSessionPanel = ({ selectedId, onClose }: ParallelSessionPan
 	const session = selectedId.startsWith("ws:") ? undefined : parallelSessions?.[selectedId]
 	const workspaceName = selectedId.startsWith("ws:") ? selectedId.slice(3) : session?.workspaceName
 	const workspace = parallelWorkspaces?.find((w) => w.name === workspaceName)
-	const messages = useMemo(
-		() => (session ? (parallelSessionMessages?.[session.sessionId] ?? []) : []),
-		[session, parallelSessionMessages],
-	)
+	// kilocode_change start: bound transcript — subagent transcripts are projected
+	// through a per-session projector upstream; tombstoned rows must not render here
+	// (they carry no text/images). Count them for the collapse banner.
+	const { messages, tombstonedCount } = useMemo(() => {
+		const all = session ? (parallelSessionMessages?.[session.sessionId] ?? []) : []
+		let tombstoned = 0
+		const visible: typeof all = []
+		for (const message of all) {
+			if ((message as { webviewTombstone?: boolean }).webviewTombstone === true) {
+				tombstoned++
+				continue
+			}
+			visible.push(message)
+		}
+		return { messages: visible, tombstonedCount: tombstoned }
+	}, [session, parallelSessionMessages])
+	// kilocode_change end
 
 	const scrollToPinnedMessage = useCallback(() => {
 		const ts = pinnedJumpTsRef.current
@@ -107,6 +121,15 @@ export const ParallelSessionPanel = ({ selectedId, onClose }: ParallelSessionPan
 						className="border-r border-vscode-panel-border"
 					/>
 					<div className="flex-1 min-h-0 min-w-0 overflow-hidden">
+						{/* kilocode_change: bound transcript — collapsed-rows banner, mirrors ChatView */}
+						{!!tombstonedCount && (
+							<div className="px-3 py-1 text-xs text-vscode-descriptionForeground border-b border-vscode-panel-border/60 shrink-0">
+								<Trans i18nKey="chat:transcript.collapsedBanner" count={tombstonedCount}>
+									Earlier messages ({{ count: tombstonedCount }}) are collapsed to keep memory bounded.
+									Full history stays saved.
+								</Trans>
+							</div>
+						)}
 						<Virtuoso
 							ref={virtuosoRef}
 							className="h-full overflow-y-auto"

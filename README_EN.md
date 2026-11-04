@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.3.1</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.3.2</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,9 +35,9 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.3.1** closes the final loop on long-session gray panels: the webview transcript itself is now bounded. A `boundTranscript` projector keeps a verbatim tail window (800 rows + 256 hysteresis) and replaces older rows with lightweight tombstones (text/images/reasoning dropped; ts/type/ask/say/partial/isAnswered/checkpoint preserved, plus `api_req_started` cost JSON and `contextCondense` for token/cost accounting). Both ingest paths — full-state snapshots and streaming `messageUpdated` appends — pass through the projector, so the renderer's resident copy of a 7k-row session no longer grows linearly (9.3.0 field state: renderer pinned at jsHeapSizeLimit ~4.2GB while the host stayed at 873MB). Tombstone identity is cached per-ts and returned by reference; the verbatim/tombstone boundary advances in batches only past TAIL+HYSTERESIS; task switches and rewinds reset the projector so incremental caches keep hitting. Tombstoned rows never render; a compact banner reports how many earlier messages are collapsed and that full history stays saved. Stored transcripts and model I/O remain untouched — the host still persists and replays full transcripts; only the webview's resident copy is bounded. The 9.3.0 evolve same-numbering rule, Shiki skips, incremental `postState` omission, mirror-window `ui_messages`-only hydrate, and the 9.2.9 bounded virtualization and inotify fixes all remain.
-
-> 9.3.1 field validation (2026-11-01): after installing into VSCodium and restarting, continuous sampling shows the renderer fluctuating in the 360-560MB band with visible GC fallbacks and zero gray-panel alerts, while the old unbounded instance had reached 4432MB. Falsification condition: renderer anon memory still growing linearly with message count on a long session refutes this fix.
+> **Deeptask 9.3.2** closes the last gap in long-session gray panels: **subagent transcripts are bounded too**. 9.3.1 constrained only the main conversation; subagent sessions (`parallelSessionMessages`) still accumulated verbatim — a 3-day image-reading run pushed the renderer to 5.4GB and system memory to 92% (host stayed at ~1.1GB). Every subagent session now gets its own projector (released when the session disappears), plus an **image budget**: even inside the 800-row verbatim window, only the newest 24 image-bearing rows keep their `images` payloads; older rows are cloned without images (text preserved). When `messageUpdated` replaces a row object, the stripped clone rebuilds from the new source so stale content never shows. The subagent panel filters tombstoned rows and shows the same collapse banner. Falsification condition: renderer anon memory still growing linearly after a long subagent image-reading run refutes this fix.
+>
+> **9.3.1** bounded the main-conversation transcript: a `boundTranscript` projector keeps a verbatim tail window (800 rows + 256 hysteresis) and replaces older rows with lightweight tombstones (preserving identity fields plus `api_req_started` cost JSON for token/cost accounting). Both ingest paths pass through the projector, so the renderer's resident copy no longer grows linearly (9.3.0 field state: renderer pinned at ~4.2GB while the host stayed at 873MB). Stored transcripts and model I/O remain untouched.
 
 > Prior-release digest: 9.3.0 forced evolve slug/display same numbering and task-checklist splitting; long-session gray panels followed the measured holder chain (Shiki skip, incremental `postState` omission, mirror-window `ui_messages`-only hydrate). 9.2.9 gave the chat list real bounded virtualization and closed the inotify recursive-watch hole. 9.2.8 persisted subagent results before delivery and kept incremental continuation state in condensation. Full entries in the [CHANGELOG](./CHANGELOG.md).
 
@@ -116,6 +116,28 @@ Long commands do not disappear into transient terminal output. Scripts live in `
 
 [Learn how to continue work through EXTRA](./docs/deeptask/guides/USER_GUIDE_EN.md#6-continue-work-through-extra)
 
+### Multi-level task-splitting folder system: checklists stay light, progress stays recoverable
+
+The real enemy of long tasks is not difficulty but **checklist rot**: a several-hundred-line task file both bloats every context injection and makes it impossible for a fresh session to locate "where are we now". Deeptask fights it with a hard-constrained folder protocol:
+
+```text
+EXTRA/task/
+├── RELEASE_PIPELINE.md              ← authoritative checklist: the ONLY file allowed
+│                                      to carry deeptask-task-id; keeps just the
+│                                      current focus / falsification line / child
+│                                      pointers, always <80 lines
+├── RELEASE_PIPELINE/                ← <short-title>/ task directory: home of light files
+│   ├── DAY1_BUILD.md                ←   daily progress lives only in light files
+│   ├── DAY2_RELEASE.md              ←   light files never carry deeptask-task-id
+│   └── ...
+└── finished/                        ← archive: completed light files move here,
+                                       one-sentence conclusion written back to the pointer
+```
+
+Four hard rules form the protocol: **① Single authority** — one task has exactly one authoritative checklist file, the only file allowed to carry the task identity marker (`deeptask-task-id`). **② Threshold splitting** — once the authoritative file exceeds ~80 lines or 4 nesting levels, a `<short-title>/` directory is created and daily progress moves into light files. **③ Pointer write-back** — when a light file completes, only a one-sentence conclusion returns to the authoritative pointer, then the file archives into `finished/`. **④ Archive without loss** — archiving only marks that part done; condensation and restoration never slice the authoritative snapshot.
+
+This solves two engineering problems at once: session resumption only needs to read one lightweight pointer file (not replay the whole transcript), and task state survives context condensation because it lives in files rather than summary prose. **The checklist is an index, progress is files, recovery is reading pointers** — a filesystem-backed memory for cross-session long-running work.
+
 ### Connect broadly through OpenAI-compatible APIs
 
 OpenAI Compatible is the productive default for cloud services, proxy gateways, and local inference servers implementing OpenAI-style Chat Completions or Responses APIs. Enter the base URL, API key, and model ID; detect server metadata when available; or override context and output-token limits manually.
@@ -152,17 +174,17 @@ Apart from "the model's own conversation handling that commands cannot do" (work
 
 ## Start in three minutes
 
-1. Download `deeptask-9.3.0.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.3.2.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.3.0.vsix --force
+    codium --install-extension ./deeptask-9.3.2.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.3.0.vsix --force
+    code --install-extension ./deeptask-9.3.2.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

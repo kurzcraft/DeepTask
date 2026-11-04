@@ -1,5 +1,13 @@
 # Deeptask
 
+## 9.3.2
+
+### Patch Changes
+
+- Bound subagent transcripts: every `parallelSessionMessages[sessionId]` now flows through its own `boundTranscript` projector (per-session registry, released when the session disappears). 9.3.1 bounded only the main conversation — a 3-day subagent image-reading run accumulated MB-scale base64 rows verbatim and pushed the renderer to 5.4GB / system memory to 92% (2026-11-04 field sample; host stayed at ~1.1GB).
+- Image budget inside the verbatim window: even within the 800-row tail, only the newest 24 image-bearing rows keep their `images` payloads; older image rows are cloned without images (text preserved, clone identity stable per ts+source). Cache entries remember their source row so `messageUpdated` replaces rebuild the clone instead of showing stale content; clones are dropped once the row is tombstoned.
+- `ParallelSessionPanel` filters tombstoned rows and shows the same collapsed-messages banner as the main chat. Falsification condition: a long subagent image-reading run whose renderer anon memory still grows linearly after 9.3.2 refutes this fix.
+
 ## 9.3.1
 
 ### Patch Changes

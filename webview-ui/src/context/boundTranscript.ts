@@ -40,11 +40,27 @@ import type { ClineMessage } from "@roo-code/types"
 export const BOUND_TRANSCRIPT_TAIL = 800
 /** Extra verbatim rows tolerated before the boundary advances (batch amortization). */
 export const BOUND_TRANSCRIPT_HYSTERESIS = 256
+// kilocode_change start: image budget — loop image-reading tasks stack hundreds of
+// MB-scale base64 strings inside the verbatim window (UTF-16 doubles ASCII base64),
+// so the tail window alone is not a bound. Keep images on the most recent
+// image-bearing rows only; older rows keep their text but drop the blobs.
+export const BOUND_TRANSCRIPT_IMAGE_ROWS = 24
+// kilocode_change end
 
 function isCheapRow(message: ClineMessage): boolean {
 	// Rows that carry no heavy payloads at all — cloning them buys nothing.
 	return message.text === undefined && message.images === undefined && message.reasoning === undefined
 }
+
+// kilocode_change start: stripImagesFor — clone a row without its images payload.
+// Cached per-ts exactly like tombstones so identity stays stable across calls.
+function stripImagesFor(message: ClineMessage): ClineMessage {
+	const clone: Record<string, unknown> = { ...message }
+	delete clone.images
+	clone.webviewImagesStripped = true
+	return clone as ClineMessage
+}
+// kilocode_change end
 
 function tombstoneFor(message: ClineMessage): ClineMessage {
 	const tombstone: Record<string, unknown> = {
@@ -92,6 +108,9 @@ export interface BoundTranscriptProjector {
 export function createBoundTranscriptProjector(
 	tail = BOUND_TRANSCRIPT_TAIL,
 	hysteresis = BOUND_TRANSCRIPT_HYSTERESIS,
+	// kilocode_change: image budget is injectable for tests (default keeps the
+	// newest BOUND_TRANSCRIPT_IMAGE_ROWS image-bearing rows with images).
+	imageRows = BOUND_TRANSCRIPT_IMAGE_ROWS,
 ): BoundTranscriptProjector {
 	let highWaterTs: number | undefined // rows with ts < highWaterTs are tombstoned
 	let anchorHeadTs: number | undefined // conversation identity guard
@@ -103,7 +122,61 @@ export function createBoundTranscriptProjector(
 		anchorHeadTs = headTs
 		tombstones = new Map()
 		tombstoned = 0
+		// kilocode_change: image-strip cache follows the same lifecycle as tombstones
+		imageStripped = new Map()
+		imageBudgetTs = undefined
 	}
+
+	// kilocode_change start: image-budget state. imageBudgetTs is the ts of the
+	// OLDEST row whose images are still kept; rows with images and ts below it
+	// are cloned without images (cached per-ts for identity stability).
+	// Cache entries remember their SOURCE row object: messageUpdated replaces a
+	// row with a new object (same ts), and the clone must then be rebuilt so the
+	// panel shows fresh content, not a stale pre-update clone.
+	let imageStripped = new Map<number, { source: ClineMessage; clone: ClineMessage }>()
+	let imageBudgetTs: number | undefined
+	const projectImages = (messages: readonly ClineMessage[]): ClineMessage[] => {
+		// Find the ts boundary: keep images on the newest `imageRows` image-bearing
+		// rows (verbatim window only; tombstoned rows already lost theirs).
+		const imageTsList: number[] = []
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const m = messages[i]!
+			if ((m as { images?: unknown }).images !== undefined) {
+				imageTsList.push(m.ts)
+				if (imageTsList.length >= imageRows) break
+			}
+		}
+		if (imageTsList.length < imageRows) {
+			imageBudgetTs = undefined
+		} else {
+			imageBudgetTs = imageTsList[imageTsList.length - 1]
+		}
+		if (imageBudgetTs === undefined) {
+			// Everyone keeps images — but rows previously stripped must stay
+			// stripped-object-stable if they re-enter the budget window on rewind?
+			// Rewind resets below; treat budget-window growth as a reset too.
+			if (imageStripped.size > 0) {
+				imageStripped = new Map()
+			}
+			return messages as ClineMessage[]
+		}
+		const out: ClineMessage[] = new Array(messages.length)
+		for (let i = 0; i < messages.length; i++) {
+			const message = messages[i]!
+			if (message.ts < imageBudgetTs! && (message as { images?: unknown }).images !== undefined) {
+				let entry = imageStripped.get(message.ts)
+				if (!entry || entry.source !== message) {
+					entry = { source: message, clone: stripImagesFor(message) }
+					imageStripped.set(message.ts, entry)
+				}
+				out[i] = entry.clone
+				continue
+			}
+			out[i] = message
+		}
+		return out
+	}
+	// kilocode_change end
 
 	return {
 		get tombstonedCount() {
@@ -138,7 +211,8 @@ export function createBoundTranscriptProjector(
 			}
 
 			if (highWaterTs === undefined) {
-				return messages as ClineMessage[]
+				// kilocode_change: even without tombstones the image budget applies
+				return projectImages(messages)
 			}
 
 			const out: ClineMessage[] = new Array(messages.length)
@@ -160,7 +234,53 @@ export function createBoundTranscriptProjector(
 				}
 				out[i] = tombstone
 			}
-			return out
+			// kilocode_change: rows below the tombstone boundary are replaced by
+			// small tombstones now — drop their image-strip clones from the cache
+			// or the clones keep pinning full `text` payloads forever.
+			if (imageStripped.size > 0) {
+				for (const ts of imageStripped.keys()) {
+					if (ts < highWaterTs!) {
+						imageStripped.delete(ts)
+					}
+				}
+			}
+			// kilocode_change: apply the image budget to the verbatim window
+			return projectImages(out)
 		},
 	}
 }
+
+// kilocode_change start: per-session projector registry for parallel subagent
+// conversations. Each subagent session gets its own projector (its own head
+// identity / boundary); removing the session releases the projector and its
+// identity caches. The webview used to push subagent messages verbatim into
+// parallelSessionMessages[sessionId] forever — a 3-day image-reading run
+// pushed the renderer to 5.4GB (2026-11-04 field sample) because 9.3.1 only
+// bounded the MAIN conversation transcript.
+const boundTranscriptProjectors = new Map<string, BoundTranscriptProjector>()
+
+export function getParallelProjector(sessionId: string): BoundTranscriptProjector {
+	let projector = boundTranscriptProjectors.get(sessionId)
+	if (!projector) {
+		projector = createBoundTranscriptProjector()
+		boundTranscriptProjectors.set(sessionId, projector)
+	}
+	return projector
+}
+
+/** Drop projectors (and their caches) for sessions that no longer exist. */
+export function pruneParallelProjectors(liveSessionIds: Iterable<string>): void {
+	for (const sessionId of [...boundTranscriptProjectors.keys()]) {
+		let live = false
+		for (const id of liveSessionIds) {
+			if (id === sessionId) {
+				live = true
+				break
+			}
+		}
+		if (!live) {
+			boundTranscriptProjectors.delete(sessionId)
+		}
+	}
+}
+// kilocode_change end

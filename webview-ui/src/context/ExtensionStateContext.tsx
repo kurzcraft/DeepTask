@@ -45,6 +45,8 @@ import { ClineRulesToggles } from "@roo/cline-rules" // kilocode_change
 import {
 	createBoundTranscriptProjector,
 	type BoundTranscriptProjector,
+	getParallelProjector,
+	pruneParallelProjectors,
 } from "./boundTranscript"
 // kilocode_change end
 
@@ -569,15 +571,18 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 						parallelConversations: conversations,
 						parallelActiveConversationId: message.parallelActiveConversationId,
 					}))
-					// Keep messages only for sessions that still exist.
-					setParallelSessionMessages((prevMessages) =>
-						Object.fromEntries(
-							Object.entries(prevMessages).filter(([id]) =>
-								sessions.some((session) => session.sessionId === id),
-							),
+				// Keep messages only for sessions that still exist.
+				setParallelSessionMessages((prevMessages) =>
+					Object.fromEntries(
+						Object.entries(prevMessages).filter(([id]) =>
+							sessions.some((session) => session.sessionId === id),
 						),
-					)
-					break
+					),
+				)
+				// kilocode_change: release per-session transcript projectors for
+				// removed subagent sessions so their identity caches don't leak.
+				pruneParallelProjectors(sessions.map((session) => session.sessionId))
+				break
 				}
 				case "parallelSessionMessage":
 				case "parallelSessionMessageUpdated": {
@@ -596,9 +601,14 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 						} else {
 							list.push(clineMessage)
 						}
+						// kilocode_change: project the subagent transcript through its
+						// own bounded projector — identical contract to the main
+						// conversation (tombstones + image budget). Without this a
+						// 3-day subagent image-reading run accumulated MB-scale
+						// base64 blobs verbatim and pushed the renderer to 5.4GB.
 						return {
 							...prevMessages,
-							[sessionId]: list,
+							[sessionId]: getParallelProjector(sessionId).project(list),
 						}
 					})
 					break

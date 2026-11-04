@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.3.1</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.3.2</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,9 +35,9 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.3.1** 根治长会话灰屏的最后一环：给 webview 转录本身做有界持有。`boundTranscript` 投影器保留一条逐字尾部窗口（800 行 + 256 行迟滞），更早的行替换为轻量墓碑（丢弃 text/images/reasoning 大负载；保留 ts/类型/ask/say/partial/isAnswered/checkpoint 与 `api_req_started` 成本 JSON、`contextCondense`，token/成本统计不受损）。全量 state 快照与流式 `messageUpdated` 追加两条摄取路径都过投影器，渲染进程对 7k 行会话的常驻副本不再随消息数线性增长（9.3.0 现场实测：渲染 heap 卡在 jsHeapSizeLimit ~4.2GB 而 host 仅 873MB）。墓碑身份按 ts 稳定缓存、按引用返回，逐字/墓碑边界只在越过 TAIL+迟滞后分批推进，任务切换/回卷会重置投影器，增量缓存持续命中。墓碑行不渲染，转录顶部一条紧凑横幅报告已折叠的更早消息数并说明完整历史仍在磁盘。存储转录与模型 I/O 完全不动：host 仍全量持久化与回放，只有 webview 常驻副本有界。9.3.0 的 evolve 同号、Shiki 跳过、增量 `postState` 省略、镜像窗口只读 `ui_messages`、9.2.9 有界虚拟化与 inotify 修复仍在。
-
-> 9.3.1 现场验收（2026-11-01）：装入 VSCodium 重启后连续采样，渲染进程 360-560MB / host 520-673MB 区间波动且出现 GC 回落，零灰屏告警；旧实例（9.3.0 无界持有）同期曾达 4432MB。长会话证伪条件：渲染 anon 仍随消息数线性增长即推翻此修复。
+> **Deeptask 9.3.2** 补上长会话灰屏的最后缺口：**子代理转录也有界了**。9.3.1 只约束了主对话转录，子代理（`parallelSessionMessages`）仍逐字无界累积——3 天读图长跑实测渲染进程 5.4GB、系统内存 92%（host 仅 ~1.1GB）。现在每个子代理会话有独立投影器（会话移除即释放），并且新增**图片预算**：即使处于 800 行逐字窗口内，也只有最新 24 条含图行保留 `images` 大负载，更早的行剥图留文；`messageUpdated` 换对象时剥图克隆按源身份重建，不会显示陈旧内容。子代理面板同样过滤墓碑行并显示折叠横幅。证伪条件：子代理读图长跑后渲染 anon 仍线性增长即推翻此修复。
+>
+> **9.3.1** 根治长会话灰屏的主对话环节：`boundTranscript` 投影器保留 800 行逐字尾部窗口（+256 迟滞），更早的行替换为轻量墓碑（保留 ts/类型/ask/say/partial/isAnswered/checkpoint 与 `api_req_started` 成本 JSON，token/成本统计不受损）。全量快照与流式追加两条摄取路径都过投影器，渲染进程对 7k 行会话的常驻副本不再线性增长（9.3.0 现场实测：渲染 heap 卡在 ~4.2GB 而 host 仅 873MB）。墓碑身份按 ts 稳定缓存、按引用返回，边界分批推进，任务切换/回卷重置投影器，增量缓存持续命中。存储转录与模型 I/O 完全不动。
 
 > 此前版本摘要：9.3.0 强制 evolve slug 与显示名同号并规定任务清单拆分；长会话灰屏按实测持有链修（Shiki 跳过、增量 `postState` 省略、镜像窗口只读 `ui_messages`）。9.2.9 给聊天列表真正的有界虚拟化并堵住 inotify 递归监视。9.2.8 子代理结果先持久化再回传、长上下文压缩保留增量续跑状态。详细条目见 [CHANGELOG](./CHANGELOG.md)。
 
@@ -114,6 +114,25 @@ EXTRA/
 
 [查看 EXTRA 跨会话接续教程](./docs/deeptask/guides/USER_GUIDE.md#6-使用-extra-持续接续)
 
+### 多级任务拆分文件夹系统：清单永远是轻的，进度永远是可恢复的
+
+长任务的死敌不是难度而是**清单腐化**：一个几百行的任务文件既撑爆每次注入的上下文，又让新会话无法快速定位"现在做到哪了"。Deeptask 用一套硬约束的文件夹协议对抗它：
+
+```text
+EXTRA/task/
+├── RELEASE_PIPELINE.md              ← 权威清单：唯一含 deeptask-task-id 的文件
+│                                      只保留当前焦点/证伪线/子文件指针，永远 <80 行
+├── RELEASE_PIPELINE/                ← <short-title>/ 任务目录：轻文件之家
+│   ├── DAY1_BUILD.md                ←   日常进度只写在轻文件里
+│   ├── DAY2_RELEASE.md              ←   轻文件禁止携带 deeptask-task-id
+│   └── ...
+└── finished/                        ← 归档：轻文件完成即移入，结论一句话回写权威清单
+```
+
+四条硬规则构成协议：**① 单一权威**——一个任务只有一个权威清单文件，它是唯一允许携带任务身份标记（`deeptask-task-id`）的文件；**② 阈值拆分**——权威清单超过约 80 行或 4 层嵌套即强制建 `<short-title>/` 目录，把日常进度切到轻文件；**③ 指针回写**——轻文件完成时只把一句话结论写回权威清单指针，然后归档进 `finished/`；**④ 归档不灭失**——归档只表示"这部分做完了"，上下文压缩与恢复永不切片权威快照。
+
+这套协议同时解决了两个工程问题：恢复会话时模型只需读一个轻量指针文件就能接续（而不是重放整个转录），上下文压缩时任务状态因为文件化而不会被摘要噪声覆盖。**清单是索引，进度是文件，恢复是读指针**——这就是跨会话长任务的文件系统化记忆。
+
 ### 广泛接入 OpenAI-compatible API
 
 OpenAI Compatible 是开箱即用的默认入口，可连接实现 OpenAI 风格 Chat Completions 或 Responses API 的云服务、代理网关和本地推理服务。用户可填写 Base URL、API Key、模型 ID，检测服务端模型元数据，也可手动覆盖上下文和输出 token。
@@ -150,17 +169,17 @@ Deeptask 选择寄生在 VSCodium 里而不是做成独立软件，是刻意为�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.3.0.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.3.2.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.3.0.vsix --force
+    codium --install-extension ./deeptask-9.3.2.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.3.0.vsix --force
+    code --install-extension ./deeptask-9.3.2.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。
