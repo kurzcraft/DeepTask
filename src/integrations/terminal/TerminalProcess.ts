@@ -3,7 +3,7 @@ import * as vscode from "vscode"
 import { inspect } from "util"
 
 import type { ExitCodeDetails } from "./types"
-import { BaseTerminalProcess } from "./BaseTerminalProcess"
+import { BaseTerminalProcess, MAX_TERMINAL_BUFFER_CHARS, appendBoundedBuffer } from "./BaseTerminalProcess"
 import { Terminal } from "./Terminal"
 import { getTerminalShellExecutionStream } from "./TerminalShellExecutionStream"
 
@@ -374,11 +374,21 @@ export class TerminalProcess extends BaseTerminalProcess {
 			}
 			// kilocode_change end
 
-			// Command output started, accumulate data without filtering.
-			// notice to future programmers: do not add escape sequence
-			// filtering here: fullOutput cannot change in length (see getUnretrievedOutput),
-			// and chunks may not be complete so you cannot rely on detecting or removing escape sequences mid-stream.
-			this.fullOutput += data
+		// Command output started, accumulate data without filtering.
+		// notice to future programmers: do not add escape sequence
+		// filtering here: fullOutput cannot change in length (see getUnretrievedOutput),
+		// and chunks may not be complete so you cannot rely on detecting or removing escape sequences mid-stream.
+		// kilocode_change: ring-cap fullOutput so a multi-gigabyte training log can
+		// never grow the extension host heap without bound. When old characters are
+		// evicted, pull lastRetrievedIndex back by the same amount so
+		// getUnretrievedOutput() keeps returning only the unseen tail.
+		const nextFullLength = this.fullOutput.length + data.length
+		if (nextFullLength > MAX_TERMINAL_BUFFER_CHARS) {
+			const evicted = nextFullLength - MAX_TERMINAL_BUFFER_CHARS
+			this.droppedOutputChars += evicted
+			this.lastRetrievedIndex = Math.max(0, this.lastRetrievedIndex - evicted)
+		}
+		this.fullOutput = appendBoundedBuffer(this.fullOutput, data)
 
 			// The end marker is the command boundary. VS Code may keep the shared stream
 			// open and immediately emit the interactive prompt (including carriage-return
@@ -570,6 +580,11 @@ export class TerminalProcess extends BaseTerminalProcess {
 		if (this.terminal.isClosed()) {
 			output +=
 				"\n<VSCE terminal shell closed before command completion; treated terminal closure as command completion.>"
+		}
+		// kilocode_change: surface ring-buffer eviction so the model knows older
+		// output was dropped instead of silently missing from a long-running log.
+		if (this.droppedOutputChars > 0) {
+			output += `\n<Output buffer capped at ${MAX_TERMINAL_BUFFER_CHARS} characters; approximately ${this.droppedOutputChars} older characters were dropped.>`
 		}
 		this.emit("completed", output)
 		this.emit("continue")

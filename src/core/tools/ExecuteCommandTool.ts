@@ -16,6 +16,7 @@ import { unescapeHtmlEntities } from "../../utils/text-normalization"
 import { ExitCodeDetails, RooTerminalCallbacks, RooTerminalProcess } from "../../integrations/terminal/types"
 import { TerminalRegistry } from "../../integrations/terminal/TerminalRegistry"
 import { Terminal } from "../../integrations/terminal/Terminal"
+import { MAX_TERMINAL_BUFFER_CHARS, appendBoundedBuffer } from "../../integrations/terminal/BaseTerminalProcess" // kilocode_change: bounded live output
 import { Package } from "../../shared/package"
 import { t } from "../../i18n"
 import { BaseTool, ToolCallbacks } from "./BaseTool"
@@ -266,14 +267,39 @@ export async function executeCommandInTerminal(
 	const provider = await task.providerRef.deref()
 
 	let accumulatedOutput = ""
+	// kilocode_change: live-output ring cap + postMessage throttle. Before this,
+	// every onLine tick (>=100ms) ran a full O(n) compress pass over an unbounded
+	// accumulatedOutput and posted the result to the webview; a multi-gigabyte
+	// training log froze the extension host and grayed out the webview.
+	let accumulatedDroppedChars = 0
+	let lastOutputPostMs = 0
+	const liveOutputTombstone = () =>
+		accumulatedDroppedChars > 0
+			? `[... ${accumulatedDroppedChars} older characters dropped by the live output ring buffer ...]\n`
+			: ""
 	const callbacks: RooTerminalCallbacks = {
 		onLine: async (lines: string, process: RooTerminalProcess) => {
-			accumulatedOutput += lines
-			const compressedOutput = Terminal.compressTerminalOutput(
-				accumulatedOutput,
-				terminalOutputLineLimit,
-				terminalOutputCharacterLimit,
-			)
+			const nextAccumulatedLength = accumulatedOutput.length + lines.length
+			if (nextAccumulatedLength > MAX_TERMINAL_BUFFER_CHARS) {
+				accumulatedDroppedChars += nextAccumulatedLength - MAX_TERMINAL_BUFFER_CHARS
+			}
+			accumulatedOutput = appendBoundedBuffer(accumulatedOutput, lines)
+
+			// Throttle live updates to the webview: the completion event is the
+			// authoritative payload, intermediate posts are display-only.
+			const now = Date.now()
+			if (now - lastOutputPostMs < 250) {
+				return
+			}
+			lastOutputPostMs = now
+
+			const compressedOutput =
+				liveOutputTombstone() +
+				Terminal.compressTerminalOutput(
+					accumulatedOutput,
+					terminalOutputLineLimit,
+					terminalOutputCharacterLimit,
+				)
 			postCommandStatusToWebview(provider, {
 				executionId,
 				status: "output",
@@ -325,7 +351,12 @@ export async function executeCommandInTerminal(
 			// line streaming already captured text (or after continue() detached the
 			// line listener), fall back to accumulated live output so the model still
 			// receives terminal-visible content.
-			const completedOutput = output && output.length > 0 ? output : accumulatedOutput
+			const usedFallback = !(output && output.length > 0)
+			const completedOutput = usedFallback
+				? accumulatedDroppedChars > 0
+					? liveOutputTombstone() + accumulatedOutput
+					: accumulatedOutput
+				: output
 			result = Terminal.compressTerminalOutput(
 				completedOutput ?? "",
 				terminalOutputLineLimit,
@@ -411,7 +442,7 @@ export async function executeCommandInTerminal(
 		}
 
 		result = Terminal.compressTerminalOutput(
-			accumulatedOutput,
+			accumulatedDroppedChars > 0 ? liveOutputTombstone() + accumulatedOutput : accumulatedOutput,
 			terminalOutputLineLimit,
 			terminalOutputCharacterLimit,
 		)

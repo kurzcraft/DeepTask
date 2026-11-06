@@ -4,7 +4,7 @@ import process from "process"
 
 import { getShell } from "../../utils/shell"
 import type { RooTerminal } from "./types"
-import { BaseTerminalProcess } from "./BaseTerminalProcess"
+import { BaseTerminalProcess, MAX_TERMINAL_BUFFER_CHARS, appendBoundedBuffer } from "./BaseTerminalProcess"
 
 // kilocode_change start
 const PROCESS_LOOKUP_TIMEOUT_MS = 2_000
@@ -124,12 +124,21 @@ export class ExecaTerminalProcess extends BaseTerminalProcess {
 
 			this.terminal.setActiveStream(stream, this.pid)
 
-			for await (const line of stream) {
-				if (this.aborted) {
-					break
-				}
+		for await (const line of stream) {
+			if (this.aborted) {
+				break
+			}
 
-				this.fullOutput += line
+			// kilocode_change: ring-cap fullOutput (see BaseTerminalProcess). A
+			// training watcher streaming gigabytes must never grow the host heap
+			// unboundedly; evicted chars are counted for the completion tombstone.
+			const nextFullLength = this.fullOutput.length + line.length
+			if (nextFullLength > MAX_TERMINAL_BUFFER_CHARS) {
+				const evicted = nextFullLength - MAX_TERMINAL_BUFFER_CHARS
+				this.droppedOutputChars += evicted
+				this.lastRetrievedIndex = Math.max(0, this.lastRetrievedIndex - evicted)
+			}
+			this.fullOutput = appendBoundedBuffer(this.fullOutput, line)
 
 				// kilocode_change: mirror every chunk to the attached echo sink
 				// (pseudoterminal) immediately, independent of the throttled
@@ -180,7 +189,13 @@ export class ExecaTerminalProcess extends BaseTerminalProcess {
 			}
 			this.emitRemainingBufferIfListening()
 			this.stopHotTimer()
-			this.emit("completed", this.fullOutput)
+			// kilocode_change: ring-cap tombstone so the model knows older output
+			// was dropped from a very long-running command.
+			const completedPayload =
+				this.droppedOutputChars > 0
+					? `${this.fullOutput}\n<Output buffer capped at ${MAX_TERMINAL_BUFFER_CHARS} characters; approximately ${this.droppedOutputChars} older characters were dropped.>`
+					: this.fullOutput
+			this.emit("completed", completedPayload)
 			this.emit("continue")
 			this.subprocess = undefined
 			// kilocode_change end

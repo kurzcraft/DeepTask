@@ -2,6 +2,26 @@ import { EventEmitter } from "events"
 
 import type { RooTerminalProcess, RooTerminalProcessEvents, ExitCodeDetails } from "./types"
 
+// kilocode_change start: bounded terminal output buffers.
+// Long-running commands (training watchers, dev servers) can stream gigabytes
+// through a single terminal. Every buffer in this pipeline must be capped or
+// the extension host eventually OOMs and the webview grays out. The cap keeps
+// the most recent MAX_TERMINAL_BUFFER_CHARS characters; everything older is
+// dropped and counted so callers can surface a tombstone.
+export const MAX_TERMINAL_BUFFER_CHARS = 1_000_000
+
+/** Append to a bounded buffer, evicting the oldest characters on overflow. */
+export function appendBoundedBuffer(buffer: string, chunk: string, maxChars = MAX_TERMINAL_BUFFER_CHARS): string {
+	if (buffer.length + chunk.length <= maxChars) {
+		return buffer + chunk
+	}
+
+	// Keep the newest characters: drop the oldest buffered text first.
+	const combined = buffer + chunk
+	return combined.slice(combined.length - maxChars)
+}
+// kilocode_change end
+
 export abstract class BaseTerminalProcess extends EventEmitter<RooTerminalProcessEvents> implements RooTerminalProcess {
 	public command: string = ""
 
@@ -12,6 +32,9 @@ export abstract class BaseTerminalProcess extends EventEmitter<RooTerminalProces
 	protected lastEmitTime_ms: number = 0
 	protected fullOutput: string = ""
 	protected lastRetrievedIndex: number = 0
+	// kilocode_change: characters evicted from fullOutput by the ring cap; exposed
+	// so completion payloads can tell the model output was truncated.
+	protected droppedOutputChars: number = 0
 
 	static interpretExitCode(exitCode: number | undefined): ExitCodeDetails {
 		if (exitCode === undefined) {
