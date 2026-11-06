@@ -2680,6 +2680,61 @@ describe("Queued message processing after condense", () => {
 		expect(String(result[0].content)).toContain("do not roll progress back")
 	})
 
+	// kilocode_change start: condense progress snapshot — no double write, tail-biased truncation
+	it("does not double-write the todoList when the EXTRA/task file is available and keeps the newest milestones on truncation", async () => {
+		const task = Object.create(Task.prototype) as Task
+		;(task as any).workspacePath = "/mock/workspace/path"
+		;(task as any).latestUserContinuationFocus = "只认旧的任务清单 bug 修复"
+		task.todoList = [{ id: "mirror", content: "in-memory mirror should not be serialized when file exists", status: "in_progress" }]
+		const oldMilestone = "旧里程碑-头部条目-可能被截断丢弃"
+		const newestMilestone = `最新里程碑-尾部条目-${"细节".repeat(30)}-必须保留`
+		const fileContent = [
+			"<!-- deeptask-task-id:test-instance -->",
+			"# 标题",
+			"- [x] 旧条目",
+			...Array.from({ length: 160 }, (_, index) => `- [x] ${oldMilestone} #${index} ${"填充".repeat(30)}`),
+			`- [-] ${newestMilestone}`,
+		].join("\n")
+		vi.spyOn(task as any, "findOwnedTaskProgressFilePath").mockResolvedValue("/mock/workspace/path/EXTRA/task/A.md")
+		vi.mocked(fs.readFile).mockResolvedValueOnce(fileContent as any)
+
+		const snapshot = await (task as any).buildHostTaskStateSnapshot()
+
+		const text = String(snapshot)
+		expect(text).toContain('<current_task_state authority="host">')
+		expect(text).toContain("Authoritative EXTRA/task file: EXTRA/task/A.md")
+		// No double write: the in-memory todoList must not appear when the file exists
+		expect(text).not.toContain("in-memory mirror should not be serialized when file exists")
+		expect(text).not.toContain("Native checklist:")
+		// Tail-biased truncation: head (marker/title) survives...
+		expect(text).toContain("deeptask-task-id:test-instance")
+		expect(text).toContain("# 标题")
+		// ...and the newest milestones survive even though old ones are dropped
+		expect(text).toContain(newestMilestone)
+		expect(text).toContain("[truncated")
+		// The old head-biased behavior kept the oldest entries and cut the tail;
+		// that exact failure mode must be gone: the middle filler entries are dropped
+		expect(text).not.toContain(`${oldMilestone} #30 `)
+		// Tail starts on a line boundary (no mid-line bisection right after the notice)
+		const afterNotice = text.split("[truncated")[1] ?? ""
+		expect(afterNotice.startsWith(" ") || afterNotice.startsWith("\n")).toBe(true)
+	})
+
+	it("falls back to the in-memory todoList only when the EXTRA/task file is unavailable", async () => {
+		const task = Object.create(Task.prototype) as Task
+		;(task as any).workspacePath = "/mock/workspace/path"
+		;(task as any).latestUserContinuationFocus = "fallback focus"
+		task.todoList = [{ id: "a", content: "内存兜底清单条目", status: "pending" }]
+		vi.spyOn(task as any, "findOwnedTaskProgressFilePath").mockResolvedValue(undefined)
+
+		const snapshot = await (task as any).buildHostTaskStateSnapshot()
+
+		const text = String(snapshot)
+		expect(text).toContain("Native checklist:")
+		expect(text).toContain("内存兜底清单条目")
+	})
+	// kilocode_change end
+
 	it("discards a manual condense result when history changes while summarizing", async () => {
 		const provider = createProvider()
 		const task = new Task({

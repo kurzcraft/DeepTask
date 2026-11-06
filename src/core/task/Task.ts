@@ -3137,11 +3137,14 @@ ${protocolHint}
 			lines.push(`Newest user instruction: ${focus}`)
 		}
 
-		if (this.todoList && this.todoList.length > 0) {
-			lines.push("Native checklist:")
-			lines.push(this.serializeTaskProgressChecklist(this.todoList))
-		}
-
+		// kilocode_change start
+		// Prefer the authoritative EXTRA/task file and do NOT also serialize
+		// the in-memory todoList. The todoList is a mirror of that file, so the
+		// old double write doubled the snapshot, and the old head-biased slice
+		// then kept the oldest entries while cutting the newest tail
+		// milestones — the direct mechanism behind "condense keeps only the
+		// old checklist and ignores pre-condense progress".
+		let progressBody: string | undefined
 		if (!this.isChildAgent) {
 			try {
 				const progressPath = await this.findOwnedTaskProgressFilePath()
@@ -3149,7 +3152,7 @@ ${protocolHint}
 					const relative = path.relative(this.cwd, progressPath)
 					const content = (await fsp.readFile(progressPath, "utf8")).trim()
 					lines.push(`Authoritative EXTRA/task file: ${relative}`)
-					lines.push(content)
+					progressBody = content
 				}
 			} catch (error) {
 				console.error(
@@ -3159,13 +3162,39 @@ ${protocolHint}
 			}
 		}
 
+		if (progressBody) {
+			lines.push(progressBody)
+		} else if (this.todoList && this.todoList.length > 0) {
+			lines.push("Native checklist:")
+			lines.push(this.serializeTaskProgressChecklist(this.todoList))
+		}
+		// kilocode_change end
+
 		if (lines.length === 0) {
 			return ""
 		}
 
 		let body = lines.join("\n").trim()
 		if (body.length > Task.MAX_HOST_TASK_STATE_CHARS) {
-			body = `${body.slice(0, Task.MAX_HOST_TASK_STATE_CHARS)}\n[truncated; read the EXTRA/task file for the rest]`
+			// kilocode_change start: tail-biased truncation. Keep the file head
+			// (task-id marker + title + original request) and spend the rest of
+			// the budget on the newest milestones at the tail, which are the
+			// live continuation state after condensation.
+			const headBudget = 1_200
+			const markerBudget = 120
+			const tailBudget = Math.max(0, Task.MAX_HOST_TASK_STATE_CHARS - headBudget - markerBudget)
+			const head = body.slice(0, headBudget)
+			let tailStart = Math.max(headBudget, body.length - tailBudget)
+			// Align the tail to the next line boundary so no milestone line is
+			// bisected mid-text by the budget cut.
+			if (tailStart > headBudget && tailStart < body.length) {
+				const nextLine = body.indexOf("\n", tailStart)
+				tailStart = nextLine === -1 ? body.length : nextLine + 1
+			}
+			const tail = body.slice(tailStart)
+			const omitted = Math.max(0, tailStart - headBudget)
+			body = `${head}\n[truncated ${omitted} chars of older milestones; the newest milestones are preserved below; read the EXTRA/task file for full history]\n${tail}`
+			// kilocode_change end
 		}
 
 		return `${HOST_TASK_STATE_OPEN}\n${body}\n${HOST_TASK_STATE_CLOSE}`

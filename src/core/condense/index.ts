@@ -370,7 +370,10 @@ const LOCAL_FALLBACK_MESSAGE_MAX_CHARS = 900 // kilocode_change
 const AUTO_CONDENSE_PROVIDER_BUDGET_MS = 15_000 // kilocode_change
 
 // kilocode_change start
-function compactMessageForLocalSummary(message: ApiMessage): string {
+function compactMessageForLocalSummary(
+	message: ApiMessage,
+	maxChars: number = LOCAL_FALLBACK_MESSAGE_MAX_CHARS,
+): string {
 	const parts =
 		typeof message.content === "string"
 			? [message.content]
@@ -402,7 +405,7 @@ function compactMessageForLocalSummary(message: ApiMessage): string {
 	const { body, hostState } = extractHostTaskStateBlock(processed)
 	// The 900-char cap is for recap prose only. Slicing the flattened string would
 	// cut the host EXTRA/task block that flattenPriorSummary appends at the end.
-	return upsertHostTaskState(body.slice(0, LOCAL_FALLBACK_MESSAGE_MAX_CHARS), hostState)
+	return upsertHostTaskState(body.slice(0, maxChars), hostState)
 }
 
 /**
@@ -469,6 +472,58 @@ export function buildLocalFallbackSummary(messages: ApiMessage[], providerError:
 	// bisect <current_task_state> and drop the EXTRA/task snapshot.
 	return upsertHostTaskState(summary, collectedHostState)
 }
+
+// kilocode_change start
+const PROVIDER_CONDENSE_INPUT_MAX_CHARS = 48_000
+const PROVIDER_CONDENSE_MESSAGE_MAX_CHARS = 1_200
+
+/**
+	* Bounds the provider condensing request for the automatic fast path.
+	*
+	* The automatic condense fast path has a 15-second budget. Sending the raw
+	* transcript (often 200k+ tokens) guarantees the summarization request cannot
+	* finish in time, so every automatic condensation degraded to the local
+	* fallback dump and pre-condense progress was lost. This builder bounds the
+	* request locally first: the first message (original task) and the newest real
+	* user instruction are always included, the remaining budget is filled
+	* newest-first so pre-condense progress survives, and each message is
+	* compacted with the same rules as the local fallback (environment dumps
+	* stripped, tool blocks flattened).
+	*/
+export function buildProviderCondenseInput(messages: ApiMessage[]): ApiMessage[] {
+	const entries = messages
+		.map((message, index) => ({
+			index,
+			role: message.role,
+			isRealUser: isRealUserInstruction(message),
+			text: compactMessageForLocalSummary(message, PROVIDER_CONDENSE_MESSAGE_MAX_CHARS),
+		}))
+		.filter((entry) => entry.text.length > 0)
+
+	if (entries.length === 0) {
+		return []
+	}
+
+	const first = entries[0]
+	const newestRealUser = [...entries].reverse().find((entry) => entry.isRealUser)
+	const selected = new Map<number, (typeof entries)[number]>([[first.index, first]])
+	if (newestRealUser) {
+		selected.set(newestRealUser.index, newestRealUser)
+	}
+	let usedChars = [...selected.values()].reduce((total, entry) => total + entry.text.length, 0)
+
+	for (const entry of [...entries].reverse()) {
+		if (selected.has(entry.index)) continue
+		if (usedChars + entry.text.length > PROVIDER_CONDENSE_INPUT_MAX_CHARS) continue
+		selected.set(entry.index, entry)
+		usedChars += entry.text.length
+	}
+
+	return [...selected.values()]
+		.sort((left, right) => left.index - right.index)
+		.map((entry) => ({ role: entry.role, content: entry.text }))
+}
+// kilocode_change end
 
 export const HOST_TASK_STATE_OPEN = '<current_task_state authority="host">'
 export const HOST_TASK_STATE_CLOSE = "</current_task_state>"
@@ -745,7 +800,13 @@ export async function summarizeConversation(
 		content: "Summarize the conversation so far, as described in the prompt instructions.",
 	}
 
-	const requestMessages = maybeRemoveImageBlocks([...messagesToSummarize, finalRequestMessage], apiHandler).map(
+	// kilocode_change start
+	// Automatic condense runs under a 15-second fast-path budget; pre-compress
+	// the request locally so the provider can actually finish in time instead
+	// of always falling back to the local dump.
+	const providerInput = isAutomaticTrigger ? buildProviderCondenseInput(messagesToSummarize) : messagesToSummarize
+	// kilocode_change end
+	const requestMessages = maybeRemoveImageBlocks([...providerInput, finalRequestMessage], apiHandler).map(
 		({ role, content }) => ({ role, content }),
 	)
 
