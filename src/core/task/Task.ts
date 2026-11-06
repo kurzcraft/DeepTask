@@ -159,6 +159,7 @@ import {
 	getMessagesSinceLastSummary,
 	summarizeConversation,
 	getEffectiveApiHistory,
+	reshapeCondensedApiHistory,
 	applyHostTaskStateToMessage,
 	HOST_TASK_STATE_OPEN,
 	HOST_TASK_STATE_CLOSE,
@@ -3113,18 +3114,11 @@ ${protocolHint}
 
 	private buildUserContinuationText(continuationText: string): string {
 		// kilocode_change start
-		// Put the human's words first and make their control priority explicit. A
-		// completed historical turn must never preempt new input. The guidance is
-		// deliberately semantic, not a rigid category split: EVERY user message
-		// must first get a natural conversational reply that shows the agent
-		// understood what was said — like a normal chat. Tracking mechanisms
-		// (diagnosis, new plans, milestones) may follow within the same reply, but
-		// they never replace the reply itself. Short negative replies like "没有用"
-		// / "didn't work" are defect reports about the previous fix, not
-		// acknowledgements or small talk: acknowledge the failure in words, then
-		// diagnose why the fix failed and pursue a materially different approach,
-		// recording it as a new milestone in the task progress list.
-		return `<latest_human_message>\n${continuationText}\n</latest_human_message>\n\nTreat the message above as the user's newest statement and reply to it the way a person in a normal chat would — first show you understood what they said, in their language. This is mandatory for every user message, whatever its type. The reply is plain text in your response: text and tool calls are allowed in the SAME response, so put the conversational reply FIRST and let any tool call follow it — never skip the reply because you are about to call a tool, and never answer with a bare tool call and no words. If a tool was interrupted before completion, that work resumes only AFTER your conversational reply, never instead of it. Beyond that conversational reply, classify the message by meaning: a short negative reply (e.g. "没有用", "不行", "没效果", "didn't work", "still broken") is a defect report stating the previous fix failed — in the same reply also state why the fix failed, then pursue a materially different approach and record it as a new milestone in the task progress list before further tool work. Do not restate old status, do not repeat the failed approach, and do not ask the user to re-confirm the failed approach. A pure question or social remark needs only the conversational reply. Never call attempt_completion merely because earlier work was completed or because the message is short.`
+		// Put the human's words first. Do not force a recap: the old "first show
+		// you understood / reply FIRST" rule made every uncompressed turn open
+		// by restating the original task or paraphrasing the latest message
+		// (2026-11-06 field report). Continue the current work instead.
+		return `<latest_human_message>\n${continuationText}\n</latest_human_message>\n\nThis is the user's newest statement. Continue the current work from it. Do not recap the original opening task, do not restate old status, and do not start with an "I understood" paraphrase. Text and tool calls may appear in the same response; a bare tool call is allowed when the next action is obvious. If a tool was interrupted, resume that work. A short negative reply (e.g. "没有用", "不行", "没效果", "didn't work", "still broken") is a defect report stating the previous fix failed — state why it failed, then pursue a materially different approach and record it as a new milestone in the task progress list before further tool work. Do not repeat the failed approach, and do not ask the user to re-confirm it. A pure question or social remark needs only a direct answer. Never call attempt_completion merely because earlier work was completed or because the message is short.`
 		// kilocode_change end
 	}
 
@@ -6754,8 +6748,12 @@ ${protocolHint}
 		// enabling accurate rewind operations while still sending condensed history to the API.
 		const effectiveHistory = getEffectiveApiHistory(this.apiConversationHistory, taskUsesNativeTools)
 		const messagesSinceLastSummary = getMessagesSinceLastSummary(effectiveHistory)
-		const messagesWithoutImages = maybeRemoveImageBlocks(messagesSinceLastSummary, this.api)
+		// kilocode_change start: request-time reshape only. Storage stays
+		// [original first, summary, keep]; uncompressed turns are a no-op.
+		const requestHistory = reshapeCondensedApiHistory(messagesSinceLastSummary)
+		const messagesWithoutImages = maybeRemoveImageBlocks(requestHistory, this.api)
 		const cleanConversationHistory = this.buildCleanConversationHistory(messagesWithoutImages as ApiMessage[])
+		// kilocode_change end
 
 		// kilocode_change start
 		// Fetch project properties for KiloCode provider tracking

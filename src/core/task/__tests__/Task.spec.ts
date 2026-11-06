@@ -3945,8 +3945,10 @@ describe("Queued message processing after condense", () => {
 		const continuationBlocks = initiateSpy.mock.calls[0][0] as Array<{ text?: string }>
 		const continuationContent = continuationBlocks[0]?.text ?? ""
 		expect(continuationContent).toMatch(/^<latest_human_message>\nexpand list and work\n<\/latest_human_message>/)
-		expect(continuationContent).toContain("reply to it the way a person in a normal chat would")
-		expect(continuationContent).toContain("This is mandatory for every user message, whatever its type.")
+		expect(continuationContent).toContain("Continue the current work from it")
+		expect(continuationContent).toContain("Do not recap the original opening task")
+		expect(continuationContent).not.toContain("first show you understood")
+		expect(continuationContent).not.toContain("reply to it the way a person in a normal chat would")
 		expect(continuationContent).toContain("is a defect report stating the previous fix failed")
 		expect(continuationContent).toContain("record it as a new milestone")
 		expect(continuationContent).not.toContain("update_todo_list")
@@ -4351,8 +4353,9 @@ describe("Queued message processing after condense", () => {
 		expect(continuationContent).toMatch(
 			new RegExp(`^<latest_human_message>\\n${latestHumanMessage}\\n</latest_human_message>`),
 		)
-		expect(continuationContent).toContain("reply to it the way a person in a normal chat would")
-		expect(continuationContent).toContain("This is mandatory for every user message, whatever its type.")
+		expect(continuationContent).toContain("Continue the current work from it")
+		expect(continuationContent).toContain("Do not recap the original opening task")
+		expect(continuationContent).not.toContain("first show you understood")
 		expect(continuationContent).toContain("is a defect report stating the previous fix failed")
 		expect(continuationContent).not.toContain("archive")
 		expect(continuationContent).not.toContain("progress-file")
@@ -4467,7 +4470,8 @@ describe("Queued message processing after condense", () => {
 		expect(continuationContent).toMatch(/^<latest_human_message>\n没有用\n<\/latest_human_message>/)
 		expect(continuationContent).toContain("is a defect report stating the previous fix failed")
 		expect(continuationContent).toContain("pursue a materially different approach")
-		expect(continuationContent).toContain("Do not restate old status")
+		expect(continuationContent).toContain("do not restate old status")
+		expect(continuationContent).not.toContain("first show you understood")
 		expect(continuationContent).not.toContain("answer conversationally without creating")
 	})
 

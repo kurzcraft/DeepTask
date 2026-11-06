@@ -39,7 +39,7 @@ const taskId = "test-task-id"
 const DEFAULT_PREV_CONTEXT_TOKENS = 1000
 
 describe("buildLocalFallbackSummary", () => {
-	it("preserves the initial task and newest user extension within a strict budget", () => {
+	it("keeps newest work and does not recopy the original opening as live Previous Conversation", () => {
 		const messages: ApiMessage[] = [
 			{ role: "user", content: "Initial task: repair context compression", ts: 1 },
 			...Array.from({ length: 120 }, (_, index) => ({
@@ -55,7 +55,8 @@ describe("buildLocalFallbackSummary", () => {
 
 		expect(performance.now() - startedAt).toBeLessThan(100)
 		expect(summary.length).toBeLessThanOrEqual(12_000)
-		expect(summary).toContain("Initial task: repair context compression")
+		expect(summary).toContain("Background context only")
+		expect(summary).not.toContain("Initial task: repair context compression")
 		expect(summary).toContain("Newest acceptance target: never truncate when provider fails")
 		expect(summary).toContain("relay timed out")
 	})
@@ -134,6 +135,33 @@ Authoritative EXTRA/task file: EXTRA/task/UNI_RESEARCH_OPERATOR_ASSEMBLY_PROGRES
 		expect(summary).toContain("Newest request: keep EXTRA/task after provider timeout")
 		expect(summary).not.toContain("Continue from the newest user request and preserve unfinished tasks")
 		expect(summary.indexOf(HOST_TASK_STATE_OPEN)).toBeGreaterThan(summary.indexOf("2. Current Work"))
+	})
+
+	it("does not dump the original <task> and keeps Current Work when hostState is 12k", () => {
+		const opening = `<task>
+整理uni-research skill并在实际科研中不断更新你认为正确的套路,梳理研究的核心方法论
+</task>
+[Environment details omitted]`
+		const hostState = `${HOST_TASK_STATE_OPEN}\nNewest user instruction: 重新运行一下等待命令\n${"milestone line\n".repeat(900)}</current_task_state>`
+		const messages: ApiMessage[] = [
+			{ role: "user", content: opening, ts: 1 },
+			{ role: "assistant", content: "Wired A4 criterion and started D1 wait", ts: 2 },
+			{ role: "user", content: upsertHostTaskState("Newest request: 重新运行一下等待命令", hostState), ts: 3 },
+		]
+
+		const summary = buildLocalFallbackSummary(
+			messages,
+			"Automatic context condense exceeded its 15 second fast-path budget",
+		)
+
+		expect(summary).not.toContain("<task>")
+		expect(summary).not.toContain("整理uni-research skill")
+		expect(summary).toContain("Background context only")
+		expect(summary).toContain("重新运行一下等待命令")
+		expect(summary).toContain("Wired A4 criterion")
+		expect(summary).toMatch(/2\.\s*Current Work[\s\S]+Wired A4/)
+		expect(summary).toContain(HOST_TASK_STATE_OPEN)
+		expect(summary.indexOf("Wired A4 criterion")).toBeLessThan(summary.indexOf(HOST_TASK_STATE_OPEN))
 	})
 })
 
@@ -1175,7 +1203,10 @@ describe("summarizeConversation", () => {
 
 		expect(result.error).toBeUndefined()
 		expect(result.condenseId).toBeDefined()
-		expect(result.summary).toContain("Initial task")
+		expect(result.summary).toContain("Background context only")
+		expect(result.summary).not.toContain("Initial task")
+		expect(result.summary).toContain("Work two")
+		expect(result.summary).toContain("Extension one")
 		expect(result.summary).toContain("relay unavailable")
 		expect(result.messages.some((message) => message.isSummary)).toBe(true)
 	})

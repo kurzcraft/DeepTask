@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.3.2</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.3.3</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,9 +35,9 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.3.2** closes the last gap in long-session gray panels: **subagent transcripts are bounded too**. 9.3.1 constrained only the main conversation; subagent sessions (`parallelSessionMessages`) still accumulated verbatim — a 3-day image-reading run pushed the renderer to 5.4GB and system memory to 92% (host stayed at ~1.1GB). Every subagent session now gets its own projector (released when the session disappears), plus an **image budget**: even inside the 800-row verbatim window, only the newest 24 image-bearing rows keep their `images` payloads; older rows are cloned without images (text preserved). When `messageUpdated` replaces a row object, the stripped clone rebuilds from the new source so stale content never shows. The subagent panel filters tombstoned rows and shows the same collapse banner. Falsification condition: renderer anon memory still growing linearly after a long subagent image-reading run refutes this fix.
+> **Deeptask 9.3.3** stops condensed turns from reopening the original task, and stops uncompressed turns from recapping at every opening. The condensed view is still `[original first task, summary, keep]`; when a summary exists, the first user turn becomes a background stub and `<current_task_state>` is merged onto the last keep-window user message. Local fallback summaries no longer dump the original `<task>` into Previous Conversation, and host-state snapshots do not consume the Current Work budget. Uncompressed continuations no longer force a “first show you understood / reply FIRST” recap. Falsification condition: condensed turns still reopen the original first task, or uncompressed turns still recap understanding/the original task, refutes this fix.
 >
-> **9.3.1** bounded the main-conversation transcript: a `boundTranscript` projector keeps a verbatim tail window (800 rows + 256 hysteresis) and replaces older rows with lightweight tombstones (preserving identity fields plus `api_req_started` cost JSON for token/cost accounting). Both ingest paths pass through the projector, so the renderer's resident copy no longer grows linearly (9.3.0 field state: renderer pinned at ~4.2GB while the host stayed at 873MB). Stored transcripts and model I/O remain untouched.
+> **9.3.2** closed the last long-session gray-panel gap: subagent transcripts are bounded too. 9.3.1 constrained only the main conversation; subagent sessions (`parallelSessionMessages`) still accumulated verbatim. Every subagent session now gets its own projector, plus an image budget: even inside the 800-row verbatim window, only the newest 24 image-bearing rows keep their `images` payloads.
 
 > Prior-release digest: 9.3.0 forced evolve slug/display same numbering and task-checklist splitting; long-session gray panels followed the measured holder chain (Shiki skip, incremental `postState` omission, mirror-window `ui_messages`-only hydrate). 9.2.9 gave the chat list real bounded virtualization and closed the inotify recursive-watch hole. 9.2.8 persisted subagent results before delivery and kept incremental continuation state in condensation. Full entries in the [CHANGELOG](./CHANGELOG.md).
 
@@ -174,17 +174,17 @@ Apart from "the model's own conversation handling that commands cannot do" (work
 
 ## Start in three minutes
 
-1. Download `deeptask-9.3.2.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.3.3.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.3.2.vsix --force
+    codium --install-extension ./deeptask-9.3.3.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.3.2.vsix --force
+    code --install-extension ./deeptask-9.3.3.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

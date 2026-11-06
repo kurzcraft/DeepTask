@@ -369,6 +369,40 @@ const LOCAL_FALLBACK_SUMMARY_MAX_CHARS = 12_000 // kilocode_change
 const LOCAL_FALLBACK_MESSAGE_MAX_CHARS = 900 // kilocode_change
 const AUTO_CONDENSE_PROVIDER_BUDGET_MS = 15_000 // kilocode_change
 
+export const CONDENSED_BACKGROUND_STUB =
+	"Background context only. Continue from the current work and host task state, not from this opening request."
+
+function stripLiveOpeningTask(text: string): string {
+	return text
+		.replace(/<task\b[^>]*>[\s\S]*?(?:<\/task>|$)/gi, "")
+		.replace(/\[Environment details omitted\]/gi, "")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim()
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+/**
+ * Persisted local-fallback summaries still dump the original opening <task>
+ * into Previous Conversation. Strip that live instruction from already-stored
+ * summaries so request-time reshape can recover old transcripts.
+ */
+function stripOriginalOpeningFromSummary(summaryText: string, originalFirst: string): string {
+	let next = stripLiveOpeningTask(summaryText)
+	const originalCore = stripLiveOpeningTask(originalFirst).replace(/\s+/g, " ").trim()
+	if (originalCore.length >= 40) {
+		const words = originalCore.slice(0, 160).split(/\s+/).filter(Boolean)
+		const pattern =
+			words.length >= 4
+				? words.slice(0, 24).map(escapeRegExp).join("\\s+")
+				: escapeRegExp(originalCore.slice(0, Math.min(80, originalCore.length)))
+		next = next.replace(new RegExp(pattern, "i"), "")
+	}
+	return next.replace(/\n{3,}/g, "\n\n").trim()
+}
+
 // kilocode_change start
 function compactMessageForLocalSummary(
 	message: ApiMessage,
@@ -410,8 +444,10 @@ function compactMessageForLocalSummary(
 
 /**
  * Builds a deterministic, millisecond-scale summary when the summarization
- * provider is unavailable. It preserves the original request plus the newest
- * user goals and implementation evidence instead of dropping half the turns.
+ * provider is unavailable. Current work and the newest user request survive.
+ * The original opening <task> is background only and must not be recopied as
+ * live Previous Conversation — that shape made every 15s timeout look identical
+ * (2026-11-06 field export).
  */
 export function buildLocalFallbackSummary(messages: ApiMessage[], providerError: string): string {
 	let collectedHostState = ""
@@ -435,15 +471,20 @@ export function buildLocalFallbackSummary(messages: ApiMessage[], providerError:
 	}
 
 	const first = entries[0]
-	const latestUser = [...entries].reverse().find((entry) => entry.role === "user")
-	const selected = new Map<number, (typeof entries)[number]>([[first.index, first]])
+	// Background facts must come from the raw first message. compactMessageForLocalSummary
+	// flattens nested "1. Previous Conversation" dumps, which would make
+	// compactBackgroundFacts miss that section and replace real recap facts with the stub.
+	const firstRaw = messages[0] ? getApiMessageText(messages[0]) : first.text
+	// Do not put the original opening into the timeline. It is background only.
+	const latestUser = [...entries].reverse().find((entry) => entry.role === "user" && entry.index !== first.index)
+	const selected = new Map<number, (typeof entries)[number]>()
 	if (latestUser) selected.set(latestUser.index, latestUser)
 	let usedChars = [...selected.values()].reduce((total, entry) => total + entry.text.length, 0)
 
 	// User turns carry task boundaries and acceptance criteria. Walk newest-first
 	// so extensions and corrections survive even in very long conversations.
 	for (const entry of [...entries].reverse()) {
-		if (entry.role !== "user" || selected.has(entry.index)) continue
+		if (entry.role !== "user" || selected.has(entry.index) || entry.index === first.index) continue
 		if (usedChars + entry.text.length > LOCAL_FALLBACK_SUMMARY_MAX_CHARS * 0.65) continue
 		selected.set(entry.index, entry)
 		usedChars += entry.text.length
@@ -451,22 +492,22 @@ export function buildLocalFallbackSummary(messages: ApiMessage[], providerError:
 
 	// Fill remaining budget with the newest assistant/tool evidence.
 	for (const entry of [...entries].reverse()) {
-		if (selected.has(entry.index)) continue
+		if (selected.has(entry.index) || entry.index === first.index) continue
 		if (usedChars + entry.text.length > LOCAL_FALLBACK_SUMMARY_MAX_CHARS) continue
 		selected.set(entry.index, entry)
 		usedChars += entry.text.length
 	}
 
 	const timeline = [...selected.values()]
-		.filter((entry) => entry.index !== first.index)
 		.sort((left, right) => left.index - right.index)
 		.map((entry) => `${entry.role === "user" ? "User" : "Assistant"}: ${entry.text}`)
 		.join("\n\n")
 
 	const footer = `\n\n3. Continuation State:\nNewest user request, unfinished work, modified files, test results, and acceptance criteria are listed above. Continue that work. Do not repeat this summary, any prior opening sentence, or a status mantra as chat.\n\n[Fast local summary used because the configured condense provider failed: ${providerError.slice(0, 300)}]`
-	const header = `1. Previous Conversation:\n${compactBackgroundFacts(first.text)}\n\n2. Current Work and Recent Decisions:\n`
-	const hostBudget = collectedHostState ? collectedHostState.length + 2 : 0
-	const timelineBudget = Math.max(0, LOCAL_FALLBACK_SUMMARY_MAX_CHARS - header.length - footer.length - hostBudget)
+	const header = `1. Previous Conversation:\n${compactBackgroundFacts(firstRaw)}\n\n2. Current Work and Recent Decisions:\n`
+	// Host EXTRA/task snapshots have their own cap. Subtracting them here zeros
+	// Current Work on long checklists (field: 12k hostState → empty section 2).
+	const timelineBudget = Math.max(0, LOCAL_FALLBACK_SUMMARY_MAX_CHARS - header.length - footer.length)
 	const summary = header + timeline.slice(Math.max(0, timeline.length - timelineBudget)) + footer
 	// Pin host state after the timeline slice so a mid-string budget cut cannot
 	// bisect <current_task_state> and drop the EXTRA/task snapshot.
@@ -576,7 +617,7 @@ export function applyHostTaskStateToMessage(message: ApiMessage, hostState: stri
 	}
 }
 
-/** Brief background only — never dump a nested summary or a prior opening mantra. */
+/** Brief background only — never dump a nested summary, opening <task>, or mantra. */
 export function compactBackgroundFacts(text: string): string {
 	const trimmed = text.trim()
 	if (!trimmed) {
@@ -587,15 +628,15 @@ export function compactBackgroundFacts(text: string): string {
 		/1\.\s*Previous Conversation:\s*([\s\S]*?)(?=\n\s*2\.\s*Current Work|\n\s*3\.\s*Continuation State|$)/i,
 	)
 	if (previousSection?.[1]) {
-		return previousSection[1].replace(/\s+/g, " ").trim().slice(0, 800)
+		const cleaned = stripLiveOpeningTask(previousSection[1]).replace(/\s+/g, " ").trim()
+		if (cleaned) {
+			return cleaned.slice(0, 800)
+		}
+		return CONDENSED_BACKGROUND_STUB
 	}
 
-	const firstLine = trimmed.split(/\n/)[0]?.trim() ?? trimmed
-	if (/^(关窗后|Continue from the newest user request|1\.\s*Previous Conversation)/i.test(firstLine)) {
-		return firstLine.slice(0, 180)
-	}
-
-	return trimmed.slice(0, 800)
+	// Raw opening requests, including <task> dumps, are live instructions.
+	return CONDENSED_BACKGROUND_STUB
 }
 
 /**
@@ -615,7 +656,7 @@ export function flattenPriorSummary(text: string): string {
 	}
 
 	if (!/1\.\s*Previous Conversation:|2\.\s*Current Work|3\.\s*Continuation State/i.test(source)) {
-		return upsertHostTaskState(source, hostState)
+		return upsertHostTaskState(stripLiveOpeningTask(source) || CONDENSED_BACKGROUND_STUB, hostState)
 	}
 
 	const section = (label: string, next: string): string => {
@@ -623,7 +664,7 @@ export function flattenPriorSummary(text: string): string {
 		return match?.[1]?.replace(/\s+/g, " ").trim() ?? ""
 	}
 
-	const previous = section("1\\.\\s*Previous Conversation", "2\\.\\s*Current Work")
+	const previous = stripLiveOpeningTask(section("1\\.\\s*Previous Conversation", "2\\.\\s*Current Work"))
 	const current = section("2\\.\\s*Current Work(?: and (?:Recent )?Decisions)?", "3\\.\\s*Continuation State")
 	const continuation = section("3\\.\\s*Continuation State", "$")
 		.replace(/Continue from the newest user request[^.]*\.?/gi, "")
@@ -1012,8 +1053,102 @@ export function getMessagesSinceLastSummary(messages: ApiMessage[]): ApiMessage[
 	return messagesSinceSummary
 }
 
+function getApiMessageText(message: ApiMessage): string {
+	if (typeof message.content === "string") {
+		return message.content
+	}
+
+	if (!Array.isArray(message.content)) {
+		return ""
+	}
+
+	return message.content
+		.filter((block): block is Anthropic.Messages.TextBlockParam => block.type === "text")
+		.map((block) => block.text)
+		.join("\n")
+}
+
+function setApiMessageText(message: ApiMessage, text: string): ApiMessage {
+	if (typeof message.content === "string" || !Array.isArray(message.content)) {
+		return { ...message, content: text }
+	}
+
+	const otherBlocks = message.content.filter((block) => block.type !== "text")
+	return {
+		...message,
+		content: [{ type: "text" as const, text }, ...otherBlocks],
+	}
+}
+
 /**
- * Filters the API conversation history to get the "effective" messages to send to the API.
+	* Request-time reshape for condensed history.
+	*
+	* After condensation the stored view is still [original first task, summary, ...keep].
+	* Providers treat that first user turn as the live instruction, so the model
+	* restarts the original task and ignores hostState buried in the assistant
+	* summary. This rewrite is a no-op when no summary exists, so uncompressed
+	* turns do not inject a stub or repeat an opening recap.
+	*/
+export function reshapeCondensedApiHistory(messages: ApiMessage[]): ApiMessage[] {
+	const summaryIndex = messages.findIndex((message) => message.isSummary)
+	if (summaryIndex === -1) {
+		return messages
+	}
+
+	let hostState = ""
+	for (const message of messages) {
+		if (!message.isSummary) {
+			continue
+		}
+		const extracted = extractHostTaskStateBlock(getApiMessageText(message)).hostState
+		if (extracted) {
+			hostState = extracted
+		}
+	}
+
+	const originalFirstText =
+		messages[0]?.role === "user" && !messages[0].isSummary ? getApiMessageText(messages[0]) : ""
+
+	const next = messages.map((message, index) => {
+		if (index === 0 && message.role === "user" && !message.isSummary) {
+			return { ...message, content: CONDENSED_BACKGROUND_STUB }
+		}
+		if (message.isSummary) {
+			const { body } = extractHostTaskStateBlock(getApiMessageText(message))
+			return setApiMessageText(message, stripOriginalOpeningFromSummary(body, originalFirstText))
+		}
+		return message
+	})
+
+	if (!hostState) {
+		return next
+	}
+
+	let lastUserAfterSummary = -1
+	for (let index = next.length - 1; index > summaryIndex; index--) {
+		if (next[index].role === "user") {
+			lastUserAfterSummary = index
+			break
+		}
+	}
+
+	if (lastUserAfterSummary !== -1) {
+		const target = next[lastUserAfterSummary]
+		const { body } = extractHostTaskStateBlock(getApiMessageText(target))
+		next[lastUserAfterSummary] = setApiMessageText(target, upsertHostTaskState(body, hostState))
+		return next
+	}
+
+	next.splice(summaryIndex + 1, 0, {
+		role: "user",
+		content: hostState,
+		ts: (next[summaryIndex]?.ts ?? Date.now()) + 1,
+	})
+	return next
+}
+
+/**
+	* Filters the API conversation history to get the "effective" messages to send to the API.
  * Messages with a condenseParent that points to an existing summary are filtered out,
  * as they have been replaced by that summary.
  * Messages with a truncationParent that points to an existing truncation marker are also filtered out,

@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.3.2</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.3.3</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,9 +35,9 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.3.2** 补上长会话灰屏的最后缺口：**子代理转录也有界了**。9.3.1 只约束了主对话转录，子代理（`parallelSessionMessages`）仍逐字无界累积——3 天读图长跑实测渲染进程 5.4GB、系统内存 92%（host 仅 ~1.1GB）。现在每个子代理会话有独立投影器（会话移除即释放），并且新增**图片预算**：即使处于 800 行逐字窗口内，也只有最新 24 条含图行保留 `images` 大负载，更早的行剥图留文；`messageUpdated` 换对象时剥图克隆按源身份重建，不会显示陈旧内容。子代理面板同样过滤墓碑行并显示折叠横幅。证伪条件：子代理读图长跑后渲染 anon 仍线性增长即推翻此修复。
+> **Deeptask 9.3.3** 修压缩后仍从原始任务重开、以及未压缩轮次每次开头复述的问题。压缩后有效历史仍是「原始首条 + 摘要 + keep」：有 summary 时，请求时把首条改成 background stub，`<current_task_state>` 合并进 keep 窗口最后一条 user。本地快路径摘要不再把原始 `<task>` 倾倒进 Previous Conversation，hostState 不占 Current Work 预算。未压缩续跑去掉 “first show you understood / reply FIRST” 强制复述，直接继续当前工作。证伪条件：压缩后仍从原始首条重开、或未压缩轮次仍先复述理解/原任务，即推翻此修复。
 >
-> **9.3.1** 根治长会话灰屏的主对话环节：`boundTranscript` 投影器保留 800 行逐字尾部窗口（+256 迟滞），更早的行替换为轻量墓碑（保留 ts/类型/ask/say/partial/isAnswered/checkpoint 与 `api_req_started` 成本 JSON，token/成本统计不受损）。全量快照与流式追加两条摄取路径都过投影器，渲染进程对 7k 行会话的常驻副本不再线性增长（9.3.0 现场实测：渲染 heap 卡在 ~4.2GB 而 host 仅 873MB）。墓碑身份按 ts 稳定缓存、按引用返回，边界分批推进，任务切换/回卷重置投影器，增量缓存持续命中。存储转录与模型 I/O 完全不动。
+> **9.3.2** 补上长会话灰屏的最后缺口：子代理转录也有界了。9.3.1 只约束了主对话转录，子代理（`parallelSessionMessages`）仍逐字无界累积。每个子代理会话现有独立投影器，并新增图片预算：即使处于 800 行逐字窗口内，也只有最新 24 条含图行保留 `images` 大负载。
 
 > 此前版本摘要：9.3.0 强制 evolve slug 与显示名同号并规定任务清单拆分；长会话灰屏按实测持有链修（Shiki 跳过、增量 `postState` 省略、镜像窗口只读 `ui_messages`）。9.2.9 给聊天列表真正的有界虚拟化并堵住 inotify 递归监视。9.2.8 子代理结果先持久化再回传、长上下文压缩保留增量续跑状态。详细条目见 [CHANGELOG](./CHANGELOG.md)。
 
@@ -169,17 +169,17 @@ Deeptask 选择寄生在 VSCodium 里而不是做成独立软件，是刻意为�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.3.2.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.3.3.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.3.2.vsix --force
+    codium --install-extension ./deeptask-9.3.3.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.3.2.vsix --force
+    code --install-extension ./deeptask-9.3.3.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

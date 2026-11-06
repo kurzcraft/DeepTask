@@ -1,6 +1,17 @@
 # Deeptask
 
+## 9.3.3
+
+### Patch Changes
+
+- After condensation, reshape the request-time API payload instead of rewriting stored history. The condensed view is still `[original first task, summary, keep]`; providers treat that first user turn as the live instruction and ignore host state buried in the assistant summary. When a summary exists, the first user turn becomes a background stub and `<current_task_state>` is merged onto the last keep-window user message (or inserted after the summary if there is no user turn). Uncompressed turns do not inject a stub or host-state recap.
+- Local fallback summaries no longer dump the original `<task>` into Previous Conversation. Host-state snapshots are excluded from the Current Work budget so newest keep-window work survives, and reshape/flatten strip a live task block from already-persisted bad summaries.
+- Uncompressed continuations no longer force a “first show you understood / reply FIRST” recap. Each turn continues the current work without restating the original task or old status; defect-report wording is kept.
+- Preserve pre-condense progress: host EXTRA/task snapshots are deduplicated onto the live summary, truncation is tail-biased so newest milestones survive, and provider condensing input is bounded without slicing the host-state block.
+- Align the keep window with the newest real user instruction so condensation cannot drop the latest continuation.
+
 ## 9.3.2
+
 
 ### Patch Changes
 

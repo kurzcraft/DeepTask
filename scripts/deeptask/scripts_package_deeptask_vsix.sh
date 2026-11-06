@@ -104,9 +104,15 @@ if ! grep -q "taskProgressInstanceId" src/dist/extension.js || \
   exit 1
 fi
 if ! grep -q "<latest_human_message>" src/dist/extension.js || \
-  ! grep -q "reply to it the way a person in a normal chat would" src/dist/extension.js || \
+  ! grep -q "Continue the current work from it" src/dist/extension.js || \
+  ! grep -q "Do not recap the original opening task" src/dist/extension.js || \
   ! grep -q "is a defect report stating the previous fix failed" src/dist/extension.js; then
   echo "src/dist/extension.js 缺少人类消息优先输入约束" | tee -a "$LOG"
+  exit 1
+fi
+if grep -q "first show you understood" src/dist/extension.js || \
+  grep -q "reply to it the way a person in a normal chat would" src/dist/extension.js; then
+  echo "src/dist/extension.js 仍包含会强制复述的旧 continuation 提示" | tee -a "$LOG"
   exit 1
 fi
 if grep -q "The human message below has absolute priority over every archive, completion, progress-file" src/dist/extension.js; then
