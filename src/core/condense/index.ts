@@ -249,6 +249,71 @@ export const MIN_CONDENSE_THRESHOLD = 5 // Minimum percentage of context window 
 export const MAX_CONDENSE_THRESHOLD = 100 // Maximum percentage of context window to trigger condensing
 
 // kilocode_change start
+/** Upper bound on how far the keep window may extend backwards past the count-based default. */
+export const MAX_KEEP_WINDOW_EXTENSION = 24
+
+/**
+ * A "real" user instruction is a user turn carrying non-empty text. Pure
+ * tool_result turns are machine output, not instructions, and must not anchor
+ * the keep boundary.
+ */
+function isRealUserInstruction(message: ApiMessage): boolean {
+	if (message.role !== "user") {
+		return false
+	}
+	if (typeof message.content !== "string") {
+		return message.content.some((block) => block.type === "text" && block.text.trim().length > 0)
+	}
+	return message.content.trim().length > 0
+}
+
+/**
+ * Align the condense keep-window boundary with the newest real user instruction.
+ *
+ * A count-only window (last N messages) almost always ends with tool_use /
+ * tool_result tails in agent sessions, so the latest user instruction lands
+ * inside the summarization range. If the generated summary drops the verbatim
+ * instruction (fast-path timeouts, local fallback, or plain provider quality),
+ * the next API payload contains only old task background and the model resumes
+ * the PREVIOUS task. Extending the window backwards so the newest instruction
+ * and everything after it stay verbatim makes recent-context survival
+ * independent of summary quality.
+ *
+ * Bounds: never extend more than MAX_KEEP_WINDOW_EXTENSION messages, never
+ * cross an existing summary (it already owns everything before it), and never
+ * extend past index 1 so the first message always stays in the summarize range.
+ */
+export function extendKeepStartToLatestUserMessage(
+	messages: ApiMessage[],
+	keepStartIndex: number,
+	maxExtension = MAX_KEEP_WINDOW_EXTENSION,
+): number {
+	if (messages.length === 0) {
+		return keepStartIndex
+	}
+
+	// Default window already contains a real user instruction: nothing to do.
+	for (let i = messages.length - 1; i >= keepStartIndex; i--) {
+		if (isRealUserInstruction(messages[i])) {
+			return keepStartIndex
+		}
+	}
+
+	const floor = Math.max(1, keepStartIndex - maxExtension)
+	for (let i = keepStartIndex - 1; i >= floor; i--) {
+		// An existing summary owns everything before it; do not un-condense it.
+		if (messages[i].isSummary) {
+			break
+		}
+		if (isRealUserInstruction(messages[i])) {
+			return i
+		}
+	}
+	return keepStartIndex
+}
+// kilocode_change end
+
+// kilocode_change start
 // Keep this prompt compact: it is paid on every provider-backed condensation.
 // The host appends authoritative live task state after the summary is committed.
 const SUMMARY_PROMPT = `\
@@ -617,7 +682,19 @@ export async function summarizeConversation(
 				toolUseBlocksToPreserve: [],
 			}
 
-	const keepStartIndex = Math.max(sourceMessages.length - N_MESSAGES_TO_KEEP, 0)
+	// kilocode_change start
+	// Align the keep boundary with the newest real user instruction. The
+	// count-based window ends with tool tails in agent sessions; without this
+	// alignment the newest instruction is summarized away and the next turn
+	// resumes the previous task.
+	const keepStartIndex = extendKeepStartToLatestUserMessage(
+		sourceMessages,
+		Math.max(sourceMessages.length - N_MESSAGES_TO_KEEP, 0),
+	)
+	const keepMessagesAligned = sourceMessages.slice(keepStartIndex)
+	keepMessages.length = 0
+	keepMessages.push(...keepMessagesAligned)
+	// kilocode_change end
 	const includeFirstKeptMessageInSummary = toolUseBlocksToPreserve.length > 0
 	const summarySliceEnd = includeFirstKeptMessageInSummary ? keepStartIndex + 1 : keepStartIndex
 	const messagesBeforeKeep = summarySliceEnd > 0 ? sourceMessages.slice(0, summarySliceEnd) : []
