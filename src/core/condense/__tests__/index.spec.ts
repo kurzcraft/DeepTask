@@ -102,7 +102,10 @@ describe("buildLocalFallbackSummary", () => {
 		expect(summary).toContain("Newest request: restore child inbox after restart")
 		expect(summary).not.toMatch(/1\. Previous Conversation:[\s\S]*1\. Previous Conversation:/)
 		expect(summary).not.toContain("Continue from the newest user request and preserve unfinished tasks")
-		expect(summary).toContain("Do not repeat this summary")
+		// The newest user instruction arrived after the anchor, so arbitration
+		// names it the live target (continuity anchor is its context).
+		expect(summary).toContain("Continuity anchor")
+		expect(summary).toContain("the quoted user instruction arrived after the anchor")
 	})
 
 	it("keeps a flattened host EXTRA/task block intact instead of slicing it at 900 chars", () => {
@@ -1205,8 +1208,14 @@ describe("summarizeConversation", () => {
 		expect(result.condenseId).toBeDefined()
 		expect(result.summary).toContain("Background context only")
 		expect(result.summary).not.toContain("Initial task")
-		expect(result.summary).toContain("Work two")
-		expect(result.summary).toContain("Extension one")
+		// r5: Current Work is the live next step from the full history
+		// (keep-window "Latest result"), not a dump of discarded-half
+		// "Work two" / "Extension one" (field 2026-11-06 15:59).
+		expect(result.summary).toContain("Latest result")
+		expect(result.summary).toContain("Continuity anchor")
+		expect(result.summary).toContain("Continue")
+		expect(result.summary).not.toContain("Work two")
+		expect(result.summary).not.toContain("Extension one")
 		expect(result.summary).toContain("relay unavailable")
 		expect(result.messages.some((message) => message.isSummary)).toBe(true)
 	})

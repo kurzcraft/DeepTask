@@ -331,7 +331,7 @@ Authority rules:
 Use exactly these sections:
 1. Previous Conversation: brief background facts only.
 2. Current Work and Decisions: recent actions, files, concrete results, failures, and rejected approaches. Incremental since the last summary.
-3. Continuation State: quote the newest user instruction verbatim; list unfinished work, verification status, and the immediate next action.
+3. Continuation State: quote verbatim the model's last declared next step (continuity anchor) and the newest user instruction; state which arrived later; list unfinished work, verification status, and the immediate next action.
 
 Be dense. Omit repeated narration, obsolete plans, environment dumps, hidden reasoning, and examples. Output only the summary.`
 // kilocode_change end
@@ -368,6 +368,13 @@ function stringifyCondenseContent(content: Anthropic.Messages.MessageParam["cont
 const LOCAL_FALLBACK_SUMMARY_MAX_CHARS = 12_000 // kilocode_change
 const LOCAL_FALLBACK_MESSAGE_MAX_CHARS = 900 // kilocode_change
 const AUTO_CONDENSE_PROVIDER_BUDGET_MS = 15_000 // kilocode_change
+const LOCAL_FALLBACK_ANCHOR_MAX_CHARS = 1_000 // kilocode_change
+// Shared by the fallback generator and the re-embedding strippers so the label
+// text can never drift between write and strip (field 2026-11-06).
+const CONTINUITY_ANCHOR_LABEL =
+	"Continuity anchor (model's last statement before condensing; continue exactly from here):" // kilocode_change
+const NEWEST_USER_LABEL =
+	"Newest user instruction (verbatim; overrides the anchor only if it arrived after the anchor):" // kilocode_change
 
 export const CONDENSED_BACKGROUND_STUB =
 	"Background context only. Continue from the current work and host task state, not from this opening request."
@@ -382,6 +389,122 @@ function stripLiveOpeningTask(text: string): string {
 
 function escapeRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+/**
+ * Local-fallback boilerplate must not survive re-embedding. Field 2026-11-06:
+ * every condensation re-copied the prior banner + "listed above" placeholder,
+ * so banner count grew ×N per condensation while carrying zero content.
+ *
+ * The mantra patterns must stay line-bounded ([^\n.]): with a bare [^.]* a
+ * mantra immediately followed by an adjacent <current_task_state> block (no
+ * separating period) swallowed the OPEN tag and everything up to the first
+ * "." inside the snapshot, silently deleting the host EXTRA/task state from
+ * the fallback summary (field 2026-11-06 differential: mantra+hostState with
+ * no period lost the block; period-delimited mantras and no-mantra shapes
+ * kept it).
+ */
+export function stripFallbackBoilerplate(text: string): string {
+	return text
+		.replace(/\[Fast local summary used because the configured condense provider failed:[^\]]*\]/gi, "")
+		.replace(
+			/Newest user request, unfinished work, modified files, test results, and acceptance criteria are listed above\.\s*Continue that work\.?/gi,
+			"",
+		)
+		.replace(/Continue from the newest user request[^\n.]*\.?/gi, "")
+		.replace(/Do not repeat this summary[^\n.]*\.?/gi, "")
+}
+
+/**
+ * Quote text for the continuity footer: drop environment dumps, fallback
+ * boilerplate, and any host state block so the quote carries only the
+ * statement itself (host state is pinned separately and must never be eaten
+ * by an unbounded mantra strip).
+ */
+function quoteForContinuation(text: string): string {
+	const { body } = extractHostTaskStateBlock(
+		text.replace(/<environment_details>[\s\S]*?<\/environment_details>/g, "\n"),
+	)
+	return stripFallbackBoilerplate(body)
+		.replace(/\n{3,}/g, "\n\n")
+		.trim()
+}
+
+function looksLikeToolDump(text: string): boolean {
+	const trimmed = text.trim()
+	return (
+		trimmed.startsWith("[Tool result:") ||
+		trimmed.startsWith("[Tool Use:") ||
+		/^\[Tool [^\]]+:/.test(trimmed)
+	)
+}
+
+function assistantProse(message: ApiMessage): string {
+	const text = quoteForContinuation(getApiMessageText(message))
+	if (!text || text === CONDENSED_BACKGROUND_STUB || looksLikeToolDump(text)) {
+		return ""
+	}
+	return text
+}
+
+function quoteNewestUserInstruction(message: ApiMessage): string {
+	const text = quoteForContinuation(extractHostTaskStateBlock(getApiMessageText(message)).body)
+		.slice(0, LOCAL_FALLBACK_ANCHOR_MAX_CHARS)
+		.trim()
+	if (!text || text === CONDENSED_BACKGROUND_STUB || looksLikeToolDump(text)) {
+		return ""
+	}
+	return text
+}
+
+function assistantToolStep(message: ApiMessage): string {
+	const tools = getToolUseBlocks(message)
+	if (tools.length === 0) {
+		return ""
+	}
+	return tools
+		.map((block) => {
+			const input = JSON.stringify(block.input ?? {})
+			return `[Tool ${block.name}: ${input.slice(0, 400)}]`
+		})
+		.join("\n")
+}
+
+/**
+ * The continuity anchor is the model's own last declared step before
+ * condensation. Agent sessions run long stretches with no user instruction —
+ * the D1→A4 pivot was model-driven (field 2026-11-06) — so the last assistant
+ * text statement, not a user instruction, is the live continuation target.
+ *
+ * Field 2026-11-06 15:59 export: the live A4 statement lived in the keep
+ * window, while messagesToSummarize ended on a tool_use-only assistant turn.
+ * getApiMessageText drops tool_use, so searching only the discarded half made
+ * the anchor empty every time. Callers must pass the full effective history
+ * (discarded + keep). Prose wins over tool_use; tool_use is the fallback when
+ * the model declared the next step only by calling a tool.
+ */
+export function extractContinuityAnchor(messages: ApiMessage[]): { text: string; index: number } {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index]
+		if (message.role !== "assistant" || message.isSummary) {
+			continue
+		}
+		const text = assistantProse(message)
+		if (text) {
+			return { text, index }
+		}
+	}
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index]
+		if (message.role !== "assistant" || message.isSummary) {
+			continue
+		}
+		const text = assistantToolStep(message)
+		if (text) {
+			return { text, index }
+		}
+	}
+	return { text: "", index: -1 }
 }
 
 /**
@@ -427,9 +550,18 @@ function compactMessageForLocalSummary(
 					})
 					.filter(Boolean)
 
-	const compacted = parts
-		.join("\n")
-		.replace(/<environment_details>[\s\S]*?<\/environment_details>/g, "[Environment details omitted]")
+	// Extract the host block BEFORE boilerplate stripping: an unbounded mantra
+	// pattern used to run past a mantra straight into an adjacent
+	// <current_task_state> block when no period separated them (field
+	// 2026-11-06), eating the OPEN tag and dropping the whole EXTRA/task
+	// snapshot from the fallback summary.
+	const { body: rawBody, hostState: rawHostState } = extractHostTaskStateBlock(
+		parts
+			.join("\n")
+			.replace(/<environment_details>[\s\S]*?<\/environment_details>/g, "[Environment details omitted]")
+			.replace(/\n{3,}/g, "\n\n"),
+	)
+	const compacted = stripFallbackBoilerplate(rawBody)
 		.replace(/\n{3,}/g, "\n\n")
 		.trim()
 
@@ -439,7 +571,7 @@ function compactMessageForLocalSummary(
 	const { body, hostState } = extractHostTaskStateBlock(processed)
 	// The 900-char cap is for recap prose only. Slicing the flattened string would
 	// cut the host EXTRA/task block that flattenPriorSummary appends at the end.
-	return upsertHostTaskState(body.slice(0, maxChars), hostState)
+	return upsertHostTaskState(body.slice(0, maxChars), hostState || rawHostState)
 }
 
 /**
@@ -448,69 +580,71 @@ function compactMessageForLocalSummary(
  * The original opening <task> is background only and must not be recopied as
  * live Previous Conversation — that shape made every 15s timeout look identical
  * (2026-11-06 field export).
+ *
+ * `messages` is the discarded half (Previous Conversation). `liveMessages` is
+ * the full effective history including the keep window. Field 2026-11-06
+ * 15:59: the live A4 statement lived in keep, while the discarded half ended
+ * on a D1 tool_use; searching only `messages` made the anchor empty and
+ * Current Work recopy the old D1 tool.
  */
-export function buildLocalFallbackSummary(messages: ApiMessage[], providerError: string): string {
+export function buildLocalFallbackSummary(
+	messages: ApiMessage[],
+	providerError: string,
+	liveMessages: ApiMessage[] = messages,
+): string {
+	const history = liveMessages.length > 0 ? liveMessages : messages
+
 	let collectedHostState = ""
-	const entries = messages
-		.map((message, index) => {
-			const compacted = compactMessageForLocalSummary(message)
-			const { body, hostState } = extractHostTaskStateBlock(compacted)
-			if (hostState) {
-				collectedHostState = hostState
-			}
-			return {
-				index,
-				role: message.role,
-				text: body,
-			}
-		})
-		.filter((entry) => entry.text)
-
-	if (entries.length === 0) {
-		return collectedHostState
+	for (const message of history) {
+		const compacted = compactMessageForLocalSummary(message)
+		const { hostState } = extractHostTaskStateBlock(compacted)
+		if (hostState) {
+			collectedHostState = hostState
+		}
 	}
 
-	const first = entries[0]
-	// Background facts must come from the raw first message. compactMessageForLocalSummary
-	// flattens nested "1. Previous Conversation" dumps, which would make
-	// compactBackgroundFacts miss that section and replace real recap facts with the stub.
-	const firstRaw = messages[0] ? getApiMessageText(messages[0]) : first.text
-	// Do not put the original opening into the timeline. It is background only.
-	const latestUser = [...entries].reverse().find((entry) => entry.role === "user" && entry.index !== first.index)
-	const selected = new Map<number, (typeof entries)[number]>()
-	if (latestUser) selected.set(latestUser.index, latestUser)
-	let usedChars = [...selected.values()].reduce((total, entry) => total + entry.text.length, 0)
+	const firstRaw = messages[0]
+		? getApiMessageText(messages[0])
+		: history[0]
+			? getApiMessageText(history[0])
+			: ""
 
-	// User turns carry task boundaries and acceptance criteria. Walk newest-first
-	// so extensions and corrections survive even in very long conversations.
-	for (const entry of [...entries].reverse()) {
-		if (entry.role !== "user" || selected.has(entry.index) || entry.index === first.index) continue
-		if (usedChars + entry.text.length > LOCAL_FALLBACK_SUMMARY_MAX_CHARS * 0.65) continue
-		selected.set(entry.index, entry)
-		usedChars += entry.text.length
+	// Continuity anchor and newest user must come from the full effective
+	// history. The discarded half in agent sessions is almost always a
+	// tool_use tail; keep holds the last declared next step.
+	const anchor = extractContinuityAnchor(history)
+	const anchorQuote = anchor.text.slice(0, LOCAL_FALLBACK_ANCHOR_MAX_CHARS).trim()
+	let newestUserIndex = -1
+	let newestUserQuote = ""
+	for (let index = history.length - 1; index >= 1; index--) {
+		if (!isRealUserInstruction(history[index])) {
+			continue
+		}
+		const quoted = quoteNewestUserInstruction(history[index])
+		if (!quoted) {
+			continue
+		}
+		newestUserIndex = index
+		newestUserQuote = quoted
+		break
 	}
+	const userAfterAnchor = newestUserIndex >= 0 && anchor.index >= 0 && newestUserIndex > anchor.index
 
-	// Fill remaining budget with the newest assistant/tool evidence.
-	for (const entry of [...entries].reverse()) {
-		if (selected.has(entry.index) || entry.index === first.index) continue
-		if (usedChars + entry.text.length > LOCAL_FALLBACK_SUMMARY_MAX_CHARS) continue
-		selected.set(entry.index, entry)
-		usedChars += entry.text.length
-	}
+	// Current Work is the live next step, never a dump of discarded-half
+	// tool_use from an earlier task (field: D1 read_file recopy).
+	const currentWork = (anchorQuote || newestUserQuote).trim()
 
-	const timeline = [...selected.values()]
-		.sort((left, right) => left.index - right.index)
-		.map((entry) => `${entry.role === "user" ? "User" : "Assistant"}: ${entry.text}`)
-		.join("\n\n")
+	const anchorBlock = anchorQuote
+		? `${CONTINUITY_ANCHOR_LABEL}\n${anchorQuote}`
+		: "No assistant statement survived before condensing; continue from the newest user instruction below."
+	const userBlock = newestUserQuote ? `\n\n${NEWEST_USER_LABEL}\n${newestUserQuote}` : ""
+	const arbitration = userAfterAnchor
+		? "Arbitration: the quoted user instruction arrived after the anchor, so it is the live target and the anchor is its context."
+		: "Arbitration: continue exactly from the anchor's declared next step. An older host checklist snapshot describing an earlier task must not override the anchor. Only a user instruction arriving after the anchor overrides it."
 
-	const footer = `\n\n3. Continuation State:\nNewest user request, unfinished work, modified files, test results, and acceptance criteria are listed above. Continue that work. Do not repeat this summary, any prior opening sentence, or a status mantra as chat.\n\n[Fast local summary used because the configured condense provider failed: ${providerError.slice(0, 300)}]`
+	const footer = `\n\n3. Continuation State:\n${anchorBlock}${userBlock}\n\n${arbitration}\n\n[Fast local summary used because the configured condense provider failed: ${providerError.slice(0, 300)}]`
 	const header = `1. Previous Conversation:\n${compactBackgroundFacts(firstRaw)}\n\n2. Current Work and Recent Decisions:\n`
-	// Host EXTRA/task snapshots have their own cap. Subtracting them here zeros
-	// Current Work on long checklists (field: 12k hostState → empty section 2).
-	const timelineBudget = Math.max(0, LOCAL_FALLBACK_SUMMARY_MAX_CHARS - header.length - footer.length)
-	const summary = header + timeline.slice(Math.max(0, timeline.length - timelineBudget)) + footer
-	// Pin host state after the timeline slice so a mid-string budget cut cannot
-	// bisect <current_task_state> and drop the EXTRA/task snapshot.
+	const summary = header + currentWork + footer
 	return upsertHostTaskState(summary, collectedHostState)
 }
 
@@ -665,10 +799,17 @@ export function flattenPriorSummary(text: string): string {
 	}
 
 	const previous = stripLiveOpeningTask(section("1\\.\\s*Previous Conversation", "2\\.\\s*Current Work"))
-	const current = section("2\\.\\s*Current Work(?: and (?:Recent )?Decisions)?", "3\\.\\s*Continuation State")
-	const continuation = section("3\\.\\s*Continuation State", "$")
-		.replace(/Continue from the newest user request[^.]*\.?/gi, "")
-		.replace(/Do not repeat this summary[^.]*\.?/gi, "")
+	const current = stripFallbackBoilerplate(
+		section("2\\.\\s*Current Work(?: and (?:Recent )?Decisions)?", "3\\.\\s*Continuation State"),
+	)
+		.replace(/\s+/g, " ")
+		.trim()
+	const continuation = stripFallbackBoilerplate(section("3\\.\\s*Continuation State", "$"))
+		// The anchor/user labels and quotes are content and must survive
+		// re-embedding (a third condensation has no other trace of the anchor);
+		// only the fixed arbitration tail and the no-anchor fallback line drop.
+		.replace(/Arbitration:[\s\S]*$/gi, "")
+		.replace(/No assistant statement survived before condensing[^.]*\.?/gi, "")
 		.replace(/\s+/g, " ")
 		.trim()
 
@@ -927,7 +1068,7 @@ export async function summarizeConversation(
 		if (!isAutomaticTrigger) {
 			return { ...response, cost, error: errorMessage }
 		}
-		summary = buildLocalFallbackSummary(messagesToSummarize, errorMessage)
+		summary = buildLocalFallbackSummary(messagesToSummarize, errorMessage, sourceMessages)
 	}
 
 	summary = summary.trim()
@@ -937,7 +1078,7 @@ export async function summarizeConversation(
 		if (!isAutomaticTrigger) {
 			return { ...response, cost, error }
 		}
-		summary = buildLocalFallbackSummary(messagesToSummarize, error)
+		summary = buildLocalFallbackSummary(messagesToSummarize, error, sourceMessages)
 		if (!summary) {
 			return { ...response, cost, error }
 		}
@@ -1115,7 +1256,10 @@ export function reshapeCondensedApiHistory(messages: ApiMessage[]): ApiMessage[]
 		}
 		if (message.isSummary) {
 			const { body } = extractHostTaskStateBlock(getApiMessageText(message))
-			return setApiMessageText(message, stripOriginalOpeningFromSummary(body, originalFirstText))
+			return setApiMessageText(
+				message,
+				stripOriginalOpeningFromSummary(stripFallbackBoilerplate(body), originalFirstText),
+			)
 		}
 		return message
 	})
