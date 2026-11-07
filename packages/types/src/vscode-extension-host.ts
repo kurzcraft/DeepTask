@@ -595,6 +595,12 @@ export type ExtensionState = Pick<
 	// kilocode_change: omitted on incremental state posts when the transcript
 	// cursor is unchanged; the webview keeps its existing slice.
 	clineMessages?: ClineMessage[]
+	/**
+	 * kilocode_change: rows omitted by host compact projection (not shipped as
+	 * tombstones). Sent with clineMessages so the collapse banner stays correct
+	 * without a 16k-row array. Omitted on incremental posts that skip clineMessages.
+	 */
+	clineMessagesTombstoned?: number
 	currentTaskItem?: HistoryItem
 	currentTaskTodos?: TodoItem[] // Initial todos for the current task
 	apiConfiguration: ProviderSettings

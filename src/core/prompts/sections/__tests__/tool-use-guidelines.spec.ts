@@ -69,20 +69,20 @@ describe("getToolUseGuidelinesSection", () => {
 			it("should include simplified iterative process guidelines", () => {
 				const guidelines = getToolUseGuidelinesSection(TOOL_PROTOCOL.NATIVE)
 
-				expect(guidelines).toContain("carefully considering the user's response after tool executions")
+				expect(guidelines).toContain("carefully considering the user's response after each tool use")
 				// Native protocol doesn't have the step-by-step list
 				expect(guidelines).not.toContain("It is crucial to proceed step-by-step")
 			})
 		})
 
 		describe("with MULTIPLE_NATIVE_TOOL_CALLS enabled", () => {
-			it("should include multiple-tools-per-message guidance when experiment enabled", () => {
+			it("keeps one-tool-per-message even when the experiment flag is on", () => {
 				const guidelines = getToolUseGuidelinesSection(TOOL_PROTOCOL.NATIVE, {
 					[EXPERIMENT_IDS.MULTIPLE_NATIVE_TOOL_CALLS]: true,
 				})
 
-				expect(guidelines).toContain("you may use multiple tools in a single message")
-				expect(guidelines).not.toContain("use one tool at a time per message")
+				expect(guidelines).toContain("use one tool at a time per message")
+				expect(guidelines).not.toContain("you may use multiple tools in a single message")
 			})
 
 			it("should include simplified iterative process guidelines", () => {
@@ -90,7 +90,7 @@ describe("getToolUseGuidelinesSection", () => {
 					[EXPERIMENT_IDS.MULTIPLE_NATIVE_TOOL_CALLS]: true,
 				})
 
-				expect(guidelines).toContain("carefully considering the user's response after tool executions")
+				expect(guidelines).toContain("carefully considering the user's response after each tool use")
 				expect(guidelines).not.toContain("It is crucial to proceed step-by-step")
 			})
 		})

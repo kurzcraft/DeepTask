@@ -16,6 +16,10 @@ import type { ToolUse } from "../../shared/tools"
 import { trackContribution } from "../../services/contribution-tracking/ContributionTrackingService" // kilocode_change
 
 import { BaseTool, ToolCallbacks } from "./BaseTool"
+import {
+	getTaskProgressWriteLimitError,
+	isActiveTaskProgressMarkdownPath,
+} from "./helpers/taskProgressLimits" // kilocode_change: EXTRA/task growth gate
 
 interface ApplyDiffParams {
 	path: string
@@ -87,6 +91,21 @@ export class ApplyDiffTool extends BaseTool<"apply_diff"> {
 			)) ?? {
 				success: false,
 				error: "No diff strategy available",
+			}
+
+			if (diffResult.success && isActiveTaskProgressMarkdownPath(task.cwd, relPath)) {
+				const limitError = getTaskProgressWriteLimitError({
+					relPath,
+					proposedContent: diffResult.content,
+					existingContent: originalContent,
+				})
+				if (limitError) {
+					task.consecutiveMistakeCount++
+					task.recordToolError("apply_diff", limitError)
+					task.didToolFailInCurrentTurn = true
+					pushToolResult(formatResponse.toolError(limitError, toolProtocol))
+					return
+				}
 			}
 
 			if (!diffResult.success) {

@@ -1,5 +1,22 @@
 # Deeptask
 
+## 9.3.5
+
+### Patch Changes
+
+- Compact the host→webview transcript before postState: keep row 0, two collapsed stubs, and an 800-row tail. Do not send a 16k tombstone array. Cheap historical rows drop text/images/reasoning; the tail still caps command/tool payloads. Field 13k/22MB wait-command transcripts now project as that compact shape instead of a 6.2MB tombstone dump.
+- Do not slice raw tool/api JSON at char 3000. That cut injected a raw newline into a string literal and ChatView `JSON.parse` crashed the webview (`SyntaxError` at position 3000). Oversized JSON payloads now shrink string fields then re-stringify; ChatView uses `safeJsonParse` for tool and `api_req_started` rows.
+- `manage_mode` can now delete a custom mode. Built-in modes stay immutable. Deleting the currently active custom mode switches to the newest remaining evolve copy, or the default mode if none remain.
+- Host-enforce the EXTRA/task 30-line / 4-level cap as a growth gate, not a freeze gate: creating or growing an over-limit Markdown file is rejected immediately, but shrinks and status-only updates on an already-over-limit file are allowed. Overflow must split into `EXTRA/task/<title>/` light files; freezing the current file or omitting new milestones is not valid. Native `update_todo_list` must project the file exactly and must not invent extra items.
+- Tool-use prompts always require exactly one tool call per assistant response. The multiple-native-tool-calls experiment wording is removed from the system prompt.
+
+## 9.3.4
+
+### Patch Changes
+
+- Bound the host→webview IPC snapshot itself. 9.3.1/9.3.2 only tombstone after the renderer `JSON.parse`s the payload, so a 13k-row / 22MB Scientist wait-command snapshot still inflated the zygote to gray-screen (renderer anon 4304MB @ 2026-11-07 09:52). `projectClineMessagesForDisplay` now tombstones historical rows and caps images before postState, keeping row 0 and an 800-row tail verbatim. Storage and model I/O stay full.
+- Field-shape unit test: a 13k-row / 22MB wait-command transcript projects to well under 3MB of IPC JSON, preserves the task header and the in-flight truncated command, and does not mutate stored rows.
+
 ## 9.3.3
 
 ### Patch Changes

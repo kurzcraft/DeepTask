@@ -30,32 +30,26 @@ describe("createBoundTranscriptProjector", () => {
 		expect(projector.tombstonedCount).toBe(0)
 	})
 
-	it("tombstones rows older than the tail window and keeps the tail verbatim", () => {
+	it("omits rows older than the tail window and keeps row 0, two stubs, and the tail", () => {
 		const projector = createBoundTranscriptProjector(10, 4)
-		const messages = bulk(30) // 30 > 10 + 4 triggers the first batch advance
+		const messages = bulk(30) // 30 > 10 + 4 triggers compact
 		const out = projector.project(messages)
 
-		expect(out.length).toBe(30)
-		// Tail (last 10) stays verbatim (same object references).
-		for (let i = 20; i < 30; i++) {
-			expect(out[i]).toBe(messages[i])
-		}
-		// Old rows are tombstones: heavy fields dropped, identity fields kept.
-		for (let i = 1; i < 20; i++) {
-			expect((out[i] as { webviewTombstone?: boolean }).webviewTombstone).toBe(true)
-			expect(out[i]!.text).toBeUndefined()
-			expect(out[i]!.ts).toBe(messages[i]!.ts)
-			expect(out[i]!.say).toBe(messages[i]!.say)
-		}
-		// Row 0 (task row) is never tombstoned.
+		expect(out.length).toBe(13)
 		expect(out[0]).toBe(messages[0])
-		expect(projector.tombstonedCount).toBeGreaterThan(0)
+		expect((out[0] as { webviewTombstone?: boolean }).webviewTombstone).toBeUndefined()
+		expect((out[1] as { webviewTombstone?: boolean }).webviewTombstone).toBe(true)
+		expect(out[1]!.say).toBe("api_req_started")
+		expect((out[2] as { webviewTombstone?: boolean }).webviewTombstone).toBe(true)
+		expect(out[2]!.say).toBe("condense_context")
+		for (let i = 0; i < 10; i++) {
+			expect(out[3 + i]).toBe(messages[20 + i])
+		}
+		expect(projector.tombstonedCount).toBe(19)
 	})
 
-	it("keeps api_req_started text (token/cost accounting source)", () => {
+	it("folds dropped-prefix token totals into the api_req stub", () => {
 		const projector = createBoundTranscriptProjector(4, 2)
-		// Row 0 is the task header row and is never tombstoned; the api_req row
-		// must sit deeper in history to exercise the tombstone-with-text path.
 		const taskRow = { ts: 1, type: "say", say: "text", text: "do the thing" } as ClineMessage
 		const apiReq = {
 			ts: 2,
@@ -65,11 +59,13 @@ describe("createBoundTranscriptProjector", () => {
 		} as ClineMessage
 		const messages = [taskRow, apiReq, ...bulk(10, 3)]
 		const out = projector.project(messages)
+		expect(out.length).toBe(7)
 		expect((out[1] as { webviewTombstone?: boolean }).webviewTombstone).toBe(true)
-		expect(out[1]!.text).toBe(apiReq.text)
+		expect(out[1]!.say).toBe("api_req_started")
+		expect(JSON.parse(out[1]!.text!)).toMatchObject({ tokensIn: 100, tokensOut: 50, cost: 0.5 })
 	})
 
-	it("keeps condense context cost data", () => {
+	it("folds dropped-prefix condense cost into the accounting stubs", () => {
 		const projector = createBoundTranscriptProjector(4, 2)
 		const taskRow = { ts: 1, type: "say", say: "text", text: "do the thing" } as ClineMessage
 		const condense = {
@@ -81,36 +77,44 @@ describe("createBoundTranscriptProjector", () => {
 		} as unknown as ClineMessage
 		const messages = [taskRow, condense, ...bulk(10, 3)]
 		const out = projector.project(messages)
+		expect(out.length).toBe(7)
 		expect((out[1] as { webviewTombstone?: boolean }).webviewTombstone).toBe(true)
-		expect(out[1]!.text).toBeUndefined()
-		expect(out[1]!.contextCondense).toEqual({ cost: 0.25, newContextTokens: 1200 })
+		expect(out[1]!.say).toBe("api_req_started")
+		expect(JSON.parse(out[1]!.text!)).toMatchObject({ cost: 0.25 })
+		expect((out[2] as { webviewTombstone?: boolean }).webviewTombstone).toBe(true)
+		expect(out[2]!.say).toBe("condense_context")
+		expect(condense.text).toContain("long summary")
 	})
 
-	it("returns stable tombstone identity across calls (prefix identity invariant)", () => {
+	it("keeps compact identity across messageUpdated appends below hysteresis", () => {
 		const projector = createBoundTranscriptProjector(10, 4)
-		// Reuse ONE base array: the identity contract is about the same input
-		// objects flowing through repeated project() calls, not fresh clones.
-		const base = bulk(30)
-		const first = projector.project(base)
-		// Streaming append below the hysteresis threshold must not disturb
-		// any existing row identity.
-		const appended = [...base, msg(31)]
+		const first = projector.project(bulk(30))
+		// messageUpdated appends onto the already-compact resident array, not
+		// the original 30-row snapshot (that would rebuild stubs every tick).
+		const appended = [...first, msg(31)]
 		const second = projector.project(appended)
-		for (let i = 0; i < 30; i++) {
+		expect(second.length).toBe(first.length + 1)
+		for (let i = 0; i < first.length; i++) {
 			expect(second[i]).toBe(first[i])
 		}
+		expect(second[second.length - 1]).toBe(appended[appended.length - 1])
 	})
 
-	it("advances the boundary in batches, not on every append", () => {
+	it("does not recompact on a single messageUpdated append at the hysteresis edge", () => {
 		const projector = createBoundTranscriptProjector(10, 4)
-		let messages = bulk(30)
-		const first = projector.project(messages)
-		// Append 3 rows: verbatim count = 10 - 1 (row0 excluded from tombstones
-		// but still counted in verbatim region boundary math) + 3 < tail+hyst,
-		// so no re-tombstoning and prefix identity holds.
-		messages = [...messages, msg(31), msg(32), msg(33)]
-		const second = projector.project(messages)
-		expect(second.slice(0, 30)).toEqual(first)
+		const first = projector.project(bulk(30))
+		expect(first.length).toBe(13)
+		const second = projector.project([...first, msg(31)])
+		expect(second.slice(0, first.length)).toEqual(first)
+		expect(second.length).toBe(14)
+	})
+
+	it("honors the host omittedHint for the collapse banner across streaming appends", () => {
+		const projector = createBoundTranscriptProjector(10, 4)
+		const compact = projector.project(bulk(30), 19)
+		expect(projector.tombstonedCount).toBe(19)
+		projector.project([...compact, msg(31)])
+		expect(projector.tombstonedCount).toBe(19)
 	})
 
 	it("resets on task switch (new head)", () => {
@@ -133,8 +137,10 @@ describe("createBoundTranscriptProjector", () => {
 		const projector = createBoundTranscriptProjector(10, 4)
 		const messages = bulk(500, 1)
 		const out = projector.project(messages)
+		expect(out.length).toBe(13)
 		expect(out[0]).toBe(messages[0])
 		expect((out[0] as { webviewTombstone?: boolean }).webviewTombstone).toBeUndefined()
+		expect(projector.tombstonedCount).toBe(489)
 	})
 
 	// kilocode_change start: image budget within the verbatim window
@@ -162,22 +168,19 @@ describe("createBoundTranscriptProjector", () => {
 		expect(tombstonedWithImages).toHaveLength(0)
 	})
 
-	it("image-strip clones keep stable identity across appends (except rows falling out of budget)", () => {
+	it("image-strip clones keep stable identity across messageUpdated appends", () => {
 		const projector = createBoundTranscriptProjector(10, 4, 5)
 		const base = [...bulk(2), ...Array.from({ length: 40 }, (_, i) => imgMsg(3 + i))]
 		const first = projector.project(base)
-		const appended = [...base, imgMsg(43)]
+		const appended = [...first, imgMsg(43)]
 		const second = projector.project(appended)
 		let changed = 0
-		for (let i = 0; i < base.length; i++) {
+		for (let i = 0; i < first.length; i++) {
 			if (second[i] !== first[i]) {
 				changed++
-				// Only rows that fell out of the image budget may change identity,
-				// and they must change into a stripped clone (no images).
 				expect((second[i] as { webviewImagesStripped?: boolean }).webviewImagesStripped).toBe(true)
 			}
 		}
-		// One append pushes the budget by at most one image row.
 		expect(changed).toBeLessThanOrEqual(1)
 	})
 

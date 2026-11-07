@@ -14,6 +14,10 @@ import { sanitizeUnifiedDiff, computeDiffStats } from "../diff/stats"
 import type { ToolUse } from "../../shared/tools"
 
 import { BaseTool, ToolCallbacks } from "./BaseTool"
+import {
+	getTaskProgressWriteLimitError,
+	isActiveTaskProgressMarkdownPath,
+} from "./helpers/taskProgressLimits" // kilocode_change: EXTRA/task growth gate
 
 interface SearchReplaceParams {
 	file_path: string
@@ -150,6 +154,23 @@ export class SearchReplaceTool extends BaseTool<"search_replace"> {
 
 			// Apply the single replacement
 			const newContent = fileContent.replace(normalizedOldString, normalizedNewString)
+
+			// kilocode_change start: EXTRA/task growth gate — reject overflow growth, allow shrinks.
+			if (isActiveTaskProgressMarkdownPath(task.cwd, relPath)) {
+				const limitError = getTaskProgressWriteLimitError({
+					relPath,
+					proposedContent: newContent,
+					existingContent: fileContent,
+				})
+				if (limitError) {
+					task.consecutiveMistakeCount++
+					task.recordToolError("search_replace")
+					task.didToolFailInCurrentTurn = true
+					pushToolResult(formatResponse.toolError(limitError, toolProtocol))
+					return
+				}
+			}
+			// kilocode_change end
 
 			// Check if any changes were made
 			if (newContent === fileContent) {

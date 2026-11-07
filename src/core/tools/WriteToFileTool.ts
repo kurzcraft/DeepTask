@@ -18,6 +18,10 @@ import type { ToolUse } from "../../shared/tools"
 import { trackContribution } from "../../services/contribution-tracking/ContributionTrackingService" // kilocode_change
 
 import { BaseTool, ToolCallbacks } from "./BaseTool"
+import {
+	getTaskProgressWriteLimitError,
+	isActiveTaskProgressMarkdownPath,
+} from "./helpers/taskProgressLimits" // kilocode_change: EXTRA/task growth gate
 
 interface WriteToFileParams {
 	path: string
@@ -99,6 +103,32 @@ export class WriteToFileTool extends BaseTool<"write_to_file"> {
 
 			if (!task.api.getModel().id.includes("claude")) {
 				newContent = unescapeHtmlEntities(newContent)
+			}
+		}
+		// kilocode_change end
+
+		// kilocode_change start: EXTRA/task growth gate — reject overflow growth, allow shrinks.
+		if (isActiveTaskProgressMarkdownPath(task.cwd, relPath)) {
+			let existingContent: string | null = null
+			if (fileExists) {
+				try {
+					existingContent = await fs.readFile(absolutePath, "utf8")
+				} catch {
+					existingContent = null
+				}
+			}
+			const limitError = getTaskProgressWriteLimitError({
+				relPath,
+				proposedContent: newContent,
+				existingContent,
+			})
+			if (limitError) {
+				task.consecutiveMistakeCount++
+				task.recordToolError("write_to_file")
+				task.didToolFailInCurrentTurn = true
+				pushToolResult(formatResponse.toolError(limitError, toolProtocol))
+				await task.diffViewProvider.reset()
+				return
 			}
 		}
 		// kilocode_change end

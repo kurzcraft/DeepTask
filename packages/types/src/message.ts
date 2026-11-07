@@ -306,8 +306,16 @@ export const clineMessageSchema = z.object({
 	/** Display-only: historical command output was shortened for the webview. Storage stays full. */
 	commandOutputTruncated: z.boolean().optional(),
 	commandOutputOriginalLength: z.number().optional(),
-	/** Display-only: row was tombstoned by the webview bound-transcript projector (text/images dropped). Host never sets this. */
+	/**
+	 * Display-only: historical row was tombstoned (text/images/reasoning dropped).
+	 * Host sets this in projectClineMessagesForDisplay so the extension→webview
+	 * IPC never carries a 13k-row / 22MB snapshot (Scientist wait-command gray
+	 * screen: renderer anon 4304MB). The webview projector may also set it
+	 * after JSON.parse. Storage and model I/O stay full.
+	 */
 	webviewTombstone: z.boolean().optional(),
+	/** Display-only: images dropped by the host/webview image budget. Storage stays full. */
+	webviewImagesStripped: z.boolean().optional(),
 	metadata: z
 		.object({
 			kiloCode: kiloCodeMetaDataSchema.optional(),

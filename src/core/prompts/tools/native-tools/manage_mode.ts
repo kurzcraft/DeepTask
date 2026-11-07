@@ -11,7 +11,7 @@ export function createManageModeTool(): OpenAI.Chat.ChatCompletionTool {
 		function: {
 			name: "manage_mode",
 			description:
-				"Create, copy, update, list, or switch agent modes — the ONLY sanctioned way to change modes. " +
+				"Create, copy, update, list, switch, or delete agent modes — the ONLY sanctioned way to change modes. " +
 				MODE_FILE_GOVERNANCE_RULE +
 				" " +
 				'list: all modes with slug/name/groups/source. ' +
@@ -19,6 +19,7 @@ export function createManageModeTool(): OpenAI.Chat.ChatCompletionTool {
 				'copy: duplicate an existing mode with edits (copy_from required); the new slug automatically gets a "-1"/"-2" style suffix so the original stays untouched; every provided field overrides the copied value. ' +
 				'update: modify an existing mode by value; built-in modes are overridden via a same-slug custom copy; to keep the original intact use "copy" instead. ' +
 				'switch: activate a mode. ' +
+				'delete: permanently remove a custom mode (slug required); built-in modes cannot be deleted; if the deleted mode is current, switch to another custom evolve-* or the default mode first. ' +
 				"Unless switch_after is exactly \"false\", the newly created/updated mode is activated immediately so the running task picks it up in real time. " +
 				'groups is a JSON array like ["read","edit","command"] or with restrictions [["edit",{"fileRegex":"\\\\.md$","description":"markdown only"}]]; valid groups: read, edit, browser, command, mcp, modes.',
 			strict: true,
@@ -27,13 +28,13 @@ export function createManageModeTool(): OpenAI.Chat.ChatCompletionTool {
 				properties: {
 					action: {
 						type: "string",
-						enum: ["list", "create", "copy", "update", "switch"],
+						enum: ["list", "create", "copy", "update", "switch", "delete"],
 						description: "Operation to perform",
 					},
 					slug: {
 						type: ["string", "null"],
 						description:
-							"Mode slug (letters/numbers/dashes). Required for create/update/switch. For copy: optional base slug; the final slug gets a -1/-2 suffix automatically.",
+							"Mode slug (letters/numbers/dashes). Required for create/update/switch/delete. For copy: optional base slug; the final slug gets a -1/-2 suffix automatically.",
 					},
 					name: {
 						type: ["string", "null"],

@@ -15,6 +15,10 @@ import type { ToolUse } from "../../shared/tools"
 import { trackContribution } from "../../services/contribution-tracking/ContributionTrackingService" // kilocode_change
 
 import { BaseTool, ToolCallbacks } from "./BaseTool"
+import {
+	getTaskProgressWriteLimitError,
+	isActiveTaskProgressMarkdownPath,
+} from "./helpers/taskProgressLimits" // kilocode_change: EXTRA/task growth gate
 
 interface EditFileParams {
 	file_path: string
@@ -369,6 +373,25 @@ export class EditFileTool extends BaseTool<"edit_file"> {
 			const newContent = isNewFile
 				? new_string
 				: restoreLineEnding(currentContentLF ?? currentContent ?? "", originalEol)
+
+			// kilocode_change start: EXTRA/task growth gate — reject overflow growth, allow shrinks.
+			if (isActiveTaskProgressMarkdownPath(task.cwd, relPath)) {
+				const limitError = getTaskProgressWriteLimitError({
+					relPath,
+					proposedContent: newContent,
+					existingContent: isNewFile ? null : currentContent,
+				})
+				if (limitError) {
+					task.consecutiveMistakeCount++
+					task.didToolFailInCurrentTurn = true
+					await finalizePartialToolAskIfNeeded(relPath)
+					await recordFailureForPathAndMaybeEscalate(relPath, limitError)
+					task.recordToolError("edit_file", limitError)
+					pushToolResult(formatResponse.toolError(limitError, toolProtocol))
+					return
+				}
+			}
+			// kilocode_change end
 
 			// Check if any changes were made
 			if (!isNewFile && newContent === currentContent) {

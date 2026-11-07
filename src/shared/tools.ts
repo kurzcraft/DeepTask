@@ -169,7 +169,7 @@ export type NativeToolArgs = {
 	// kilocode_change end
 	// kilocode_change start: agent-managed modes
 	manage_mode: {
-		action: "list" | "create" | "copy" | "update" | "switch"
+		action: "list" | "create" | "copy" | "update" | "switch" | "delete"
 		slug?: string
 		name?: string
 		role_definition?: string

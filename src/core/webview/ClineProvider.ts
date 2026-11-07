@@ -56,7 +56,7 @@ import {
 	modelIdKeysByProvider,
 } from "@roo-code/types"
 import {
-	projectClineMessagesForDisplay,
+	projectClineMessagesForDisplayWithMeta,
 	projectCommandExecutionStatusTextForDisplay,
 	projectCommandMessageForDisplay,
 } from "@roo-code/core"
@@ -3630,11 +3630,18 @@ export class ClineProvider
 					: undefined,
 			...(options?.includeClineMessages === false
 				? {}
-				: {
-						clineMessages: this.pendingNewConversation
-							? []
-							: projectClineMessagesForDisplay(this.getFocusedChatTask()?.clineMessages || []),
-					}),
+				: (() => {
+						if (this.pendingNewConversation) {
+							return { clineMessages: [], clineMessagesTombstoned: 0 }
+						}
+						const projected = projectClineMessagesForDisplayWithMeta(
+							this.getFocusedChatTask()?.clineMessages || [],
+						)
+						return {
+							clineMessages: projected.messages,
+							clineMessagesTombstoned: projected.tombstonedCount,
+						}
+					})()),
 			currentTaskTodos: this.pendingNewConversation ? [] : this.getFocusedChatTask()?.todoList || [],
 			// kilocode_change start
 			// Visible message queues are disabled. Do not expose stale queue state to

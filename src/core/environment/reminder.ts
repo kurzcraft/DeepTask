@@ -17,7 +17,7 @@ export function formatReminderSection(
 			"If no authoritative EXTRA/task Markdown checklist exists, first inspect EXTRA/task and write/read that checklist, then call `update_todo_list`.",
 			"During checklist preparation, do not edit project files, execute commands, browse, or call attempt_completion.",
 			"After the file is written and read back, call `update_todo_list` to project the verified checklist into native state before real work.",
-			"Discard finished old milestones, add concrete new milestones, mark the first new actionable item in_progress, then begin real tool work.",
+			"Add concrete new milestones to the EXTRA/task Markdown first (split into light files if a write would grow past 30 lines / 4 levels). Shrinks and status-only updates on an already-over-limit file are allowed. Then project that exact file into `update_todo_list`; do not invent extra native items.",
 			"",
 		].join("\n")
 	}

@@ -12,7 +12,7 @@ import path from "path"
 import fs from "fs/promises"
 
 interface ManageModeParams {
-	action: "list" | "create" | "copy" | "update" | "switch"
+	action: "list" | "create" | "copy" | "update" | "switch" | "delete"
 	slug?: string
 	name?: string
 	role_definition?: string
@@ -270,7 +270,7 @@ export class ManageModeTool extends BaseTool<"manage_mode"> {
 					const current = state.mode ?? defaultModeSlug
 				pushToolResult(
 					`Modes (${lines.length}, current: ${current}):\n${JSON.stringify(lines, null, 2)}\n` +
-						`Use action "create" for a brand-new mode, "copy" to duplicate an existing mode (numbered series continue: evolve-3 -> evolve-4) with edits, "update" to modify an existing custom mode by value (evolve-series updates fork the next number and switch to it immediately), or "switch" to activate a mode.`,
+						`Use action "create" for a brand-new mode, "copy" to duplicate an existing mode (numbered series continue: evolve-3 -> evolve-4) with edits, "update" to modify an existing custom mode by value (evolve-series updates fork the next number and switch to it immediately), "switch" to activate a mode, or "delete" to permanently remove a custom mode (built-in modes cannot be deleted).`,
 				)
 					task.consecutiveMistakeCount = 0
 					return
@@ -622,12 +622,59 @@ if (
 					return
 				}
 
+				case "delete": {
+					const target = params.slug?.trim() || ""
+					if (!target) {
+						task.consecutiveMistakeCount++
+						task.recordToolError("manage_mode")
+						pushToolResult(await task.sayAndCreateMissingParamError("manage_mode", "slug"))
+						return
+					}
+					const isCustom = customModes.some((c) => c.slug === target)
+					if (!isCustom) {
+						task.consecutiveMistakeCount++
+						task.recordToolError("manage_mode")
+						pushToolResult(
+							formatResponse.toolError(
+								`Cannot delete "${target}": only custom modes can be deleted. Built-in modes are immutable.`,
+							),
+						)
+						return
+					}
+					const currentMode = state.mode ?? defaultModeSlug
+					if (
+						!(await this.approve(callbacks, {
+							action: "delete",
+							slug: target,
+							reason: params.reason,
+						}))
+					) {
+						return
+					}
+					let switchNote = ""
+					if (currentMode === target) {
+						const fallback =
+							customModes.find((m) => m.slug !== target && /^evolve-\d+$/.test(m.slug))?.slug ||
+							customModes.find((m) => m.slug !== target)?.slug ||
+							defaultModeSlug
+						await provider.handleModeSwitch(fallback)
+						switchNote = `\nSwitched away from the deleted mode to "${fallback}".`
+					}
+					await manager.deleteCustomMode(target)
+					const updatedModes = await manager.getCustomModes()
+					await provider.contextProxy.setValue("customModes", updatedModes)
+					await provider.postStateToWebview()
+					task.consecutiveMistakeCount = 0
+					pushToolResult(`Deleted custom mode "${target}".${switchNote}`)
+					return
+				}
+
 				default:
 					task.consecutiveMistakeCount++
 					task.recordToolError("manage_mode")
 					pushToolResult(
 						formatResponse.toolError(
-							`Unknown action "${params.action}". Allowed: list, create, copy, update, switch.`,
+							`Unknown action "${params.action}". Allowed: list, create, copy, update, switch, delete.`,
 						),
 					)
 					return

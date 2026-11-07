@@ -13,12 +13,19 @@ export { consolidateCommands, consolidateCommandsIncremental, COMMAND_OUTPUT_STR
 
 export {
 	COMMAND_OUTPUT_DISPLAY_CHAR_LIMIT,
+	WEBVIEW_TRANSCRIPT_DISPLAY_TAIL,
+	WEBVIEW_TRANSCRIPT_IMAGE_ROWS,
+	WEBVIEW_TRANSCRIPT_TEXT_CHAR_LIMIT,
 	isCommandDisplayMessage,
 	truncateDisplayOutput,
 	truncateCommandOutputText,
 	projectCommandMessageForDisplay,
 	projectCommandExecutionStatusTextForDisplay,
+	projectTranscriptBoundForDisplay,
+	projectTranscriptBoundForDisplayWithMeta,
 	projectClineMessagesForDisplay,
+	projectClineMessagesForDisplayWithMeta,
+	buildPrefixAccountingStubs,
 } from "./projectCommandOutput.js"
 
 export { safeJsonParse } from "./safeJsonParse.js"

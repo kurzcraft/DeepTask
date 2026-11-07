@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.3.3</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.3.5</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,11 +35,11 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.3.3** 修压缩后仍从原始任务重开、以及未压缩轮次每次开头复述的问题。压缩后有效历史仍是「原始首条 + 摘要 + keep」：有 summary 时，请求时把首条改成 background stub，`<current_task_state>` 合并进 keep 窗口最后一条 user。本地快路径摘要不再把原始 `<task>` 倾倒进 Previous Conversation，hostState 不占 Current Work 预算。未压缩续跑去掉 “first show you understood / reply FIRST” 强制复述，直接继续当前工作。证伪条件：压缩后仍从原始首条重开、或未压缩轮次仍先复述理解/原任务，即推翻此修复。
+> **Deeptask 9.3.5** 把 host→webview 转录压成 compact 形状（第 0 行 + 两条折叠桩 + 800 行尾），禁止把超大 JSON 在第 3000 字符处切开。`EXTRA/task` 30 行/4 层上限是增长门不是冻死门：新建或继续增长超限文件立即拒绝，已超限文件的缩减与状态改写必须放行。`manage_mode` 可删除自定义模式；每次响应只调用一个工具。证伪条件：13k/22MB 等待命令转录仍把 16k tombstone 数组发给 webview，或已超限清单的逐项缩减仍被拒绝，即推翻此修复。
 >
-> **9.3.2** 补上长会话灰屏的最后缺口：子代理转录也有界了。9.3.1 只约束了主对话转录，子代理（`parallelSessionMessages`）仍逐字无界累积。每个子代理会话现有独立投影器，并新增图片预算：即使处于 800 行逐字窗口内，也只有最新 24 条含图行保留 `images` 大负载。
+> **9.3.4** 在 postState 前墓碑化历史行，堵住 9.3.1/9.3.2 只在 renderer `JSON.parse` 之后投影、挡不住 22MB IPC 的灰屏。**9.3.3** 修压缩后仍从原始任务重开、以及未压缩轮次每次开头复述。
 
-> 此前版本摘要：9.3.0 强制 evolve slug 与显示名同号并规定任务清单拆分；长会话灰屏按实测持有链修（Shiki 跳过、增量 `postState` 省略、镜像窗口只读 `ui_messages`）。9.2.9 给聊天列表真正的有界虚拟化并堵住 inotify 递归监视。9.2.8 子代理结果先持久化再回传、长上下文压缩保留增量续跑状态。详细条目见 [CHANGELOG](./CHANGELOG.md)。
+> 此前版本摘要：9.3.2 子代理转录有界化；9.3.0 强制 evolve slug 与显示名同号并规定任务清单拆分；长会话灰屏按实测持有链修。详细条目见 [CHANGELOG](./CHANGELOG.md)。
 
 ## 你可以怎样使用 Deeptask
 
@@ -121,7 +121,7 @@ EXTRA/
 ```text
 EXTRA/task/
 ├── RELEASE_PIPELINE.md              ← 权威清单：唯一含 deeptask-task-id 的文件
-│                                      只保留当前焦点/证伪线/子文件指针，永远 <80 行
+│                                      只保留当前焦点/证伪线/子文件指针，永远 ≤30 行
 ├── RELEASE_PIPELINE/                ← <short-title>/ 任务目录：轻文件之家
 │   ├── DAY1_BUILD.md                ←   日常进度只写在轻文件里
 │   ├── DAY2_RELEASE.md              ←   轻文件禁止携带 deeptask-task-id
@@ -129,7 +129,7 @@ EXTRA/task/
 └── finished/                        ← 归档：轻文件完成即移入，结论一句话回写权威清单
 ```
 
-四条硬规则构成协议：**① 单一权威**——一个任务只有一个权威清单文件，它是唯一允许携带任务身份标记（`deeptask-task-id`）的文件；**② 阈值拆分**——权威清单超过约 80 行或 4 层嵌套即强制建 `<short-title>/` 目录，把日常进度切到轻文件；**③ 指针回写**——轻文件完成时只把一句话结论写回权威清单指针，然后归档进 `finished/`；**④ 归档不灭失**——归档只表示"这部分做完了"，上下文压缩与恢复永不切片权威快照。
+四条硬规则构成协议：**① 单一权威**——一个任务只有一个权威清单文件，它是唯一允许携带任务身份标记（`deeptask-task-id`）的文件；**② 硬上限拆分**——权威清单超过 30 行或 4 层嵌套即强制建 `<short-title>/` 目录，把日常进度切到轻文件（硬门禁，不是软建议）；**③ 指针回写**——轻文件完成时只把一句话结论写回权威清单指针，然后归档进 `finished/`；**④ 归档不灭失**——归档只表示"这部分做完了"，上下文压缩与恢复永不切片权威快照。
 
 这套协议同时解决了两个工程问题：恢复会话时模型只需读一个轻量指针文件就能接续（而不是重放整个转录），上下文压缩时任务状态因为文件化而不会被摘要噪声覆盖。**清单是索引，进度是文件，恢复是读指针**——这就是跨会话长任务的文件系统化记忆。
 
@@ -169,17 +169,17 @@ Deeptask 选择寄生在 VSCodium 里而不是做成独立软件，是刻意为�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.3.3.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.3.5.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.3.3.vsix --force
+    codium --install-extension ./deeptask-9.3.5.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.3.3.vsix --force
+    code --install-extension ./deeptask-9.3.5.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

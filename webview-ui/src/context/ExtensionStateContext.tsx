@@ -463,6 +463,7 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 	// identity or the memoized settings context value.
 	const [clineMessages, setClineMessages] = useState<ClineMessage[]>([])
 	const [parallelSessionMessages, setParallelSessionMessages] = useState<Record<string, ClineMessage[]>>({})
+	const [hostTombstonedCount, setHostTombstonedCount] = useState<number | undefined>(undefined)
 	// kilocode_change end
 
 	const [didHydrateState, setDidHydrateState] = useState(false)
@@ -521,10 +522,16 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 				// the host transcript cursor is unchanged. Do not treat a missing
 				// field as an empty conversation.
 				if (newState.clineMessages !== undefined) {
-					// kilocode_change: bound the resident transcript (tombstone
-					// rows older than the tail window) so the renderer heap no
-					// longer grows linearly with conversation length.
-					setClineMessages(boundTranscriptProjector.project(newState.clineMessages))
+					// Compact the resident transcript to row 0 + stubs + tail.
+					// Host already omitted historical rows; this also bounds
+					// messageUpdated appends that would otherwise grow the array.
+					setHostTombstonedCount(newState.clineMessagesTombstoned)
+					setClineMessages(
+						boundTranscriptProjector.project(
+							newState.clineMessages,
+							newState.clineMessagesTombstoned,
+						),
+					)
 				}
 					setShowWelcome(!checkExistKey(newState.apiConfiguration))
 					setDidHydrateState(true)
@@ -780,10 +787,11 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		() => ({
 			clineMessages,
 			parallelSessionMessages,
-			// kilocode_change: bounded transcript diagnostics
-			clineMessagesTombstoned: boundTranscriptProjector.tombstonedCount,
+			// Prefer the host compact count (omitted rows, not a 16k tombstone
+			// array). Fall back to the projector when streaming appends compact.
+			clineMessagesTombstoned: hostTombstonedCount ?? boundTranscriptProjector.tombstonedCount,
 		}),
-		[clineMessages, parallelSessionMessages],
+		[clineMessages, parallelSessionMessages, hostTombstonedCount],
 	)
 
 	const contextValue = useMemo<ExtensionSettingsContextType>(

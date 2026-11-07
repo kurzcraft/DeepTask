@@ -17,6 +17,10 @@ import { applyDiffTool as applyDiffToolClass } from "./ApplyDiffTool"
 import { computeDiffStats, sanitizeUnifiedDiff } from "../diff/stats"
 import { resolveToolProtocol } from "../../utils/resolveToolProtocol"
 import { trackContribution } from "../../services/contribution-tracking/ContributionTrackingService" // kilocode_change
+import {
+	getTaskProgressWriteLimitError,
+	isActiveTaskProgressMarkdownPath,
+} from "./helpers/taskProgressLimits" // kilocode_change: EXTRA/task growth gate
 
 export interface DiffOperation {
 	path: string
@@ -549,6 +553,26 @@ ${errorDetails ? `\nTechnical details:\n${errorDetails}\n` : ""}
 					// Get the content from the result and update success count
 					originalContent = diffResult.content || originalContent
 					successCount = diffItems.length - (diffResult.failParts?.length || 0)
+					// kilocode_change start: EXTRA/task growth gate — reject overflow growth, allow shrinks.
+					if (originalContent && isActiveTaskProgressMarkdownPath(cline.cwd, relPath)) {
+						const limitError = getTaskProgressWriteLimitError({
+							relPath,
+							proposedContent: originalContent,
+							existingContent: beforeContent ?? null,
+						})
+						if (limitError) {
+							cline.consecutiveMistakeCount++
+							cline.recordToolError("apply_diff", limitError)
+							cline.didToolFailInCurrentTurn = true
+							results.push(limitError)
+							if (operationsToApprove.length === 1) {
+								pushToolResult(formatResponse.toolError(limitError))
+								return
+							}
+							continue
+						}
+					}
+					// kilocode_change end
 				}
 
 				// If no diffs were successfully applied, continue to next file

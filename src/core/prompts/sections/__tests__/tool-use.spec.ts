@@ -34,13 +34,14 @@ describe("getSharedToolUseSection", () => {
 			expect(section).toContain("Do not call zero tools or more than one tool")
 		})
 
-		it("should NOT include one tool per message requirement when experiment is enabled", () => {
+		it("keeps exactly one tool per response even when the multiple-tool experiment flag is on", () => {
 			const section = getSharedToolUseSection(TOOL_PROTOCOL.NATIVE, { multipleNativeToolCalls: true })
 
-			expect(section).not.toContain("You must use exactly one tool per message")
-			expect(section).not.toContain("every assistant message must include a tool call")
-			expect(section).toContain("You must call at least one tool per assistant response")
-			expect(section).toContain("Prefer calling as many tools as are reasonably needed")
+			expect(section).toContain("You must use exactly one tool call per assistant response")
+			expect(section).toContain("Do not call zero tools or more than one tool")
+			expect(section).not.toContain("You must call at least one tool per assistant response")
+			expect(section).not.toContain("Prefer calling as many tools as are reasonably needed")
+			expect(section).not.toContain("you may use multiple tools in a single message")
 		})
 
 		it("should include native tool-calling instructions", () => {

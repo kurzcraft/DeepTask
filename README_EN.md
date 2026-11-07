@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.3.3</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.3.5</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,11 +35,11 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.3.3** stops condensed turns from reopening the original task, and stops uncompressed turns from recapping at every opening. The condensed view is still `[original first task, summary, keep]`; when a summary exists, the first user turn becomes a background stub and `<current_task_state>` is merged onto the last keep-window user message. Local fallback summaries no longer dump the original `<task>` into Previous Conversation, and host-state snapshots do not consume the Current Work budget. Uncompressed continuations no longer force a “first show you understood / reply FIRST” recap. Falsification condition: condensed turns still reopen the original first task, or uncompressed turns still recap understanding/the original task, refutes this fix.
+> **Deeptask 9.3.5** compact the host→webview transcript (row 0 + two collapsed stubs + an 800-row tail) and stop slicing oversized JSON at char 3000. The EXTRA/task 30-line / 4-level cap is a growth gate, not a freeze gate: creating or growing an over-limit file is rejected immediately, but shrinks and status-only updates on an already-over-limit file are allowed. `manage_mode` can delete a custom mode. Each assistant response may call exactly one tool. Falsification condition: a 13k/22MB wait-command transcript still ships a 16k tombstone array, or item-by-item shrinks of an already-over-limit checklist are still rejected, refutes this fix.
 >
-> **9.3.2** closed the last long-session gray-panel gap: subagent transcripts are bounded too. 9.3.1 constrained only the main conversation; subagent sessions (`parallelSessionMessages`) still accumulated verbatim. Every subagent session now gets its own projector, plus an image budget: even inside the 800-row verbatim window, only the newest 24 image-bearing rows keep their `images` payloads.
+> **9.3.4** tombstones historical rows before postState, closing the 9.3.1/9.3.2 hole where projection after renderer `JSON.parse` could not stop a 22MB IPC gray-screen. **9.3.3** stops condensed turns from reopening the original task, and uncompressed turns from recapping at every opening.
 
-> Prior-release digest: 9.3.0 forced evolve slug/display same numbering and task-checklist splitting; long-session gray panels followed the measured holder chain (Shiki skip, incremental `postState` omission, mirror-window `ui_messages`-only hydrate). 9.2.9 gave the chat list real bounded virtualization and closed the inotify recursive-watch hole. 9.2.8 persisted subagent results before delivery and kept incremental continuation state in condensation. Full entries in the [CHANGELOG](./CHANGELOG.md).
+> Prior-release digest: 9.3.2 bounded subagent transcripts; 9.3.0 forced evolve slug/display same numbering and task-checklist splitting. Full entries in the [CHANGELOG](./CHANGELOG.md).
 
 > Same-day follow-up: isolate command ownership when Kilo Code is co-installed, bound post-completion terminal cleanup, and restore cancellation controls. 425 targeted tests pass; long-duration gray-panel and manual parent-interruption validation remain outstanding.
 
@@ -125,7 +125,7 @@ EXTRA/task/
 ├── RELEASE_PIPELINE.md              ← authoritative checklist: the ONLY file allowed
 │                                      to carry deeptask-task-id; keeps just the
 │                                      current focus / falsification line / child
-│                                      pointers, always <80 lines
+│                                      pointers, always ≤30 lines
 ├── RELEASE_PIPELINE/                ← <short-title>/ task directory: home of light files
 │   ├── DAY1_BUILD.md                ←   daily progress lives only in light files
 │   ├── DAY2_RELEASE.md              ←   light files never carry deeptask-task-id
@@ -134,7 +134,7 @@ EXTRA/task/
                                        one-sentence conclusion written back to the pointer
 ```
 
-Four hard rules form the protocol: **① Single authority** — one task has exactly one authoritative checklist file, the only file allowed to carry the task identity marker (`deeptask-task-id`). **② Threshold splitting** — once the authoritative file exceeds ~80 lines or 4 nesting levels, a `<short-title>/` directory is created and daily progress moves into light files. **③ Pointer write-back** — when a light file completes, only a one-sentence conclusion returns to the authoritative pointer, then the file archives into `finished/`. **④ Archive without loss** — archiving only marks that part done; condensation and restoration never slice the authoritative snapshot.
+Four hard rules form the protocol: **① Single authority** — one task has exactly one authoritative checklist file, the only file allowed to carry the task identity marker (`deeptask-task-id`). **② Hard-limit splitting** — once the authoritative file exceeds 30 lines or 4 nesting levels, a `<short-title>/` directory is created and daily progress moves into light files (hard ban, not a soft suggestion). **③ Pointer write-back** — when a light file completes, only a one-sentence conclusion returns to the authoritative pointer, then the file archives into `finished/`. **④ Archive without loss** — archiving only marks that part done; condensation and restoration never slice the authoritative snapshot.
 
 This solves two engineering problems at once: session resumption only needs to read one lightweight pointer file (not replay the whole transcript), and task state survives context condensation because it lives in files rather than summary prose. **The checklist is an index, progress is files, recovery is reading pointers** — a filesystem-backed memory for cross-session long-running work.
 
@@ -174,17 +174,17 @@ Apart from "the model's own conversation handling that commands cannot do" (work
 
 ## Start in three minutes
 
-1. Download `deeptask-9.3.3.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.3.5.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.3.3.vsix --force
+    codium --install-extension ./deeptask-9.3.5.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.3.3.vsix --force
+    code --install-extension ./deeptask-9.3.5.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

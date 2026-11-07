@@ -45,6 +45,7 @@ function makeProvider(customModes: ModeConfig[], stateMode = "evolve-1") {
 	const modes = customModes.map((m) => ({ ...m }))
 	const updated: Array<{ slug: string; config: ModeConfig }> = []
 	const switched: string[] = []
+	const deleted: string[] = []
 	const provider = {
 		customModesManager: {
 			getCustomModes: vi.fn(async () => modes.map((m) => ({ ...m }))),
@@ -53,6 +54,11 @@ function makeProvider(customModes: ModeConfig[], stateMode = "evolve-1") {
 				const i = modes.findIndex((m) => m.slug === slug)
 				if (i >= 0) modes[i] = config
 				else modes.push(config)
+			}),
+			deleteCustomMode: vi.fn(async (slug: string) => {
+				deleted.push(slug)
+				const i = modes.findIndex((m) => m.slug === slug)
+				if (i >= 0) modes.splice(i, 1)
 			}),
 		},
 		getState: vi.fn(async () => ({ mode: stateMode })),
@@ -63,7 +69,7 @@ function makeProvider(customModes: ModeConfig[], stateMode = "evolve-1") {
 		postStateToWebview: vi.fn(async () => {}),
 		contextProxy: { setValue: vi.fn(async () => {}) },
 	}
-	return { provider, updated, switched }
+	return { provider, updated, switched, deleted }
 }
 
 const evolveBuiltIn = getAllModes([]).find((m) => m.slug === "evolve") as ModeConfig
@@ -204,5 +210,50 @@ describe("manage_mode evolve-series fork-on-update chain", () => {
 		expect(updated[0].config.description).toContain("相比 evolve-3 的更新")
 		expect(updated[0].config.description).toContain("popover ordering + evolve subtitle")
 		expect(switched).toEqual(["evolve-4"])
+	})
+
+	it("deletes a custom evolve-17 copy and switches to evolve-16 when current", async () => {
+		const fork = (n: number): ModeConfig => ({
+			...evolveBuiltIn,
+			slug: `evolve-${n}`,
+			name: `Evolve-${n}`,
+			source: "global",
+		})
+		const { provider, switched, deleted } = makeProvider([fork(16), fork(17)], "evolve-17")
+		const callbacks = makeCallbacks()
+
+		await manageModeTool.execute(
+			{
+				action: "delete",
+				slug: "evolve-17",
+				reason: "mistaken fork; revert to evolve-16",
+			},
+			makeTask(provider),
+			callbacks as unknown as ToolCallbacks,
+		)
+
+		expect(deleted).toEqual(["evolve-17"])
+		expect(switched).toEqual(["evolve-16"])
+		expect(callbacks.results[0]).toContain('Deleted custom mode "evolve-17"')
+		expect(callbacks.results[0]).toContain("evolve-16")
+	})
+
+	it("refuses to delete a built-in mode", async () => {
+		const { provider, deleted, switched } = makeProvider([])
+		const callbacks = makeCallbacks()
+
+		await manageModeTool.execute(
+			{
+				action: "delete",
+				slug: "evolve",
+				reason: "should fail",
+			},
+			makeTask(provider),
+			callbacks as unknown as ToolCallbacks,
+		)
+
+		expect(deleted).toEqual([])
+		expect(switched).toEqual([])
+		expect(callbacks.results[0]).toContain("only custom modes can be deleted")
 	})
 })

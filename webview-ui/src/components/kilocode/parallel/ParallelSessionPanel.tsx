@@ -4,6 +4,7 @@ import { Trans } from "react-i18next"
 
 import { useAppTranslation } from "@/i18n/TranslationContext"
 import { useExtensionState } from "@/context/ExtensionStateContext"
+import { getParallelProjector } from "@/context/boundTranscript"
 import { vscode } from "@/utils/vscode"
 import ChatRow from "@/components/chat/ChatRow"
 import { UserMessageRail } from "./UserMessageRail"
@@ -33,20 +34,19 @@ export const ParallelSessionPanel = ({ selectedId, onClose }: ParallelSessionPan
 	const session = selectedId.startsWith("ws:") ? undefined : parallelSessions?.[selectedId]
 	const workspaceName = selectedId.startsWith("ws:") ? selectedId.slice(3) : session?.workspaceName
 	const workspace = parallelWorkspaces?.find((w) => w.name === workspaceName)
-	// kilocode_change start: bound transcript — subagent transcripts are projected
-	// through a per-session projector upstream; tombstoned rows must not render here
-	// (they carry no text/images). Count them for the collapse banner.
+	// Compact projection keeps only row 0 + two accounting stubs + tail.
+	// Stubs are hidden; the collapse banner uses the projector's omitted-row
+	// count, not the stub count (which would always be 2).
 	const { messages, tombstonedCount } = useMemo(() => {
 		const all = session ? (parallelSessionMessages?.[session.sessionId] ?? []) : []
-		let tombstoned = 0
 		const visible: typeof all = []
 		for (const message of all) {
 			if ((message as { webviewTombstone?: boolean }).webviewTombstone === true) {
-				tombstoned++
 				continue
 			}
 			visible.push(message)
 		}
+		const tombstoned = session ? getParallelProjector(session.sessionId).tombstonedCount : 0
 		return { messages: visible, tombstonedCount: tombstoned }
 	}, [session, parallelSessionMessages])
 	// kilocode_change end
