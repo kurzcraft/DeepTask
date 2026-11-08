@@ -2349,6 +2349,144 @@ describe("ChatView - Command Execution Status", () => {
 
 		expect(vscode.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "terminalOperation" }))
 	})
+
+	it("does not replace Cancel with Continue/Terminate for another conversation's shell", async () => {
+		const { getByText, queryByText } = renderChatView()
+
+		mockPostMessage({
+			currentTaskItem: { id: "focused-task", number: 1, ts: Date.now() - 3000 },
+			clineMessages: [
+				{
+					type: "say",
+					say: "task",
+					ts: Date.now() - 3000,
+					text: "Focused task",
+				},
+				{
+					type: "say",
+					say: "api_req_started",
+					ts: Date.now() - 1000,
+					text: JSON.stringify({ apiProtocol: "openai" }),
+				},
+			],
+		})
+
+		await waitFor(() => {
+			expect(getByText("chat:cancel.title")).toBeInTheDocument()
+		})
+
+		act(() => {
+			window.postMessage(
+				{
+					type: "commandExecutionStatus",
+					text: JSON.stringify({
+						executionId: "bg-shell",
+						status: "started",
+						command: "sleep 999",
+						taskId: "background-task",
+					}),
+				},
+				"*",
+			)
+		})
+
+		await waitFor(() => {
+			expect(getByText("chat:cancel.title")).toBeInTheDocument()
+		})
+		expect(queryByText("chat:proceedWhileRunning.title")).not.toBeInTheDocument()
+		expect(queryByText("chat:killCommand.title")).not.toBeInTheDocument()
+	})
+
+	it("still shows Continue/Terminate for the focused conversation's own shell", async () => {
+		const { getByText, queryByText } = renderChatView()
+
+		mockPostMessage({
+			currentTaskItem: { id: "focused-task", number: 1, ts: Date.now() - 3000 },
+			clineMessages: [
+				{
+					type: "say",
+					say: "task",
+					ts: Date.now() - 3000,
+					text: "Focused task",
+				},
+				{
+					type: "ask",
+					ask: "command",
+					ts: Date.now() - 1000,
+					text: "sleep 30",
+					partial: false,
+					isAnswered: true,
+				},
+			],
+		})
+
+		act(() => {
+			window.postMessage(
+				{
+					type: "commandExecutionStatus",
+					text: JSON.stringify({
+						executionId: "fg-shell",
+						status: "started",
+						command: "sleep 30",
+						taskId: "focused-task",
+					}),
+				},
+				"*",
+			)
+		})
+
+		await waitFor(() => {
+			expect(getByText("chat:proceedWhileRunning.title")).toBeInTheDocument()
+			expect(getByText("chat:killCommand.title")).toBeInTheDocument()
+		})
+		expect(queryByText("chat:cancel.title")).not.toBeInTheDocument()
+	})
+
+	it("ignores unscoped commandExecutionStatus while a focused task id is known", async () => {
+		const { getByText, queryByText } = renderChatView()
+
+		mockPostMessage({
+			currentTaskItem: { id: "focused-task", number: 1, ts: Date.now() - 3000 },
+			clineMessages: [
+				{
+					type: "say",
+					say: "task",
+					ts: Date.now() - 3000,
+					text: "Focused task",
+				},
+				{
+					type: "say",
+					say: "api_req_started",
+					ts: Date.now() - 1000,
+					text: JSON.stringify({ apiProtocol: "openai" }),
+				},
+			],
+		})
+
+		await waitFor(() => {
+			expect(getByText("chat:cancel.title")).toBeInTheDocument()
+		})
+
+		act(() => {
+			window.postMessage(
+				{
+					type: "commandExecutionStatus",
+					text: JSON.stringify({
+						executionId: "legacy-shell",
+						status: "started",
+						command: "sleep 999",
+					}),
+				},
+				"*",
+			)
+		})
+
+		await waitFor(() => {
+			expect(getByText("chat:cancel.title")).toBeInTheDocument()
+		})
+		expect(queryByText("chat:proceedWhileRunning.title")).not.toBeInTheDocument()
+		expect(queryByText("chat:killCommand.title")).not.toBeInTheDocument()
+	})
 })
 
 describe("ChatView - Context Condensing Indicator Tests", () => {

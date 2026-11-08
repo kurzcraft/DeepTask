@@ -98,6 +98,67 @@ describe("ClineProvider live-command registry (fix 6)", () => {
 	})
 })
 
+describe("ClineProvider commandExecutionStatus chat isolation", () => {
+	const postToWebview = async (message: { type: string; text: string }) =>
+		ClineProvider.prototype.postMessageToWebview.call(provider, message as any)
+
+	beforeEach(() => {
+		provider.pendingNewConversation = undefined
+		provider.view = { webview: { postMessage: vi.fn().mockResolvedValue(undefined) } }
+		provider.getFocusedChatTask = () => ({ taskId: "focused-task" })
+	})
+
+	it("broadcasts only the focused task's command chrome", () => {
+		expect(provider.shouldBroadcastCommandExecutionToChat("focused-task")).toBe(true)
+		expect(provider.shouldBroadcastCommandExecutionToChat("background-task")).toBe(false)
+		expect(provider.shouldBroadcastCommandExecutionToChat(undefined)).toBe(false)
+	})
+
+	it("drops background commandExecutionStatus before the webview", async () => {
+		await postToWebview({
+			type: "commandExecutionStatus",
+			text: JSON.stringify({
+				executionId: "bg-1",
+				status: "started",
+				command: "sleep 999",
+				taskId: "background-task",
+			}),
+		})
+
+		expect(provider.view.webview.postMessage).not.toHaveBeenCalled()
+	})
+
+	it("drops unscoped commandExecutionStatus when the focused chat is known", async () => {
+		await postToWebview({
+			type: "commandExecutionStatus",
+			text: JSON.stringify({
+				executionId: "legacy-1",
+				status: "started",
+				command: "sleep 999",
+			}),
+		})
+
+		expect(provider.view.webview.postMessage).not.toHaveBeenCalled()
+	})
+
+	it("posts the focused task's live command status to the webview", async () => {
+		const payload = {
+			executionId: "fg-1",
+			status: "started",
+			command: "sleep 1",
+			taskId: "focused-task",
+		}
+
+		await postToWebview({
+			type: "commandExecutionStatus",
+			text: JSON.stringify(payload),
+		})
+
+		expect(provider.view.webview.postMessage).toHaveBeenCalledTimes(1)
+		expect(JSON.parse(provider.view.webview.postMessage.mock.calls[0][0].text)).toEqual(payload)
+	})
+})
+
 describe("handleModeSwitch targets the focused conversation (fix 7A)", () => {
 	beforeEach(() => {
 		provider.updateGlobalState.mockClear()

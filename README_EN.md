@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.3.5</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.3.6</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,9 +35,9 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.3.5** compact the host→webview transcript (row 0 + two collapsed stubs + an 800-row tail) and stop slicing oversized JSON at char 3000. The EXTRA/task 30-line / 4-level cap is a growth gate, not a freeze gate: creating or growing an over-limit file is rejected immediately, but shrinks and status-only updates on an already-over-limit file are allowed. `manage_mode` can delete a custom mode. Each assistant response may call exactly one tool. Falsification condition: a 13k/22MB wait-command transcript still ships a 16k tombstone array, or item-by-item shrinks of an already-over-limit checklist are still rejected, refutes this fix.
+> **Deeptask 9.3.6** isolates live command chrome across parallel chats: `commandExecutionStatus` no longer bypasses the focus gate and paints Continue/Terminate over the focused Cancel (missing `taskId` is fail-closed). In-place `messageUpdated` replaces re-enter the transcript projector; unchanged same-ts images are omitted from incremental IPC and merged back onto the resident row before projecting. Falsification condition: a background command still paints Continue/Terminate over the focused Cancel, or a same-ts streaming update inside the 800-row window still re-inflates a previously stripped image blob, refutes this fix.
 >
-> **9.3.4** tombstones historical rows before postState, closing the 9.3.1/9.3.2 hole where projection after renderer `JSON.parse` could not stop a 22MB IPC gray-screen. **9.3.3** stops condensed turns from reopening the original task, and uncompressed turns from recapping at every opening.
+> **9.3.5** compact the host→webview transcript (row 0 + two collapsed stubs + an 800-row tail) and stop slicing oversized JSON at char 3000. The EXTRA/task 30-line / 4-level cap is a growth gate, not a freeze gate. **9.3.4** tombstones historical rows before postState. **9.3.3** stops condensed turns from reopening the original task, and uncompressed turns from recapping at every opening.
 
 > Prior-release digest: 9.3.2 bounded subagent transcripts; 9.3.0 forced evolve slug/display same numbering and task-checklist splitting. Full entries in the [CHANGELOG](./CHANGELOG.md).
 
@@ -174,17 +174,17 @@ Apart from "the model's own conversation handling that commands cannot do" (work
 
 ## Start in three minutes
 
-1. Download `deeptask-9.3.5.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.3.6.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.3.5.vsix --force
+    codium --install-extension ./deeptask-9.3.6.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.3.5.vsix --force
+    code --install-extension ./deeptask-9.3.6.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

@@ -4,6 +4,8 @@ import fs from "fs/promises"
 import EventEmitter from "events"
 import { CoalesceLatestWork } from "./helpers/coalesceLatestWork" // kilocode_change
 import { clineMessagesSnapshotCursor, shouldPostClineMessages } from "./helpers/clineMessagesSnapshot" // kilocode_change
+import { IncrementalImageOmitter } from "../../shared/incrementalImageOmit" // kilocode_change
+
 
 import { Anthropic } from "@anthropic-ai/sdk"
 import delay from "delay"
@@ -249,10 +251,12 @@ export class ClineProvider
 	private stateSnapshotDisposed = false
 	private lastPostedClineMessagesCursor: string | undefined
 	private readonly stateSnapshotWork = new CoalesceLatestWork((force) => this.flushStateToWebview(force))
+	private readonly incrementalImageOmitter = new IncrementalImageOmitter()
 
 	/** Abort/overwrite must not let a later omit post keep a stale webview transcript. */
 	public invalidatePostedClineMessagesCursor(): void {
 		this.lastPostedClineMessagesCursor = undefined
+		this.incrementalImageOmitter.invalidate()
 	}
 	// kilocode_change end
 	private recentTasksCache?: string[]
@@ -1247,6 +1251,36 @@ export class ClineProvider
 		return focused.taskId === task.taskId
 	}
 
+	// kilocode_change start: commandExecutionStatus used to bypass
+	// shouldBroadcastTaskToChat and paint Continue/Terminate over the focused chat.
+	/**
+	 * Live command chrome (Continue/Terminate) is a focused-chat concern.
+	 * Missing taskId is fail-closed: we cannot prove the focused chat owns it.
+	 */
+	public shouldBroadcastCommandExecutionToChat(taskId: string | undefined): boolean {
+		if (!taskId) {
+			return false
+		}
+		if (this.pendingNewConversation) {
+			return false
+		}
+		const focused = this.getFocusedChatTask()
+		if (!focused) {
+			return false
+		}
+		return focused.taskId === taskId
+	}
+
+	private peekCommandExecutionTaskId(text: string): string | undefined {
+		try {
+			const parsed = JSON.parse(text) as { taskId?: unknown }
+			return typeof parsed?.taskId === "string" && parsed.taskId.length > 0 ? parsed.taskId : undefined
+		} catch {
+			return undefined
+		}
+	}
+	// kilocode_change end
+
 	public syncLiveTask(task: Task): void {
 		// kilocode_change start: a task whose loop has settled is no longer live.
 		// Previously every message upsert kept the snapshot alive forever, so a
@@ -2094,16 +2128,37 @@ export class ClineProvider
 		// NOTE: Changing this? Update effects.ts in the cli too.
 		// Display-only projection: never persist these rewritten payloads.
 		// commandOutputFull stays intact so expand can still fetch storage.
+		// kilocode_change start: drop background commandExecutionStatus before
+		// it can paint Continue/Terminate over the focused conversation.
+		if (message.type === "commandExecutionStatus" && typeof message.text === "string") {
+			const taskId = this.peekCommandExecutionTaskId(message.text)
+			if (!this.shouldBroadcastCommandExecutionToChat(taskId)) {
+				return
+			}
+		}
+		// kilocode_change end
 		if (
 			(message.type === "messageUpdated" ||
 				message.type === "parallelSessionMessage" ||
 				message.type === "parallelSessionMessageUpdated") &&
 			message.clineMessage
 		) {
+			const sessionKey =
+				message.type === "messageUpdated" ? "" : (message.parallelSessionId ?? "")
 			message = {
 				...message,
-				clineMessage: projectCommandMessageForDisplay(message.clineMessage),
+				clineMessage: this.incrementalImageOmitter.omitUnchanged(
+					projectCommandMessageForDisplay(message.clineMessage),
+					sessionKey,
+				),
 			}
+		} else if (message.type === "state" && message.state?.clineMessages !== undefined) {
+			// Fingerprints must come from storage, not the display projection
+			// which may already have dropped image blobs (image budget).
+			const originals = this.pendingNewConversation
+				? []
+				: (this.getFocusedChatTask()?.clineMessages ?? message.state.clineMessages)
+			this.incrementalImageOmitter.rememberAll(originals)
 		} else if (message.type === "commandExecutionStatus" && typeof message.text === "string") {
 			message = {
 				...message,

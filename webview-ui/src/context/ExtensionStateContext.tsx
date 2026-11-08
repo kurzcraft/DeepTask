@@ -41,6 +41,7 @@ import { McpMarketplaceCatalog } from "../../../src/shared/kilocode/mcp" // kilo
 import { vscode } from "@src/utils/vscode"
 import { convertTextMateToHljs } from "@src/utils/textMateToHljs"
 import { ClineRulesToggles } from "@roo/cline-rules" // kilocode_change
+import { mergeIncrementalClineMessage } from "@roo/incrementalImageOmit" // kilocode_change
 // kilocode_change start: bounded transcript projection
 import {
 	createBoundTranscriptProjector,
@@ -601,12 +602,12 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 						if (isUpdate) {
 							const index = list.findIndex((m) => m.ts === clineMessage.ts)
 							if (index === -1) {
-								list.push(clineMessage)
+								list.push(mergeIncrementalClineMessage(clineMessage, undefined))
 							} else {
-								list[index] = clineMessage
+								list[index] = mergeIncrementalClineMessage(clineMessage, list[index])
 							}
 						} else {
-							list.push(clineMessage)
+							list.push(mergeIncrementalClineMessage(clineMessage, undefined))
 						}
 						// kilocode_change: project the subagent transcript through its
 						// own bounded projector — identical contract to the main
@@ -662,8 +663,17 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 						const lastIndex = findLastIndex(prevMessages, (msg) => msg.ts === clineMessage.ts)
 						if (lastIndex !== -1) {
 							const newClineMessages = [...prevMessages]
-							newClineMessages[lastIndex] = clineMessage
-							return newClineMessages
+							newClineMessages[lastIndex] = mergeIncrementalClineMessage(
+								clineMessage,
+								prevMessages[lastIndex],
+							)
+							// kilocode_change: in-place replace must re-enter the projector.
+							// Host incremental payloads still carry full images; skipping
+							// project() re-inflated previously stripped rows inside the
+							// 800-row window (Scientist 3.83GB / 1521 collapsed banner).
+							// Same-ts omitted images are merged back onto the resident row
+							// so JSON.parse never has to re-inflate the blob.
+							return boundTranscriptProjector.project(newClineMessages)
 						}
 						// kilocode_change start: incremental append for new messages
 						// The extension host streams newly created messages through this

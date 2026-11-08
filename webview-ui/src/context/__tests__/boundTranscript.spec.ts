@@ -184,6 +184,24 @@ describe("createBoundTranscriptProjector", () => {
 		expect(changed).toBeLessThanOrEqual(1)
 	})
 
+	it("re-strips images when messageUpdated replaces an older row in place", () => {
+		const projector = createBoundTranscriptProjector(10, 4, 5)
+		const messages = Array.from({ length: 12 }, (_, i) => imgMsg(1 + i))
+		const first = projector.project(messages)
+		const stripped = first.find((m) => (m as { webviewImagesStripped?: boolean }).webviewImagesStripped === true)
+		expect(stripped).toBeDefined()
+
+		const replaced = [...first]
+		const index = replaced.findIndex((m) => m.ts === stripped!.ts)
+		replaced[index] = imgMsg(stripped!.ts)
+		const second = projector.project(replaced)
+		const row = second.find((m) => m.ts === stripped!.ts)!
+
+		expect((row as { images?: unknown }).images).toBeUndefined()
+		expect((row as { webviewImagesStripped?: boolean }).webviewImagesStripped).toBe(true)
+		expect(second.filter((m) => (m as { images?: unknown }).images !== undefined).length).toBeLessThanOrEqual(5)
+	})
+
 	it("applies the image budget even below the tail window (no tombstones yet)", () => {
 		const projector = createBoundTranscriptProjector(10, 4, 5)
 		// 12 rows < 14 → no tombstones, but more image rows than the budget of 5.

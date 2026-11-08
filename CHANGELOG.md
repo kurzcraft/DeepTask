@@ -1,5 +1,13 @@
 # Deeptask
 
+## 9.3.6
+
+### Patch Changes
+
+- Isolate live command chrome across parallel chats. `commandExecutionStatus` used to bypass `shouldBroadcastTaskToChat` and paint Continue/Terminate over the focused conversation. Host now drops unscoped or background events (`shouldBroadcastCommandExecutionToChat`; missing `taskId` is fail-closed). The webview also fail-closes when the focused task id is known.
+- Re-run the webview transcript projector on in-place `messageUpdated` replaces, not only on appends. Same-ts streaming updates were swapping full image blobs back onto already-stripped rows inside the 800-row window (Scientist field: webview V8 3885/4096MB with resident ≈803 and tombstonedCount 1521).
+- Omit unchanged same-ts image blobs from incremental host IPC. Fingerprint by length plus prefix/suffix, never hash the full base64. The webview merges omitted images back onto the resident row before projecting, so `JSON.parse` does not re-inflate the blob.
+
 ## 9.3.5
 
 ### Patch Changes

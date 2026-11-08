@@ -1745,11 +1745,13 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 					const result = commandExecutionStatusSchema.safeParse(safeJsonParse(message.text, {}))
 					if (result.success) {
 						const { executionId, status, taskId } = result.data
-						// kilocode_change start: cross-conversation guard. Events from
-						// background conversations must not light up Run/Kill/Continue
-						// in the conversation the user is looking at. Legacy events
-						// without taskId (older hosts) keep the old behavior.
-						if (taskId && currentTaskItem?.id && taskId !== currentTaskItem.id) {
+						// kilocode_change start: cross-conversation guard.
+						// Host already drops background commandExecutionStatus, but
+						// the webview must still fail-closed when the focused task
+						// id is known: unscoped or foreign events must not replace
+						// Cancel with Continue/Terminate. When currentTaskItem is
+						// missing (new task not yet in history), trust the host.
+						if (currentTaskItem?.id && (!taskId || taskId !== currentTaskItem.id)) {
 							break
 						}
 						// kilocode_change end

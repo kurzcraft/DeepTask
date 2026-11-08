@@ -316,6 +316,12 @@ export const clineMessageSchema = z.object({
 	webviewTombstone: z.boolean().optional(),
 	/** Display-only: images dropped by the host/webview image budget. Storage stays full. */
 	webviewImagesStripped: z.boolean().optional(),
+	/**
+	 * Display-only: host omitted unchanged images from an incremental IPC
+	 * payload (same ts fingerprint). The webview must merge and keep the
+	 * images it already has. Storage stays full.
+	 */
+	webviewImagesOmitted: z.boolean().optional(),
 	metadata: z
 		.object({
 			kiloCode: kiloCodeMetaDataSchema.optional(),

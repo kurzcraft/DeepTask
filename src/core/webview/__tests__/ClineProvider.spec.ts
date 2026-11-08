@@ -655,6 +655,36 @@ describe("ClineProvider", () => {
 		expect(mockPostMessage).toHaveBeenCalledWith(message)
 	})
 
+	test("omits unchanged images from incremental messageUpdated IPC", async () => {
+		await provider.resolveWebviewView(mockWebviewView)
+		const images = ["data:image/png;base64," + "A".repeat(4_096)]
+		const first = {
+			ts: 42,
+			type: "say" as const,
+			say: "user_feedback" as const,
+			text: "partial",
+			images,
+		}
+		const second = { ...first, text: "updated-text", images: [...images] }
+
+		await provider.postMessageToWebview({ type: "messageUpdated", clineMessage: first })
+		await provider.postMessageToWebview({ type: "messageUpdated", clineMessage: second })
+
+		const posted = (
+			mockPostMessage.mock.calls as Array<
+				[{ type?: string; clineMessage?: typeof first & { webviewImagesOmitted?: boolean } }]
+			>
+		)
+			.map(([payload]) => payload)
+			.filter((payload) => payload.type === "messageUpdated")
+		expect(posted).toHaveLength(2)
+		expect(posted[0]!.clineMessage?.images).toEqual(images)
+		expect(posted[1]!.clineMessage?.images).toBeUndefined()
+		expect(posted[1]!.clineMessage?.webviewImagesOmitted).toBe(true)
+		expect(posted[1]!.clineMessage?.text).toBe("updated-text")
+		expect(JSON.stringify(posted[1]!.clineMessage).length).toBeLessThan(JSON.stringify(second).length / 2)
+	})
+
 	test("handles webviewDidLaunch message", async () => {
 		await provider.resolveWebviewView(mockWebviewView)
 
