@@ -71,7 +71,12 @@ import { findLast } from "../../shared/array"
 import { supportPrompt } from "../../shared/support-prompt"
 import { GlobalFileNames } from "../../shared/globalFileNames"
 import { Mode, defaultModeSlug, getModeBySlug } from "../../shared/modes"
-import { isEvolveSlug, resolveLatestEvolve, parseEvolveVersion } from "../../shared/evolve-upgrade"
+import {
+	isEvolveSlug,
+	resolveLatestEvolve,
+	parseEvolveVersion,
+	shouldPreserveProviderOnModeSwitch,
+} from "../../shared/evolve-upgrade"
 import { experimentDefault } from "../../shared/experiments"
 import { formatLanguage } from "../../shared/language"
 import { WebviewMessage } from "../../shared/WebviewMessage"
@@ -1855,6 +1860,7 @@ export class ClineProvider
 			// installed evolve mode, ranked by slug digit (evolve-N displays as
 			// Evolve-N; dual numbering was a bug). Root conversations only —
 			// subagent/child history keeps its dispatcher-assigned mode.
+			const modeBeforeEvolveUpgrade = historyItem.mode
 			if (!historyItem.rootTask && !historyItem.parentTask && isEvolveSlug(historyItem.mode)) {
 				const latest = resolveLatestEvolve(customModes)
 				const currentVersion = parseEvolveVersion(
@@ -1868,6 +1874,10 @@ export class ClineProvider
 					historyItem.mode = latest.slug
 				}
 			}
+			const preserveProviderOnEvolveUpgrade = shouldPreserveProviderOnModeSwitch(
+				modeBeforeEvolveUpgrade,
+				historyItem.mode,
+			)
 			// kilocode_change end
 
 			await this.updateGlobalState("mode", historyItem.mode)
@@ -1875,7 +1885,9 @@ export class ClineProvider
 			// Load the saved API config for the restored mode if it exists.
 			// Skip mode-based profile activation if historyItem.apiConfigName exists,
 			// since the task's specific provider profile will override it anyway.
-			if (!historyItem.apiConfigName) {
+			// kilocode_change: evolving to a newer copy must not activate that
+			// copy's stale sticky profile.
+			if (!historyItem.apiConfigName && !preserveProviderOnEvolveUpgrade) {
 				const savedConfigId = await this.providerSettingsManager.getModeConfigId(historyItem.mode)
 				const listApiConfig = await this.providerSettingsManager.listConfig()
 
@@ -2446,51 +2458,69 @@ export class ClineProvider
 			}
 		}
 
+		const previousMode = this.getGlobalState("mode")
+		const preserveProvider = shouldPreserveProviderOnModeSwitch(previousMode, newMode)
+
 		await this.updateGlobalState("mode", newMode)
 
 		this.emit(RooCodeEventName.ModeChanged, newMode)
 
-		// Load the saved API config for the new mode if it exists.
-		const savedConfigId = await this.providerSettingsManager.getModeConfigId(newMode)
 		const listApiConfig = await this.providerSettingsManager.listConfig()
 
 		// Update listApiConfigMeta first to ensure UI has latest data.
 		await this.updateGlobalState("listApiConfigMeta", listApiConfig)
 
-		// If this mode has a saved config, use it.
-		if (savedConfigId) {
-			const profile = listApiConfig.find(({ id }) => id === savedConfigId)
-
-			if (profile?.name) {
-				// Check if the profile has actual API configuration (not just an id).
-				// In CLI mode, the ProviderSettingsManager may return empty default profiles
-				// that only contain 'id' and 'name' fields. Activating such a profile would
-				// overwrite the CLI's working API configuration with empty settings.
-				// Skip activation if the profile has no apiProvider set - this indicates
-				// an unconfigured/empty profile.
-				const fullProfile = await this.providerSettingsManager.getProfile({ name: profile.name })
-				const hasActualSettings = !!fullProfile.apiProvider
-
-				if (hasActualSettings) {
-					await this.activateProviderProfile({ name: profile.name })
-				} else {
-					// The task will continue with the current/default configuration.
-				}
-			} else {
-				// The task will continue with the current/default configuration.
-			}
-		} else {
-			// If no saved config for this mode, save current config as default.
-			const currentApiConfigNameAfter = this.getGlobalState("currentApiConfigName")
-
-			if (currentApiConfigNameAfter) {
-				const config = listApiConfig.find((c) => c.name === currentApiConfigNameAfter)
-
+		// kilocode_change start: evolving (evolve -> evolve-N) must keep the live
+		// provider. Historical copies often still point at a stale sticky
+		// profile (fresh-install default, leftover after delete+recreate).
+		if (preserveProvider) {
+			const currentApiConfigName = this.getGlobalState("currentApiConfigName")
+			if (currentApiConfigName) {
+				const config = listApiConfig.find((c) => c.name === currentApiConfigName)
 				if (config?.id) {
 					await this.providerSettingsManager.setModeConfig(newMode, config.id)
 				}
 			}
+		} else {
+			// Load the saved API config for the new mode if it exists.
+			const savedConfigId = await this.providerSettingsManager.getModeConfigId(newMode)
+
+			// If this mode has a saved config, use it.
+			if (savedConfigId) {
+				const profile = listApiConfig.find(({ id }) => id === savedConfigId)
+
+				if (profile?.name) {
+					// Check if the profile has actual API configuration (not just an id).
+					// In CLI mode, the ProviderSettingsManager may return empty default profiles
+					// that only contain 'id' and 'name' fields. Activating such a profile would
+					// overwrite the CLI's working API configuration with empty settings.
+					// Skip activation if the profile has no apiProvider set - this indicates
+					// an unconfigured/empty profile.
+					const fullProfile = await this.providerSettingsManager.getProfile({ name: profile.name })
+					const hasActualSettings = !!fullProfile.apiProvider
+
+					if (hasActualSettings) {
+						await this.activateProviderProfile({ name: profile.name })
+					} else {
+						// The task will continue with the current/default configuration.
+					}
+				} else {
+					// The task will continue with the current/default configuration.
+				}
+			} else {
+				// If no saved config for this mode, save current config as default.
+				const currentApiConfigNameAfter = this.getGlobalState("currentApiConfigName")
+
+				if (currentApiConfigNameAfter) {
+					const config = listApiConfig.find((c) => c.name === currentApiConfigNameAfter)
+
+					if (config?.id) {
+						await this.providerSettingsManager.setModeConfig(newMode, config.id)
+					}
+				}
+			}
 		}
+		// kilocode_change end
 
 		await this.postStateToWebview()
 

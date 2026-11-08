@@ -57,3 +57,27 @@ export function resolveLatestEvolve(
 export function isEvolveSlug(slug: string | undefined | null): boolean {
 	return !!slug && /^evolve(?:-(\d+))?$/.test(slug)
 }
+
+/**
+ * Evolving (evolve -> evolve-N, or evolve-N -> evolve-M) must keep the live
+ * provider. Historical copies often still point at a stale sticky profile
+ * (fresh-install default, leftover after delete+recreate).
+ */
+export function shouldPreserveProviderOnModeSwitch(
+	fromSlug: string | undefined | null,
+	toSlug: string | undefined | null,
+): boolean {
+	return isEvolveSlug(fromSlug) && isEvolveSlug(toSlug) && fromSlug !== toSlug
+}
+
+/**
+ * System-prompt MODES list: non-evolve modes plus the newest evolve copy.
+ * Historical Evolve-N entries belong in ~/.deeptask/PROMPT_EVOLUTION_LOG.md.
+ */
+export function filterModesForSystemPrompt<T extends { slug: string; name?: string }>(modes: T[]): T[] {
+	const latest = resolveLatestEvolve(modes)
+	if (!latest) {
+		return modes
+	}
+	return modes.filter((mode) => !isEvolveSlug(mode.slug) || mode.slug === latest.slug)
+}

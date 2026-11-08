@@ -455,7 +455,7 @@ describe("filterNativeToolsForMode", () => {
 		expect(toolNames).toContain("attempt_completion")
 	})
 
-	it("should exclude ask_followup_question when auto-approval Questions is disabled", () => {
+	it("should keep ask_followup_question when follow-up auto-select is disabled", () => {
 		const codeMode: ModeConfig = {
 			slug: "code",
 			name: "Code",
@@ -468,7 +468,7 @@ describe("filterNativeToolsForMode", () => {
 			alwaysAllowFollowupQuestions: false,
 		} as any)
 		const toolNames = filtered.map((tool) => ("function" in tool ? tool.function.name : ""))
-		expect(toolNames).not.toContain("ask_followup_question")
+		expect(toolNames).toContain("ask_followup_question")
 		expect(toolNames).toContain("attempt_completion")
 	})
 
@@ -963,7 +963,7 @@ describe("getToolDescriptionsForMode", () => {
 		expect(result).not.toContain("ask_followup_question")
 	})
 
-	it("should exclude ask_followup_question descriptions when auto-approval Questions is disabled", () => {
+	it("should keep ask_followup_question descriptions when follow-up auto-select is disabled", () => {
 		const result = getToolDescriptionsForMode(
 			"code",
 			"/test",
@@ -980,7 +980,7 @@ describe("getToolDescriptionsForMode", () => {
 			undefined,
 			{ autoApprovalEnabled: true, alwaysAllowFollowupQuestions: false } as any,
 		)
-		expect(result).not.toContain("ask_followup_question")
+		expect(result).toContain("ask_followup_question")
 	})
 
 	it("should include ask_followup_question when yoloMode is disabled", () => {

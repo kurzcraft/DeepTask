@@ -3,6 +3,7 @@ import * as vscode from "vscode"
 import type { ModeConfig } from "@roo-code/types"
 
 import { getAllModesWithPrompts } from "../../../shared/modes"
+import { filterModesForSystemPrompt } from "../../../shared/evolve-upgrade"
 import { ensureSettingsDirectoryExists } from "../../../utils/globalContext"
 
 export async function getModesSection(
@@ -14,25 +15,25 @@ export async function getModesSection(
 
 	// Get all modes with their overrides from extension state
 	const allModes = await getAllModesWithPrompts(context)
+	// kilocode_change: system-prompt MODES lists the newest evolve copy only.
+	// Historical Evolve-N entries live in ~/.deeptask/PROMPT_EVOLUTION_LOG.md.
+	const listedModes = filterModesForSystemPrompt(allModes)
 
 	let modesContent = `====
 
 MODES
 
 - These are the currently available modes:
-${allModes
+${listedModes
 	.map((mode: ModeConfig) => {
-		let description: string
-		if (mode.whenToUse && mode.whenToUse.trim() !== "") {
-			// Use whenToUse as the primary description, indenting subsequent lines for readability
-			description = mode.whenToUse.replace(/\n/g, "\n    ")
-		} else {
-			// Fallback to the first sentence of roleDefinition if whenToUse is not available
-			description = mode.roleDefinition.split(".")[0]
-		}
-		return `  * "${mode.name}" mode (${mode.slug}) - ${description}`
+		const source = (mode.whenToUse?.trim() || mode.roleDefinition.split(/[.。]/)[0] || mode.name)
+			.replace(/\s+/g, " ")
+			.trim()
+		const description = source.length > 120 ? `${source.slice(0, 117)}...` : source
+		return `  * "${mode.name}" (${mode.slug}) - ${description}`
 	})
-	.join("\n")}`
+	.join("\n")}
+- Historical evolve copies are omitted here. Read ~/.deeptask/PROMPT_EVOLUTION_LOG.md for lineage.`
 
 	if (!skipXmlExamples) {
 		modesContent += `

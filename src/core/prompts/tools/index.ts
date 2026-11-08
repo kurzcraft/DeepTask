@@ -160,11 +160,9 @@ export function getToolDescriptionsForMode(
 	}
 
 	// kilocode_change start
-	// Keep legacy/XML tool descriptions consistent with the native capability gate.
-	if (
-		clineProviderState?.yoloMode ||
-		(clineProviderState?.autoApprovalEnabled === true && clineProviderState.alwaysAllowFollowupQuestions !== true)
-	) {
+	// YOLO skips questions entirely. Disabling follow-up auto-select only stops
+	// timeout-picking the first option; keep ask_followup_question advertised.
+	if (clineProviderState?.yoloMode) {
 		tools.delete("ask_followup_question")
 	}
 	// kilocode_change end

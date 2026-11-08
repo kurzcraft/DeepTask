@@ -7,6 +7,9 @@
 - Isolate live command chrome across parallel chats. `commandExecutionStatus` used to bypass `shouldBroadcastTaskToChat` and paint Continue/Terminate over the focused conversation. Host now drops unscoped or background events (`shouldBroadcastCommandExecutionToChat`; missing `taskId` is fail-closed). The webview also fail-closes when the focused task id is known.
 - Re-run the webview transcript projector on in-place `messageUpdated` replaces, not only on appends. Same-ts streaming updates were swapping full image blobs back onto already-stripped rows inside the 800-row window (Scientist field: webview V8 3885/4096MB with resident ≈803 and tombstonedCount 1521).
 - Omit unchanged same-ts image blobs from incremental host IPC. Fingerprint by length plus prefix/suffix, never hash the full base64. The webview merges omitted images back onto the resident row before projecting, so `JSON.parse` does not re-inflate the blob.
+- Compress the plugin system prompt without dropping hard rules. `ask_followup_question` stays available even when timeout auto-selects the first suggestion. Skills catalog is short trigger + path; full text stays in `SKILL.md`. TASK PROGRESS FILE, MODES, SCRIPT-FIRST, SYSTEM INFORMATION, and RULES are de-duplicated so terminal `cd` no longer contradicts the workspace. Custom-layer prompts are not in this release.
+- Evolving (`evolve` → `evolve-N`) keeps the live provider. Switching to a new evolve copy no longer activates that copy's stale sticky profile.
+- System-prompt MODES lists the newest evolve copy only. Historical Evolve-N entries belong in `~/.deeptask/PROMPT_EVOLUTION_LOG.md`.
 
 ## 9.3.5
 

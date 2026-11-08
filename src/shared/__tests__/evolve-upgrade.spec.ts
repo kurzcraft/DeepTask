@@ -1,7 +1,14 @@
 // npx vitest run src/shared/__tests__/evolve-upgrade.spec.ts
 import { describe, expect, it } from "vitest"
 
-import { evolveDisplayName, isEvolveSlug, parseEvolveVersion, resolveLatestEvolve } from "../evolve-upgrade"
+import {
+	evolveDisplayName,
+	filterModesForSystemPrompt,
+	isEvolveSlug,
+	parseEvolveVersion,
+	resolveLatestEvolve,
+	shouldPreserveProviderOnModeSwitch,
+} from "../evolve-upgrade"
 
 describe("evolve-upgrade helpers", () => {
 	it("isEvolveSlug matches the evolve family", () => {
@@ -48,5 +55,34 @@ describe("evolve-upgrade helpers", () => {
 	it("resolveLatestEvolve returns undefined when no evolve modes exist", () => {
 		expect(resolveLatestEvolve([{ slug: "code", name: "Code" }])).toBeUndefined()
 		expect(resolveLatestEvolve([])).toBeUndefined()
+	})
+
+	it("shouldPreserveProviderOnModeSwitch only for evolve-family hops", () => {
+		expect(shouldPreserveProviderOnModeSwitch("evolve-17", "evolve-18")).toBe(true)
+		expect(shouldPreserveProviderOnModeSwitch("evolve", "evolve-1")).toBe(true)
+		expect(shouldPreserveProviderOnModeSwitch("evolve-17", "evolve-17")).toBe(false)
+		expect(shouldPreserveProviderOnModeSwitch("code", "architect")).toBe(false)
+		expect(shouldPreserveProviderOnModeSwitch("evolve-17", "code")).toBe(false)
+		expect(shouldPreserveProviderOnModeSwitch("code", "evolve-17")).toBe(false)
+		expect(shouldPreserveProviderOnModeSwitch(undefined, "evolve-18")).toBe(false)
+	})
+
+	it("filterModesForSystemPrompt keeps non-evolve modes plus the newest evolve copy", () => {
+		const modes = [
+			{ slug: "code", name: "Code" },
+			{ slug: "evolve", name: "Evolve" },
+			{ slug: "evolve-16", name: "Evolve-16" },
+			{ slug: "evolve-17", name: "Evolve-17" },
+			{ slug: "ask", name: "Ask" },
+		]
+		expect(filterModesForSystemPrompt(modes).map((m) => m.slug)).toEqual(["code", "evolve-17", "ask"])
+	})
+
+	it("filterModesForSystemPrompt is a no-op when no evolve modes exist", () => {
+		const modes = [
+			{ slug: "code", name: "Code" },
+			{ slug: "ask", name: "Ask" },
+		]
+		expect(filterModesForSystemPrompt(modes)).toEqual(modes)
 	})
 })

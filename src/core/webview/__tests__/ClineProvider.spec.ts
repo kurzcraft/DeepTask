@@ -1946,6 +1946,45 @@ describe("ClineProvider", () => {
 			// Verify state was posted to webview
 			expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "state" }))
 		})
+
+		it("keeps the live provider when switching between evolve copies", async () => {
+			const liveProfile: ProviderSettingsEntry = {
+				name: "live-config",
+				id: "live-id",
+				apiProvider: "openai",
+			}
+			const staleProfile: ProviderSettingsEntry = {
+				name: "stale-config",
+				id: "stale-id",
+				apiProvider: "anthropic",
+			}
+
+			;(provider as any).providerSettingsManager = {
+				initialize: vi.fn().mockResolvedValue(undefined),
+				getModeConfigId: vi.fn().mockResolvedValue("stale-id"),
+				listConfig: vi.fn().mockResolvedValue([liveProfile, staleProfile]),
+				activateProfile: vi.fn().mockResolvedValue(staleProfile),
+				setModeConfig: vi.fn(),
+				getProfile: vi.fn().mockResolvedValue(staleProfile),
+			} as any
+
+			const contextProxy = (provider as any).contextProxy
+			const getValueSpy = vi.spyOn(contextProxy, "getValue")
+			getValueSpy.mockImplementation((key: any) => {
+				if (key === "currentApiConfigName") return "live-config"
+				if (key === "mode") return "evolve-17"
+				return undefined
+			})
+
+			await provider.handleModeSwitch("evolve-18")
+
+			expect(mockContext.globalState.update).toHaveBeenCalledWith("mode", "evolve-18")
+			expect(provider.providerSettingsManager.getModeConfigId).not.toHaveBeenCalled()
+			expect(provider.providerSettingsManager.activateProfile).not.toHaveBeenCalledWith({
+				name: "stale-config",
+			})
+			expect(provider.providerSettingsManager.setModeConfig).toHaveBeenCalledWith("evolve-18", "live-id")
+		})
 	})
 
 	describe("createTaskWithHistoryItem mode validation", () => {

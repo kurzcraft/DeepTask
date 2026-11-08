@@ -71,9 +71,7 @@ export class AskFollowupQuestionTool extends BaseTool<"ask_followup_question"> {
 		try {
 			// kilocode_change start
 			const state = await task.providerRef.deref()?.getState()
-			const questionsDisabled =
-				state?.yoloMode || (state?.autoApprovalEnabled === true && state.alwaysAllowFollowupQuestions !== true)
-			if (questionsDisabled) {
+			if (state?.yoloMode) {
 				task.consecutiveMistakeCount++
 				task.recordToolError("ask_followup_question")
 				task.didToolFailInCurrentTurn = true
@@ -111,9 +109,9 @@ export class AskFollowupQuestionTool extends BaseTool<"ask_followup_question"> {
 
 	override async handlePartial(task: Task, block: ToolUse<"ask_followup_question">): Promise<void> {
 		// kilocode_change start
-		// Do not render a transient question for a tool call that execute() will reject.
+		// YOLO skips questions. Disabling follow-up auto-select still shows the question.
 		const state = await task.providerRef.deref()?.getState()
-		if (state?.yoloMode || (state?.autoApprovalEnabled === true && state.alwaysAllowFollowupQuestions !== true)) {
+		if (state?.yoloMode) {
 			return
 		}
 		// kilocode_change end

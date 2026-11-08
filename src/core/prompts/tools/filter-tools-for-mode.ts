@@ -332,9 +332,9 @@ export function filterNativeToolsForMode(
 	}
 
 	// kilocode_change start
-	// Question permission is a capability gate while auto-approval is enabled, not
-	// merely a timeout preference. Hide the tool when the user disables Questions.
-	if (state?.yoloMode || (state?.autoApprovalEnabled === true && state.alwaysAllowFollowupQuestions !== true)) {
+	// YOLO skips questions entirely. Disabling follow-up auto-select only stops
+	// timeout-picking the first option; the model must still be able to ask.
+	if (state?.yoloMode) {
 		allowedToolNames.delete("ask_followup_question")
 	}
 	// kilocode_change end

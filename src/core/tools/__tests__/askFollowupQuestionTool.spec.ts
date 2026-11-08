@@ -149,8 +149,8 @@ describe("askFollowupQuestionTool", () => {
 		})
 	})
 
-	describe("auto-approval Questions permission", () => {
-		it("rejects a complete question call when Questions is disabled", async () => {
+	describe("follow-up auto-select permission", () => {
+		it("still asks when follow-up auto-select is disabled", async () => {
 			mockCline.providerRef.deref = () => ({
 				getState: () =>
 					Promise.resolve({
@@ -177,13 +177,12 @@ describe("askFollowupQuestionTool", () => {
 				toolProtocol: "xml",
 			})
 
-			expect(mockCline.ask).not.toHaveBeenCalled()
-			expect(mockCline.recordToolError).toHaveBeenCalledWith("ask_followup_question")
-			expect(mockCline.didToolFailInCurrentTurn).toBe(true)
-			expect(toolResult).toContain("Questions permission is disabled")
+			expect(mockCline.ask).toHaveBeenCalled()
+			expect(mockCline.recordToolError).not.toHaveBeenCalledWith("ask_followup_question")
+			expect(toolResult).not.toContain("Questions permission is disabled")
 		})
 
-		it("does not render a partial question when Questions is disabled", async () => {
+		it("still renders a partial question when follow-up auto-select is disabled", async () => {
 			mockCline.providerRef.deref = () => ({
 				getState: () => Promise.resolve({ autoApprovalEnabled: true, alwaysAllowFollowupQuestions: false }),
 			})
@@ -202,7 +201,7 @@ describe("askFollowupQuestionTool", () => {
 				toolProtocol: "native",
 			})
 
-			expect(mockCline.ask).not.toHaveBeenCalled()
+			expect(mockCline.ask).toHaveBeenCalled()
 		})
 	})
 	// kilocode_change end

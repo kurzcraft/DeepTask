@@ -11,6 +11,17 @@ function escapeXml(value: string): string {
 		.replace(/'/g, "&apos;")
 }
 
+const SKILL_DESCRIPTION_LIMIT = 180
+
+function compactSkillDescription(description: string): string {
+	const compact = description.replace(/\s+/g, " ").trim()
+	const first = compact.split(/(?<=[.!?。])\s+/)[0] || compact
+	if (first.length <= SKILL_DESCRIPTION_LIMIT) {
+		return first
+	}
+	return `${first.slice(0, SKILL_DESCRIPTION_LIMIT - 3)}...`
+}
+
 /**
  * Generate the skills section for the system prompt.
  * Only includes skills relevant to the current mode.
@@ -32,7 +43,7 @@ export async function getSkillsSection(
 	const skillsXml = skills
 		.map((skill) => {
 			const name = escapeXml(skill.name)
-			const description = escapeXml(skill.description)
+			const description = escapeXml(compactSkillDescription(skill.description))
 			// Per the Agent Skills integration guidance for filesystem-based agents,
 			// location should be an absolute path to the SKILL.md file.
 			const location = escapeXml(skill.path)
@@ -48,49 +59,6 @@ AVAILABLE SKILLS
 ${skillsXml}
 </available_skills>
 
-<mandatory_skill_check>
-REQUIRED PRECONDITION
-
-Before producing ANY user-facing response, you MUST perform a skill applicability check.
-
-Step 1: Skill Evaluation
-- Evaluate the user's request against ALL available skill <description> entries in <available_skills>.
-- Determine whether at least one skill clearly and unambiguously applies.
-
-Step 2: Branching Decision
-
-<if_skill_applies>
-- Select EXACTLY ONE skill.
-- Prefer the most specific skill when multiple skills match.
-- Read the full SKILL.md file at the skill's <location>.
-- Load the SKILL.md contents fully into context BEFORE continuing.
-- Follow the SKILL.md instructions precisely.
-- Do NOT respond outside the skill-defined flow.
-</if_skill_applies>
-
-<if_no_skill_applies>
-- Proceed with a normal response.
-- Do NOT load any SKILL.md files.
-</if_no_skill_applies>
-
-CONSTRAINTS:
-- Do NOT load every SKILL.md up front.
-- Load SKILL.md ONLY after a skill is selected.
-- Do NOT skip this check.
-- FAILURE to perform this check is an error.
-</mandatory_skill_check>
-
-<context_notes>
-- The skill list is already filtered for the current mode: "${currentMode}".
-- Mode-specific skills may come from skills-${currentMode}/ with project-level overrides taking precedence over global skills.
-</context_notes>
-
-<internal_verification>
-This section is for internal control only.
-Do NOT include this section in user-facing output.
-
-After completing the evaluation, internally confirm:
-<skill_check_completed>true|false</skill_check_completed>
-</internal_verification>
+Before any user-facing response, match the request against skill descriptions. If one skill clearly applies, read its SKILL.md at <location> and follow it; otherwise proceed without loading SKILL.md. Do not load every SKILL.md up front. Descriptions are compact triggers; full instructions stay in SKILL.md. List already filtered for mode "${currentMode}".
 `
 }

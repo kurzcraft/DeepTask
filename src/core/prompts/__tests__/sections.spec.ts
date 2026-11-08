@@ -48,9 +48,9 @@ describe("getCapabilitiesSection", () => {
 		const result = getCapabilitiesSection(cwd)
 
 		expect(result).toContain("CAPABILITIES")
-		expect(result).toContain("execute CLI commands")
+		expect(result).toContain("execute CLI")
 		expect(result).toContain("list files")
-		expect(result).toContain("read and write files")
+		expect(result).toContain("read/write files")
 	})
 
 	it("includes MCP reference when mcpHub is provided", () => {
