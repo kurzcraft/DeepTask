@@ -1,4 +1,4 @@
-import { safeWriteJson } from "../../utils/safeWriteJson"
+import { seedIncrementalJsonArrayCache, writeJsonArrayIncremental } from "../../utils/incrementalJsonArrayWrite"
 import * as path from "path"
 import * as fs from "fs/promises"
 
@@ -23,7 +23,12 @@ export async function readTaskMessages({
 	const fileExists = await fileExistsAtPath(filePath)
 
 	if (fileExists) {
-		return JSON.parse(await fs.readFile(filePath, "utf8"))
+		const fileContent = await fs.readFile(filePath, "utf8")
+		const parsed = JSON.parse(fileContent)
+		if (Array.isArray(parsed) && parsed.length > 0) {
+			await seedIncrementalJsonArrayCache(filePath, parsed, fileContent)
+		}
+		return parsed
 	}
 
 	return []
@@ -38,8 +43,9 @@ export type SaveTaskMessagesOptions = {
 export async function saveTaskMessages({ messages, taskId, globalStoragePath }: SaveTaskMessagesOptions) {
 	const taskDir = await getTaskDirectoryPath(globalStoragePath, taskId)
 	const filePath = path.join(taskDir, GlobalFileNames.uiMessages)
-	// kilocode_change start: snapshot before writing (prevents torn JSON under
-	// concurrent mutation, same rationale as saveApiMessages).
-	await safeWriteJson(filePath, messages, { snapshot: true })
+	// kilocode_change start: incremental array write
+	// Same rationale as saveApiMessages: never JSON.stringify the full
+	// transcript. Reuse frozen prefix bytes; stringify only the dirty tail.
+	await writeJsonArrayIncremental(filePath, messages)
 	// kilocode_change end
 }

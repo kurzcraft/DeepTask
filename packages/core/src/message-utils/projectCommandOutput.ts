@@ -1,8 +1,7 @@
 // kilocode_change - new file
-import type { ClineMessage, TokenUsage } from "@roo-code/types"
+import type { ClineMessage } from "@roo-code/types"
 
 import { COMMAND_OUTPUT_STRING } from "./consolidateCommands.js"
-import { consolidateTokenUsage } from "./consolidateTokenUsage.js"
 import { safeJsonParse } from "./safeJsonParse.js"
 
 /** Display-only budget for command output. Storage and model I/O stay full. */
@@ -13,42 +12,34 @@ const COMMAND_OUTPUT_DISPLAY_MARKER = (omitted: number) =>
 	`\n… [truncated ${omitted} chars, expand to load full output] …\n`
 
 /**
- * Host-side IPC bound. 9.3.4 still posted a 16k-row tombstone/cheap-row array
- * (~6.2MB JSON for the 16160-row / 27MB Scientist field). JSON.parse of that
- * array, plus the webview keeping the same 16k objects resident, grew the
- * renderer linearly 400MB→4.1GB over 10h. Compact the posted transcript to
- * row 0 + accounting stubs + an 800-row tail. Storage and model I/O stay full.
+ * Host-side IPC bound. 9.3.4 still posted a 16k-row tombstone array; JSON.parse
+ * of that plus an unvirtualized Markdown tree gray-screened the renderer.
+ * 9.3.6 then omitted everything outside a 64-row sliding page — continuous
+ * scroll position broke. Keep every row in order so Virtuoso can virtualize a
+ * single list. Newest WEBVIEW_TRANSCRIPT_DISPLAY_TAIL rows stay 8k-truncated;
+ * older rows keep a cheap preview so a 13k-row / 22MB snapshot stays under
+ * 3MB of IPC JSON. Images cap at WEBVIEW_TRANSCRIPT_IMAGE_ROWS. Storage and
+ * model I/O stay full.
  */
-export const WEBVIEW_TRANSCRIPT_DISPLAY_TAIL = 800
-export const WEBVIEW_TRANSCRIPT_IMAGE_ROWS = 24
+export const WEBVIEW_TRANSCRIPT_DISPLAY_TAIL = 64
+export const WEBVIEW_TRANSCRIPT_IMAGE_ROWS = 4
+/** Cheap preview for rows older than the verbatim tail. Sized so 13k rows of
+ *  field text stay under the 3MB IPC budget without dropping the list. */
+export const WEBVIEW_TRANSCRIPT_HISTORICAL_CHAR_LIMIT = 120
 /** Display-only cap for tool / reasoning / leftover text inside the tail. */
 export const WEBVIEW_TRANSCRIPT_TEXT_CHAR_LIMIT = COMMAND_OUTPUT_DISPLAY_CHAR_LIMIT
+/** Preview budget for the left-rail user-message index (not ChatRow text). */
+export const USER_MESSAGE_RAIL_PREVIEW_CHARS = 120
+
+export interface UserMessageRailTick {
+	ts: number
+	index: number
+	preview: string
+}
+
 /** Per-field cap when shrinking JSON tool/api payloads (re-stringified, so newlines stay escaped). */
 const JSON_DISPLAY_FIELD_CHAR_LIMIT = 2_000
 const JSON_SAFE_TRUNCATION_MARKER = (omitted: number) => `…[truncated ${omitted} chars]…`
-
-function tombstoneMessageForDisplay(message: ClineMessage): ClineMessage {
-	const tombstone: Record<string, unknown> = {
-		ts: message.ts,
-		type: message.type,
-		webviewTombstone: true,
-	}
-	if (message.ask !== undefined) tombstone.ask = message.ask
-	if (message.say !== undefined) tombstone.say = message.say
-	if (message.partial !== undefined) tombstone.partial = message.partial
-	if (message.isAnswered !== undefined) tombstone.isAnswered = message.isAnswered
-	if (message.checkpoint !== undefined) tombstone.checkpoint = message.checkpoint
-	if (message.conversationHistoryIndex !== undefined) {
-		tombstone.conversationHistoryIndex = message.conversationHistoryIndex
-	}
-	if (message.type === "say" && message.say === "api_req_started" && message.text !== undefined) {
-		tombstone.text = message.text
-	}
-	if (message.contextCondense !== undefined) {
-		tombstone.contextCondense = message.contextCondense
-	}
-	return tombstone as ClineMessage
-}
 
 function stripImagesForDisplay(message: ClineMessage): ClineMessage {
 	const clone: Record<string, unknown> = { ...message }
@@ -57,56 +48,45 @@ function stripImagesForDisplay(message: ClineMessage): ClineMessage {
 	return clone as ClineMessage
 }
 
-function pickStubTimestamps(row0Ts: number, firstTailTs: number): { apiTs: number; condenseTs: number } {
-	if (firstTailTs > row0Ts + 1) {
-		const span = firstTailTs - row0Ts
-		const apiTs = row0Ts + Math.max(1, Math.floor(span / 3))
-		const condenseTs = Math.min(firstTailTs - 1, row0Ts + Math.max(2, Math.floor((2 * span) / 3)))
-		if (condenseTs > apiTs) {
-			return { apiTs, condenseTs }
-		}
-		return { apiTs, condenseTs: Math.min(firstTailTs - 1, apiTs + 1) }
+function cheapPreviewText(text: string, limit = WEBVIEW_TRANSCRIPT_HISTORICAL_CHAR_LIMIT): string {
+	if (text.length <= limit) {
+		return text
 	}
-	return { apiTs: row0Ts, condenseTs: row0Ts }
+	return `${text.slice(0, limit)}…`
 }
 
 /**
- * Fold dropped-prefix token/cost totals into two tombstone stubs so TaskHeader
- * metrics survive without shipping 16k api_req rows. Stubs never render.
+ * Keep the row in the continuous list, but drop the payload that Markdown would
+ * amplify. api_req_started keeps cost JSON so TaskHeader metrics survive without
+ * prefix stubs. Storage stays full; expand still fetches command output by ts.
  */
-export function buildPrefixAccountingStubs(
-	row0: ClineMessage,
-	firstTail: ClineMessage,
-	prefixUsage: TokenUsage,
-	contextTokens: number,
-): ClineMessage[] {
-	const { apiTs, condenseTs } = pickStubTimestamps(row0.ts, firstTail.ts)
-	const apiStub: ClineMessage = {
-		ts: apiTs,
-		type: "say",
-		say: "api_req_started",
-		webviewTombstone: true,
-		text: JSON.stringify({
-			tokensIn: prefixUsage.totalTokensIn,
-			tokensOut: prefixUsage.totalTokensOut,
-			...(typeof prefixUsage.totalCacheWrites === "number" ? { cacheWrites: prefixUsage.totalCacheWrites } : {}),
-			...(typeof prefixUsage.totalCacheReads === "number" ? { cacheReads: prefixUsage.totalCacheReads } : {}),
-			cost: prefixUsage.totalCost,
-		}),
+function projectHistoricalRowForDisplay(message: ClineMessage): ClineMessage {
+	if ((message as { webviewTombstone?: boolean }).webviewTombstone === true) {
+		return message
 	}
-	const condenseStub: ClineMessage = {
-		ts: condenseTs,
-		type: "say",
-		say: "condense_context",
-		webviewTombstone: true,
-		contextCondense: {
-			cost: 0,
-			prevContextTokens: contextTokens,
-			newContextTokens: contextTokens,
-			summary: "",
-		},
+
+	if (message.type === "say" && message.say === "api_req_started" && message.text) {
+		const projectedText = projectJsonTextForDisplay(stripApiReqRequestForDisplay(message.text))
+		if (projectedText !== message.text) {
+			return { ...message, text: projectedText }
+		}
+		return message
 	}
-	return [apiStub, condenseStub]
+
+	let next: ClineMessage = message
+	if (next.contextCondense !== undefined && next.contextCondense.summary) {
+		next = {
+			...next,
+			contextCondense: { ...next.contextCondense, summary: "" },
+		}
+	}
+	if (next.text && next.text.length > WEBVIEW_TRANSCRIPT_HISTORICAL_CHAR_LIMIT) {
+		next = { ...next, text: cheapPreviewText(next.text) }
+	}
+	if (next.reasoning && next.reasoning.length > WEBVIEW_TRANSCRIPT_HISTORICAL_CHAR_LIMIT) {
+		next = { ...next, reasoning: cheapPreviewText(next.reasoning) }
+	}
+	return next
 }
 
 function compactTranscriptForDisplay(
@@ -118,16 +98,24 @@ function compactTranscriptForDisplay(
 	}
 
 	const start = messages.length - tail
-	const tombstonedCount = Math.max(0, start - 1)
-	const tailRows = messages.slice(start)
-	const row0 = messages[0]!
-	const prefixUsage = consolidateTokenUsage(messages.slice(0, start))
-	const fullUsage = consolidateTokenUsage(messages)
-	const stubs = buildPrefixAccountingStubs(row0, tailRows[0]!, prefixUsage, fullUsage.contextTokens)
+	let changed = false
+	const next = new Array<ClineMessage>(messages.length)
+	for (let i = 0; i < messages.length; i++) {
+		const message = messages[i]!
+		if (i < start) {
+			const projected = projectHistoricalRowForDisplay(message)
+			next[i] = projected
+			if (projected !== message) {
+				changed = true
+			}
+		} else {
+			next[i] = message
+		}
+	}
 	return {
-		messages: [row0, ...stubs, ...tailRows],
-		tombstonedCount,
-		changed: true,
+		messages: changed ? next : messages,
+		tombstonedCount: 0,
+		changed,
 	}
 }
 
@@ -168,12 +156,41 @@ function applyImageBudget(messages: ClineMessage[], imageRows: number): { messag
 	return { messages: changed ? next : messages, changed }
 }
 
+function isCompletedUserFeedback(message: ClineMessage): boolean {
+	return message.type === "say" && message.say === "user_feedback" && message.partial !== true
+}
+
+function railPreviewFor(message: ClineMessage): string {
+	const text = typeof message.text === "string" ? message.text.replace(/\s+/g, " ").trim() : ""
+	if (!text) {
+		return "(empty message)"
+	}
+	return text.length <= USER_MESSAGE_RAIL_PREVIEW_CHARS
+		? text
+		: `${text.slice(0, USER_MESSAGE_RAIL_PREVIEW_CHARS)}…`
+}
+
 /**
- * Drop historical payloads before they cross the extension→webview IPC.
- * Row 0 (task header) and the newest WEBVIEW_TRANSCRIPT_DISPLAY_TAIL rows
- * stay intact; older rows are omitted (not shipped as tombstones/cheap-rows).
- * Prefix token/cost totals fold into two display-only stubs. Image blobs
- * inside the tail are capped to the newest WEBVIEW_TRANSCRIPT_IMAGE_ROWS.
+ * Full-history left-rail index. One tick per completed user_feedback row.
+ * Preview is capped; images/reasoning never ship. Storage stays full.
+ */
+export function projectUserMessageRailIndex(messages: readonly ClineMessage[]): UserMessageRailTick[] {
+	const ticks: UserMessageRailTick[] = []
+	for (let index = 0; index < messages.length; index++) {
+		const message = messages[index]!
+		if (!isCompletedUserFeedback(message)) {
+			continue
+		}
+		ticks.push({ ts: message.ts, index, preview: railPreviewFor(message) })
+	}
+	return ticks
+}
+
+/**
+ * Keep every row in order for Virtuoso. Rows older than the newest
+ * WEBVIEW_TRANSCRIPT_DISPLAY_TAIL keep a cheap preview so a 13k-row / 22MB
+ * snapshot stays under 3MB of IPC JSON. Image blobs are capped to the newest
+ * WEBVIEW_TRANSCRIPT_IMAGE_ROWS. Storage and model I/O stay full.
  */
 export function projectTranscriptBoundForDisplay(
 	messages: ClineMessage[],
@@ -371,12 +388,11 @@ export function projectCommandExecutionStatusTextForDisplay(text: string): strin
 }
 
 /**
- * Project UI transcripts for the webview. Historical rows are omitted
- * before they cross IPC (so JSON.parse never inflates the renderer with a
- * 16k-row tombstone array). Command/tool/api_req rows in the verbatim tail
- * send a short preview, including the in-flight partial command. Callers
- * must not persist the returned array. Expand still loads storage via
- * requestCommandOutput.
+ * Project UI transcripts for the webview as one continuous list. Historical
+ * rows keep a cheap preview (not omitted, not paged). Command/tool/api_req
+ * rows in the newest tail send an 8k preview, including the in-flight partial
+ * command. Callers must not persist the returned array. Expand still loads
+ * storage via requestCommandOutput.
  */
 export function projectClineMessagesForDisplay(messages: ClineMessage[]): ClineMessage[] {
 	return projectClineMessagesForDisplayWithMeta(messages).messages
@@ -392,17 +408,17 @@ export function projectClineMessagesForDisplayWithMeta(messages: ClineMessage[])
 
 	const bounded = projectTranscriptBoundForDisplayWithMeta(messages)
 	let changed = bounded.messages !== messages
-	const projected = bounded.messages.map((message) => {
-		if ((message as { webviewTombstone?: boolean }).webviewTombstone === true) {
+	const verbatimStart =
+		messages.length > WEBVIEW_TRANSCRIPT_DISPLAY_TAIL ? messages.length - WEBVIEW_TRANSCRIPT_DISPLAY_TAIL : 0
+	const projected = bounded.messages.map((message, index) => {
+		if (index < verbatimStart || (message as { webviewTombstone?: boolean }).webviewTombstone === true) {
 			return message
 		}
 
 		const next = projectCommandMessageForDisplay(message)
-
 		if (next !== message) {
 			changed = true
 		}
-
 		return next
 	})
 
@@ -411,6 +427,3 @@ export function projectClineMessagesForDisplayWithMeta(messages: ClineMessage[])
 		tombstonedCount: bounded.tombstonedCount,
 	}
 }
-
-// Keep the helper available for tests that still assert tombstone shape.
-export { tombstoneMessageForDisplay }

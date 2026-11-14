@@ -4,13 +4,16 @@ import type { ClineMessage } from "@roo-code/types"
 import { COMMAND_OUTPUT_STRING } from "../consolidateCommands.js"
 import {
 	COMMAND_OUTPUT_DISPLAY_CHAR_LIMIT,
+	USER_MESSAGE_RAIL_PREVIEW_CHARS,
 	WEBVIEW_TRANSCRIPT_DISPLAY_TAIL,
+	WEBVIEW_TRANSCRIPT_HISTORICAL_CHAR_LIMIT,
 	WEBVIEW_TRANSCRIPT_IMAGE_ROWS,
 	projectClineMessagesForDisplay,
 	projectClineMessagesForDisplayWithMeta,
 	projectCommandMessageForDisplay,
 	projectTranscriptBoundForDisplay,
 	projectTranscriptBoundForDisplayWithMeta,
+	projectUserMessageRailIndex,
 	truncateCommandOutputText,
 } from "../projectCommandOutput.js"
 
@@ -111,58 +114,59 @@ describe("projectCommandOutput", () => {
 		expect(projected.text!.length).toBeLessThan(original.text!.length)
 	})
 
-	it("omits historical rows before they cross IPC, keeping row 0, two stubs, and the tail", () => {
+	it("keeps every historical row in order and cheap-previews payloads older than the tail", () => {
 		const messages = Array.from({ length: 30 }, (_, i) => sayText(i + 1, `payload-${i + 1}-`.padEnd(2000, "x")))
 		const { messages: out, tombstonedCount } = projectTranscriptBoundForDisplayWithMeta(messages, 10, 5)
 
-		expect(out.length).toBe(13)
-		expect(out[0]).toBe(messages[0])
+		expect(out).toHaveLength(30)
 		expect(out[0]!.webviewTombstone).toBeUndefined()
-		expect(out[1]!.webviewTombstone).toBe(true)
-		expect(out[1]!.say).toBe("api_req_started")
-		expect(out[2]!.webviewTombstone).toBe(true)
-		expect(out[2]!.say).toBe("condense_context")
+		expect(out[0]!.ts).toBe(1)
+		expect(out[0]!.text!.length).toBeLessThanOrEqual(WEBVIEW_TRANSCRIPT_HISTORICAL_CHAR_LIMIT + 1)
+		expect(out[0]!.text).toContain("payload-1-")
+		expect(out[1]!.text!.length).toBeLessThanOrEqual(WEBVIEW_TRANSCRIPT_HISTORICAL_CHAR_LIMIT + 1)
+		expect(out[1]!.text).toContain("payload-2-")
 		for (let i = 0; i < 10; i++) {
-			expect(out[3 + i]).toBe(messages[20 + i])
+			expect(out[20 + i]).toBe(messages[20 + i])
 		}
-		expect(tombstonedCount).toBe(19)
-		expect(messages[1]!.text).toContain("payload-")
+		expect(tombstonedCount).toBe(0)
+		expect(messages[0]!.text).toHaveLength(2000)
+		expect(messages[1]!.text).toHaveLength(2000)
 	})
 
-	it("folds dropped-prefix token and condense totals into the two accounting stubs", () => {
+	it("keeps historical api_req cost JSON and blanks condense summaries without dropping rows", () => {
 		const taskRow = sayText(1, "do the thing")
 		const apiReq = {
 			ts: 2,
 			type: "say",
 			say: "api_req_started",
-			text: JSON.stringify({ tokensIn: 100, tokensOut: 50, cost: 0.5 }),
+			text: JSON.stringify({ tokensIn: 100, tokensOut: 50, cost: 0.5, request: "x".repeat(4000) }),
 		} as ClineMessage
 		const condense = {
 			ts: 3,
 			type: "say",
 			say: "condense_context",
 			text: "long summary".padEnd(5000, "y"),
-			contextCondense: { cost: 0.25, newContextTokens: 1200 },
+			contextCondense: { cost: 0.25, newContextTokens: 1200, summary: "long summary".padEnd(5000, "y") },
 		} as unknown as ClineMessage
 		const tail = Array.from({ length: 10 }, (_, i) => sayText(4 + i, `tail-${i}`))
 		const out = projectTranscriptBoundForDisplay([taskRow, apiReq, condense, ...tail], 4, 5)
 
-		expect(out.length).toBe(7)
-		expect(out[1]!.webviewTombstone).toBe(true)
+		expect(out).toHaveLength(13)
+		expect(out[1]!.webviewTombstone).toBeUndefined()
 		expect(out[1]!.say).toBe("api_req_started")
 		expect(JSON.parse(out[1]!.text!)).toEqual({
 			tokensIn: 100,
 			tokensOut: 50,
-			cost: 0.75,
+			cost: 0.5,
 		})
-		expect(out[2]!.webviewTombstone).toBe(true)
+		expect(out[2]!.webviewTombstone).toBeUndefined()
 		expect(out[2]!.say).toBe("condense_context")
 		expect(out[2]!.contextCondense).toEqual({
-			cost: 0,
-			prevContextTokens: 1200,
+			cost: 0.25,
 			newContextTokens: 1200,
 			summary: "",
 		})
+		expect(out[2]!.text!.length).toBeLessThanOrEqual(WEBVIEW_TRANSCRIPT_HISTORICAL_CHAR_LIMIT + 1)
 		expect(condense.text).toContain("long summary")
 	})
 
@@ -215,17 +219,14 @@ describe("projectCommandOutput", () => {
 		const { messages: projected, tombstonedCount } = projectClineMessagesForDisplayWithMeta(messages)
 		const projectedJsonBytes = JSON.stringify(projected).length
 
-		expect(projected.length).toBe(1 + 2 + WEBVIEW_TRANSCRIPT_DISPLAY_TAIL)
+		expect(projected).toHaveLength(FIELD_ROW_COUNT)
 		expect(projected[0]).toBe(messages[0])
 		expect(projected[0]!.text).toBe("Scientist wait-command task")
+		expect(projected[1]!.text!.length).toBeLessThanOrEqual(WEBVIEW_TRANSCRIPT_HISTORICAL_CHAR_LIMIT + 1)
 		expect(projectedJsonBytes).toBeLessThan(originalJsonBytes / 8)
 		expect(projectedJsonBytes).toBeLessThan(3_000_000)
-		expect(tombstonedCount).toBe(FIELD_ROW_COUNT - WEBVIEW_TRANSCRIPT_DISPLAY_TAIL - 1)
-
-		const tombstoned = projected.filter((m) => m.webviewTombstone === true)
-		expect(tombstoned.length).toBe(2)
-		expect(tombstoned[0]!.say).toBe("api_req_started")
-		expect(tombstoned[1]!.say).toBe("condense_context")
+		expect(tombstonedCount).toBe(0)
+		expect(projected.filter((m) => m.webviewTombstone === true)).toHaveLength(0)
 		expect(messages[1]!.text).toHaveLength(FIELD_PAYLOAD_CHARS)
 
 		const last = projected[projected.length - 1]!
@@ -237,8 +238,41 @@ describe("projectCommandOutput", () => {
 	})
 
 	it("keeps the default host bound aligned with the webview tail/image budget", () => {
-		expect(WEBVIEW_TRANSCRIPT_DISPLAY_TAIL).toBe(800)
-		expect(WEBVIEW_TRANSCRIPT_IMAGE_ROWS).toBe(24)
+		expect(WEBVIEW_TRANSCRIPT_DISPLAY_TAIL).toBe(64)
+		expect(WEBVIEW_TRANSCRIPT_HISTORICAL_CHAR_LIMIT).toBe(120)
+		expect(WEBVIEW_TRANSCRIPT_IMAGE_ROWS).toBe(4)
+	})
+
+	it("indexes every completed user_feedback row with a capped preview", () => {
+		const messages: ClineMessage[] = [
+			sayText(1, "task"),
+			{ ts: 2, type: "say", say: "user_feedback", text: "first" } as ClineMessage,
+			sayText(3, "assistant"),
+			{
+				ts: 4,
+				type: "say",
+				say: "user_feedback",
+				text: "x".repeat(USER_MESSAGE_RAIL_PREVIEW_CHARS + 40),
+			} as ClineMessage,
+			{ ts: 5, type: "say", say: "user_feedback", text: "streaming", partial: true } as ClineMessage,
+		]
+		const ticks = projectUserMessageRailIndex(messages)
+		expect(ticks).toHaveLength(2)
+		expect(ticks[0]).toEqual({ ts: 2, index: 1, preview: "first" })
+		expect(ticks[1]!.ts).toBe(4)
+		expect(ticks[1]!.index).toBe(3)
+		expect(ticks[1]!.preview.length).toBe(USER_MESSAGE_RAIL_PREVIEW_CHARS + 1)
+		expect(ticks[1]!.preview.endsWith("…")).toBe(true)
+	})
+
+	it("ships a continuous 200-row list instead of a sliding 64-row page", () => {
+		const messages = Array.from({ length: 200 }, (_, i) => sayText(i + 1, `row ${i + 1}`))
+		const projected = projectTranscriptBoundForDisplay(messages)
+		expect(projected).toHaveLength(200)
+		expect(projected[0]!.ts).toBe(1)
+		expect(projected[79]!.ts).toBe(80)
+		expect(projected[199]!.ts).toBe(200)
+		expect(projected.filter((message) => message.webviewTombstone === true)).toHaveLength(0)
 	})
 
 	it("shrinks oversized tool JSON without slicing a string literal at char 3000", () => {

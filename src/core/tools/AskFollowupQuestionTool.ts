@@ -92,10 +92,13 @@ export class AskFollowupQuestionTool extends BaseTool<"ask_followup_question"> {
 				return
 			}
 
-			// Transform follow_up suggestions to the format expected by task.ask
+			// Transform follow_up suggestions to the format expected by task.ask.
+			// kilocode_change: never forward `mode`. Native schema is strict and
+			// requires the field, so models often fill a slug; selecting that
+			// answer used to switch mode and then the sticky provider profile.
 			const follow_up_json = {
 				question,
-				suggest: follow_up.map((s) => ({ answer: s.text, mode: s.mode })),
+				suggest: follow_up.map((s) => ({ answer: s.text })),
 			}
 
 			task.consecutiveMistakeCount = 0

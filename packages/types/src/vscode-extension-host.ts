@@ -596,11 +596,19 @@ export type ExtensionState = Pick<
 	// cursor is unchanged; the webview keeps its existing slice.
 	clineMessages?: ClineMessage[]
 	/**
-	 * kilocode_change: rows omitted by host compact projection (not shipped as
-	 * tombstones). Sent with clineMessages so the collapse banner stays correct
-	 * without a 16k-row array. Omitted on incremental posts that skip clineMessages.
+	 * kilocode_change: rows omitted by host compact projection. Continuous
+	 * history keeps every row, so this is 0. Kept so the collapse banner stays
+	 * correct if a future bound reintroduces omission. Omitted on incremental
+	 * posts that skip clineMessages.
 	 */
 	clineMessagesTombstoned?: number
+	/**
+	 * kilocode_change: full-history left-rail index. One tick per completed
+	 * user_feedback row (ts + source index + short preview). Not ChatRow text.
+	 */
+	userMessageRail?: Array<{ ts: number; index: number; preview: string }>
+	/** kilocode_change: stored transcript length for rail positioning. */
+	transcriptLength?: number
 	currentTaskItem?: HistoryItem
 	currentTaskTodos?: TodoItem[] // Initial todos for the current task
 	apiConfiguration: ProviderSettings

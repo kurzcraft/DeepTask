@@ -5,7 +5,6 @@ import {
 	consolidateTokenUsageIncremental as getApiMetricsIncremental,
 	hasTokenUsageChanged,
 	hasToolUsageChanged,
-	buildPrefixAccountingStubs,
 } from "@roo-code/core/browser"
 
 export {
@@ -15,5 +14,4 @@ export {
 	getApiMetricsIncremental,
 	hasTokenUsageChanged,
 	hasToolUsageChanged,
-	buildPrefixAccountingStubs,
 }

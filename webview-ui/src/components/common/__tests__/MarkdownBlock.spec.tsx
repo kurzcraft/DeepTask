@@ -115,4 +115,12 @@ describe("MarkdownBlock", () => {
 		expect(screen.getByText("Third level ordered")).toBeInTheDocument()
 		expect(screen.getByText("Back to first level")).toBeInTheDocument()
 	})
+
+	it("renders historical plain text without the code-block background class", () => {
+		const { container } = render(<MarkdownBlock markdown={"DeepTask said this."} plain />)
+		const pre = container.querySelector("pre.chat-plain-text")
+		expect(pre).toBeInTheDocument()
+		expect(pre).toHaveClass("bg-transparent")
+		expect(pre?.textContent).toBe("DeepTask said this.")
+	})
 })

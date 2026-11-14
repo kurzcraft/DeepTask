@@ -6,7 +6,8 @@ import { StandardTooltip } from "@src/components/ui"
 
 import MarkdownBlock from "../common/MarkdownBlock"
 
-export const Markdown = memo(({ markdown, partial }: { markdown?: string; partial?: boolean }) => {
+export const Markdown = memo(
+	({ markdown, partial, plain }: { markdown?: string; partial?: boolean; plain?: boolean }) => {
 	const [isHovering, setIsHovering] = useState(false)
 
 	// Shorter feedback duration for copy button flash.
@@ -22,7 +23,14 @@ export const Markdown = memo(({ markdown, partial }: { markdown?: string; partia
 			onMouseLeave={() => setIsHovering(false)}
 			style={{ position: "relative" }}>
 			<div style={{ wordBreak: "break-word", overflowWrap: "anywhere" }}>
-				<MarkdownBlock markdown={markdown} />
+				{plain ? (
+					// kilocode_change: historical "said" rows must not inherit the global pre code-block background
+					<pre className="chat-plain-text m-0 whitespace-pre-wrap break-words font-[inherit] text-[inherit] bg-transparent">
+						{markdown}
+					</pre>
+				) : (
+					<MarkdownBlock markdown={markdown} />
+				)}
 			</div>
 			{markdown && !partial && isHovering && (
 				<div

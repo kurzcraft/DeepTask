@@ -84,11 +84,15 @@ const mockVirtuosoScrollTo = vi.fn()
 const mockVirtuosoScrollToIndex = vi.fn()
 let latestVirtuosoProps: {
 	atBottomStateChange?: (isAtBottom: boolean) => void
+	atTopStateChange?: (isAtTop: boolean) => void
 	totalListHeightChanged?: (height: number) => void
 	className?: string
 	style?: React.CSSProperties
 	increaseViewportBy?: { top: number; bottom: number }
 	computeItemKey?: (index: number, item: ClineMessage) => React.Key
+	data?: ClineMessage[]
+	initialTopMostItemIndex?: number | { index: number; align?: "start" | "center" | "end" }
+	virtuosoKey?: React.Key
 }
 
 // Mock react-virtuoso to render items directly without virtualization while
@@ -99,20 +103,24 @@ vi.mock("react-virtuoso", () => ({
 			data,
 			itemContent,
 			atBottomStateChange,
+			atTopStateChange,
 			totalListHeightChanged,
 			className,
 			style,
 			increaseViewportBy,
 			computeItemKey,
+			initialTopMostItemIndex,
 		}: {
 			data: ClineMessage[]
 			itemContent: (index: number, item: ClineMessage) => React.ReactNode
 			atBottomStateChange?: (isAtBottom: boolean) => void
+			atTopStateChange?: (isAtTop: boolean) => void
 			totalListHeightChanged?: (height: number) => void
 			className?: string
 			style?: React.CSSProperties
 			increaseViewportBy?: { top: number; bottom: number }
 			computeItemKey?: (index: number, item: ClineMessage) => React.Key
+			initialTopMostItemIndex?: number | { index: number; align?: "start" | "center" | "end" }
 		},
 		ref: React.ForwardedRef<{
 			scrollTo: typeof mockVirtuosoScrollTo
@@ -127,11 +135,14 @@ vi.mock("react-virtuoso", () => ({
 		if (isChatList) {
 			latestVirtuosoProps = {
 				atBottomStateChange,
+				atTopStateChange,
 				totalListHeightChanged,
 				className,
 				style,
 				increaseViewportBy,
 				computeItemKey,
+				data,
+				initialTopMostItemIndex,
 			}
 		}
 
@@ -492,6 +503,100 @@ describe("ChatView - streaming output following", () => {
 		})
 		flushNextAnimationFrame()
 		expect(mockVirtuosoScrollTo).toHaveBeenCalledTimes(1)
+	})
+
+	it("jumps a rail tick inside the continuous list without requesting a sliding page", async () => {
+		const result = renderChatView()
+		mockPostMessage({
+			clineMessages: [
+				{ type: "say", say: "task", ts: 1, text: "Active task" },
+				{ type: "say", say: "user_feedback", ts: 10, text: "first question" },
+				{ type: "say", say: "text", ts: 11, text: "old assistant" },
+				{ type: "say", say: "text", ts: 90, text: "live tail" },
+			],
+			userMessageRail: [
+				{ ts: 10, index: 1, preview: "first question" },
+				{ ts: 50, index: 40, preview: "later question" },
+			],
+			transcriptLength: 4,
+			clineMessagesTombstoned: 0,
+		})
+		await waitFor(() => expect(result.getByTestId("user-message-rail")).toBeInTheDocument())
+		expect(result.getAllByTestId("user-message-rail-tick")).toHaveLength(2)
+		expect(result.queryByTestId("transcript-collapsed-banner")).not.toBeInTheDocument()
+		// Leading task say is rendered by the header, not Virtuoso.
+		expect(latestVirtuosoProps.data?.map((message) => message.ts)).toEqual([10, 11, 90])
+
+		vi.mocked(vscode.postMessage).mockClear()
+		mockVirtuosoScrollToIndex.mockClear()
+		fireEvent.click(result.getAllByTestId("user-message-rail-tick")[0])
+		expect(vscode.postMessage).not.toHaveBeenCalledWith(
+			expect.objectContaining({ type: "requestTranscriptPage" }),
+		)
+		expect(mockVirtuosoScrollToIndex).toHaveBeenCalledWith({
+			index: 0,
+			align: "center",
+			behavior: "auto",
+		})
+		expect(latestVirtuosoProps.data?.map((message) => message.ts)).toEqual([10, 11, 90])
+	})
+
+	it("keeps the continuous list when the active task changes", async () => {
+		const result = renderChatView()
+		mockPostMessage({
+			clineMessages: [
+				{ type: "say", say: "task", ts: 1, text: "Active task" },
+				{ type: "say", say: "user_feedback", ts: 10, text: "first question" },
+				{ type: "say", say: "text", ts: 90, text: "live tail" },
+			],
+			userMessageRail: [{ ts: 10, index: 1, preview: "first question" }],
+			transcriptLength: 3,
+			clineMessagesTombstoned: 0,
+		})
+		await waitFor(() => expect(result.getByTestId("user-message-rail")).toBeInTheDocument())
+		expect(latestVirtuosoProps.data?.some((message) => message.ts === 10)).toBe(true)
+
+		mockPostMessage({
+			clineMessages: [
+				{ type: "say", say: "task", ts: 1000, text: "Other task" },
+				{ type: "say", say: "text", ts: 1001, text: "other live tail" },
+			],
+			userMessageRail: [{ ts: 1002, index: 1, preview: "other question" }],
+			transcriptLength: 2,
+			clineMessagesTombstoned: 0,
+		})
+		await waitFor(() => expect(latestVirtuosoProps.data?.some((message) => message.ts === 1001)).toBe(true))
+		expect(latestVirtuosoProps.data?.some((message) => message.ts === 10 || message.ts === 90)).toBe(false)
+		expect(result.queryByTestId("transcript-collapsed-banner")).not.toBeInTheDocument()
+	})
+
+	it("does not request a sliding page from the top, bottom, or wheel", async () => {
+		const result = renderChatView()
+		mockPostMessage({
+			clineMessages: [
+				{ type: "say", say: "task", ts: 1, text: "Active task" },
+				{ type: "say", say: "user_feedback", ts: 10, text: "first question" },
+				{ type: "say", say: "text", ts: 90, text: "live tail" },
+			],
+			userMessageRail: [{ ts: 10, index: 1, preview: "first question" }],
+			transcriptLength: 3,
+			clineMessagesTombstoned: 0,
+		})
+		await waitFor(() => expect(result.getByTestId("user-message-rail")).toBeInTheDocument())
+		vi.mocked(vscode.postMessage).mockClear()
+
+		act(() => {
+			latestVirtuosoProps.atTopStateChange?.(false)
+			latestVirtuosoProps.atTopStateChange?.(true)
+			latestVirtuosoProps.atBottomStateChange?.(true)
+		})
+		fireEvent.wheel(result.getByTestId("chat-virtuoso-item-list"), { deltaY: 120 })
+		fireEvent.wheel(result.getByTestId("chat-virtuoso-item-list"), { deltaY: -120 })
+
+		expect(vscode.postMessage).not.toHaveBeenCalledWith(
+			expect.objectContaining({ type: "requestTranscriptPage" }),
+		)
+		expect(latestVirtuosoProps.data?.map((message) => message.ts)).toEqual([10, 90])
 	})
 })
 

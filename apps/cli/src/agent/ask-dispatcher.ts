@@ -301,8 +301,7 @@ export class AskDispatcher {
 			this.outputManager.output("\nSuggested answers:")
 			suggestions.forEach((suggestion, index) => {
 				const suggestionText = suggestion.answer || String(suggestion)
-				const modeHint = suggestion.mode ? ` (mode: ${suggestion.mode})` : ""
-				this.outputManager.output(`  ${index + 1}. ${suggestionText}${modeHint}`)
+				this.outputManager.output(`  ${index + 1}. ${suggestionText}`)
 			})
 			this.outputManager.output("")
 		}

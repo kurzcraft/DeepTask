@@ -1,42 +1,35 @@
 // kilocode_change - new file
 import type { ClineMessage } from "@roo-code/types"
 
-import { buildPrefixAccountingStubs, getApiMetrics } from "@roo/getApiMetrics"
-
 /**
  * Bounded transcript projection for the webview (kilocode_change).
  *
- * 9.3.4 still kept a 16k-row tombstone/cheap-row array in the renderer after
- * JSON.parse (~6.2MB for the 16160-row / 27MB Scientist field). That array,
- * plus streaming `messageUpdated` appends that grew it back, pinned the
- * renderer 400MB→4.1GB over 10h. Compact to row 0 + two accounting stubs +
- * an 800-row tail — the same cutting plane as the host IPC projector.
- * Cheap rows are dropped, not retained. Storage and model I/O stay full.
+ * 9.3.6 sliding 64-row pages broke scroll continuity. Keep every row in one
+ * Virtuoso list. Host already cheap-previews historical payloads; this
+ * projector only enforces the image budget so streaming `messageUpdated`
+ * cannot re-inflate stripped blobs. Storage and model I/O stay full.
  *
  * Identity stability contract (critical for the incremental caches in
  * consolidateCommandsIncremental / consolidateTokenUsageIncremental /
  * filterVisibleMessagesIncremental):
- *   - Ordinary streaming appends below TAIL + HYSTERESIS keep every existing
- *     row's object identity.
- *   - Compact advances in batches and rebuilds only the stub pair; the new
- *     tail window keeps the same object references.
- *   - Shrink (task switch / rewind / branch replacement) resets the projector
- *     instead of serving stubs from another branch.
+ *   - Ordinary streaming appends keep every existing row's object identity.
+ *   - Image-strip clones are cached per ts+source and rebuilt only when the
+ *     source row object changes.
+ *   - Shrink (task switch / rewind / branch replacement) resets the projector.
  */
 
-/** Verbatim tail size. 800 messages ≈ a few MB worst case, covers any realistic scrollback. */
-export const BOUND_TRANSCRIPT_TAIL = 800
-/** Extra verbatim rows tolerated before compacting (batch amortization). */
-export const BOUND_TRANSCRIPT_HYSTERESIS = 256
+/** Kept for tests/host alignment: newest rows stay 8k-truncated on the host. */
+export const BOUND_TRANSCRIPT_TAIL = 64
+/** Extra verbatim rows tolerated before compacting (unused; paging is gone). */
+export const BOUND_TRANSCRIPT_HYSTERESIS = 16
 // kilocode_change start: image budget — loop image-reading tasks stack hundreds of
-// MB-scale base64 strings inside the verbatim window (UTF-16 doubles ASCII base64),
-// so the tail window alone is not a bound. Keep images on the most recent
-// image-bearing rows only; older rows keep their text but drop the blobs.
-export const BOUND_TRANSCRIPT_IMAGE_ROWS = 24
+// MB-scale base64 strings (UTF-16 doubles ASCII base64). Keep images on the
+// most recent image-bearing rows only; older rows keep their text but drop blobs.
+export const BOUND_TRANSCRIPT_IMAGE_ROWS = 4
 // kilocode_change end
 
 // kilocode_change start: stripImagesFor — clone a row without its images payload.
-// Cached per-ts exactly like stubs so identity stays stable across calls.
+// Cached per-ts so identity stays stable across calls.
 function stripImagesFor(message: ClineMessage): ClineMessage {
 	const clone: Record<string, unknown> = { ...message }
 	delete clone.images
@@ -45,33 +38,15 @@ function stripImagesFor(message: ClineMessage): ClineMessage {
 }
 // kilocode_change end
 
-function compactForDisplay(
-	messages: readonly ClineMessage[],
-	tail: number,
-): { messages: ClineMessage[]; dropped: number } {
-	if (messages.length <= tail) {
-		return { messages: messages as ClineMessage[], dropped: 0 }
-	}
-
-	const start = messages.length - tail
-	const dropped = Math.max(0, start - 1)
-	const row0 = messages[0]!
-	const tailRows = messages.slice(start) as ClineMessage[]
-	const prefixUsage = getApiMetrics(messages.slice(0, start) as ClineMessage[])
-	const fullUsage = getApiMetrics(messages as ClineMessage[])
-	const stubs = buildPrefixAccountingStubs(row0, tailRows[0]!, prefixUsage, fullUsage.contextTokens)
-	return { messages: [row0, ...stubs, ...tailRows], dropped }
-}
-
 export interface BoundTranscriptProjector {
 	project(messages: readonly ClineMessage[], omittedHint?: number): ClineMessage[]
-	/** Rows omitted by compact projection (diagnostics / collapse banner). */
+	/** Always 0: the continuous list is not omitted. Host may still send 0. */
 	readonly tombstonedCount: number
 }
 
 export function createBoundTranscriptProjector(
-	tail = BOUND_TRANSCRIPT_TAIL,
-	hysteresis = BOUND_TRANSCRIPT_HYSTERESIS,
+	_tail = BOUND_TRANSCRIPT_TAIL,
+	_hysteresis = BOUND_TRANSCRIPT_HYSTERESIS,
 	// kilocode_change: image budget is injectable for tests (default keeps the
 	// newest BOUND_TRANSCRIPT_IMAGE_ROWS image-bearing rows with images).
 	imageRows = BOUND_TRANSCRIPT_IMAGE_ROWS,
@@ -156,27 +131,9 @@ export function createBoundTranscriptProjector(
 				reset(headTs)
 			}
 
-			if (messages.length > tail + hysteresis) {
-				const compacted = compactForDisplay(messages, tail)
-				if (typeof omittedHint === "number") {
-					tombstoned = omittedHint
-				} else {
-					tombstoned += compacted.dropped
-				}
-				if (imageStripped.size > 0) {
-					const keepFrom = compacted.messages[compacted.messages.length - tail]!.ts
-					for (const ts of imageStripped.keys()) {
-						if (ts < keepFrom) {
-							imageStripped.delete(ts)
-						}
-					}
-				}
-				return projectImages(compacted.messages)
-			}
-
 			if (typeof omittedHint === "number") {
 				tombstoned = omittedHint
-			} else if (messages.length <= tail) {
+			} else {
 				tombstoned = 0
 			}
 

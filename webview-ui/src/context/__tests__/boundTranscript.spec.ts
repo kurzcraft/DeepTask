@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest"
 
 import {
 	BOUND_TRANSCRIPT_IMAGE_ROWS,
+	BOUND_TRANSCRIPT_TAIL,
 	createBoundTranscriptProjector,
 	getParallelProjector,
 	pruneParallelProjectors,
@@ -22,7 +23,12 @@ function imgMsg(ts: number): ClineMessage {
 }
 
 describe("createBoundTranscriptProjector", () => {
-	it("returns the input untouched below the tail window", () => {
+	it("keeps the default webview bound aligned with the host tail/image budget", () => {
+		expect(BOUND_TRANSCRIPT_TAIL).toBe(64)
+		expect(BOUND_TRANSCRIPT_IMAGE_ROWS).toBe(4)
+	})
+
+	it("returns the input untouched when no images need stripping", () => {
 		const projector = createBoundTranscriptProjector(10, 4)
 		const messages = bulk(9)
 		const out = projector.project(messages)
@@ -30,25 +36,19 @@ describe("createBoundTranscriptProjector", () => {
 		expect(projector.tombstonedCount).toBe(0)
 	})
 
-	it("omits rows older than the tail window and keeps row 0, two stubs, and the tail", () => {
+	it("keeps every historical row in one continuous list", () => {
 		const projector = createBoundTranscriptProjector(10, 4)
-		const messages = bulk(30) // 30 > 10 + 4 triggers compact
+		const messages = bulk(30)
 		const out = projector.project(messages)
 
-		expect(out.length).toBe(13)
+		expect(out).toHaveLength(30)
+		expect(out).toBe(messages)
 		expect(out[0]).toBe(messages[0])
 		expect((out[0] as { webviewTombstone?: boolean }).webviewTombstone).toBeUndefined()
-		expect((out[1] as { webviewTombstone?: boolean }).webviewTombstone).toBe(true)
-		expect(out[1]!.say).toBe("api_req_started")
-		expect((out[2] as { webviewTombstone?: boolean }).webviewTombstone).toBe(true)
-		expect(out[2]!.say).toBe("condense_context")
-		for (let i = 0; i < 10; i++) {
-			expect(out[3 + i]).toBe(messages[20 + i])
-		}
-		expect(projector.tombstonedCount).toBe(19)
+		expect(projector.tombstonedCount).toBe(0)
 	})
 
-	it("folds dropped-prefix token totals into the api_req stub", () => {
+	it("does not fold historical api_req rows into prefix stubs", () => {
 		const projector = createBoundTranscriptProjector(4, 2)
 		const taskRow = { ts: 1, type: "say", say: "text", text: "do the thing" } as ClineMessage
 		const apiReq = {
@@ -59,13 +59,13 @@ describe("createBoundTranscriptProjector", () => {
 		} as ClineMessage
 		const messages = [taskRow, apiReq, ...bulk(10, 3)]
 		const out = projector.project(messages)
-		expect(out.length).toBe(7)
-		expect((out[1] as { webviewTombstone?: boolean }).webviewTombstone).toBe(true)
-		expect(out[1]!.say).toBe("api_req_started")
+		expect(out).toHaveLength(12)
+		expect(out[1]).toBe(apiReq)
+		expect((out[1] as { webviewTombstone?: boolean }).webviewTombstone).toBeUndefined()
 		expect(JSON.parse(out[1]!.text!)).toMatchObject({ tokensIn: 100, tokensOut: 50, cost: 0.5 })
 	})
 
-	it("folds dropped-prefix condense cost into the accounting stubs", () => {
+	it("does not fold historical condense rows into prefix stubs", () => {
 		const projector = createBoundTranscriptProjector(4, 2)
 		const taskRow = { ts: 1, type: "say", say: "text", text: "do the thing" } as ClineMessage
 		const condense = {
@@ -77,44 +77,40 @@ describe("createBoundTranscriptProjector", () => {
 		} as unknown as ClineMessage
 		const messages = [taskRow, condense, ...bulk(10, 3)]
 		const out = projector.project(messages)
-		expect(out.length).toBe(7)
-		expect((out[1] as { webviewTombstone?: boolean }).webviewTombstone).toBe(true)
-		expect(out[1]!.say).toBe("api_req_started")
-		expect(JSON.parse(out[1]!.text!)).toMatchObject({ cost: 0.25 })
-		expect((out[2] as { webviewTombstone?: boolean }).webviewTombstone).toBe(true)
-		expect(out[2]!.say).toBe("condense_context")
+		expect(out).toHaveLength(12)
+		expect(out[1]).toBe(condense)
+		expect((out[1] as { webviewTombstone?: boolean }).webviewTombstone).toBeUndefined()
+		expect(out[1]!.say).toBe("condense_context")
 		expect(condense.text).toContain("long summary")
 	})
 
-	it("keeps compact identity across messageUpdated appends below hysteresis", () => {
+	it("keeps row identity across messageUpdated appends", () => {
 		const projector = createBoundTranscriptProjector(10, 4)
 		const first = projector.project(bulk(30))
-		// messageUpdated appends onto the already-compact resident array, not
-		// the original 30-row snapshot (that would rebuild stubs every tick).
 		const appended = [...first, msg(31)]
 		const second = projector.project(appended)
-		expect(second.length).toBe(first.length + 1)
+		expect(second).toHaveLength(first.length + 1)
 		for (let i = 0; i < first.length; i++) {
 			expect(second[i]).toBe(first[i])
 		}
 		expect(second[second.length - 1]).toBe(appended[appended.length - 1])
 	})
 
-	it("does not recompact on a single messageUpdated append at the hysteresis edge", () => {
+	it("does not drop rows on a single messageUpdated append", () => {
 		const projector = createBoundTranscriptProjector(10, 4)
 		const first = projector.project(bulk(30))
-		expect(first.length).toBe(13)
+		expect(first).toHaveLength(30)
 		const second = projector.project([...first, msg(31)])
 		expect(second.slice(0, first.length)).toEqual(first)
-		expect(second.length).toBe(14)
+		expect(second).toHaveLength(31)
 	})
 
 	it("honors the host omittedHint for the collapse banner across streaming appends", () => {
 		const projector = createBoundTranscriptProjector(10, 4)
-		const compact = projector.project(bulk(30), 19)
-		expect(projector.tombstonedCount).toBe(19)
+		const compact = projector.project(bulk(30), 0)
+		expect(projector.tombstonedCount).toBe(0)
 		projector.project([...compact, msg(31)])
-		expect(projector.tombstonedCount).toBe(19)
+		expect(projector.tombstonedCount).toBe(0)
 	})
 
 	it("resets on task switch (new head)", () => {
@@ -122,32 +118,31 @@ describe("createBoundTranscriptProjector", () => {
 		projector.project(bulk(30, 1))
 		const nextTask = bulk(5, 1000)
 		const out = projector.project(nextTask)
-		expect(out).toBe(nextTask) // verbatim again, no stale tombstones
+		expect(out).toBe(nextTask)
 	})
 
-	it("resets on rewind to inside the window", () => {
+	it("resets on rewind to a shorter prefix", () => {
 		const projector = createBoundTranscriptProjector(10, 4)
 		projector.project(bulk(30, 1))
-		const rewound = bulk(5, 1) // same head, shorter
+		const rewound = bulk(5, 1)
 		const out = projector.project(rewound)
 		expect(out).toBe(rewound)
 	})
 
-	it("never tombstones row 0 even when the window slides far past it", () => {
+	it("never drops row 0 from a long continuous list", () => {
 		const projector = createBoundTranscriptProjector(10, 4)
 		const messages = bulk(500, 1)
 		const out = projector.project(messages)
-		expect(out.length).toBe(13)
+		expect(out).toHaveLength(500)
 		expect(out[0]).toBe(messages[0])
 		expect((out[0] as { webviewTombstone?: boolean }).webviewTombstone).toBeUndefined()
-		expect(projector.tombstonedCount).toBe(489)
+		expect(projector.tombstonedCount).toBe(0)
 	})
 
 	// kilocode_change start: image budget within the verbatim window
 	it("keeps images only on the newest IMAGE_ROWS image-bearing rows", () => {
 		const projector = createBoundTranscriptProjector(10, 4, 5)
-		// 62 rows all carrying images: 62 > 14 → the tail window tombstones the
-		// prefix; then the image budget caps image rows at 5.
+		// Continuous list keeps every row; the image budget still caps blobs at 5.
 		const messages = [...bulk(2), ...Array.from({ length: 60 }, (_, i) => imgMsg(3 + i))]
 		const out = projector.project(messages)
 		const withImages = out.filter((m) => (m as { images?: unknown }).images !== undefined)
@@ -202,9 +197,8 @@ describe("createBoundTranscriptProjector", () => {
 		expect(second.filter((m) => (m as { images?: unknown }).images !== undefined).length).toBeLessThanOrEqual(5)
 	})
 
-	it("applies the image budget even below the tail window (no tombstones yet)", () => {
+	it("applies the image budget on a short continuous list", () => {
 		const projector = createBoundTranscriptProjector(10, 4, 5)
-		// 12 rows < 14 → no tombstones, but more image rows than the budget of 5.
 		const messages = Array.from({ length: 12 }, (_, i) => imgMsg(1 + i))
 		const out = projector.project(messages)
 		const withImages = out.filter((m) => (m as { images?: unknown }).images !== undefined)

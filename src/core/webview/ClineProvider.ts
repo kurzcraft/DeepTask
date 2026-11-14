@@ -61,6 +61,7 @@ import {
 	projectClineMessagesForDisplayWithMeta,
 	projectCommandExecutionStatusTextForDisplay,
 	projectCommandMessageForDisplay,
+	projectUserMessageRailIndex,
 } from "@roo-code/core"
 import { aggregateTaskCostsRecursive, type AggregatedCosts } from "./aggregateTaskCosts"
 import { TelemetryService } from "@roo-code/telemetry"
@@ -3717,14 +3718,20 @@ export class ClineProvider
 				? {}
 				: (() => {
 						if (this.pendingNewConversation) {
-							return { clineMessages: [], clineMessagesTombstoned: 0 }
+							return {
+								clineMessages: [],
+								clineMessagesTombstoned: 0,
+								userMessageRail: [],
+								transcriptLength: 0,
+							}
 						}
-						const projected = projectClineMessagesForDisplayWithMeta(
-							this.getFocusedChatTask()?.clineMessages || [],
-						)
+						const stored = this.getFocusedChatTask()?.clineMessages || []
+						const projected = projectClineMessagesForDisplayWithMeta(stored)
 						return {
 							clineMessages: projected.messages,
 							clineMessagesTombstoned: projected.tombstonedCount,
+							userMessageRail: projectUserMessageRailIndex(stored),
+							transcriptLength: stored.length,
 						}
 					})()),
 			currentTaskTodos: this.pendingNewConversation ? [] : this.getFocusedChatTask()?.todoList || [],

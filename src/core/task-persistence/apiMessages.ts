@@ -1,4 +1,8 @@
-import { safeWriteJson } from "../../utils/safeWriteJson"
+import {
+	clearIncrementalJsonArrayCache,
+	seedIncrementalJsonArrayCache,
+	writeJsonArrayIncremental,
+} from "../../utils/incrementalJsonArrayWrite"
 import * as path from "path"
 import * as fs from "fs/promises"
 
@@ -131,6 +135,9 @@ export async function readApiMessages({
 					`[Roo-Debug] readApiMessages: Found API conversation history file, but it's empty (parsed as []). TaskId: ${taskId}, Path: ${filePath}`,
 				)
 			}
+			if (Array.isArray(parsedData) && parsedData.length > 0) {
+				await seedIncrementalJsonArrayCache(filePath, parsedData, fileContent)
+			}
 			return parsedData
 		} catch (error) {
 			console.error(
@@ -147,7 +154,8 @@ export async function readApiMessages({
 				try {
 					const backupPath = `${filePath}.corrupt_${Date.now()}.bak`
 					await fs.copyFile(filePath, backupPath)
-					await fs.writeFile(filePath, JSON.stringify(recovered), "utf8")
+					clearIncrementalJsonArrayCache(filePath)
+					await writeJsonArrayIncremental(filePath, recovered)
 					console.error(
 						`[readApiMessages] Recovered ${recovered.length} messages from torn history for task ${taskId}; corrupt file backed up to ${backupPath}`,
 					)
@@ -201,11 +209,11 @@ export async function saveApiMessages({
 }) {
 	const taskDir = await getTaskDirectoryPath(globalStoragePath, taskId)
 	const filePath = path.join(taskDir, GlobalFileNames.apiConversationHistory)
-	// kilocode_change start: snapshot before writing
-	// Message objects in `messages` are shared references that other async
-	// flows can mutate while stream-json serializes them, tearing the JSON
-	// mid-file (observed with 9MB histories). Snapshot=true serializes
-	// synchronously before any I/O so the bytes on disk are immutable.
-	await safeWriteJson(filePath, messages, { snapshot: true })
+	// kilocode_change start: incremental array write
+	// Full JSON.stringify of a 36MB api_conversation_history doubled host RSS
+	// on every save. Reuse frozen prefix bytes from disk and stringify only
+	// the dirty tail, one element at a time. Identity + fingerprint detect
+	// in-place mutations (streaming last row, historical api_req_started).
+	await writeJsonArrayIncremental(filePath, messages)
 	// kilocode_change end
 }

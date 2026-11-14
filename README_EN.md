@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.3.6** isolates live command chrome across parallel chats: `commandExecutionStatus` no longer bypasses the focus gate and paints Continue/Terminate over the focused Cancel (missing `taskId` is fail-closed). In-place `messageUpdated` replaces re-enter the transcript projector; unchanged same-ts images are omitted from incremental IPC and merged back onto the resident row before projecting. Falsification condition: a background command still paints Continue/Terminate over the focused Cancel, or a same-ts streaming update inside the 800-row window still re-inflates a previously stripped image blob, refutes this fix.
+> **Deeptask 9.3.6** isolates live command chrome across parallel chats: `commandExecutionStatus` no longer bypasses the focus gate and paints Continue/Terminate over the focused Cancel (missing `taskId` is fail-closed). The chat body is one continuous Virtuoso list of every saved row, so scroll position stays continuous; 64-row sliding pages are gone. Historical rows keep a 120-char preview, the newest 64 rows stay 8k-truncated, and images cap at 4; storage and model I/O stay full. In-place `messageUpdated` replaces re-enter the transcript projector; unchanged same-ts images are omitted from incremental IPC and merged back onto the resident row before projecting. Falsification condition: a background command still paints Continue/Terminate over the focused Cancel, scrolling a long transcript still drops rows or jumps position, or a same-ts streaming update still re-inflates a previously stripped image blob, refutes this fix.
 >
 > **9.3.5** compact the host→webview transcript (row 0 + two collapsed stubs + an 800-row tail) and stop slicing oversized JSON at char 3000. The EXTRA/task 30-line / 4-level cap is a growth gate, not a freeze gate. **9.3.4** tombstones historical rows before postState. **9.3.3** stops condensed turns from reopening the original task, and uncompressed turns from recapping at every opening.
 
@@ -102,6 +102,10 @@ When a tool throws unexpectedly, Deeptask returns an explicit failure to the mod
 This produces an engineering form of near-infinite continuity: a task can evolve through repeated condensation, restoration, and cross-session continuation. The claim is based on durable state and verifiable evidence, not on pretending that a single model request has unlimited tokens.
 
 [Learn how to correct and extend active work](./docs/deeptask/guides/USER_GUIDE_EN.md#correct-the-task-while-it-runs)
+
+### Continuous full-history chat, not sliding pages
+
+The chat body is one continuous Virtuoso list of every saved row, so scroll position stays continuous. 64-row sliding pages pinned people to the wrong end of the window — a jump of dozens of rows — and are gone. Memory stays bounded by virtualization, 120-char historical previews, 8k truncation on the newest 64 rows, and a 4-image cap; storage and model I/O stay full. The left user-message rail is a light full-history index (`ts` + placement + capped preview); clicking a tick jumps inside the same list instead of fetching another page.
 
 ### EXTRA turns a conversation into a recoverable workspace
 

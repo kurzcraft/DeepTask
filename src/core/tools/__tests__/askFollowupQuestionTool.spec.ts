@@ -56,7 +56,7 @@ describe("askFollowupQuestionTool", () => {
 		)
 	})
 
-	it("should parse suggestions with mode attributes", async () => {
+	it("strips mode attributes so selecting an answer cannot switch mode or provider", async () => {
 		const block: ToolUse = {
 			type: "tool_use",
 			name: "ask_followup_question",
@@ -77,14 +77,13 @@ describe("askFollowupQuestionTool", () => {
 
 		expect(mockCline.ask).toHaveBeenCalledWith(
 			"followup",
-			expect.stringContaining(
-				'"suggest":[{"answer":"Write code","mode":"code"},{"answer":"Debug issue","mode":"debug"}]',
-			),
+			expect.stringContaining('"suggest":[{"answer":"Write code"},{"answer":"Debug issue"}]'),
 			false,
 		)
+		expect(mockCline.ask.mock.calls[0][1]).not.toContain('"mode"')
 	})
 
-	it("should handle mixed suggestions with and without mode attributes", async () => {
+	it("strips mixed mode attributes and keeps only the answer text", async () => {
 		const block: ToolUse = {
 			type: "tool_use",
 			name: "ask_followup_question",
@@ -105,11 +104,43 @@ describe("askFollowupQuestionTool", () => {
 
 		expect(mockCline.ask).toHaveBeenCalledWith(
 			"followup",
+			expect.stringContaining('"suggest":[{"answer":"Regular option"},{"answer":"Plan architecture"}]'),
+			false,
+		)
+		expect(mockCline.ask.mock.calls[0][1]).not.toContain('"mode"')
+	})
+
+	it("strips native follow_up mode slugs before asking", async () => {
+		const block: ToolUse<"ask_followup_question"> = {
+			type: "tool_use",
+			name: "ask_followup_question",
+			params: {},
+			partial: false,
+			nativeArgs: {
+				question: "Would you like me to implement this feature?",
+				follow_up: [
+					{ text: "Yes, implement it now", mode: "code" },
+					{ text: "No, just plan it out", mode: "architect" },
+				],
+			},
+		}
+
+		await askFollowupQuestionTool.handle(mockCline, block, {
+			askApproval: vi.fn(),
+			handleError: vi.fn(),
+			pushToolResult: mockPushToolResult,
+			removeClosingTag: vi.fn((tag, content) => content),
+			toolProtocol: "native",
+		})
+
+		expect(mockCline.ask).toHaveBeenCalledWith(
+			"followup",
 			expect.stringContaining(
-				'"suggest":[{"answer":"Regular option"},{"answer":"Plan architecture","mode":"architect"}]',
+				'"suggest":[{"answer":"Yes, implement it now"},{"answer":"No, just plan it out"}]',
 			),
 			false,
 		)
+		expect(mockCline.ask.mock.calls[0][1]).not.toContain('"mode"')
 	})
 
 	// kilocode_change start

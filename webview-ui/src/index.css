@@ -474,6 +474,14 @@ input[cmdk-input]:focus {
 	background-color: transparent !important;
 }
 
+/* kilocode_change start */
+/* Historical "said" rows render as <pre> to skip react-markdown; they must
+   not inherit the global code-block background. */
+pre.chat-plain-text {
+	background-color: transparent !important;
+}
+/* kilocode_change end */
+
 /*
  * Use geometric precision for codicons to avoid blurriness
  */

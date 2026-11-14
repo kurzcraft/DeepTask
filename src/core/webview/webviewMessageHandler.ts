@@ -332,8 +332,18 @@ export const webviewMessageHandler = async (
 					globalStoragePath: provider.contextProxy.globalStorageUri.fsPath,
 				})
 
-				// Update the UI to reflect the deletion
+				// kilocode_change start
+				// A delete rewinds the visible timeline but leaves the live Task
+				// without a pending ask. ChatView then sees a settled say row and
+				// wipes Resume/Terminate. Freeze the rewound prefix so abort cannot
+				// overwrite it, then cancel+rehydrate so resumeTaskFromHistory
+				// injects resume_task — the same recovery boundary as abort/cancel.
+				currentCline.clearStaleWebviewAskResponse?.()
+				currentCline.messageQueueService?.clear?.()
+				currentCline.freezeHistoryPersistenceForBranchReplacement?.()
 				await provider.postStateToWebview()
+				await cancelTaskAndRestoreUi("deleted user message")
+				// kilocode_change end
 			}
 		} catch (error) {
 			console.error("Error in delete message:", error)

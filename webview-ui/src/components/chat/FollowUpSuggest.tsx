@@ -95,8 +95,9 @@ export const FollowUpSuggest = ({
 				onCancelAutoApproval?.()
 			}
 
-			// Pass the suggestion object to the parent component
-			// The parent component will handle mode switching if needed
+			// Pass the suggestion object to the parent. Selecting an answer
+			// never switches mode or provider, even if a stale `mode` slug is
+			// still present on historical follow-up JSON.
 			onSuggestionClick?.(suggestion, event)
 		},
 		[onSuggestionClick, onCancelAutoApproval],
@@ -133,12 +134,6 @@ export const FollowUpSuggest = ({
 								<Timer className="size-3 inline-block -mt-0.5 mr-1 animate-pulse" />
 								{t("chat:followUpSuggest.timerPrefix", { seconds: countdown })}
 							</p>
-						)}
-						{suggestion.mode && (
-							<div className="absolute bottom-0 right-0 text-[10px] text-vscode-badge-foreground pl-1 pr-2.5 pt-0.5 pb-1.5 flex items-center gap-0.5 bg-transparent rounded-xl">
-								<span className="codicon codicon-arrow-right" style={{ fontSize: "8px" }} />
-								{suggestion.mode}
-							</div>
 						)}
 						<StandardTooltip content={t("chat:followUpSuggest.copyToInput")}>
 							<div

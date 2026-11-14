@@ -356,6 +356,16 @@ describe("sanitizeNativeToolHistory", () => {
 			},
 		])
 	})
+
+	it("should leave object-shaped content untouched instead of throwing", () => {
+		const messages: ApiMessage[] = [
+			{ role: "user", content: { type: "text", text: "Previous message" } as any, ts: 900 },
+			{ role: "user", content: { type: "text", text: "Delete this" } as any, ts: 1000 },
+			{ role: "assistant", content: { type: "text", text: "Response" } as any, ts: 1100 },
+		]
+
+		expect(sanitizeNativeToolHistory(messages)).toEqual(messages)
+	})
 })
 
 describe("getKeepMessagesWithToolBlocks", () => {

@@ -1,6 +1,6 @@
 {
 	"extension.displayName": "Deeptask: AI Coding Agent, Copilot, and Autocomplete",
-	"extension.description": "Finish long-running software tasks with parallel subagents, git worktree workspaces, visible integrated terminals, live requirement corrections, full-auto or approval-based control, a multi-level task-splitting folder system (light authoritative checklists, per-task subfolders, finished archives) that keeps progress recoverable across sessions, context continuation, and broad OpenAI-compatible API support.",
+	"extension.description": "Finish long-running software tasks with parallel subagents, git worktree workspaces, visible integrated terminals, live requirement corrections, full-auto or approval-based control, a multi-level task-splitting folder system (light authoritative checklists, per-task subfolders, finished archives) that keeps progress recoverable across sessions, continuous full-history chat (virtualized Virtuoso list of every saved row, not 64-row sliding pages), context continuation, and broad OpenAI-compatible API support.",
 	"views.contextMenu.label": "Deeptask",
 	"views.terminalMenu.label": "Deeptask",
 	"views.activitybar.title": "Deeptask",

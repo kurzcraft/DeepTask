@@ -125,4 +125,32 @@ describe("checkAutoApproval", () => {
 
 		expect(result).toEqual({ decision: "ask" })
 	})
+
+	it("auto-approves follow-up answers without switching mode or provider", async () => {
+		const result = await checkAutoApproval({
+			state: {
+				autoApprovalEnabled: true,
+				alwaysAllowFollowupQuestions: true,
+				followupAutoApproveTimeoutMs: 1_000,
+			} as unknown as ExtensionState,
+			ask: "followup",
+			text: JSON.stringify({
+				question: "Would you like me to implement this feature?",
+				suggest: [
+					{ answer: "Yes, implement it now", mode: "code" },
+					{ answer: "No, just plan it out", mode: "architect" },
+				],
+			}),
+		})
+
+		expect(result.decision).toBe("timeout")
+		if (result.decision !== "timeout") {
+			throw new Error("expected follow-up auto-approval timeout")
+		}
+		expect(result.timeout).toBe(1_000)
+		expect(result.fn()).toEqual({
+			askResponse: "messageResponse",
+			text: "Yes, implement it now",
+		})
+	})
 })

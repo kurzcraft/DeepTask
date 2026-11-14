@@ -14,8 +14,11 @@ export { consolidateCommands, consolidateCommandsIncremental, COMMAND_OUTPUT_STR
 export {
 	COMMAND_OUTPUT_DISPLAY_CHAR_LIMIT,
 	WEBVIEW_TRANSCRIPT_DISPLAY_TAIL,
+	WEBVIEW_TRANSCRIPT_HISTORICAL_CHAR_LIMIT,
 	WEBVIEW_TRANSCRIPT_IMAGE_ROWS,
 	WEBVIEW_TRANSCRIPT_TEXT_CHAR_LIMIT,
+	USER_MESSAGE_RAIL_PREVIEW_CHARS,
+	type UserMessageRailTick,
 	isCommandDisplayMessage,
 	truncateDisplayOutput,
 	truncateCommandOutputText,
@@ -25,7 +28,7 @@ export {
 	projectTranscriptBoundForDisplayWithMeta,
 	projectClineMessagesForDisplay,
 	projectClineMessagesForDisplayWithMeta,
-	buildPrefixAccountingStubs,
+	projectUserMessageRailIndex,
 } from "./projectCommandOutput.js"
 
 export { safeJsonParse } from "./safeJsonParse.js"

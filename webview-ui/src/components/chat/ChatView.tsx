@@ -17,9 +17,9 @@ import { commandExecutionStatusSchema } from "@roo-code/types"
 import { findLast } from "@roo/array"
 import { SuggestionItem } from "@roo-code/types"
 import { combineApiRequests } from "@roo/combineApiRequests"
-import { combineCommandSequencesIncremental } from "@roo/combineCommandSequences"
+	import { combineCommandSequences, combineCommandSequencesIncremental } from "@roo/combineCommandSequences"
 import { getApiMetricsIncremental, type TokenUsageIncrementalCache } from "@roo/getApiMetrics"
-import { filterVisibleMessagesIncremental } from "./visibleMessages"
+import { filterVisibleMessages, filterVisibleMessagesIncremental } from "./visibleMessages"
 import { getAllModes } from "@roo/modes"
 import { ProfileValidator } from "@roo/ProfileValidator"
 import { getLatestTodo } from "@roo/todo"
@@ -130,6 +130,8 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const {
 		clineMessages: messages,
 		clineMessagesTombstoned, // kilocode_change: bounded transcript diagnostics
+		userMessageRail, // kilocode_change: full-history light index
+		transcriptLength, // kilocode_change: stored length for rail placement
 		currentTaskItem,
 		currentTaskTodos,
 		taskHistoryFullLength, // kilocode_change
@@ -138,7 +140,6 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		organizationAllowList,
 		mode,
 		setMode,
-		alwaysAllowModeSwitch,
 		showAutoApproveMenu, // kilocode_change
 		enableCheckpoints, // kilocode_change
 		customModes,
@@ -292,6 +293,8 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const followOutputFrameRef = useRef<number>()
 	const lastTouchYRef = useRef<number>()
 	const pinnedJumpTsRef = useRef<number | null>(null)
+	const pinAlignRef = useRef<"start" | "center" | "end">("center")
+	const isAtBottomRef = useRef(false)
 	// kilocode_change end
 	const [showScrollToBottom, setShowScrollToBottom] = useState(false)
 	const [isAtBottom, setIsAtBottom] = useState(false)
@@ -1132,7 +1135,6 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		}
 		// Reset user response flag for new message
 		userRespondedRef.current = false
-
 		// Only reset message-specific state, preserving mode.
 		setInputValue("")
 		setSendingDisabled(true)
@@ -1868,6 +1870,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		},
 		[
 			currentTaskItem?.id, // kilocode_change: keep cross-conversation event guards current.
+			task?.ts,
 			isCondensing,
 			isHidden,
 			sendingDisabled,
@@ -1885,7 +1888,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 
 	useEvent("message", handleMessage)
 
-	const visibleMessages = useMemo(() => {
+	const liveVisibleMessages = useMemo(() => {
 		const next = filterVisibleMessagesIncremental(
 			modifiedMessages,
 			visibleInputRef.current,
@@ -1897,6 +1900,9 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		visibleOutputRef.current = next
 		return next
 	}, [modifiedMessages, task])
+
+	const bodyModifiedMessages = modifiedMessages
+	const visibleMessages = liveVisibleMessages
 
 	useEffect(() => {
 		const cleanupInterval = setInterval(() => {
@@ -2011,8 +2017,15 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		return result
 	}, [isCondensing, visibleMessages, isBrowserSessionMessage])
 
-	const chatRowListMeta = useMemo(() => buildChatRowListMeta(modifiedMessages), [modifiedMessages])
-	const previousTodosByTs = useMemo(() => buildPreviousTodosByTs(modifiedMessages), [modifiedMessages])
+	const chatRowListMeta = useMemo(
+		() => buildChatRowListMeta(bodyModifiedMessages),
+		[bodyModifiedMessages],
+	)
+	const previousTodosByTs = useMemo(
+		() => buildPreviousTodosByTs(bodyModifiedMessages),
+		[bodyModifiedMessages],
+	)
+	const collapsedBannerCount = clineMessagesTombstoned
 
 	// scrolling
 
@@ -2049,7 +2062,10 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			if (index < 0) {
 				return
 			}
-			virtuosoRef.current?.scrollToIndex({ index, align: "end", behavior })
+			// Pin the first newly revealed visible row at the top. Pinning the
+			// overlap landmark with align:end left a tall ChatRow filling the
+			// viewport, so page-up looked unchanged.
+			virtuosoRef.current?.scrollToIndex({ index, align: pinAlignRef.current, behavior })
 		},
 		[groupedMessages],
 	)
@@ -2113,16 +2129,19 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	)
 	// kilocode_change end
 
-	const handleMessageClick = useCallback(
-		(index: number) => {
+	const jumpToTimestamp = useCallback(
+		(ts: number) => {
 			stickyFollowRef.current = false
-			pinnedJumpTsRef.current = groupedMessages[index]?.ts ?? null
+			pinnedJumpTsRef.current = ts
+			pinAlignRef.current = "center"
 			setShowScrollToBottom(true)
 			setIsAtBottom(false)
-			setHighlightedMessageIndex(index)
-			scrollToPinnedMessage("auto")
+			const localIndex = groupedMessages.findIndex((message) => message.ts === ts)
+			if (localIndex >= 0) {
+				setHighlightedMessageIndex(localIndex)
+				scrollToPinnedMessage("auto")
+			}
 
-			// Clear existing timer if present
 			if (highlightClearTimerRef.current) {
 				clearTimeout(highlightClearTimerRef.current)
 			}
@@ -2132,6 +2151,16 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			}, 1000)
 		},
 		[groupedMessages, scrollToPinnedMessage],
+	)
+
+	const handleMessageClick = useCallback(
+		(index: number) => {
+			const ts = groupedMessages[index]?.ts
+			if (typeof ts === "number") {
+				jumpToTimestamp(ts)
+			}
+		},
+		[groupedMessages, jumpToTimestamp],
 	)
 
 	useEffect(() => {
@@ -2192,6 +2221,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	useEffect(() => {
 		stickyFollowRef.current = true
 		pinnedJumpTsRef.current = null
+		pinAlignRef.current = "center"
 	}, [task?.ts])
 
 	const releaseOutputFollowing = useCallback((target: EventTarget | null) => {
@@ -2297,15 +2327,11 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				markFollowUpAsAnswered()
 			}
 
-			// Check if we need to switch modes
-			if (suggestion.mode) {
-				// Only switch modes if it's a manual click (event exists) or auto-approval is allowed
-				const isManualClick = !!event
-				if (isManualClick || alwaysAllowModeSwitch) {
-					// Switch mode without waiting
-					switchToMode(suggestion.mode)
-				}
-			}
+			// kilocode_change: selecting a follow-up answer must never switch
+			// mode or provider. Native ask_followup_question is strict and
+			// requires a `mode` field, so models often fill a slug even when
+			// the user only picked an answer. handleModeSwitch would then load
+			// that mode's sticky provider profile.
 
 			if (event?.shiftKey) {
 				// Always append to existing text, don't overwrite
@@ -2321,7 +2347,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				setInputValue(preservedInput)
 			}
 		},
-		[handleSendMessage, setInputValue, switchToMode, alwaysAllowModeSwitch, clineAsk, markFollowUpAsAnswered],
+		[handleSendMessage, setInputValue, clineAsk, markFollowUpAsAnswered],
 	)
 
 	const handleBatchFileResponse = useCallback((response: { [key: string]: boolean }) => {
@@ -2610,7 +2636,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 			className={
 				isHidden
 					? "hidden"
-					: "fixed top-0 left-0 right-0 max-w-5xl mx-auto bottom-0 flex flex-row overflow-hidden" // kilocode_change; add max-w-5xl + parallel rails
+					: "fixed top-0 left-0 right-0 max-w-5xl mx-auto bottom-0 flex flex-row min-h-0 overflow-hidden" // kilocode_change; add max-w-5xl + parallel rails
 			}>
 			{/* kilocode_change start: parallel subagents & workspaces */}
 			<ParallelRail
@@ -2622,7 +2648,10 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				currentFolderPath={cwd}
 				onSelect={handleParallelSelect}
 			/>
-			<div className="flex flex-col flex-1 min-w-0">
+			{/* min-h-0 is mandatory: without it this column's min-height:auto grows
+			    to the 800-row ChatRow stack, Virtuoso thinks the viewport is the
+			    full transcript, and Markdown/Shiki amplify ~2MB into ~4GB. */}
+			<div className="flex flex-col flex-1 min-h-0 min-w-0 h-full">
 				<WorkspaceBar />
 				{/* kilocode_change end */}
 				{(showAnnouncement || showAnnouncementModal) && (
@@ -2800,21 +2829,29 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 				{task && (
 					<>
 						<div className="grow flex flex-row min-h-0">
-							<UserMessageRail messages={groupedMessages} onJump={handleMessageClick} />
+							<UserMessageRail
+								messages={groupedMessages}
+								ticks={userMessageRail}
+								totalCount={transcriptLength}
+								onJump={jumpToTimestamp}
+							/>
 							<div className="grow flex flex-col min-h-0" ref={scrollContainerRef}>
-								{/* kilocode_change: bounded transcript — tombstoned rows collapsed to a banner */}
-								{!!clineMessagesTombstoned && (
+								{/* kilocode_change: bounded transcript — tombstoned rows collapsed to a banner.
+								    Use t() rather than Trans interpolation children: the test Trans mock
+								    (and any missing-key fallback) would otherwise try to render {count}
+								    as a React child and crash the whole chat tree. */}
+								{!!collapsedBannerCount && (
 									<div
 										data-testid="transcript-collapsed-banner"
+										data-collapsed-count={collapsedBannerCount}
 										className="flex-none px-3 py-1 text-xs text-vscode-descriptionForeground border-b border-vscode-panel-border/60">
-										<Trans i18nKey="chat:transcript.collapsedBanner" count={clineMessagesTombstoned}>
-											Earlier messages ({{ count: clineMessagesTombstoned }}) are collapsed to keep
-											memory bounded. Full history stays saved.
-										</Trans>
+										{t("chat:transcript.collapsedBanner", { count: collapsedBannerCount })}
 									</div>
 								)}
 								{/* kilocode_change: Virtuoso only virtualizes when its viewport is height-bounded.
-								    A non-flex flex-auto wrapper lets the list grow with content and mounts every ChatRow. */}
+								    A non-flex flex-auto wrapper lets the list grow with content and mounts every ChatRow.
+								    defaultItemHeight is required: without a seed height Virtuoso measures every
+								    ChatRow on first paint and Markdown/Shiki inflate the 800-row tail into GBs. */}
 								<div className="flex-1 min-h-0 overflow-hidden">
 									<Virtuoso
 										ref={virtuosoRef}
@@ -2824,28 +2861,42 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 										key={task.ts}
 										className="scrollable h-full overflow-y-scroll mb-1"
 										style={{ height: "100%" }}
+										defaultItemHeight={72}
 										increaseViewportBy={{ top: 240, bottom: 240 }}
 										data={groupedMessages}
 										computeItemKey={(_index, message) => message.ts}
 										itemContent={itemContent}
-										followOutput={(isAtBottom: boolean) =>
-											pinnedJumpTsRef.current != null
-												? false
-												: isAtBottom || stickyFollowRef.current
+									followOutput={(isAtBottom: boolean) => {
+										if (pinnedJumpTsRef.current != null) {
+											return false
 										}
-										// kilocode_change: cover same-message streaming and asynchronous Markdown reflow
-										totalListHeightChanged={keepFollowingOutput}
-										atBottomStateChange={(isAtBottom: boolean) => {
+										return isAtBottom || stickyFollowRef.current
+									}}
+									// kilocode_change: cover same-message streaming and asynchronous Markdown reflow
+									totalListHeightChanged={keepFollowingOutput}
+									atBottomStateChange={(isAtBottom: boolean) => {
+											isAtBottomRef.current = isAtBottom
 											setIsAtBottom(isAtBottom)
-											if (isAtBottom) {
-												pinnedJumpTsRef.current = null
-												stickyFollowRef.current = true
+											if (!isAtBottom) {
+												setShowScrollToBottom(true)
+												return
 											}
-											// Only show the scroll-to-bottom button if not at bottom
-											setShowScrollToBottom(!isAtBottom)
-										}}
-										atBottomThreshold={10}
-										initialTopMostItemIndex={groupedMessages.length - 1}
+										pinnedJumpTsRef.current = null
+										stickyFollowRef.current = true
+										setShowScrollToBottom(false)
+									}}
+									atBottomThreshold={10}
+									initialTopMostItemIndex={(() => {
+										const pinnedTs = pinnedJumpTsRef.current
+										const pinnedIndex =
+											pinnedTs == null
+												? -1
+												: groupedMessages.findIndex((message) => message.ts === pinnedTs)
+										if (pinnedIndex >= 0) {
+											return { index: pinnedIndex, align: pinAlignRef.current }
+										}
+										return Math.max(0, groupedMessages.length - 1)
+									})()}
 									/>
 								</div>
 							</div>

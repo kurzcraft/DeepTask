@@ -14,8 +14,14 @@ import { findLast } from "../../shared/array"
  * For native tools protocol, user messages with tool_result blocks require
  * corresponding tool_use blocks from the previous assistant turn.
  */
+function isContentBlockArray(
+	content: ApiMessage["content"],
+): content is Anthropic.Messages.ContentBlockParam[] {
+	return Array.isArray(content)
+}
+
 function hasToolResultBlocks(message: ApiMessage): boolean {
-	if (message.role !== "user" || typeof message.content === "string") {
+	if (message.role !== "user" || !isContentBlockArray(message.content)) {
 		return false
 	}
 	return message.content.some((block) => block.type === "tool_result")
@@ -25,7 +31,7 @@ function hasToolResultBlocks(message: ApiMessage): boolean {
  * Gets the tool_use blocks from a message.
  */
 function getToolUseBlocks(message: ApiMessage): Anthropic.Messages.ToolUseBlock[] {
-	if (message.role !== "assistant" || typeof message.content === "string") {
+	if (message.role !== "assistant" || !isContentBlockArray(message.content)) {
 		return []
 	}
 	return message.content.filter((block) => block.type === "tool_use") as Anthropic.Messages.ToolUseBlock[]
@@ -35,7 +41,7 @@ function getToolUseBlocks(message: ApiMessage): Anthropic.Messages.ToolUseBlock[
  * Gets the tool_result blocks from a message.
  */
 function getToolResultBlocks(message: ApiMessage): Anthropic.ToolResultBlockParam[] {
-	if (message.role !== "user" || typeof message.content === "string") {
+	if (message.role !== "user" || !isContentBlockArray(message.content)) {
 		return []
 	}
 	return message.content.filter((block): block is Anthropic.ToolResultBlockParam => block.type === "tool_result")
@@ -45,7 +51,7 @@ function getToolResultBlocks(message: ApiMessage): Anthropic.ToolResultBlockPara
  * Finds a tool_use block by ID in a message.
  */
 function findToolUseBlockById(message: ApiMessage, toolUseId: string): Anthropic.Messages.ToolUseBlock | undefined {
-	if (message.role !== "assistant" || typeof message.content === "string") {
+	if (message.role !== "assistant" || !isContentBlockArray(message.content)) {
 		return undefined
 	}
 	return message.content.find(
@@ -63,7 +69,7 @@ export function sanitizeNativeToolHistory(messages: ApiMessage[]): ApiMessage[] 
 	for (let index = 0; index < messages.length; index++) {
 		const message = messages[index]
 
-		if (hasToolResultBlocks(message) && typeof message.content !== "string") {
+		if (hasToolResultBlocks(message) && isContentBlockArray(message.content)) {
 			const previousToolUseIds = new Set(
 				getToolUseBlocks(sanitized.at(-1) ?? ({} as ApiMessage)).map((block) => block.id),
 			)
@@ -79,7 +85,7 @@ export function sanitizeNativeToolHistory(messages: ApiMessage[]): ApiMessage[] 
 			continue
 		}
 
-		if (hasToolUseBlocks(message) && typeof message.content !== "string") {
+		if (hasToolUseBlocks(message) && isContentBlockArray(message.content)) {
 			const nextToolResultIds = new Set(
 				getToolResultBlocks(messages[index + 1] ?? ({} as ApiMessage)).map((block) => block.tool_use_id),
 			)
@@ -108,7 +114,7 @@ export function sanitizeNativeToolHistory(messages: ApiMessage[]): ApiMessage[] 
  * which convertToR1Format and convertToZAiFormat already know how to extract.
  */
 function getReasoningBlocks(message: ApiMessage): Anthropic.Messages.ContentBlockParam[] {
-	if (message.role !== "assistant" || typeof message.content === "string") {
+	if (message.role !== "assistant" || !isContentBlockArray(message.content)) {
 		return []
 	}
 	// Filter for reasoning blocks and cast to ContentBlockParam (the type field is compatible)

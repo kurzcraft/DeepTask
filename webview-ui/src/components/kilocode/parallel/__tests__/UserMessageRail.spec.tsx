@@ -39,12 +39,30 @@ describe("UserMessageRail", () => {
 		expect(ticks).toHaveLength(2)
 	})
 
-	test("clicking a tick jumps to the message's list index", () => {
+	test("clicking a tick jumps by timestamp, not compacted list index", () => {
 		const messages = [msg(1, "text", "hi"), msg(2, "user_feedback", "fix it"), msg(3, "text", "ok")]
 		render(<UserMessageRail messages={messages} onJump={onJump} />)
 
 		fireEvent.click(screen.getByTestId("user-message-rail-tick"))
-		expect(onJump).toHaveBeenCalledWith(1)
+		expect(onJump).toHaveBeenCalledWith(2)
+	})
+
+	test("host ticks render the full-history index even when the body window omits them", () => {
+		render(
+			<UserMessageRail
+				messages={[msg(90, "text", "live tail")]}
+				ticks={[
+					{ ts: 10, index: 2, preview: "first question" },
+					{ ts: 50, index: 40, preview: "later question" },
+				]}
+				totalCount={100}
+				onJump={onJump}
+			/>,
+		)
+		expect(screen.getAllByTestId("user-message-rail-tick")).toHaveLength(2)
+
+		fireEvent.click(screen.getAllByTestId("user-message-rail-tick")[0])
+		expect(onJump).toHaveBeenCalledWith(10)
 	})
 
 	test("renders each tick as a horizontal line instead of a vertical bar", () => {

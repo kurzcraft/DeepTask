@@ -1,24 +1,16 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import * as os from "os"
 import * as path from "path"
 import * as fs from "fs/promises"
 
-// Mocks (use hoisted to avoid initialization ordering issues)
-const hoisted = vi.hoisted(() => ({
-	safeWriteJsonMock: vi.fn().mockResolvedValue(undefined),
-}))
-vi.mock("../../../utils/safeWriteJson", () => ({
-	safeWriteJson: hoisted.safeWriteJsonMock,
-}))
-
-// Import after mocks
 import { readApiMessages, saveApiMessages, recoverApiMessagesPrefix } from "../apiMessages"
 import { GlobalFileNames } from "../../../shared/globalFileNames"
+import { clearIncrementalJsonArrayCache, getLastIncrementalWriteStats } from "../../../utils/incrementalJsonArrayWrite"
 
 let tmpBaseDir: string
 
 beforeEach(async () => {
-	hoisted.safeWriteJsonMock.mockClear()
+	clearIncrementalJsonArrayCache()
 	tmpBaseDir = await fs.mkdtemp(path.join(os.tmpdir(), "roo-api-messages-"))
 })
 
@@ -63,12 +55,19 @@ describe("recoverApiMessagesPrefix", () => {
 })
 
 describe("saveApiMessages", () => {
-	it("requests a synchronous snapshot to prevent torn writes", async () => {
-		const messages: any[] = [{ role: "user", content: "hello" }]
+	it("writes a valid JSON array without a full-history stringify on append", async () => {
+		const prefix = { role: "user", content: "hello" }
+		const messages: any[] = [prefix]
 		await saveApiMessages({ messages, taskId: "snap-1", globalStoragePath: tmpBaseDir })
-		expect(hoisted.safeWriteJsonMock).toHaveBeenCalledTimes(1)
-		const options = hoisted.safeWriteJsonMock.mock.calls[0][2]
-		expect(options).toEqual({ snapshot: true })
+		const filePath = path.join(tmpBaseDir, "tasks", "snap-1", GlobalFileNames.apiConversationHistory)
+		expect(JSON.parse(await fs.readFile(filePath, "utf8"))).toEqual(messages)
+
+		messages.push({ role: "assistant", content: "world" })
+		await saveApiMessages({ messages, taskId: "snap-1", globalStoragePath: tmpBaseDir })
+		const stats = getLastIncrementalWriteStats()
+		expect(stats.reusedCount).toBe(1)
+		expect(stats.stringifiedCount).toBe(1)
+		expect(JSON.parse(await fs.readFile(filePath, "utf8"))).toEqual(messages)
 	})
 })
 
@@ -122,5 +121,28 @@ describe("readApiMessages torn-file self-healing", () => {
 
 		const result = await readApiMessages({ taskId, globalStoragePath: tmpBaseDir })
 		expect(result).toEqual(messages)
+	})
+
+	it("reuses prefix bytes after resume when the sidecar is missing", async () => {
+		const taskId = "resume-no-sidecar"
+		const prefix = Array.from({ length: 6 }, (_, i) => ({
+			role: (i % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
+			content: i === 0 ? `seed-中文😀-${i}` : `seed-${i}`,
+		}))
+		await saveApiMessages({ messages: prefix, taskId, globalStoragePath: tmpBaseDir })
+		const filePath = path.join(tmpBaseDir, "tasks", taskId, GlobalFileNames.apiConversationHistory)
+		await fs.unlink(`${filePath}.inc-idx.json`)
+		clearIncrementalJsonArrayCache()
+
+		const loaded = await readApiMessages({ taskId, globalStoragePath: tmpBaseDir })
+		expect(loaded).toHaveLength(6)
+		loaded.push({ role: "user", content: "after-resume" })
+		await saveApiMessages({ messages: loaded, taskId, globalStoragePath: tmpBaseDir })
+
+		const stats = getLastIncrementalWriteStats()
+		expect(stats.reusedCount).toBe(6)
+		expect(stats.stringifiedCount).toBe(1)
+		expect(stats.copiedBytes).toBeGreaterThan(0)
+		expect(JSON.parse(await fs.readFile(filePath, "utf8"))).toHaveLength(7)
 	})
 })

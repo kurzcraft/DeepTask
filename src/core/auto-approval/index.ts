@@ -84,6 +84,9 @@ export async function checkAutoApproval({
 					typeof state.followupAutoApproveTimeoutMs === "number" &&
 					state.followupAutoApproveTimeoutMs > 0
 				) {
+					// kilocode_change: auto-select only the answer text. A
+					// leftover `mode` slug on historical follow-up JSON must
+					// never switch mode or the sticky provider profile.
 					return {
 						decision: "timeout",
 						timeout: state.followupAutoApproveTimeoutMs,

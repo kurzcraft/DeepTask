@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react"
 import { Virtuoso } from "react-virtuoso"
-import { Trans } from "react-i18next"
 
 import { useAppTranslation } from "@/i18n/TranslationContext"
 import { useExtensionState } from "@/context/ExtensionStateContext"
@@ -121,19 +120,19 @@ export const ParallelSessionPanel = ({ selectedId, onClose }: ParallelSessionPan
 						className="border-r border-vscode-panel-border"
 					/>
 					<div className="flex-1 min-h-0 min-w-0 overflow-hidden">
-						{/* kilocode_change: bound transcript — collapsed-rows banner, mirrors ChatView */}
+						{/* kilocode_change: bound transcript — collapsed-rows banner, mirrors ChatView.
+						    Use t() rather than Trans interpolation children so a missing-key
+						    fallback cannot render {count} as a React child. */}
 						{!!tombstonedCount && (
 							<div className="px-3 py-1 text-xs text-vscode-descriptionForeground border-b border-vscode-panel-border/60 shrink-0">
-								<Trans i18nKey="chat:transcript.collapsedBanner" count={tombstonedCount}>
-									Earlier messages ({{ count: tombstonedCount }}) are collapsed to keep memory bounded.
-									Full history stays saved.
-								</Trans>
+								{t("chat:transcript.collapsedBanner", { count: tombstonedCount })}
 							</div>
 						)}
 						<Virtuoso
 							ref={virtuosoRef}
 							className="h-full overflow-y-auto"
 							style={{ height: "100%" }}
+							defaultItemHeight={72}
 							increaseViewportBy={{ top: 240, bottom: 240 }}
 							data={messages}
 							computeItemKey={(_index, message) => message.ts}

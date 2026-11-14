@@ -48,6 +48,9 @@ describe("webviewMessageHandler - checkpoint operations", () => {
 			checkpointRestore: vi.fn(),
 			overwriteClineMessages: vi.fn(),
 			overwriteApiConversationHistory: vi.fn(),
+			freezeHistoryPersistenceForBranchReplacement: vi.fn(),
+			clearStaleWebviewAskResponse: vi.fn(),
+			messageQueueService: { clear: vi.fn() },
 		}
 		mockCline.messageManager = new MessageManager(mockCline)
 
@@ -55,6 +58,8 @@ describe("webviewMessageHandler - checkpoint operations", () => {
 		mockProvider = {
 			getCurrentTask: vi.fn(() => mockCline),
 			postMessageToWebview: vi.fn(),
+			postStateToWebview: vi.fn(),
+			cancelTask: vi.fn().mockResolvedValue(undefined),
 			getTaskWithId: vi.fn(() => ({
 				historyItem: { id: "test-task-123", messages: mockCline.clineMessages },
 			})),
@@ -67,6 +72,7 @@ describe("webviewMessageHandler - checkpoint operations", () => {
 				maxImageFileSize: 5,
 				maxTotalImageSize: 20,
 			}),
+			log: vi.fn(),
 		}
 	})
 
@@ -110,6 +116,8 @@ describe("webviewMessageHandler - checkpoint operations", () => {
 
 			// Verify checkpoint restore was NOT called
 			expect(mockCline.checkpointRestore).not.toHaveBeenCalled()
+			expect(mockCline.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
+			expect(mockProvider.cancelTask).toHaveBeenCalledTimes(1)
 		})
 	})
 

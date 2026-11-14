@@ -1,32 +1,25 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import * as os from "os"
 import * as path from "path"
 import * as fs from "fs/promises"
 
-// Mocks (use hoisted to avoid initialization ordering issues)
-const hoisted = vi.hoisted(() => ({
-	safeWriteJsonMock: vi.fn().mockResolvedValue(undefined),
-}))
-vi.mock("../../../utils/safeWriteJson", () => ({
-	safeWriteJson: hoisted.safeWriteJsonMock,
-}))
-
-// Import after mocks
 import { saveTaskMessages } from "../taskMessages"
+import { GlobalFileNames } from "../../../shared/globalFileNames"
+import { clearIncrementalJsonArrayCache } from "../../../utils/incrementalJsonArrayWrite"
 
 let tmpBaseDir: string
 
 beforeEach(async () => {
-	hoisted.safeWriteJsonMock.mockClear()
-	// Create a unique, writable temp directory to act as globalStoragePath
+	clearIncrementalJsonArrayCache()
 	tmpBaseDir = await fs.mkdtemp(path.join(os.tmpdir(), "roo-test-"))
 })
 
-describe("taskMessages.saveTaskMessages", () => {
-	beforeEach(() => {
-		hoisted.safeWriteJsonMock.mockClear()
-	})
+afterEach(async () => {
+	clearIncrementalJsonArrayCache()
+	await fs.rm(tmpBaseDir, { recursive: true, force: true })
+})
 
+describe("taskMessages.saveTaskMessages", () => {
 	it("persists messages as-is", async () => {
 		const messages: any[] = [
 			{
@@ -45,9 +38,8 @@ describe("taskMessages.saveTaskMessages", () => {
 			globalStoragePath: tmpBaseDir,
 		})
 
-		expect(hoisted.safeWriteJsonMock).toHaveBeenCalledTimes(1)
-		const [, persisted] = hoisted.safeWriteJsonMock.mock.calls[0]
-		expect(persisted).toEqual(messages)
+		const filePath = path.join(tmpBaseDir, "tasks", "task-1", GlobalFileNames.uiMessages)
+		expect(JSON.parse(await fs.readFile(filePath, "utf8"))).toEqual(messages)
 	})
 
 	it("persists messages without modification when no metadata", async () => {
@@ -62,7 +54,7 @@ describe("taskMessages.saveTaskMessages", () => {
 			globalStoragePath: tmpBaseDir,
 		})
 
-		const [, persisted] = hoisted.safeWriteJsonMock.mock.calls[0]
-		expect(persisted).toEqual(messages)
+		const filePath = path.join(tmpBaseDir, "tasks", "task-2", GlobalFileNames.uiMessages)
+		expect(JSON.parse(await fs.readFile(filePath, "utf8"))).toEqual(messages)
 	})
 })

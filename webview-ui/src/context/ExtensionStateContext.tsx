@@ -55,8 +55,10 @@ export interface ExtensionStateContextType extends ExtensionState {
 	// The host may omit clineMessages on incremental state posts. The webview
 	// slice always keeps an array so ChatView never sees undefined.
 	clineMessages: ClineMessage[]
-	// kilocode_change: rows tombstoned by the bound-transcript projector (0 = below window).
+	// kilocode_change: omitted-row count from host compact projection (0 = continuous list).
 	clineMessagesTombstoned?: number
+	userMessageRail?: Array<{ ts: number; index: number; preview: string }>
+	transcriptLength?: number
 	// kilocode_change start: parallel subagents & workspaces (webview-maintained)
 	parallelSessions?: Record<string, ParallelSession>
 	parallelSessionMessages?: Record<string, ClineMessage[]>
@@ -282,8 +284,10 @@ export interface ExtensionMessageSlice {
 	clineMessages: ClineMessage[]
 	parallelSessionMessages?: Record<string, ClineMessage[]>
 	// kilocode_change start: bounded transcript diagnostics
-	/** Rows currently tombstoned by the bound-transcript projector (0 = below window). */
+	/** Rows omitted by host compact projection (0 = continuous list). */
 	clineMessagesTombstoned?: number
+	userMessageRail?: Array<{ ts: number; index: number; preview: string }>
+	transcriptLength?: number
 	// kilocode_change end
 }
 
@@ -313,6 +317,9 @@ export const mergeExtensionState = (prevState: ExtensionState | WebviewState, ne
 		customSupportPrompts,
 		experiments: newExperiments,
 		clineMessages: _newClineMessages,
+		clineMessagesTombstoned: _newTombstoned,
+		userMessageRail: _newRail,
+		transcriptLength: _newTranscriptLength,
 		...newRest
 	} = newState
 
@@ -465,6 +472,8 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 	const [clineMessages, setClineMessages] = useState<ClineMessage[]>([])
 	const [parallelSessionMessages, setParallelSessionMessages] = useState<Record<string, ClineMessage[]>>({})
 	const [hostTombstonedCount, setHostTombstonedCount] = useState<number | undefined>(undefined)
+	const [userMessageRail, setUserMessageRail] = useState<Array<{ ts: number; index: number; preview: string }>>([])
+	const [transcriptLength, setTranscriptLength] = useState<number | undefined>(undefined)
 	// kilocode_change end
 
 	const [didHydrateState, setDidHydrateState] = useState(false)
@@ -533,6 +542,12 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 							newState.clineMessagesTombstoned,
 						),
 					)
+				}
+				if (newState.userMessageRail !== undefined) {
+					setUserMessageRail(newState.userMessageRail)
+				}
+				if (newState.transcriptLength !== undefined) {
+					setTranscriptLength(newState.transcriptLength)
 				}
 					setShowWelcome(!checkExistKey(newState.apiConfiguration))
 					setDidHydrateState(true)
@@ -797,11 +812,12 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		() => ({
 			clineMessages,
 			parallelSessionMessages,
-			// Prefer the host compact count (omitted rows, not a 16k tombstone
-			// array). Fall back to the projector when streaming appends compact.
+			// Prefer the host omitted-row count (0 for the continuous list).
 			clineMessagesTombstoned: hostTombstonedCount ?? boundTranscriptProjector.tombstonedCount,
+			userMessageRail,
+			transcriptLength,
 		}),
-		[clineMessages, parallelSessionMessages, hostTombstonedCount],
+		[clineMessages, parallelSessionMessages, hostTombstonedCount, userMessageRail, transcriptLength],
 	)
 
 	const contextValue = useMemo<ExtensionSettingsContextType>(
@@ -1084,6 +1100,8 @@ export const useExtensionState = (): ExtensionStateContextType => {
 			parallelSessionMessages: messages.parallelSessionMessages,
 			// kilocode_change: bounded transcript diagnostics
 			clineMessagesTombstoned: messages.clineMessagesTombstoned,
+			userMessageRail: messages.userMessageRail,
+			transcriptLength: messages.transcriptLength,
 		}),
 		[settings, messages],
 	)

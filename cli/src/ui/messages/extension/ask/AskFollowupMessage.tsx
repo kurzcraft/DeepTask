@@ -47,12 +47,6 @@ export const AskFollowupMessage: React.FC<MessageComponentProps> = ({ message })
 							<Text color={theme.semantic.info}>
 								{index + 1}. {suggestion.answer}
 							</Text>
-							{suggestion.mode && (
-								<Text color={theme.ui.text.dimmed} dimColor>
-									{" "}
-									(switch to {suggestion.mode})
-								</Text>
-							)}
 						</Box>
 					))}
 				</Box>

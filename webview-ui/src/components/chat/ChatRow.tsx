@@ -1009,7 +1009,7 @@ export const ChatRowContent = ({
 												padding: "12px 16px",
 												backgroundColor: "var(--vscode-editor-background)",
 											}}>
-											<MarkdownBlock markdown={sub.task || ""} />
+											<MarkdownBlock markdown={sub.task || ""} plain={!isLast} />
 										</div>
 									</div>
 								))
@@ -1103,7 +1103,7 @@ export const ChatRowContent = ({
 								{t("chat:subtasks.newTaskContent")}
 							</div>
 							<div style={{ padding: "12px 16px", backgroundColor: "var(--vscode-editor-background)" }}>
-								<MarkdownBlock markdown={tool.content} />
+								<MarkdownBlock markdown={tool.content} plain={!isLast} />
 							</div>
 						</div>
 					</>
@@ -1317,7 +1317,7 @@ export const ChatRowContent = ({
 											padding: "12px 16px",
 											backgroundColor: "var(--vscode-editor-background)",
 										}}>
-										<MarkdownBlock markdown={dispatchResult.content || ""} />
+										<MarkdownBlock markdown={dispatchResult.content || ""} plain={!isLast} />
 									</div>
 								</div>
 							</div>
@@ -1355,7 +1355,7 @@ export const ChatRowContent = ({
 										padding: "12px 16px",
 										backgroundColor: "var(--vscode-editor-background)",
 									}}>
-									<MarkdownBlock markdown={message.text} />
+									<MarkdownBlock markdown={message.text} plain={!isLast} />
 								</div>
 							</div>
 						</div>
@@ -1565,8 +1565,8 @@ export const ChatRowContent = ({
 									/>
 								) : (
 									<>
-										<Markdown markdown={message.text} partial={message.partial} />
-										{message.images && message.images.length > 0 && (
+										<Markdown markdown={message.text} partial={message.partial} plain={!isLast} />
+										{isLast && message.images && message.images.length > 0 && (
 											<div style={{ marginTop: "10px" }}>
 												{message.images.map((image, index) => (
 													<ImageBlock key={index} imageData={image} />
@@ -1743,7 +1743,7 @@ export const ChatRowContent = ({
 										onCancel={handleCancelEdit}
 									/>
 								) : (
-									<Markdown markdown={message.text} />
+									<Markdown markdown={message.text} plain={!isLast} />
 								)}
 							</div>
 							{
@@ -1942,7 +1942,7 @@ export const ChatRowContent = ({
 									⚠️ Browser action result not properly grouped - this is a bug in the message
 									grouping logic
 								</div>
-								<Markdown markdown={message.text} partial={message.partial} />
+								<Markdown markdown={message.text} partial={message.partial} plain={!isLast} />
 							</div>
 						</>
 					)
@@ -1962,7 +1962,7 @@ export const ChatRowContent = ({
 								</div>
 							)}
 							<div style={{ paddingTop: 10 }}>
-								<Markdown markdown={message.text} partial={message.partial} />
+								<Markdown markdown={message.text} partial={message.partial} plain={!isLast} />
 							</div>
 						</>
 					)
@@ -2052,7 +2052,7 @@ export const ChatRowContent = ({
 									<OpenMarkdownPreviewButton markdown={message.text} />
 								</div>
 								<div style={{ color: "var(--vscode-charts-green)", paddingTop: 10 }}>
-									<Markdown markdown={message.text} partial={message.partial} />
+									<Markdown markdown={message.text} partial={message.partial} plain={!isLast} />
 								</div>
 							</div>
 						)
@@ -2076,6 +2076,8 @@ export const ChatRowContent = ({
 							<div className="flex flex-col gap-2 ml-6">
 								<Markdown
 									markdown={message.partial === true ? message?.text : followUpData?.question}
+									partial={message.partial}
+									plain={!isLast}
 								/>
 								<FollowUpSuggest
 									suggestions={followUpData?.suggest}

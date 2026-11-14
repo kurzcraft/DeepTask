@@ -63,15 +63,6 @@ const SuggestionRow: React.FC<SuggestionRowProps> = ({ suggestion, index, isSele
 			<Text color={isSelected ? theme.actions.pending : theme.ui.text.primary} bold={isSelected}>
 				{index + 1}. {suggestion.answer}
 			</Text>
-
-			{suggestion.mode && (
-				<>
-					<Text color={theme.ui.text.dimmed}> - </Text>
-					<Text color={isSelected ? theme.ui.text.primary : theme.ui.text.dimmed}>
-						switch to {suggestion.mode}
-					</Text>
-				</>
-			)}
 		</Box>
 	)
 }

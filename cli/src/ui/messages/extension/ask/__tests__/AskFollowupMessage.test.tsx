@@ -25,7 +25,7 @@ describe("AskFollowupMessage", () => {
 		expect(lastFrame()).toContain("3. Option 3")
 	})
 
-	it("should render suggestions with mode attribute", () => {
+	it("does not advertise a mode switch when leftover mode attributes are present", () => {
 		const message: ExtensionChatMessage = {
 			ts: Date.now(),
 			type: "ask",
@@ -44,9 +44,9 @@ describe("AskFollowupMessage", () => {
 
 		expect(lastFrame()).toContain("How should we proceed?")
 		expect(lastFrame()).toContain("1. Write code")
-		expect(lastFrame()).toContain("switch to code")
 		expect(lastFrame()).toContain("2. Debug issue")
-		expect(lastFrame()).toContain("switch to debug")
+		expect(lastFrame()).not.toContain("switch to code")
+		expect(lastFrame()).not.toContain("switch to debug")
 	})
 
 	it("should handle the actual message format from the issue", () => {

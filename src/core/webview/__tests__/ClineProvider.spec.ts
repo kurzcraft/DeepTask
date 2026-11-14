@@ -53,6 +53,14 @@ vi.mock("axios", () => ({
 
 vi.mock("../../../utils/safeWriteJson")
 
+vi.mock("../../task-persistence", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../task-persistence")>()
+	return {
+		...actual,
+		saveTaskMessages: vi.fn().mockResolvedValue(undefined),
+	}
+})
+
 vi.mock("../../../utils/storage", () => ({
 	getSettingsDirectoryPath: vi.fn().mockResolvedValue("/test/settings/path"),
 	getTaskDirectoryPath: vi.fn().mockResolvedValue("/test/task/path"),
@@ -389,11 +397,15 @@ describe("ClineProvider", () => {
 			const task: any = {
 				api: undefined,
 				abortTask: vi.fn(),
+				cancelCurrentRequest: vi.fn(),
 				handleWebviewAskResponse: vi.fn(),
 				clineMessages: [],
 				apiConversationHistory: [],
 				overwriteClineMessages: vi.fn(),
 				overwriteApiConversationHistory: vi.fn(),
+				freezeHistoryPersistenceForBranchReplacement: vi.fn(),
+				clearStaleWebviewAskResponse: vi.fn(),
+				messageQueueService: { clear: vi.fn() },
 				getTaskNumber: vi.fn().mockReturnValue(0),
 				setTaskNumber: vi.fn(),
 				setParentTask: vi.fn(),
@@ -1522,6 +1534,7 @@ describe("ClineProvider", () => {
 
 			// Mock createTaskWithHistoryItem
 			;(provider as any).createTaskWithHistoryItem = vi.fn()
+			const cancelSpy = vi.spyOn(provider, "cancelTask").mockResolvedValue(undefined)
 
 			// Trigger message deletion
 			const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
@@ -1551,8 +1564,11 @@ describe("ClineProvider", () => {
 				mockApiHistory[2],
 			])
 
-			// createTaskWithHistoryItem is only called when restoring checkpoints or aborting tasks
-			expect((provider as any).createTaskWithHistoryItem).not.toHaveBeenCalled()
+			// Deleting a user message rewinds then cancel+rehydrates so Resume/Terminate
+			// come back. createTaskWithHistoryItem is invoked by cancelTask, not by the
+			// rewind itself.
+			expect(mockCline.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
+			expect(cancelSpy).toHaveBeenCalledTimes(1)
 		})
 
 		test("handles case when no current task exists", async () => {
@@ -4060,6 +4076,7 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 				;(provider as any).getTaskWithId = vi.fn().mockResolvedValue({
 					historyItem: { id: "test-task-id" },
 				})
+				const cancelSpy = vi.spyOn(provider, "cancelTask").mockResolvedValue(undefined)
 
 				const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
@@ -4078,6 +4095,8 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 				// Should handle large payloads without issues - keeps messages before the deleted one
 				expect(mockCline.overwriteClineMessages).toHaveBeenCalledWith([mockMessages[0], mockMessages[1]])
 				expect(mockCline.overwriteApiConversationHistory).toHaveBeenCalledWith([{ ts: 1000 }, { ts: 2000 }])
+				expect(mockCline.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
+				expect(cancelSpy).toHaveBeenCalledTimes(1)
 			})
 		})
 
@@ -4103,6 +4122,7 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 					historyItem: { id: "test-task-id" },
 				})
 				;(provider as any).createTaskWithHistoryItem = vi.fn()
+				const cancelSpy = vi.spyOn(provider, "cancelTask").mockResolvedValue(undefined)
 
 				const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
@@ -4120,7 +4140,8 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 
 				// Verify successful operation completed
 				expect(mockCline.overwriteClineMessages).toHaveBeenCalled()
-				// createTaskWithHistoryItem is only called when restoring checkpoints or aborting tasks
+				expect(mockCline.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
+				expect(cancelSpy).toHaveBeenCalledTimes(1)
 				expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
 			})
 
@@ -4173,6 +4194,7 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 				;(provider as any).getTaskWithId = vi.fn().mockResolvedValue({
 					historyItem: { id: "test-task-id" },
 				})
+				const cancelSpy = vi.spyOn(provider, "cancelTask").mockResolvedValue(undefined)
 
 				const messageHandler = (mockWebviewView.webview.onDidReceiveMessage as any).mock.calls[0][0]
 
@@ -4190,6 +4212,8 @@ describe("ClineProvider - Comprehensive Edit/Delete Edge Cases", () => {
 
 				// Should handle identical timestamps gracefully
 				expect(mockCline.overwriteClineMessages).toHaveBeenCalled()
+				expect(mockCline.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
+				expect(cancelSpy).toHaveBeenCalledTimes(1)
 			})
 
 			test("handles messages with future timestamps", async () => {

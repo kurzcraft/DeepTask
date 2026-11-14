@@ -66,6 +66,9 @@ describe("webviewMessageHandler delete functionality", () => {
 			overwriteClineMessages: vi.fn(async () => {}),
 			overwriteApiConversationHistory: vi.fn(async () => {}),
 			taskId: "test-task-id",
+			freezeHistoryPersistenceForBranchReplacement: vi.fn(),
+			clearStaleWebviewAskResponse: vi.fn(),
+			messageQueueService: { clear: vi.fn() },
 		}
 		// Add messageManager using a real MessageManager instance (must be added after object creation
 		// to avoid circular reference issues with 'this')
@@ -75,6 +78,8 @@ describe("webviewMessageHandler delete functionality", () => {
 		provider = {
 			getCurrentTask: vi.fn(() => getCurrentTaskMock),
 			postMessageToWebview: vi.fn(),
+			postStateToWebview: vi.fn(async () => {}),
+			cancelTask: vi.fn(async () => {}),
 			contextProxy: {
 				getValue: vi.fn(),
 				setValue: vi.fn(async () => {}),
@@ -120,6 +125,8 @@ describe("webviewMessageHandler delete functionality", () => {
 			// When message is not found in API history (index is -1),
 			// API history should be truncated from the first API message at/after the deleted timestamp (fallback)
 			expect(getCurrentTaskMock.overwriteApiConversationHistory).toHaveBeenCalledWith([])
+			expect(getCurrentTaskMock.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
+			expect(provider.cancelTask).toHaveBeenCalledTimes(1)
 		})
 
 		it("should handle deletion when exact apiConversationHistoryIndex is found", async () => {
@@ -152,6 +159,8 @@ describe("webviewMessageHandler delete functionality", () => {
 			expect(getCurrentTaskMock.overwriteApiConversationHistory).toHaveBeenCalledWith([
 				{ ts: 900, role: "user", content: { type: "text", text: "Previous message" } },
 			])
+			expect(getCurrentTaskMock.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
+			expect(provider.cancelTask).toHaveBeenCalledTimes(1)
 		})
 
 		it("should handle deletion when message not found in clineMessages", async () => {
@@ -165,12 +174,15 @@ describe("webviewMessageHandler delete functionality", () => {
 				messageTs: 9999,
 			})
 
-			// Verify error message was shown (expecting translation key since t() is mocked to return the key)
-			expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("common:errors.message.message_not_found")
+			// Stale delete confirmations are obsolete, not user-facing errors.
+			expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
+			expect(getCurrentTaskMock.clearStaleWebviewAskResponse).toHaveBeenCalledTimes(1)
+			expect(provider.postStateToWebview).toHaveBeenCalled()
 
 			// Verify no truncation occurred
 			expect(getCurrentTaskMock.overwriteClineMessages).not.toHaveBeenCalled()
 			expect(getCurrentTaskMock.overwriteApiConversationHistory).not.toHaveBeenCalled()
+			expect(provider.cancelTask).not.toHaveBeenCalled()
 		})
 
 		it("should handle deletion with attempt_completion in API history", async () => {
@@ -212,6 +224,8 @@ describe("webviewMessageHandler delete functionality", () => {
 
 			// API history should be truncated from first message at/after deleted timestamp (fallback)
 			expect(getCurrentTaskMock.overwriteApiConversationHistory).toHaveBeenCalledWith([])
+			expect(getCurrentTaskMock.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
+			expect(provider.cancelTask).toHaveBeenCalledTimes(1)
 		})
 
 		it("should preserve messages before the deleted one", async () => {
@@ -247,6 +261,8 @@ describe("webviewMessageHandler delete functionality", () => {
 				{ ts: 1000, role: "user", content: { type: "text", text: "First message" } },
 				{ ts: 1500, role: "assistant", content: { type: "text", text: "First response" } },
 			])
+			expect(getCurrentTaskMock.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
+			expect(provider.cancelTask).toHaveBeenCalledTimes(1)
 		})
 
 		describe("condense preservation behavior", () => {
@@ -296,6 +312,8 @@ describe("webviewMessageHandler delete functionality", () => {
 				expect(result[3].content).toBe("Summary")
 				expect(result[3].isSummary).toBe(true) // Summary preserved
 				expect(result[4].content).toBe("Kept message 1")
+				expect(getCurrentTaskMock.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
+				expect(provider.cancelTask).toHaveBeenCalledTimes(1)
 			})
 
 			it("should restore condensed messages when summary is removed by truncation", async () => {
@@ -334,6 +352,8 @@ describe("webviewMessageHandler delete functionality", () => {
 				expect(result[0].content).toBe("Task start")
 				expect(result[1].content).toBe("Response 1")
 				expect(result[1].condenseParent).toBeUndefined() // Tag cleared since summary is gone
+				expect(getCurrentTaskMock.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
+				expect(provider.cancelTask).toHaveBeenCalledTimes(1)
 			})
 
 			it("should preserve first condense but undo second when rewinding past second condense only", async () => {
@@ -392,6 +412,8 @@ describe("webviewMessageHandler delete functionality", () => {
 				// Verify tags are preserved
 				const summary1 = result.find((msg: any) => msg.content === "Summary1")
 				expect(summary1.condenseParent).toBe(condenseId2) // Still tagged
+				expect(getCurrentTaskMock.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
+				expect(provider.cancelTask).toHaveBeenCalledTimes(1)
 			})
 
 			it("should use timestamp-based truncation when multiple messages share same timestamp", async () => {
@@ -428,6 +450,8 @@ describe("webviewMessageHandler delete functionality", () => {
 				// Both the Summary (ts=1000) and non-summary (ts=1000) are removed
 				expect(result.length).toBe(1)
 				expect(result[0].content).toBe("Previous message")
+				expect(getCurrentTaskMock.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
+				expect(provider.cancelTask).toHaveBeenCalledTimes(1)
 			})
 
 			it("should remove Summary when its condense_context clineMessage is deleted", async () => {
@@ -474,6 +498,8 @@ describe("webviewMessageHandler delete functionality", () => {
 				expect(result[1].content).toBe("Response 1")
 				// condenseParent should be cleared since the Summary is gone
 				expect(result[1].condenseParent).toBeUndefined()
+				expect(getCurrentTaskMock.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
+				expect(provider.cancelTask).toHaveBeenCalledTimes(1)
 			})
 
 			it("should preserve first Summary when only second condense_context is deleted (nested condense)", async () => {
@@ -564,6 +590,8 @@ describe("webviewMessageHandler delete functionality", () => {
 				// Messages tagged with condenseId1 should KEEP their tags
 				const response1 = result.find((msg: any) => msg.content === "Response 1")
 				expect(response1?.condenseParent).toBe(condenseId1) // Tag preserved
+				expect(getCurrentTaskMock.freezeHistoryPersistenceForBranchReplacement).toHaveBeenCalledTimes(1)
+				expect(provider.cancelTask).toHaveBeenCalledTimes(1)
 			})
 		})
 	})
