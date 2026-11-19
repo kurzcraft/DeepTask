@@ -19,6 +19,7 @@
 - Keep the full saved transcript as one continuous Virtuoso list. 64-row sliding pages broke scroll position. Historical rows keep a 120-char preview so a 13k-row / 22MB snapshot stays under 3MB of IPC JSON; the newest 64 rows stay 8k-truncated and images cap at 4 rows. Storage and model I/O stay full. An 800-row verbatim tail still exploded when Virtuoso failed to virtualize: Markdown amplified ~2MB into ~4GB.
 - Historical follow-up questions render as plain text. Only the latest follow-up row still uses Markdown.
 - The left user-message rail is a light full-history index (`ts` + placement + capped preview). Clicking a tick jumps inside the same continuous list; the body does not fetch or unload a 64-row page.
+- Stop the webview transcript projector from pinning every historical source row. The identity cache now keeps only the final clone; historical rows cheap-preview text and drop images in one object. Streaming `messageUpdated` can no longer keep 8k/base64 payloads alive after React has already switched to the preview (field: renderer still at 90% after the previous compact-only pass).
 
 ## 9.3.5
 

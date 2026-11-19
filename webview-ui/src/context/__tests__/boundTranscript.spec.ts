@@ -3,6 +3,7 @@ import type { ClineMessage } from "@roo-code/types"
 import { describe, expect, it } from "vitest"
 
 import {
+	BOUND_TRANSCRIPT_HISTORICAL_CHAR_LIMIT,
 	BOUND_TRANSCRIPT_IMAGE_ROWS,
 	BOUND_TRANSCRIPT_TAIL,
 	createBoundTranscriptProjector,
@@ -26,6 +27,7 @@ describe("createBoundTranscriptProjector", () => {
 	it("keeps the default webview bound aligned with the host tail/image budget", () => {
 		expect(BOUND_TRANSCRIPT_TAIL).toBe(64)
 		expect(BOUND_TRANSCRIPT_IMAGE_ROWS).toBe(4)
+		expect(BOUND_TRANSCRIPT_HISTORICAL_CHAR_LIMIT).toBe(120)
 	})
 
 	it("returns the input untouched when no images need stripping", () => {
@@ -42,9 +44,10 @@ describe("createBoundTranscriptProjector", () => {
 		const out = projector.project(messages)
 
 		expect(out).toHaveLength(30)
-		expect(out).toBe(messages)
-		expect(out[0]).toBe(messages[0])
+		expect(out).not.toBe(messages)
 		expect((out[0] as { webviewTombstone?: boolean }).webviewTombstone).toBeUndefined()
+		expect(out[0]!.text!.length).toBeLessThanOrEqual(BOUND_TRANSCRIPT_HISTORICAL_CHAR_LIMIT + 1)
+		expect(out[29]).toBe(messages[29])
 		expect(projector.tombstonedCount).toBe(0)
 	})
 
@@ -60,7 +63,6 @@ describe("createBoundTranscriptProjector", () => {
 		const messages = [taskRow, apiReq, ...bulk(10, 3)]
 		const out = projector.project(messages)
 		expect(out).toHaveLength(12)
-		expect(out[1]).toBe(apiReq)
 		expect((out[1] as { webviewTombstone?: boolean }).webviewTombstone).toBeUndefined()
 		expect(JSON.parse(out[1]!.text!)).toMatchObject({ tokensIn: 100, tokensOut: 50, cost: 0.5 })
 	})
@@ -73,26 +75,44 @@ describe("createBoundTranscriptProjector", () => {
 			type: "say",
 			say: "condense_context",
 			text: "long summary".padEnd(5000, "y"),
-			contextCondense: { cost: 0.25, newContextTokens: 1200 },
+			contextCondense: { cost: 0.25, newContextTokens: 1200, summary: "keep cost, drop summary" },
 		} as unknown as ClineMessage
 		const messages = [taskRow, condense, ...bulk(10, 3)]
 		const out = projector.project(messages)
 		expect(out).toHaveLength(12)
-		expect(out[1]).toBe(condense)
 		expect((out[1] as { webviewTombstone?: boolean }).webviewTombstone).toBeUndefined()
 		expect(out[1]!.say).toBe("condense_context")
+		expect(out[1]!.text!.length).toBeLessThanOrEqual(BOUND_TRANSCRIPT_HISTORICAL_CHAR_LIMIT + 1)
+		expect(out[1]!.contextCondense?.summary).toBe("")
 		expect(condense.text).toContain("long summary")
 	})
 
-	it("keeps row identity across messageUpdated appends", () => {
+	it("cheap-previews rows that have left the verbatim tail", () => {
+		const projector = createBoundTranscriptProjector(10, 4)
+		const messages = bulk(30)
+		const out = projector.project(messages)
+		for (let i = 0; i < 20; i++) {
+			expect(out[i]!.text!.length).toBeLessThanOrEqual(BOUND_TRANSCRIPT_HISTORICAL_CHAR_LIMIT + 1)
+			expect(out[i]!.text).toMatch(/^payload-\d+-/)
+		}
+		for (let i = 20; i < 30; i++) {
+			expect(out[i]).toBe(messages[i])
+			expect(out[i]!.text!.length).toBe(2000)
+		}
+	})
+
+	it("keeps compacted-row identity across messageUpdated appends", () => {
 		const projector = createBoundTranscriptProjector(10, 4)
 		const first = projector.project(bulk(30))
 		const appended = [...first, msg(31)]
 		const second = projector.project(appended)
 		expect(second).toHaveLength(first.length + 1)
-		for (let i = 0; i < first.length; i++) {
+		// Already-compacted historical rows keep identity. The one row that
+		// just left the tail is cloned once; the new tail row is the append.
+		for (let i = 0; i < 20; i++) {
 			expect(second[i]).toBe(first[i])
 		}
+		expect(second[20]!.text!.length).toBeLessThanOrEqual(BOUND_TRANSCRIPT_HISTORICAL_CHAR_LIMIT + 1)
 		expect(second[second.length - 1]).toBe(appended[appended.length - 1])
 	})
 
@@ -101,8 +121,8 @@ describe("createBoundTranscriptProjector", () => {
 		const first = projector.project(bulk(30))
 		expect(first).toHaveLength(30)
 		const second = projector.project([...first, msg(31)])
-		expect(second.slice(0, first.length)).toEqual(first)
 		expect(second).toHaveLength(31)
+		expect(second.map((row) => row.ts)).toEqual([...first.map((row) => row.ts), 31])
 	})
 
 	it("honors the host omittedHint for the collapse banner across streaming appends", () => {
@@ -134,7 +154,8 @@ describe("createBoundTranscriptProjector", () => {
 		const messages = bulk(500, 1)
 		const out = projector.project(messages)
 		expect(out).toHaveLength(500)
-		expect(out[0]).toBe(messages[0])
+		expect(out[0]!.ts).toBe(messages[0]!.ts)
+		expect(out[0]!.text!.length).toBeLessThanOrEqual(BOUND_TRANSCRIPT_HISTORICAL_CHAR_LIMIT + 1)
 		expect((out[0] as { webviewTombstone?: boolean }).webviewTombstone).toBeUndefined()
 		expect(projector.tombstonedCount).toBe(0)
 	})
@@ -163,6 +184,24 @@ describe("createBoundTranscriptProjector", () => {
 		expect(tombstonedWithImages).toHaveLength(0)
 	})
 
+	it("historical image rows compact text and drop blobs in one clone", () => {
+		const projector = createBoundTranscriptProjector(10, 4, 5)
+		const messages = [...bulk(2), ...Array.from({ length: 40 }, (_, i) => imgMsg(3 + i))]
+		const out = projector.project(messages)
+		// 42 rows, tail 10 → first 32 are historical. One clone: cheap text, no blob.
+		for (let i = 0; i < 32; i++) {
+			expect(out[i]!.text!.length).toBeLessThanOrEqual(BOUND_TRANSCRIPT_HISTORICAL_CHAR_LIMIT + 1)
+			expect((out[i] as { images?: unknown }).images).toBeUndefined()
+		}
+		expect(out.filter((m) => (m as { images?: unknown }).images !== undefined)).toHaveLength(5)
+		// Cache keys on the clone, not the source: re-projecting the projected
+		// list must not rebuild historical rows (that rebuild would pin source).
+		const again = projector.project(out)
+		for (let i = 0; i < 32; i++) {
+			expect(again[i]).toBe(out[i])
+		}
+	})
+
 	it("image-strip clones keep stable identity across messageUpdated appends", () => {
 		const projector = createBoundTranscriptProjector(10, 4, 5)
 		const base = [...bulk(2), ...Array.from({ length: 40 }, (_, i) => imgMsg(3 + i))]
@@ -173,10 +212,20 @@ describe("createBoundTranscriptProjector", () => {
 		for (let i = 0; i < first.length; i++) {
 			if (second[i] !== first[i]) {
 				changed++
-				expect((second[i] as { webviewImagesStripped?: boolean }).webviewImagesStripped).toBe(true)
+				const textCompacted =
+					second[i]!.text!.length <= BOUND_TRANSCRIPT_HISTORICAL_CHAR_LIMIT + 1
+				const imagesDropped =
+					(second[i] as { images?: unknown }).images === undefined &&
+					(first[i] as { images?: unknown }).images !== undefined
+				// Tail-exit cheap-previews; image-budget-exit drops the blob.
+				expect(textCompacted || imagesDropped).toBe(true)
 			}
 		}
-		expect(changed).toBeLessThanOrEqual(1)
+		// At most the row leaving the verbatim tail and the row leaving the image budget.
+		expect(changed).toBeLessThanOrEqual(2)
+		for (let i = 0; i < 20; i++) {
+			expect(second[i]).toBe(first[i])
+		}
 	})
 
 	it("re-strips images when messageUpdated replaces an older row in place", () => {
