@@ -650,11 +650,11 @@ export class WorkspaceStatusTool extends BaseTool<"workspace_status"> {
 				const occupants = await manager.occupantsOf(task.cwd, { taskId: task.taskId })
 				if (occupants.length > 0) {
 					conversationLines.unshift(
-						`Current cwd ${task.cwd} is OCCUPIED by: ${occupants
+						`Current cwd ${task.cwd} is also used by: ${occupants
 							.map((occupant) => `${occupant.kind}:${occupant.label ?? occupant.id}`)
 							.join(
 								", ",
-							)}. Later write-heavy work should use a new workspace; this conversation is migrated automatically when a second task starts here.`,
+							)}. Stay here. Later conversations are relocated onto sibling git worktrees automatically; do not leave this assigned cwd.`,
 					)
 				}
 			}

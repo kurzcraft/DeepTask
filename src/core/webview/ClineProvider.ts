@@ -4943,7 +4943,9 @@ export class ClineProvider
 			task: text,
 			images,
 			experiments,
-			rootTask: this.clineStack.length > 0 ? this.clineStack[0] : undefined,
+			// Parallel keepRunningTask siblings are independent roots. Only a
+			// real parentTask (subtask/delegation) inherits the stack-bottom root.
+			rootTask: parentTask ? (parentTask.rootTask ?? parentTask) : undefined,
 			parentTask,
 			taskNumber: this.clineStack.length + 1,
 			onCreated: this.taskCreationCallback,

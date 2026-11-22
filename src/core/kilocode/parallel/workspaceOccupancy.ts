@@ -80,12 +80,10 @@ export function collectWorkspaceOccupants(params: OccupancyInputs): WorkspaceOcc
 		occupants.push(occupant)
 	}
 
-	const liveTasks = params.runningTasks.filter(
-		(task) =>
-			!task.abort &&
-			!task.abandoned &&
-			(task.isActivelyRunning === true || (task.isActivelyRunning === undefined && task.isStreaming === true)),
-	)
+	// Stacked tasks occupy even while waiting for the user. Streaming-only
+	// occupancy let a later conversation join an idle first conversation's
+	// cwd; once both ran, each saw the other as an occupant.
+	const liveTasks = params.runningTasks.filter((task) => !task.abort && !task.abandoned)
 	const liveById = new Map(liveTasks.map((task) => [task.taskId, task]))
 
 	for (const conversation of params.conversations) {

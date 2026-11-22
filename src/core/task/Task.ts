@@ -886,6 +886,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 		this.checkpointTimeout = checkpointTimeout
 		this.enableBridge = enableBridge
 
+		this.rootTask = rootTask
 		this.parentTask = parentTask
 		this.taskNumber = taskNumber
 		this.initialStatus = initialStatus
