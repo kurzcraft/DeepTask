@@ -469,7 +469,7 @@ describe("ParallelManager conversations", () => {
 		expect(occupants.some((occupant) => occupant.id === first.id)).toBe(true)
 	})
 
-	test("occupantsOf ignores idle sibling conversations that are not streaming", async () => {
+	test("occupantsOf still isolates a later conversation from an idle stacked sibling", async () => {
 		const store = new Map<string, unknown>()
 		const liveTasks = [{ taskId: "task-1", cwd: "/repo", abort: false, abandoned: false, isStreaming: false }]
 		const provider = {
@@ -479,10 +479,12 @@ describe("ParallelManager conversations", () => {
 		} as unknown as ConstructorParameters<typeof ParallelManager>[0]
 		const manager = new ParallelManager(provider, new WorkspaceRegistry(makeStorage(store) as never))
 		await manager.registerMainFolder("/repo")
-		await manager.createConversation("/repo", { sessionId: "task-1", title: "idle" })
+		const first = await manager.createConversation("/repo", { sessionId: "task-1", title: "idle" })
 		const second = await manager.createConversation("/repo")
 
-		expect(await manager.isWorkspaceOccupied("/repo", { conversationId: second.id })).toBe(false)
+		expect(await manager.isWorkspaceOccupied("/repo", { conversationId: second.id })).toBe(true)
+		const occupants = await manager.occupantsOf("/repo", { conversationId: second.id })
+		expect(occupants.some((occupant) => occupant.id === first.id)).toBe(true)
 	})
 
 	test("broadcast hydrates persisted workspaces on window open", async () => {

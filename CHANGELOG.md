@@ -4,6 +4,8 @@
 
 ### Patch Changes
 
+- Keep historical command output collapsed. Only the live last command auto-expands; historical rows stay collapsed and render as `txt` so Shiki is skipped. Diff highlighting now honors the same skip gate instead of building a token tree per hunk. Field: projector cache 3.9MB did not explain a 1.1GB renderer; the next holders were historical command CodeBlocks plus `highlightHunks` bypassing skip.
+- Keep the first conversation on the main workspace when a second parallel chat starts. Creating a worktree for the second chat no longer evicts the first chat from the parent repo.
 - Deleting a user message no longer hides Resume/Terminate above the composer. The rewind used to leave a live Task without a pending ask, so ChatView treated the last row as settled and wiped those controls. Delete now freezes the rewound prefix, then cancel+rehydrates so `resume_task` is injected the same way as abort/cancel.
 - Historical "DeepTask said" rows no longer sit on the code-block gray background. Those rows render as `<pre>` to skip react-markdown, and the global `pre` style was painting `--vscode-textCodeBlock-background` over the chat panel. Plain transcript text now uses a transparent background so it matches the rest of the conversation.
 - Isolate live command chrome across parallel chats. `commandExecutionStatus` used to bypass `shouldBroadcastTaskToChat` and paint Continue/Terminate over the focused conversation. Host now drops unscoped or background events (`shouldBroadcastCommandExecutionToChat`; missing `taskId` is fail-closed). The webview also fail-closes when the focused task id is known.

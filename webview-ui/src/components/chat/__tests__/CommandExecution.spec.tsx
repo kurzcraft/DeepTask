@@ -24,7 +24,11 @@ vi.mock("../../../utils/vscode", () => ({
 }))
 
 vi.mock("../../kilocode/common/CodeBlock", () => ({
-	default: ({ source }: { source: string }) => <div data-testid="code-block">{source}</div>,
+	default: ({ source, language }: { source: string; language?: string }) => (
+		<div data-testid="code-block" data-language={language}>
+			{source}
+		</div>
+	),
 }))
 
 vi.mock("../CommandPatternSelector", () => ({
@@ -80,7 +84,9 @@ describe("CommandExecution", () => {
 			</ExtensionStateWrapper>,
 		)
 
-		expect(screen.getByTestId("code-block")).toHaveTextContent("npm install")
+		const codeBlock = screen.getByTestId("code-block")
+		expect(codeBlock).toHaveTextContent("npm install")
+		expect(codeBlock).toHaveAttribute("data-language", "txt")
 	})
 
 	it("should render command with output", () => {
@@ -91,7 +97,10 @@ describe("CommandExecution", () => {
 		)
 
 		const codeBlocks = screen.getAllByTestId("code-block")
+		expect(codeBlocks).toHaveLength(1)
 		expect(codeBlocks[0]).toHaveTextContent("npm install")
+		expect(codeBlocks[0]).toHaveAttribute("data-language", "txt")
+		expect(screen.queryByText("Installing packages...")).not.toBeInTheDocument()
 	})
 
 	it("should render with custom icon and title", () => {
@@ -233,7 +242,10 @@ Installing...`
 		)
 
 		const codeBlocks = screen.getAllByTestId("code-block")
+		expect(codeBlocks).toHaveLength(1)
 		expect(codeBlocks[0]).toHaveTextContent("npm install")
+		expect(codeBlocks[0]).toHaveAttribute("data-language", "txt")
+		expect(screen.queryByText("Installing...")).not.toBeInTheDocument()
 	})
 
 	it("should parse command with output", () => {
@@ -243,14 +255,17 @@ Suggested patterns: npm, npm install, npm run`
 
 		render(
 			<ExtensionStateWrapper>
-				<CommandExecution executionId="test-1" text={commandText} />
+				<CommandExecution executionId="test-1" text={commandText} isLast />
 			</ExtensionStateWrapper>,
 		)
 
 		// First check that the command was parsed correctly
 		const codeBlocks = screen.getAllByTestId("code-block")
+		expect(codeBlocks).toHaveLength(2)
 		expect(codeBlocks[0]).toHaveTextContent("npm install")
+		expect(codeBlocks[0]).toHaveAttribute("data-language", "shell")
 		expect(codeBlocks[1]).toHaveTextContent("Suggested patterns: npm, npm install, npm run")
+		expect(codeBlocks[1]).toHaveAttribute("data-language", "log")
 
 		const selector = screen.getByTestId("command-pattern-selector")
 		expect(selector).toBeInTheDocument()
@@ -306,14 +321,34 @@ Output here`
 
 		render(
 			<ExtensionStateWrapper value={disabledState}>
-				<CommandExecution executionId="test-1" text={commandText} />
+				<CommandExecution executionId="test-1" text={commandText} isLast />
 			</ExtensionStateWrapper>,
 		)
 
 		// Output should be visible when shell integration is disabled
 		const codeBlocks = screen.getAllByTestId("code-block")
 		expect(codeBlocks).toHaveLength(2) // Command and output blocks
+		expect(codeBlocks[0]).toHaveAttribute("data-language", "shell")
 		expect(codeBlocks[1]).toHaveTextContent("Output here")
+		expect(codeBlocks[1]).toHaveAttribute("data-language", "log")
+	})
+
+	it("keeps historical command output collapsed even when shell integration is disabled", () => {
+		const commandText = `npm install
+Output:
+Output here`
+
+		render(
+			<ExtensionStateWrapper>
+				<CommandExecution executionId="test-historical" text={commandText} />
+			</ExtensionStateWrapper>,
+		)
+
+		const codeBlocks = screen.getAllByTestId("code-block")
+		expect(codeBlocks).toHaveLength(1)
+		expect(codeBlocks[0]).toHaveTextContent("npm install")
+		expect(codeBlocks[0]).toHaveAttribute("data-language", "txt")
+		expect(screen.queryByText("Output here")).not.toBeInTheDocument()
 	})
 
 	it("should handle undefined allowedCommands and deniedCommands", () => {
@@ -393,6 +428,12 @@ Other output here`
 				</ExtensionStateWrapper>,
 			)
 
+			const codeBlocks = screen.getAllByTestId("code-block")
+			expect(codeBlocks).toHaveLength(1)
+			expect(codeBlocks[0]).toHaveTextContent("npm install")
+			expect(codeBlocks[0]).toHaveAttribute("data-language", "txt")
+			expect(screen.queryByText("Installing packages...")).not.toBeInTheDocument()
+
 			const selector = screen.getByTestId("command-pattern-selector")
 			expect(selector).toBeInTheDocument()
 			// Should show the command in the selector
@@ -455,6 +496,12 @@ Running tests...
 					/>
 				</ExtensionStateWrapper>,
 			)
+
+			const codeBlocks = screen.getAllByTestId("code-block")
+			expect(codeBlocks).toHaveLength(1)
+			expect(codeBlocks[0]).toHaveTextContent("npm test")
+			expect(codeBlocks[0]).toHaveAttribute("data-language", "txt")
+			expect(screen.queryByText("Running tests...")).not.toBeInTheDocument()
 
 			const selector = screen.getByTestId("command-pattern-selector")
 			expect(selector).toBeInTheDocument()
@@ -558,7 +605,7 @@ Without any command prefix`
 			expect(codeBlocks).toHaveLength(1) // Only the command block, no output block
 		})
 
-		it("should handle commands with numeric output", () => {
+		it("keeps historical numeric output collapsed without isLast", () => {
 			const commandWithNumericOutput = `wc -l *.go *.java
 Output:
 			   10 file1.go
@@ -572,23 +619,40 @@ Output:
 				</ExtensionStateWrapper>,
 			)
 
-			// Should render the command and output
 			const codeBlocks = screen.getAllByTestId("code-block")
+			expect(codeBlocks).toHaveLength(1)
 			expect(codeBlocks[0]).toHaveTextContent("wc -l *.go *.java")
+			expect(codeBlocks[0]).toHaveAttribute("data-language", "txt")
+			expect(screen.queryByText("45 total")).not.toBeInTheDocument()
 
-			// Should show pattern selector
 			const selector = screen.getByTestId("command-pattern-selector")
 			expect(selector).toBeInTheDocument()
-
-			// Should show a command pattern
 			expect(selector.textContent).toMatch(/wc/)
-
-			// The output should still be displayed in the code block
-			expect(codeBlocks.length).toBeGreaterThan(1)
-			expect(codeBlocks[1].textContent).toContain("45 total")
 		})
 
-		it("should handle commands with zero output", () => {
+		it("expands numeric output only for the live last command", () => {
+			const commandWithNumericOutput = `wc -l *.go *.java
+Output:
+			   10 file1.go
+			   20 file2.go
+			   15 Main.java
+			   45 total`
+
+			render(
+				<ExtensionStateWrapper>
+					<CommandExecution executionId="test-16-live" text={commandWithNumericOutput} isLast />
+				</ExtensionStateWrapper>,
+			)
+
+			const codeBlocks = screen.getAllByTestId("code-block")
+			expect(codeBlocks).toHaveLength(2)
+			expect(codeBlocks[0]).toHaveTextContent("wc -l *.go *.java")
+			expect(codeBlocks[0]).toHaveAttribute("data-language", "shell")
+			expect(codeBlocks[1].textContent).toContain("45 total")
+			expect(codeBlocks[1]).toHaveAttribute("data-language", "log")
+		})
+
+		it("keeps historical zero output collapsed without isLast", () => {
 			const commandWithZeroTotal = `wc -l *.go *.java
 Output:
 		     0 total`
@@ -599,17 +663,37 @@ Output:
 				</ExtensionStateWrapper>,
 			)
 
-			// Should show pattern selector
 			const selector = screen.getByTestId("command-pattern-selector")
 			expect(selector).toBeInTheDocument()
-
-			// Should show a command pattern
 			expect(selector.textContent).toMatch(/wc/)
 
-			// The output should still be displayed in the code block
 			const codeBlocks = screen.getAllByTestId("code-block")
-			expect(codeBlocks.length).toBeGreaterThan(1)
+			expect(codeBlocks).toHaveLength(1)
+			expect(codeBlocks[0]).toHaveTextContent("wc -l *.go *.java")
+			expect(codeBlocks[0]).toHaveAttribute("data-language", "txt")
+			expect(screen.queryByText("0 total")).not.toBeInTheDocument()
+		})
+
+		it("expands zero output only for the live last command", () => {
+			const commandWithZeroTotal = `wc -l *.go *.java
+Output:
+		     0 total`
+
+			render(
+				<ExtensionStateWrapper>
+					<CommandExecution executionId="test-17-live" text={commandWithZeroTotal} isLast />
+				</ExtensionStateWrapper>,
+			)
+
+			const selector = screen.getByTestId("command-pattern-selector")
+			expect(selector).toBeInTheDocument()
+			expect(selector.textContent).toMatch(/wc/)
+
+			const codeBlocks = screen.getAllByTestId("code-block")
+			expect(codeBlocks).toHaveLength(2)
+			expect(codeBlocks[0]).toHaveAttribute("data-language", "shell")
 			expect(codeBlocks[1]).toHaveTextContent("0 total")
+			expect(codeBlocks[1]).toHaveAttribute("data-language", "log")
 		})
 	})
 

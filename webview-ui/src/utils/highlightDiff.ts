@@ -1,7 +1,11 @@
 import { ReactNode } from "react"
-import { getHighlighter } from "./highlighter"
+import { getHighlighter, shouldSkipShikiHighlight } from "./highlighter"
 import { toJsxRuntime } from "hast-util-to-jsx-runtime"
 import { Fragment, jsx, jsxs } from "react/jsx-runtime"
+
+function splitPlainLines(text: string): ReactNode[] {
+	return text.split("\n").map((line) => line || "")
+}
 
 /**
  * Highlight two pieces of code (old and new) in a single pass and return
@@ -16,6 +20,15 @@ export async function highlightHunks(
 	_filePath?: string,
 ): Promise<{ oldLines: ReactNode[]; newLines: ReactNode[] }> {
 	try {
+		// kilocode_change: CodeBlock already skips logs/oversized sources. Diff
+		// highlighting used to bypass that gate and build a Shiki token tree
+		// per hunk, which amplified a few MB of tail diffs into GB-scale renderer heap.
+		const skipOld = shouldSkipShikiHighlight(oldText, lang)
+		const skipNew = shouldSkipShikiHighlight(newText, lang)
+		if (skipOld && skipNew) {
+			return { oldLines: splitPlainLines(oldText), newLines: splitPlainLines(newText) }
+		}
+
 		const highlighter = await getHighlighter(lang)
 		const shikiTheme = theme === "light" ? "github-light" : "github-dark"
 
@@ -23,7 +36,7 @@ export async function highlightHunks(
 		const highlightAndExtractLines = (text: string): ReactNode[] => {
 			const textLines = text.split("\n")
 
-			if (!text.trim()) {
+			if (!text.trim() || shouldSkipShikiHighlight(text, lang)) {
 				return textLines.map((line) => line || "")
 			}
 
@@ -75,7 +88,7 @@ export async function highlightHunks(
 				if (highlightedLines.length !== textLines.length) {
 					// For each line, highlight it individually (fallback)
 					return textLines.map((line) => {
-						if (!line.trim()) return line
+						if (!line.trim() || shouldSkipShikiHighlight(line, lang)) return line
 
 						try {
 							const lineHast: any = highlighter.codeToHast(line, {

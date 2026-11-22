@@ -63,7 +63,7 @@ describe("collectWorkspaceOccupants", () => {
 		expect(occupants).toEqual([])
 	})
 
-	test("idle stacked tasks that are not streaming do not occupy the workspace", () => {
+	test("idle stacked tasks still occupy so a later conversation is isolated", () => {
 		const occupants = collectWorkspaceOccupants({
 			workspacePath: "/repo",
 			conversations: [conversation()],
@@ -72,7 +72,8 @@ describe("collectWorkspaceOccupants", () => {
 			workspaces: [],
 			except: { conversationId: "cv-new" },
 		})
-		expect(occupants).toEqual([])
+		expect(occupants.some((occupant) => occupant.id === "cv-1")).toBe(true)
+		expect(occupants.some((occupant) => occupant.kind === "task" && occupant.id === "task-1")).toBe(true)
 	})
 
 	test("a running subagent occupies its worktree path", () => {

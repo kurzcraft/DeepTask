@@ -60,7 +60,7 @@ export function getWorkspaceCreateDescription(enabled: boolean | undefined): str
 		return undefined
 	}
 	return `## workspace_create
-	Description: Create a new isolated git workspace (a git worktree on its own branch based on the current folder) that this conversation and its subagents can safely write to. The creating task is switched into that worktree and the left-rail conversation moves with it. The workspace is claimed until you merge it.
+	Description: Create a new isolated git workspace (a git worktree on its own branch based on the current folder) for write-heavy work that must not share the current cwd. Calling this MOVES the current conversation into that worktree. Do not call it merely because another conversation also uses this cwd — occupancy isolation already relocates later conversations. Stay in an assigned main-repo cwd unless you explicitly need a private worktree. The workspace is claimed until you merge it.
 
 Parameters:
 - name: (optional) Short workspace name; auto-generated from the description when omitted.
@@ -78,7 +78,7 @@ export function getWorkspaceMergeDescription(enabled: boolean | undefined): stri
 		return undefined
 	}
 	return `## workspace_merge
-Description: The only workspace change tool. Merge a parallel workspace's branch back into the main branch, optionally switch this conversation first, and optionally delete the old worktree. The current conversation may leave a workspace it occupies. Pending changes are auto-committed first. The user's checkout is never dirtied. On conflict the merge aborts and returns the conflicted files.
+Description: The only workspace change tool. Merge a parallel workspace's branch back into the main branch, optionally switch this conversation first, and optionally delete the old worktree. Use this to merge completed worktrees, not to abandon an assigned main-repo cwd just because another conversation also uses it. Pending changes are auto-committed first. The user's checkout is never dirtied. On conflict the merge aborts and returns the conflicted files.
 
 Parameters:
 - name: (required) Workspace name or path to merge.

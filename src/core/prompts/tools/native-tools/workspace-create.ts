@@ -5,7 +5,7 @@ export default {
 	function: {
 		name: "workspace_create",
 		description:
-			"Create an isolated git workspace (worktree on its own branch from the current folder). This conversation is moved into the new worktree and claimed until merged with workspace_merge.",
+			"Create an isolated git workspace (worktree on its own branch from the current folder) for write-heavy work that must not share this cwd. Calling this MOVES the current conversation. Do not call it merely because another conversation also uses this cwd; occupancy isolation already relocates later conversations.",
 		parameters: {
 			type: "object",
 			properties: {

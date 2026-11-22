@@ -1,5 +1,15 @@
 # Deeptask 9.3.6
 
+## Historical commands stay collapsed; only the live last row expands
+
+Historical command rows used to auto-expand whenever shell integration was disabled, and they always highlighted as `shell`. That mounted a Shiki token tree for every past command in the 64-row tail. 9.3.6 keeps historical output collapsed until the user expands it; only the live last command auto-expands. Historical command text renders as `txt` so Shiki is skipped. Diff highlighting now honors the same skip gate instead of building a token tree per hunk.
+
+Field: projector identity-cache 3.9MB did not explain a 1.1GB renderer. The next holders were historical command CodeBlocks plus `highlightHunks` bypassing skip.
+
+## Keep the first conversation on the main workspace
+
+Starting a second parallel chat used to create a worktree and also evict the first conversation from the parent repo. The first chat now stays on the main workspace; only later chats get isolated worktrees.
+
 ## Isolate live command chrome
 
 `commandExecutionStatus` used to bypass `shouldBroadcastTaskToChat` and paint Continue/Terminate over the focused conversation. 9.3.6 closes that hole:
@@ -53,6 +63,6 @@ Clicking an `ask_followup_question` option used to send `suggestion.mode` throug
 
 Cheap-previewing historical rows was not enough: the projector cached `{source, clone}`, so every 8k/base64 payload stayed pinned after React had already switched to the preview. Compact and image-strip now happen in one object; the cache stores only that clone. Field: renderer still at 90% after the previous compact-only pass until Reload replaced pid 4102873 (rss ≈4.1GB, started 2026-11-14) with a new renderer (rss 379–620MB, OVERFLOW=False). Infinite-run gray-screen is not claimed; host full `clineMessages`, Shiki, and live command output remain the next candidates.
 
-Falsification condition: a background conversation running a command still paints Continue/Terminate over the focused Cancel, a same-ts streaming update still re-inflates a previously stripped image blob, evolving to a new copy switches the live provider, the system-prompt MODES list still enumerates historical Evolve-N copies, the compressed prompt drops `ask_followup_question` / TASK PROGRESS FILE / SCRIPT-FIRST hard rules, a resume/save of a large `api_conversation_history` still doubles host RSS because the prefix was fully stringified, a WeakRef miss / overlapping save still `JSON.stringify`s the frozen prefix, a first write or stale-size rewrite still stringifies the same rows twice, clicking a follow-up suggestion still switches mode or provider, scrolling a long transcript still drops rows or jumps position, or after Reload a long session's renderer still grows linearly because the projector cache pins historical source rows.
+Falsification condition: historical command rows still auto-expand or highlight as `shell` without `isLast`, `highlightHunks` still builds a Shiki tree for `txt`/oversized hunks, starting a second parallel chat still evicts the first conversation from the parent repo, a background conversation running a command still paints Continue/Terminate over the focused Cancel, a same-ts streaming update still re-inflates a previously stripped image blob, evolving to a new copy switches the live provider, the system-prompt MODES list still enumerates historical Evolve-N copies, the compressed prompt drops `ask_followup_question` / TASK PROGRESS FILE / SCRIPT-FIRST hard rules, a resume/save of a large `api_conversation_history` still doubles host RSS because the prefix was fully stringified, a WeakRef miss / overlapping save still `JSON.stringify`s the frozen prefix, a first write or stale-size rewrite still stringifies the same rows twice, clicking a follow-up suggestion still switches mode or provider, scrolling a long transcript still drops rows or jumps position, or after Reload a long session's renderer still grows linearly because historical command CodeBlocks or diff hunks pin Shiki token trees.
 
 **Full Changelog**: https://github.com/kurzcraft/DeepTask/compare/v9.3.5...v9.3.6

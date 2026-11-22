@@ -4,6 +4,13 @@ import { getHighlighter } from "../highlighter"
 // Mock the highlighter
 vi.mock("../highlighter", () => ({
 	getHighlighter: vi.fn(),
+	shouldSkipShikiHighlight: (source?: string, language?: string) => {
+		const text = source ?? ""
+		if (text.length === 0 || text.length > 4_000) {
+			return true
+		}
+		return ["log", "text", "plaintext", "plain", "txt"].includes((language ?? "").toLowerCase())
+	},
 }))
 
 // Mock hast-util-to-jsx-runtime
@@ -173,6 +180,26 @@ describe("highlightHunks", () => {
 		// Whitespace-only lines are preserved as-is (performance optimization)
 		expect(result.oldLines[1]).toBe("   ")
 		expect(result.newLines[1]).toBe("\t")
+	})
+
+	it("skips Shiki for oversized hunks without calling the highlighter", async () => {
+		const oldText = "a".repeat(4001)
+		const newText = "b".repeat(4001)
+		const result = await highlightHunks(oldText, newText, "javascript", "light")
+
+		expect(getHighlighter).not.toHaveBeenCalled()
+		expect(mockHighlighter.codeToHast).not.toHaveBeenCalled()
+		expect(result.oldLines).toEqual([oldText])
+		expect(result.newLines).toEqual([newText])
+	})
+
+	it("skips Shiki for plain languages without calling the highlighter", async () => {
+		const result = await highlightHunks("const x = 1", "const x = 2", "txt", "light")
+
+		expect(getHighlighter).not.toHaveBeenCalled()
+		expect(mockHighlighter.codeToHast).not.toHaveBeenCalled()
+		expect(result.oldLines).toEqual(["const x = 1"])
+		expect(result.newLines).toEqual(["const x = 2"])
 	})
 })
 

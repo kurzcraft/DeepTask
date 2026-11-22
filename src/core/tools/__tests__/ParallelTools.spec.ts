@@ -495,7 +495,9 @@ describe("Workspace tools execute guards", () => {
 		await workspaceStatusTool.execute({}, makeTask(provider), callbacks)
 		const result = JSON.stringify(callbacks.pushToolResult.mock.calls[0][0])
 		expect(result).toContain("workspace=/repo")
-		expect(result).toContain("OCCUPIED")
+		expect(result).toContain("also used by")
+		expect(result).toContain("Stay here")
+		expect(result).not.toContain("OCCUPIED")
 		expect(result).toContain("first")
 	})
 

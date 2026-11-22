@@ -1980,6 +1980,7 @@ export const ChatRowContent = ({
 							title={title}
 							commandOutputTruncated={message.commandOutputTruncated}
 							messageTs={message.ts}
+							isLast={isLast}
 						/>
 					)
 				case "use_mcp_server":

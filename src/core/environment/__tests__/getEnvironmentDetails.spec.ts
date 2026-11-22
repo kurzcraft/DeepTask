@@ -512,7 +512,7 @@ describe("getEnvironmentDetails", () => {
 		expect(result).toContain("Current viewport size: 1280x720 pixels.")
 	})
 
-	it("should tell the model to workspace_create when the cwd is occupied", async () => {
+	it("should tell the occupant to stay when the cwd is also used by another conversation", async () => {
 		mockProvider.parallelManager = {
 			occupantsOf: vi.fn().mockResolvedValue([{ kind: "conversation", id: "cv-1", label: "first" }]),
 		}
@@ -520,8 +520,9 @@ describe("getEnvironmentDetails", () => {
 
 		const result = await getEnvironmentDetails(mockCline as Task)
 		expect(result).toContain("# Workspace Occupancy")
-		expect(result).toContain("OCCUPIED")
-		expect(result).toContain("workspace_create")
+		expect(result).toContain("also used by")
+		expect(result).toContain("Stay in this assigned cwd")
+		expect(result).not.toContain("Do not keep writing here")
 		expect(mockProvider.parallelManager.occupantsOf).toHaveBeenCalledWith(mockCwd, { taskId: mockTaskId })
 	})
 
@@ -537,7 +538,7 @@ describe("getEnvironmentDetails", () => {
 		const result = await getEnvironmentDetails(mockCline as Task)
 		expect(result).toContain("# Parallel Live Tasks")
 		expect(result).toContain("other-task @ /other")
-		expect(result).toContain("workspace_create")
+		expect(result).toContain("Do not migrate this conversation")
 		expect(result).not.toContain("# Workspace Occupancy")
 	})
 })

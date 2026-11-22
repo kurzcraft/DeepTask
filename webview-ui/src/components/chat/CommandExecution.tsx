@@ -30,6 +30,8 @@ interface CommandExecutionProps {
 	title?: JSX.Element | null
 	commandOutputTruncated?: boolean
 	messageTs?: number
+	/** Live last row may auto-expand; historical rows must stay collapsed. */
+	isLast?: boolean
 }
 
 export const CommandExecution = ({
@@ -39,6 +41,7 @@ export const CommandExecution = ({
 	title,
 	commandOutputTruncated,
 	messageTs,
+	isLast = false,
 }: CommandExecutionProps) => {
 	const {
 		terminalShellIntegrationDisabled = true, // kilocode_change: default
@@ -50,9 +53,12 @@ export const CommandExecution = ({
 
 	const { command, output: parsedOutput } = useMemo(() => parseCommandAndOutput(text), [text])
 
-	// If we aren't opening the VSCode terminal for this command then we default
-	// to expanding the command execution output.
-	const [isExpanded, setIsExpanded] = useState(commandOutputTruncated ? false : terminalShellIntegrationDisabled)
+	// kilocode_change: historical command rows used to default-expand and run
+	// language="shell" Shiki on every mounted ChatRow. Only the live last row
+	// auto-expands when the VS Code terminal is not showing the output.
+	const [isExpanded, setIsExpanded] = useState(
+		Boolean(isLast) && !commandOutputTruncated && terminalShellIntegrationDisabled,
+	)
 	const [streamingOutput, setStreamingOutput] = useState("")
 	const [fullOutput, setFullOutput] = useState<string | undefined>(undefined)
 	const [status, setStatus] = useState<CommandExecutionStatus | null>(null)
@@ -119,10 +125,10 @@ export const CommandExecution = ({
 
 	useEffect(() => {
 		setFullOutput(undefined)
-		if (commandOutputTruncated) {
+		if (commandOutputTruncated || !isLast) {
 			setIsExpanded(false)
 		}
-	}, [text, commandOutputTruncated, messageTs])
+	}, [text, commandOutputTruncated, messageTs, isLast])
 
 	useEffect(() => {
 		if (!isExpanded || !commandOutputTruncated || fullOutput !== undefined || typeof messageTs !== "number") {
@@ -230,7 +236,8 @@ export const CommandExecution = ({
 
 			<div className="bg-vscode-editor-background border border-vscode-border rounded-xs ml-6 mt-2">
 				<div className="p-2">
-					<CodeBlock source={command} language="shell" />
+					{/* kilocode_change: txt skips Shiki; only the live command keeps shell tokens. */}
+					<CodeBlock source={command} language={isLast ? "shell" : "txt"} />
 					<OutputContainer isExpanded={isExpanded} output={output} />
 				</div>
 				{command && command.trim() && (

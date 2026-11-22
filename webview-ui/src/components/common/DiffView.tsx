@@ -1,6 +1,6 @@
 import { memo, useMemo, useEffect, useState } from "react"
 import { parseUnifiedDiff, type DiffLine } from "@src/utils/parseUnifiedDiff"
-import { normalizeLanguage } from "@src/utils/highlighter"
+import { normalizeLanguage, shouldSkipShikiHighlight } from "@src/utils/highlighter"
 import { getLanguageFromPath } from "@src/utils/getLanguageFromPath"
 import { highlightHunks } from "@src/utils/highlightDiff"
 
@@ -32,11 +32,14 @@ const DiffView = memo(({ source, filePath }: DiffViewProps) => {
 		return /\bvscode-light\b|\bvscode-high-contrast-light\b/i.test(cls)
 	}, [])
 
-	// Disable syntax highlighting for large diffs (performance optimization)
+	// Disable syntax highlighting for large diffs (performance optimization).
+	// kilocode_change: the 1000-line cap still let a 4k–80k char hunk build a
+	// Shiki token tree; reuse the same skip gate as CodeBlock.
 	const shouldHighlight = useMemo(() => {
 		const lineCount = source.split("\n").length
-		return lineCount <= 1000 // Only highlight diffs with <= 1000 lines
-	}, [source])
+		if (lineCount > 1000) return false
+		return !shouldSkipShikiHighlight(source, normalizedLang)
+	}, [source, normalizedLang])
 
 	// Parse diff and group into hunks
 	const diffLines = useMemo(() => parseUnifiedDiff(source, filePath), [source, filePath])

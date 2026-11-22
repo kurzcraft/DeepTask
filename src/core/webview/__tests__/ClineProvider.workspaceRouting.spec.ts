@@ -72,6 +72,30 @@ describe("ClineProvider workspace routing", () => {
 		expect(result.path).toBe("/repo/.kilocode/worktrees/isolated")
 	})
 
+	it("relocates the later writer and leaves the first occupant in place", async () => {
+		const { provider, create } = makeProvider()
+		provider.parallelManager.occupantsOf.mockResolvedValue([{ kind: "conversation", id: "cv-first", label: "first" }])
+		const first = { taskId: "task-first", cwd: "/repo", switchWorkspace: vi.fn() }
+		const later = { taskId: "task-later", cwd: "/repo", switchWorkspace: vi.fn() }
+
+		const result = await provider.ensureUnoccupiedWorkspace({
+			workspacePath: "/repo",
+			task: later,
+			conversationId: "cv-later",
+		})
+
+		expect(create).toHaveBeenCalled()
+		expect(later.switchWorkspace).toHaveBeenCalledWith("/repo/.kilocode/worktrees/isolated")
+		expect(first.switchWorkspace).not.toHaveBeenCalled()
+		expect(result.path).toBe("/repo/.kilocode/worktrees/isolated")
+	})
+
+	it("createTask treats keepRunning siblings as independent roots", () => {
+		const src = ClineProvider.prototype.createTask.toString()
+		expect(src).toMatch(/parentTask\.rootTask\s*\?\?\s*parentTask/)
+		expect(src).not.toMatch(/this\.clineStack\.length\s*>\s*0\s*\?\s*this\.clineStack\[0\]/)
+	})
+
 	it("focusTask rebinds a restored subagent to its assigned worktree instead of UI cwd", async () => {
 		const assigned = "/repo/.kilocode/worktrees/928-workspace-routing"
 		const switchWorkspace = vi.fn()
