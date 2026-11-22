@@ -393,26 +393,22 @@ export async function getEnvironmentDetails(cline: Task, includeFileDetails: boo
 			})
 			if (occupants.length > 0) {
 				details += `\n\n# Workspace Occupancy`
-				details += `\nCurrent cwd \`${cline.cwd.toPosix()}\` is OCCUPIED by: ${occupants
+				details += `\nCurrent cwd \`${cline.cwd.toPosix()}\` is also used by: ${occupants
 					.map((occupant) => `${occupant.kind}:${occupant.label ?? occupant.id}`)
 					.join(", ")}.`
-				details += `\nDo not keep writing here. Call workspace_create (or workspace_merge switch_to=a-free-workspace) so this conversation leaves the occupied tree, then continue there.`
+				details += `\nStay in this assigned cwd. Occupancy isolation relocates later conversations onto sibling git worktrees automatically. Do not call workspace_create or workspace_merge just to leave the original tree.`
 			} else {
 				const liveTasks =
 					typeof occupancyProvider.getLiveTasks === "function" ? occupancyProvider.getLiveTasks() : []
 				const siblings = liveTasks.filter(
-					(task) =>
-						task.taskId !== cline.taskId &&
-						!task.abort &&
-						!task.abandoned &&
-						task.isStreaming === true,
+					(task) => task.taskId !== cline.taskId && !task.abort && !task.abandoned,
 				)
 				if (siblings.length > 0) {
 					details += `\n\n# Parallel Live Tasks`
 					details += `\nOther live conversations/windows: ${siblings
 						.map((task) => `${task.taskId} @ ${task.cwd}`)
 						.join("; ")}.`
-					details += `\nIf you need exclusive writes, call workspace_status then workspace_create before mutating shared files.`
+					details += `\nThey keep their own cwd. Do not migrate this conversation out of its assigned workspace.`
 				}
 			}
 		} catch (error) {
