@@ -1,7 +1,7 @@
 // kilocode_change - new file
 import type { ClineMessage } from "@roo-code/types"
 
-import { COMMAND_OUTPUT_STRING } from "./consolidateCommands.js"
+import { COMMAND_OUTPUT_STRING, consolidateCommandsIncremental } from "./consolidateCommands.js"
 import { safeJsonParse } from "./safeJsonParse.js"
 
 /** Display-only budget for command output. Storage and model I/O stay full. */
@@ -52,6 +52,11 @@ function cheapPreviewText(text: string, limit = WEBVIEW_TRANSCRIPT_HISTORICAL_CH
 	if (text.length <= limit) {
 		return text
 	}
+	// Already compacted (content + ellipsis). Re-slicing would clone again and
+	// break fold-cache identity on every streaming tick.
+	if (text.length === limit + 1 && text.endsWith("…")) {
+		return text
+	}
 	return `${text.slice(0, limit)}…`
 }
 
@@ -81,10 +86,16 @@ function projectHistoricalRowForDisplay(message: ClineMessage): ClineMessage {
 		}
 	}
 	if (next.text && next.text.length > WEBVIEW_TRANSCRIPT_HISTORICAL_CHAR_LIMIT) {
-		next = { ...next, text: cheapPreviewText(next.text) }
+		const projectedText = cheapPreviewText(next.text)
+		if (projectedText !== next.text) {
+			next = { ...next, text: projectedText }
+		}
 	}
 	if (next.reasoning && next.reasoning.length > WEBVIEW_TRANSCRIPT_HISTORICAL_CHAR_LIMIT) {
-		next = { ...next, reasoning: cheapPreviewText(next.reasoning) }
+		const projectedReasoning = cheapPreviewText(next.reasoning)
+		if (projectedReasoning !== next.reasoning) {
+			next = { ...next, reasoning: projectedReasoning }
+		}
 	}
 	return next
 }
@@ -426,4 +437,23 @@ export function projectClineMessagesForDisplayWithMeta(messages: ClineMessage[])
 		messages: changed ? projected : messages,
 		tombstonedCount: bounded.tombstonedCount,
 	}
+}
+
+/**
+	* Fold command/MCP sequences, then re-apply the display bound.
+	*
+	* ChatView used to cache the concatenated fold. Host/webview projectors
+	* already 8k-truncate each `command_output` chunk, but the fold joins those
+	* chunks with no cap, so a long wait-command session grew without bound
+	* after projection. Re-projecting here caps the joined command (tail 8k,
+	* historical 120) and keeps fold-cache identity on already-compacted rows.
+	* Storage and model I/O stay full.
+	*/
+export function foldCommandsForDisplay(
+	messages: ClineMessage[],
+	previousInput?: readonly ClineMessage[],
+	previousOutput?: readonly ClineMessage[],
+): ClineMessage[] {
+	const folded = consolidateCommandsIncremental(messages, previousInput, previousOutput)
+	return projectClineMessagesForDisplay(folded)
 }

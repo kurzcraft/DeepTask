@@ -1,5 +1,22 @@
 # Deeptask
 
+## 9.3.8
+
+### Patch Changes
+
+- Re-project the webview transcript after folding command/MCP sequences. Host already 8k-truncates each `command_output` chunk, but ChatView concatenated those chunks with no cap and cached the joined string, so a long wait-command session grew after projection. Folded commands now stay at the 8k tail / 120-char historical bound; storage and model I/O stay full.
+
+## 9.3.7
+
+### Patch Changes
+
+- Inject a runtime `PROGRESSIVE THINKING` rule into every system prompt (default and file-based). Restating known facts is not progress; each thought must produce a new fact, a code/test/config change, or a materially different next action. This is not a prompt-evolution request and does not edit mode YAML.
+- Drop a persisted foreign EXTRA/task binding (for example a sibling Qoder checklist) instead of treating its stored instance ID as this host. Discovery and the completion gate only accept markers that match the current host task ID.
+- Completion is blocked only by this host's EXTRA/task checklist and its light files. Sibling conversations' Markdown in the same folder must not postpone `attempt_completion`.
+- Occupancy ignores interrupted or non-reasoning tasks, so a parked chat does not keep a worktree busy.
+- After `switchWorkspace`, file tools, path checks, progress watchers, and the session cwd follow the live task directory instead of the VS Code folder root.
+- Native todos refresh from EXTRA/task markdown events, including archive moves under `finished/`. After the owned checklist is archived, remaining native boxes are marked completed without waiting for `update_todo_list`.
+
 ## 9.3.6
 
 ### Patch Changes

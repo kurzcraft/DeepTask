@@ -13,6 +13,11 @@ mkdir -p "$LOG_DIR"
   export PATH="$NODE20:/home/kurz/nodejs/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
   VERSION="$(node -p "require('./src/package.json').version")"
+  LOCKED_VERSION="9.3.8"
+  if [[ "$VERSION" != "$LOCKED_VERSION" && "${DEEPTASK_ALLOW_VERSION_BUMP:-}" != "1" ]]; then
+    echo "refusing to install $VERSION; local DeepTask is locked at $LOCKED_VERSION (set DEEPTASK_ALLOW_VERSION_BUMP=1 only when the user named a new version)" >&2
+    exit 1
+  fi
   VSIX="$ROOT/deeptask-${VERSION}.vsix"
   INSTALLED="/home/kurz/.vscode-oss/extensions/deeptask.deeptask-${VERSION}/dist/extension.js"
 

@@ -17,7 +17,7 @@ import { commandExecutionStatusSchema } from "@roo-code/types"
 import { findLast } from "@roo/array"
 import { SuggestionItem } from "@roo-code/types"
 import { combineApiRequests } from "@roo/combineApiRequests"
-	import { combineCommandSequences, combineCommandSequencesIncremental } from "@roo/combineCommandSequences"
+import { foldCommandsForDisplay } from "@roo/combineCommandSequences"
 import { getApiMetricsIncremental, type TokenUsageIncrementalCache } from "@roo/getApiMetrics"
 import { filterVisibleMessages, filterVisibleMessagesIncremental } from "./visibleMessages"
 import { getAllModes } from "@roo/modes"
@@ -239,15 +239,15 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	// the pre-edit text look like a queued message before the accepted replacement arrives.
 	// Combine the original transcript so no-op folds can reuse it. The leading
 	// task say is rendered by the task header and skipped in visibleMessages.
-	// Streaming messageUpdated keeps prefix object identity, so reuse the already
-	// folded command/MCP prefix instead of reallocating historical output strings.
+	// Folding concatenates already-truncated 8k command_output/MCP chunks with no
+	// cap; re-project after the fold so the cache holds the capped objects.
 	const commandFoldInputRef = useRef<ClineMessage[]>([])
 	const commandFoldOutputRef = useRef<ClineMessage[]>([])
 	const visibleInputRef = useRef<ClineMessage[]>([])
 	const visibleOutputRef = useRef<ClineMessage[]>([])
 	const apiMetricsCacheRef = useRef<TokenUsageIncrementalCache | undefined>(undefined)
 	const modifiedMessages = useMemo(() => {
-		const folded = combineCommandSequencesIncremental(
+		const folded = foldCommandsForDisplay(
 			messages,
 			commandFoldInputRef.current,
 			commandFoldOutputRef.current,

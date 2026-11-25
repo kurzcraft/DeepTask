@@ -28,6 +28,7 @@ export {
 	projectTranscriptBoundForDisplayWithMeta,
 	projectClineMessagesForDisplay,
 	projectClineMessagesForDisplayWithMeta,
+	foldCommandsForDisplay,
 	projectUserMessageRailIndex,
 } from "./projectCommandOutput.js"
 

@@ -8,6 +8,7 @@ import {
 	WEBVIEW_TRANSCRIPT_DISPLAY_TAIL,
 	WEBVIEW_TRANSCRIPT_HISTORICAL_CHAR_LIMIT,
 	WEBVIEW_TRANSCRIPT_IMAGE_ROWS,
+	foldCommandsForDisplay,
 	projectClineMessagesForDisplay,
 	projectClineMessagesForDisplayWithMeta,
 	projectCommandMessageForDisplay,
@@ -298,5 +299,43 @@ describe("projectCommandOutput", () => {
 		expect(parsed.path).toContain("DEEPTASK_90PCT_AND_TASK_SPLIT.md")
 		expect(parsed.content).toContain("truncated")
 		expect(projected.text).not.toMatch(/\n… \[truncated/)
+	})
+
+	it("re-caps concatenated 8k command_output chunks after folding", () => {
+		const chunk = "x".repeat(COMMAND_OUTPUT_DISPLAY_CHAR_LIMIT)
+		const messages: ClineMessage[] = [
+			commandMessage({ ts: 1, text: "tail -f log" }),
+			commandMessage({ ts: 2, ask: "command_output", text: chunk }),
+			commandMessage({ ts: 3, ask: "command_output", text: chunk }),
+			commandMessage({ ts: 4, ask: "command_output", text: chunk }),
+		]
+
+		const folded = foldCommandsForDisplay(messages)
+		expect(folded).toHaveLength(1)
+		expect(folded[0]!.ask).toBe("command")
+		expect(folded[0]!.commandOutputTruncated).toBe(true)
+		expect(folded[0]!.text!.length).toBeLessThan(COMMAND_OUTPUT_DISPLAY_CHAR_LIMIT * 2)
+		expect(folded[0]!.text).toContain("truncated")
+		expect(messages[1]!.text).toHaveLength(COMMAND_OUTPUT_DISPLAY_CHAR_LIMIT)
+	})
+
+	it("cheap-previews a folded historical command and keeps identity on re-project", () => {
+		const chunk = "y".repeat(COMMAND_OUTPUT_DISPLAY_CHAR_LIMIT)
+		const historical: ClineMessage[] = [
+			commandMessage({ ts: 1, text: "old" }),
+			commandMessage({ ts: 2, ask: "command_output", text: chunk }),
+			commandMessage({ ts: 3, ask: "command_output", text: chunk }),
+		]
+		const tail = Array.from({ length: WEBVIEW_TRANSCRIPT_DISPLAY_TAIL }, (_, i) =>
+			sayText(10 + i, `tail-${i}`),
+		)
+		const first = foldCommandsForDisplay([...historical, ...tail])
+		expect(first[0]!.ask).toBe("command")
+		expect(first[0]!.text!.length).toBeLessThanOrEqual(WEBVIEW_TRANSCRIPT_HISTORICAL_CHAR_LIMIT + 1)
+
+		const nextTail = [...tail, sayText(10 + WEBVIEW_TRANSCRIPT_DISPLAY_TAIL, "newer")]
+		const second = foldCommandsForDisplay([...historical, ...nextTail], [...historical, ...tail], first)
+		expect(second[0]).toBe(first[0])
+		expect(second[0]!.text).toBe(first[0]!.text)
 	})
 })

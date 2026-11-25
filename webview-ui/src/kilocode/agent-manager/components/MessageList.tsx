@@ -7,7 +7,7 @@ import { sessionInputAtomFamily, selectedSessionAtom } from "../state/atoms/sess
 import { sessionMachineStateAtom, sendSessionEventAtom } from "../state/atoms/stateMachine"
 import type { ClineMessage, SuggestionItem, FollowUpData } from "@roo-code/types"
 import { safeJsonParse } from "@roo/safeJsonParse"
-import { combineCommandSequences } from "@roo/combineCommandSequences"
+import { foldCommandsForDisplay } from "@roo/combineCommandSequences"
 import { SimpleMarkdown } from "./SimpleMarkdown"
 import { FollowUpSuggestions } from "./FollowUpSuggestions"
 import { CommandExecutionBlock } from "./CommandExecutionBlock"
@@ -71,8 +71,8 @@ export function MessageList({ sessionId }: MessageListProps) {
 	const isWaitingApproval = sessionState === "waiting_approval"
 	const isYoloMode = selectedSession?.yoloMode !== false
 
-	// Combine command and command_output messages into single entries
-	const combinedMessages = useMemo(() => combineCommandSequences(messages), [messages])
+	// Combine command and command_output messages, then re-cap the joined text.
+	const combinedMessages = useMemo(() => foldCommandsForDisplay(messages), [messages])
 
 	// Find the last approval-required ask message (tool/command/completion) in the combined list
 	const lastApprovalAskTs = useMemo(() => {
