@@ -1,12 +1,12 @@
 // npx vitest run integrations/terminal/__tests__/TerminalCmdFallback.spec.ts
 // kilocode_change - new file
 
-// Regression tests for Windows cmd.exe robustness:
+// Regression tests for shell-integration fallback:
 // 1. A clearly-cmd default profile must never wait for the OSC 633;A handshake;
 //    it routes straight to the child-process fallback executor.
-// 2. On Windows, a 633;A wait timeout must degrade to child-process execution
-//    instead of failing execute_command.
-// 3. Non-Windows platforms keep the original no-shell-integration failure path.
+// 2. On any platform, a 633;A wait timeout must degrade to child-process
+//    execution instead of failing execute_command.
+// 3. Linux/VSCodium must not abort the command just because 633;A was late.
 
 vi.mock("execa", () => {
 	const createSubprocess = () => ({
@@ -219,7 +219,7 @@ describe("Terminal cmd fallback", () => {
 			expect(events.noShellIntegration).toEqual([])
 		})
 
-		it("keeps the original no-shell-integration failure on non-Windows platforms", async () => {
+		it("degrades to child-process execution on Linux when the 633;A wait times out", async () => {
 			mockWindowsPlatform("linux")
 			BaseTerminal.setShellIntegrationTimeout(60)
 
@@ -230,8 +230,10 @@ describe("Terminal cmd fallback", () => {
 			const result = terminal.runCommand("echo unix", callbacks)
 			await result
 
-			expect(events.noShellIntegration.length).toBeGreaterThan(0)
-			expect(events.noShellIntegration[0]).toContain("633;A")
+			expect(events.completed.join("")).toContain("fallback output")
+			expect(events.exits).toEqual([{ exitCode: 0 }])
+			expect(events.noShellIntegration).toEqual([])
+			expect(events.started).toContain(4242)
 		})
 	})
 

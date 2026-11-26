@@ -9,6 +9,7 @@ import { ShellIntegrationManager } from "./ShellIntegrationManager"
 import { ExecaTerminalProcess } from "./ExecaTerminalProcess"
 import { mergePromise } from "./mergePromise"
 import { getWorkspacePath } from "../../utils/path" // kilocode_change
+import { getShell } from "../../utils/shell" // kilocode_change
 
 export const DEEPTASK_TERMINAL_NAME = "Deeptask"
 // Keep as a joined string so branding residue rewrites cannot erase the legacy title.
@@ -80,7 +81,19 @@ export class Terminal extends BaseTerminal {
 
 		const env = Terminal.getEnv()
 		const iconPath = new vscode.ThemeIcon("rocket")
-		this.terminal = terminal ?? vscode.window.createTerminal({ cwd, name: DEEPTASK_TERMINAL_NAME, iconPath, env })
+		// kilocode_change start: pin an allowlisted shell so a broken default
+		// profile (for example /tmp/fast-vscode-bash.sh exit 1) cannot prevent
+		// this extension from creating its own integrated terminal.
+		this.terminal =
+			terminal ??
+			vscode.window.createTerminal({
+				cwd,
+				name: DEEPTASK_TERMINAL_NAME,
+				iconPath,
+				env,
+				shellPath: getShell(),
+			})
+		// kilocode_change end
 
 		if (Terminal.getTerminalZdotdir()) {
 			ShellIntegrationManager.terminalTmpDirs.set(id, env.ZDOTDIR)
@@ -117,9 +130,13 @@ export class Terminal extends BaseTerminal {
 		// integration handshake that cannot succeed. The command still runs with
 		// full stdout/stderr capture and a real exit code; only the visible
 		// integrated-terminal transcript is traded away.
-		if (isWindowsCmdDefaultProfile()) {
+		if (isWindowsCmdDefaultProfile() || Terminal.getShellIntegrationDisabled()) {
 			console.info(
-				`[Terminal ${this.id}] cmd.exe default profile detected; running command through the child-process fallback executor.`,
+				`[Terminal ${this.id}] ${
+					isWindowsCmdDefaultProfile()
+						? "cmd.exe default profile detected"
+						: "shell integration disabled"
+				}; running command through the child-process fallback executor.`,
 			)
 
 			return this.runCommandViaChildProcess(command, callbacks)
@@ -177,45 +194,34 @@ export class Terminal extends BaseTerminal {
 				})
 				.catch(() => {
 					// kilocode_change start
-					// On Windows the 633;A wait can time out because the profile has
-					// no integration script (cmd), integration is disabled, or the
-					// extension host stalled. Never fail the command for that: fall
-					// back to direct child-process execution so execute_command
-					// still runs the command and returns output plus exit code.
-					if (globalThis.process?.platform === "win32") {
-						console.warn(
-							`[Terminal ${this.id}] Shell integration did not initialize within ${Terminal.getShellIntegrationTimeout() / 1000}s on Windows; falling back to direct child-process execution.`,
-						)
+					// The 633;A wait can time out because the profile has no
+					// integration script, integration is disabled, the host
+					// stalled, or the integrated terminal never emitted the
+					// handshake in time (observed on Linux/VSCodium). Never
+					// fail the command for that: fall back to direct
+					// child-process execution so execute_command still runs
+					// the command and returns output plus exit code.
+					console.warn(
+						`[Terminal ${this.id}] Shell integration did not initialize within ${Terminal.getShellIntegrationTimeout() / 1000}s; falling back to direct child-process execution.`,
+					)
 
-						ShellIntegrationManager.zshCleanupTmpDir(this.id)
-
-						// Detach every listener registered on the never-started
-						// integration process (including the `continue`/`error`
-						// resolvers above) and drop it from this terminal so the
-						// fallback executor becomes the single owner.
-						process.removeAllListeners()
-						this.process = undefined
-
-						const fallback = this.runCommandViaChildProcess(command, callbacks)
-
-						// Route abort from the already-returned merged object to the
-						// child process that is actually running the command.
-						process.abort = () => fallback.abort()
-
-						void fallback.finally(() => resolve())
-						return
-					}
-					// kilocode_change end
-
-					console.log(`[Terminal ${this.id}] Shell integration not available. Command execution aborted.`)
-
-					// Clean up temporary directory if shell integration is not available
 					ShellIntegrationManager.zshCleanupTmpDir(this.id)
 
-					process.emit(
-						"no_shell_integration",
-						`Shell integration initialization sequence '\\x1b]633;A' was not received within ${Terminal.getShellIntegrationTimeout() / 1000}s. Shell integration has been disabled for this terminal instance. Increase the timeout in the settings if necessary.`,
-					)
+					// Detach every listener registered on the never-started
+					// integration process (including the `continue`/`error`
+					// resolvers above) and drop it from this terminal so the
+					// fallback executor becomes the single owner.
+					process.removeAllListeners()
+					this.process = undefined
+
+					const fallback = this.runCommandViaChildProcess(command, callbacks)
+
+					// Route abort from the already-returned merged object to the
+					// child process that is actually running the command.
+					process.abort = () => fallback.abort()
+
+					void fallback.finally(() => resolve())
+					// kilocode_change end
 				})
 		})
 
@@ -285,8 +291,9 @@ export class Terminal extends BaseTerminal {
 	 * terminal's registry bookkeeping (busy state, retention, task ownership).
 	 *
 	 * Used when shell integration cannot provide output: cmd.exe default
-	 * profiles and Windows integration-init timeouts. The visible integrated
-	 * terminal is swapped to a pseudoterminal that mirrors the execution live.
+	 * profiles, and any-platform integration-init timeouts (Windows cmd,
+	 * Linux/VSCodium 633;A handshake stalls). The visible integrated terminal
+	 * is swapped to a pseudoterminal that mirrors the execution live.
 	 */
 	private runCommandViaChildProcess(
 		command: string,

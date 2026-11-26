@@ -148,23 +148,33 @@ export class ExecuteCommandTool extends BaseTool<"execute_command"> {
 
 				pushToolResult(result)
 			} catch (error: unknown) {
-				// Never silently switch from the VS Code integrated terminal to an
-				// independent child process. That hides shell integration failures,
-				// loses visible terminal state, and makes commands appear to run in a
-				// different environment. Surface the failure and keep the integrated
-				// terminal as the only execution path when it is selected.
+				// kilocode_change start: a broken integrated terminal (633;A
+				// handshake stall, default profile exit 1) must not veto the
+				// command. Retry through the child-process executor so the
+				// model still receives output and an exit code.
+				console.warn(
+					`[ExecuteCommandTool] Integrated terminal failed; retrying through child-process execution: ${
+						error instanceof Error ? error.message : String(error)
+					}`,
+				)
 				postCommandStatusToWebview(provider, {
 					executionId,
 					status: "fallback",
 					taskId: task.taskId,
 				})
 				await task.say("shell_integration_warning")
-				task.supersedePendingAsk()
 
-				const errorMessage = error instanceof Error ? error.message : String(error)
-				pushToolResult(
-					`Command was not executed because the VS Code integrated terminal failed: ${errorMessage}`,
-				)
+				const [rejected, result] = await executeCommandInTerminal(task, {
+					...options,
+					terminalShellIntegrationDisabled: true,
+				})
+
+				if (rejected) {
+					task.didRejectTool = true
+				}
+
+				pushToolResult(result)
+				// kilocode_change end
 			}
 
 			return
@@ -262,9 +272,16 @@ export async function executeCommandInTerminal(
 
 	// Commands must always use the VS Code integrated terminal. The former
 	// Execa branch silently changed the shell, environment, working directory,
-	// and visible terminal state when this preference was enabled.
+	// and visible terminal state when this preference was enabled. Child-process
+	// fallback still runs inside that terminal (echo pty) when integration is
+	// disabled or the 633;A handshake stalls.
 	const terminalProvider = "vscode"
 	const provider = await task.providerRef.deref()
+
+	// kilocode_change: honor the per-command fallback flag. ClineProvider also
+	// writes the static from persisted state, but a retry after an integrated
+	// terminal failure must skip the 633;A wait even when that state is false.
+	Terminal.setShellIntegrationDisabled(terminalShellIntegrationDisabled)
 
 	let accumulatedOutput = ""
 	// kilocode_change: live-output ring cap + postMessage throttle. Before this,

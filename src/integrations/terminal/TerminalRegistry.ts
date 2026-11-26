@@ -159,7 +159,20 @@ export class TerminalRegistry {
 		let newTerminal
 
 		if (provider === "vscode") {
-			newTerminal = new Terminal(this.nextTerminalId++, undefined, cwd)
+			try {
+				newTerminal = new Terminal(this.nextTerminalId++, undefined, cwd)
+			} catch (error) {
+				// kilocode_change start: a broken default profile or host PTY
+				// failure must not veto execute_command. Fall back to the
+				// child-process executor so the command still runs.
+				console.warn(
+					`[TerminalRegistry] Failed to create a VS Code integrated terminal; falling back to child-process execution: ${
+						error instanceof Error ? error.message : String(error)
+					}`,
+				)
+				newTerminal = new ExecaTerminal(this.nextTerminalId++, cwd)
+				// kilocode_change end
+			}
 		} else {
 			newTerminal = new ExecaTerminal(this.nextTerminalId++, cwd)
 		}

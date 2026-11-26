@@ -443,6 +443,53 @@ describe("executeCommandTool", () => {
 			expect(mockPushToolResult).toHaveBeenCalled()
 			expect(mockTerminal.runCommand).toHaveBeenCalled()
 		})
+
+		it("retries through child-process execution when the integrated terminal fails to launch", async () => {
+			const { TerminalRegistry } = await import("../../../integrations/terminal/TerminalRegistry")
+			const { Terminal } = await import("../../../integrations/terminal/Terminal")
+			const postMessageToWebview = vitest.fn()
+			const setDisabledSpy = vitest.spyOn(Terminal, "setShellIntegrationDisabled")
+			mockCline.providerRef.deref = vitest.fn().mockResolvedValue({
+				getState: vitest.fn().mockResolvedValue({
+					terminalOutputLineLimit: 500,
+					terminalOutputCharacterLimit: 100000,
+					terminalShellIntegrationDisabled: false,
+				}),
+				postMessageToWebview,
+			})
+			vi.mocked(TerminalRegistry.getOrCreateTerminal)
+				.mockRejectedValueOnce(new Error("The terminal process failed to launch (exit code: 1)"))
+				.mockImplementation(async () => mockTerminal)
+			mockToolUse.params.command = "echo recovered"
+
+			try {
+				await executeCommandTool.handle(mockCline as unknown as Task, mockToolUse, {
+					askApproval: mockAskApproval as unknown as AskApproval,
+					handleError: mockHandleError as unknown as HandleError,
+					pushToolResult: mockPushToolResult as unknown as PushToolResult,
+					removeClosingTag: mockRemoveClosingTag as unknown as RemoveClosingTag,
+					toolProtocol: "xml",
+				})
+
+				expect(mockAskApproval).toHaveBeenCalledWith("command", "echo recovered")
+				expect(mockCline.say).toHaveBeenCalledWith("shell_integration_warning")
+				expect(postMessageToWebview).toHaveBeenCalledWith(
+					expect.objectContaining({
+						type: "commandExecutionStatus",
+						text: expect.stringContaining('"status":"fallback"'),
+					}),
+				)
+				expect(TerminalRegistry.getOrCreateTerminal).toHaveBeenCalledTimes(2)
+				expect(setDisabledSpy).toHaveBeenCalledWith(true)
+				expect(mockPushToolResult).toHaveBeenCalled()
+				const result = String(mockPushToolResult.mock.calls[0][0])
+				expect(result).not.toContain("Command was not executed")
+				expect(result).toContain("Command")
+				expect(mockHandleError).not.toHaveBeenCalled()
+			} finally {
+				setDisabledSpy.mockRestore()
+			}
+		})
 	})
 
 	describe("command output waiting state", () => {

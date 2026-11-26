@@ -5,6 +5,7 @@
 ### Patch Changes
 
 - Re-project the webview transcript after folding command/MCP sequences. Host already 8k-truncates each `command_output` chunk, but ChatView concatenated those chunks with no cap and cached the joined string, so a long wait-command session grew after projection. Folded commands now stay at the 8k tail / 120-char historical bound; storage and model I/O stay full.
+- Keep `execute_command` running when the integrated terminal cannot handshake. A late OSC `633;A`, a broken default profile, or `shellIntegrationDisabled` now falls back to child-process execution instead of returning "Command was not executed". The per-command flag is written onto `Terminal.setShellIntegrationDisabled()` before `runCommand()`, so a tool-layer retry actually skips the 5s wait.
 
 ## 9.3.7
 

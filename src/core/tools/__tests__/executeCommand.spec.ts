@@ -77,6 +77,14 @@ describe("executeCommand", () => {
 
 		// Mock TerminalRegistry.getOrCreateTerminal
 		;(TerminalRegistry.getOrCreateTerminal as any).mockResolvedValue(mockTerminal)
+
+		// kilocode_change: executeCommandInTerminal now writes the per-command
+		// fallback flag onto Terminal before runCommand. The automock must
+		// expose that static so the new path is observable.
+		;(Terminal as any).setShellIntegrationDisabled = vitest.fn()
+		if (typeof (Terminal as any).compressTerminalOutput !== "function") {
+			;(Terminal as any).compressTerminalOutput = vitest.fn((value: string) => value)
+		}
 	})
 
 	describe("Working Directory Behavior", () => {
@@ -338,6 +346,28 @@ describe("executeCommand", () => {
 
 			// Verify that the command remains in the visible integrated terminal.
 			expect(TerminalRegistry.getOrCreateTerminal).toHaveBeenCalledWith(mockTask.cwd, mockTask.taskId, "vscode")
+			// kilocode_change: the per-command flag must reach runCommand's
+			// child-process branch; keeping the vscode provider is not enough.
+			expect(Terminal.setShellIntegrationDisabled).toHaveBeenCalledWith(true)
+		})
+
+		it("clears the shell-integration-disabled static when the command keeps integration", async () => {
+			mockTerminal.runCommand.mockImplementation((command: string, callbacks: RooTerminalCallbacks) => {
+				setTimeout(() => {
+					callbacks.onCompleted("Command output", mockProcess)
+					callbacks.onShellExecutionComplete({ exitCode: 0 }, mockProcess)
+				}, 0)
+				return mockProcess
+			})
+
+			await executeCommandInTerminal(mockTask, {
+				executionId: "test-keep-integration",
+				command: "echo test",
+				terminalShellIntegrationDisabled: false,
+				terminalOutputLineLimit: 500,
+			})
+
+			expect(Terminal.setShellIntegrationDisabled).toHaveBeenCalledWith(false)
 		})
 	})
 
