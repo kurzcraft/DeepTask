@@ -97,7 +97,7 @@ describe("ClineProvider live-command registry (fix 6)", () => {
 		expect(postMessageToWebview).not.toHaveBeenCalled()
 	})
 
-	it("counts a wait-command task as actively running even when the loop is idle", () => {
+	it("does not treat leftover live commands as occupancy after the loop is idle", () => {
 		const waitTask = {
 			taskId: "task-wait",
 			cwd: "/repo",
@@ -114,6 +114,27 @@ describe("ClineProvider live-command registry (fix 6)", () => {
 		expect(live).toEqual([
 			expect.objectContaining({
 				taskId: "task-wait",
+				isActivelyRunning: false,
+			}),
+		])
+	})
+
+	it("still counts an active wait-command loop as occupancy", () => {
+		const waitTask = {
+			taskId: "task-wait-loop",
+			cwd: "/repo",
+			abort: false,
+			abandoned: false,
+			isStreaming: false,
+			isActivelyRunningTaskLoop: () => true,
+		}
+		provider.clineStack = [waitTask]
+		provider._liveTaskCoordinator = undefined
+
+		const live = provider.getLiveTasks()
+		expect(live).toEqual([
+			expect.objectContaining({
+				taskId: "task-wait-loop",
 				isActivelyRunning: true,
 			}),
 		])

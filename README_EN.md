@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.3.8</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>Download Deeptask 9.3.9</strong></a>
   ·
   <a href="#start-in-three-minutes">Quick Start</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.3.8** binds native todos to `EXTRA/task` Markdown via `bind_task_progress`. Chat copy says the list was bound, not updated. After a light-file edit, native refresh falls back to the already-bound path. Folded command/MCP rows stay at the 8k tail / 120-char historical bound. Falsification: a bound light file changes and native still shows the previous bind snapshot, or a folded command still exceeds 8k.
+> **Deeptask 9.3.9** binds native todos to `EXTRA/task` Markdown via `bind_task_progress`. Chat copy says the list was bound, not updated. After a light-file edit, native refresh falls back to the already-bound path. Folded command/MCP rows stay at the 8k tail / 120-char historical bound. Falsification: a bound light file changes and native still shows the previous bind snapshot, or a folded command still exceeds 8k.
 >
 > **9.3.6** keeps historical command output collapsed: only the live last command auto-expands, historical rows render as `txt` so Shiki is skipped, and the chat body is one continuous Virtuoso list (not 64-row sliding pages). **9.3.5** compact the host→webview transcript and stop slicing oversized JSON at char 3000. **9.3.4** tombstones historical rows before postState.
 
@@ -178,17 +178,17 @@ Apart from "the model's own conversation handling that commands cannot do" (work
 
 ## Start in three minutes
 
-1. Download `deeptask-9.3.8.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
+1. Download `deeptask-9.3.9.vsix` from [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest).
 2. Install in VSCodium:
 
     ```bash
-    codium --install-extension ./deeptask-9.3.8.vsix --force
+    codium --install-extension ./deeptask-9.3.9.vsix --force
     ```
 
     Or install in VS Code:
 
     ```bash
-    code --install-extension ./deeptask-9.3.8.vsix --force
+    code --install-extension ./deeptask-9.3.9.vsix --force
     ```
 
 3. Open Deeptask settings, select **OpenAI Compatible**, and enter the API base URL, API key, and model ID.

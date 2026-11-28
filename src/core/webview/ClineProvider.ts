@@ -1217,14 +1217,12 @@ export class ClineProvider
 				abort: task.abort,
 				abandoned: task.abandoned,
 				isStreaming: task.isStreaming,
-				// Command/tool waits keep the task loop active after HTTP streaming ends.
-				// A live shell also counts: clicking a wait-command chat used to
-				// drop the rail spinner because isStreaming was already false.
-				isActivelyRunning:
-					(typeof task.isActivelyRunningTaskLoop === "function"
-						? task.isActivelyRunningTaskLoop()
-						: task.isStreaming === true) ||
-					(this.activeCommandExecutionsByTask?.get(task.taskId)?.length ?? 0) > 0,
+				// Command/tool waits keep the task loop active after HTTP streaming
+				// ends (isStreaming false). Do NOT treat leftover live-command
+				// entries as occupancy: after soft/hard completion the loop is
+				// idle but started/output may never get exited, and that used to
+				// pin the folder rail on "running".
+				isActivelyRunning: this.isTaskLoopLiveForRail(task),
 			}))
 		const remote = this._liveTaskCoordinator
 			? this._liveTaskCoordinator.listRemoteTasks().map((task) => ({
@@ -1246,6 +1244,16 @@ export class ClineProvider
 			}
 		}
 		return [...byId.values()]
+	}
+
+	/** Folder-rail occupancy follows the task loop, not leftover shell chrome. */
+	private isTaskLoopLiveForRail(task: {
+		isStreaming?: boolean
+		isActivelyRunningTaskLoop?: () => boolean
+	}): boolean {
+		return typeof task.isActivelyRunningTaskLoop === "function"
+			? task.isActivelyRunningTaskLoop()
+			: task.isStreaming === true
 	}
 
 	public shouldBroadcastTaskToChat(task: Task): boolean {
@@ -1294,13 +1302,9 @@ export class ClineProvider
 		// Previously every message upsert kept the snapshot alive forever, so a
 		// completed conversation in window A kept spinning as "running" in the
 		// folder rail of newly opened windows. Remove settled tasks instead of
-		// upserting them.
-		const hasLiveCommand = (this.activeCommandExecutionsByTask?.get(task.taskId)?.length ?? 0) > 0
-		const isActive =
-			(typeof task.isActivelyRunningTaskLoop === "function"
-				? task.isActivelyRunningTaskLoop()
-				: task.isStreaming === true) || hasLiveCommand
-		const isActivelyRunning = !task.abort && !task.abandoned && isActive === true
+		// upserting them. Leftover commandExecutionStatus entries must not keep
+		// occupancy after the loop has already ended (soft completion).
+		const isActivelyRunning = !task.abort && !task.abandoned && this.isTaskLoopLiveForRail(task) === true
 		if (!isActivelyRunning) {
 			void this.liveTaskCoordinator
 				.removeTask(task.taskId)

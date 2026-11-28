@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.3.8</strong></a>
+  <a href="https://github.com/kurzcraft/DeepTask/releases/latest"><strong>下载 Deeptask 9.3.9</strong></a>
   ·
   <a href="#三分钟开始">快速开始</a>
   ·
@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.3.8** native 待办绑定 `EXTRA/task` Markdown（`bind_task_progress`），聊天显示「已绑定」而非「已更新」；light 文件改写后 native 回退已绑定路径刷新。折叠 command/MCP 后再投影：折叠后的 command 停在 8k 尾 / 历史 120 字。证伪：绑定 light 后改清单 native 仍显示旧快照，或折叠 command 仍超 8k。
+> **Deeptask 9.3.9** native 待办绑定 `EXTRA/task` Markdown（`bind_task_progress`），聊天显示「已绑定」而非「已更新」；light 文件改写后 native 回退已绑定路径刷新。折叠 command/MCP 后再投影：折叠后的 command 停在 8k 尾 / 历史 120 字。证伪：绑定 light 后改清单 native 仍显示旧快照，或折叠 command 仍超 8k。
 >
 > **9.3.6** 历史命令默认折叠：只有当前最后一条命令自动展开，历史行用 `txt` 跳过 Shiki；diff 高亮走同一 skip 门。聊天主体是一条连续完整历史的 Virtuoso 列表，不再用 64 行滑窗换页。**9.3.5** 把 host→webview 转录压成 compact 形状，禁止把超大 JSON 在第 3000 字符处切开。**9.3.4** 在 postState 前墓碑化历史行。
 
@@ -173,17 +173,17 @@ Deeptask 选择寄生在 VSCodium 里而不是做成独立软件，是刻意为�
 
 ## 三分钟开始
 
-1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.3.8.vsix`。
+1. 从 [GitHub Releases](https://github.com/kurzcraft/DeepTask/releases/latest) 下载 `deeptask-9.3.9.vsix`。
 2. 安装到 VSCodium：
 
     ```bash
-    codium --install-extension ./deeptask-9.3.8.vsix --force
+    codium --install-extension ./deeptask-9.3.9.vsix --force
     ```
 
     或安装到 VS Code：
 
     ```bash
-    code --install-extension ./deeptask-9.3.8.vsix --force
+    code --install-extension ./deeptask-9.3.9.vsix --force
     ```
 
 3. 打开 Deeptask 设置，选择 **OpenAI Compatible**，填写 API Base URL、API Key 和模型 ID。

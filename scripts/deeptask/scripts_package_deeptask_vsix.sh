@@ -9,11 +9,6 @@ mkdir -p "$LOG_DIR"
 export PATH="$NODE20:/home/kurz/nodejs/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export npm_config_yes=true
 VERSION="$(node -p "require('$ROOT/src/package.json').version")"
-LOCKED_VERSION="9.3.8"
-if [[ "$VERSION" != "$LOCKED_VERSION" && "${DEEPTASK_ALLOW_VERSION_BUMP:-}" != "1" ]]; then
-  echo "refusing to package $VERSION; local DeepTask is locked at $LOCKED_VERSION (set DEEPTASK_ALLOW_VERSION_BUMP=1 only when the user named a new version)" >&2
-  exit 1
-fi
 VSIX_NAME="deeptask-${VERSION}.vsix"
 export VERSION VSIX_NAME
 

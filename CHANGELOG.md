@@ -1,5 +1,12 @@
 # Deeptask
 
+## 9.3.9
+
+### Patch Changes
+
+- Stop treating leftover live-command chrome as folder-rail occupancy after a green completion. Soft completion does not emit `TaskCompleted`; a stale `started`/`output` entry plus upgrade-only broadcast used to pin the rail spinner on running. Occupancy now follows the task loop, broadcast can downgrade idle sessions, and the loop `finally` syncs live occupancy.
+- Unlock the local packaging lock that forced same-version 9.3.8 re-releases. Version iteration is now driven by `src/package.json`.
+
 ## 9.3.8
 
 ### Patch Changes

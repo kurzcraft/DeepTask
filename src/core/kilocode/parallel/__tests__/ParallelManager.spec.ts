@@ -352,6 +352,52 @@ describe("ParallelManager conversations", () => {
 		expect(session?.endedAt).toBeUndefined()
 	})
 
+	test("broadcast downgrades a running session when the live task is idle", async () => {
+		const store = new Map<string, unknown>()
+		const posted: ExtensionMessage[] = []
+		const liveTasks = [
+			{
+				taskId: "task-done",
+				cwd: "/repo",
+				abort: false,
+				abandoned: false,
+				isStreaming: false,
+				isActivelyRunning: false,
+			},
+		]
+		const provider = {
+			context: { globalState: makeStorage(store) },
+			postMessageToWebview: async (message: ExtensionMessage) => {
+				posted.push(message)
+			},
+			getLiveTasks: () => liveTasks,
+		} as unknown as ConstructorParameters<typeof ParallelManager>[0]
+		const manager = new ParallelManager(provider, new WorkspaceRegistry(makeStorage(store) as never))
+		await manager.createConversation("/repo", { sessionId: "task-done", title: "done cmd" })
+		;(
+			manager as unknown as { sessions: Map<string, { info: Record<string, unknown>; messages: unknown[] }> }
+		).sessions.set("task-done", {
+			info: {
+				sessionId: "task-done",
+				taskId: "task-done",
+				parentTaskId: "parent",
+				label: "done cmd",
+				task: "done cmd",
+				status: "running",
+				startedAt: 1,
+			},
+			messages: [],
+		})
+		posted.length = 0
+		await manager.broadcast()
+		const message = posted.find((entry) => entry.type === "parallelSessionsUpdated")
+		const session = message?.parallelSessions?.find(
+			(entry) => entry.sessionId === "task-done" || entry.taskId === "task-done",
+		)
+		expect(session?.status).toBe("completed")
+		expect(session?.endedAt).toEqual(expect.any(Number))
+	})
+
 	test("setConversationArchived hides from the default list but remains in broadcast", async () => {
 		const { manager, posted } = setup()
 		const created = await manager.createConversation("/repo", { title: "keep" })

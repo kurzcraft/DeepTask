@@ -1624,6 +1624,44 @@ export class ParallelManager {
 				startedAt: conversation.lastActiveAt ?? Date.now(),
 			})
 		}
+		// kilocode_change: broadcast used to be upgrade-only. After a green
+		// soft/hard completion the in-memory session stayed "running" because
+		// leftover live-command occupancy (or a stale snapshot) never flipped
+		// it back, pinning the folder-rail spinner.
+		const liveRunningIds = new Set(
+			liveTasks
+				.filter((task) => (task.isActivelyRunning ?? task.isStreaming) === true)
+				.map((task) => task.taskId),
+		)
+		const now = Date.now()
+		for (const session of sessions) {
+			if (session.status !== "running") {
+				continue
+			}
+			const liveMatch = liveTasks.find(
+				(task) => session.sessionId === task.taskId || session.taskId === task.taskId,
+			)
+			if (!liveMatch) {
+				continue
+			}
+			if (!liveRunningIds.has(liveMatch.taskId)) {
+				session.status = "completed"
+				session.endedAt = now
+				for (const state of this.sessions.values()) {
+					if (
+						state.info.sessionId === session.sessionId ||
+						state.info.taskId === session.taskId ||
+						state.info.sessionId === liveMatch.taskId ||
+						state.info.taskId === liveMatch.taskId
+					) {
+						if (state.info.status === "running") {
+							state.info.status = "completed"
+							state.info.endedAt = now
+						}
+					}
+				}
+			}
+		}
 		const folders = await this.getFolders()
 		const workspaces: ParallelWorkspace[] = this.annotatedWorkspaces()
 		const conversations = await this.listConversations(true)

@@ -4711,6 +4711,7 @@ ${protocolHint}
 				this.isTaskLoopActive = false
 				// Soft boundary only ends when the loop that produced it fully exits.
 				this.softCompletionBoundaryPending = false
+				this.providerRef.deref()?.syncLiveTask?.(this)
 			}
 			// kilocode_change end
 		}
