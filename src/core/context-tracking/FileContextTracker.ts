@@ -23,6 +23,9 @@ import { ClineProvider } from "../webview/ClineProvider"
 export class FileContextTracker {
 	readonly taskId: string
 	private providerRef: WeakRef<ClineProvider>
+	// kilocode_change: parallel worktrees must resolve tracked files against the
+	// task cwd, not vscode.workspace.workspaceFolders[0] (the UI folder).
+	private readonly getCwdOverride?: () => string | undefined
 
 	// File tracking and watching.
 	// Never attach a recursive `**` change watcher: on a large repo that
@@ -39,13 +42,18 @@ export class FileContextTracker {
 	private recentlyEditedByRoo = new Set<string>()
 	private checkpointPossibleFiles = new Set<string>()
 
-	constructor(provider: ClineProvider, taskId: string) {
+	constructor(provider: ClineProvider, taskId: string, getCwd?: () => string | undefined) {
 		this.providerRef = new WeakRef(provider)
 		this.taskId = taskId
+		this.getCwdOverride = getCwd
 	}
 
 	// Gets the current working directory or returns undefined if it cannot be determined
 	private getCwd(): string | undefined {
+		const override = this.getCwdOverride?.()
+		if (override) {
+			return override
+		}
 		const cwd = vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath).at(0)
 		if (!cwd) {
 			console.info("No workspace folder available - cannot determine current working directory")

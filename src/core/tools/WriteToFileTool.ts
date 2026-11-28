@@ -18,10 +18,7 @@ import type { ToolUse } from "../../shared/tools"
 import { trackContribution } from "../../services/contribution-tracking/ContributionTrackingService" // kilocode_change
 
 import { BaseTool, ToolCallbacks } from "./BaseTool"
-import {
-	getTaskProgressWriteLimitError,
-	isActiveTaskProgressMarkdownPath,
-} from "./helpers/taskProgressLimits" // kilocode_change: EXTRA/task growth gate
+import { getTaskProgressWriteLimitError, isActiveTaskProgressMarkdownPath } from "./helpers/taskProgressLimits" // kilocode_change: EXTRA/task growth gate
 
 interface WriteToFileParams {
 	path: string
@@ -134,7 +131,7 @@ export class WriteToFileTool extends BaseTool<"write_to_file"> {
 		// kilocode_change end
 
 		const fullPath = relPath ? path.resolve(task.cwd, removeClosingTag("path", relPath)) : ""
-		const isOutsideWorkspace = isPathOutsideWorkspace(fullPath)
+		const isOutsideWorkspace = isPathOutsideWorkspace(fullPath, task.cwd)
 
 		const sharedMessageProps: ClineSayTool = {
 			tool: fileExists ? "editedExistingFile" : "newFileCreated",
@@ -310,7 +307,7 @@ export class WriteToFileTool extends BaseTool<"write_to_file"> {
 		}
 
 		const isWriteProtected = task.rooProtectedController?.isWriteProtected(relPath!) || false
-		const isOutsideWorkspace = isPathOutsideWorkspace(absolutePath)
+		const isOutsideWorkspace = isPathOutsideWorkspace(absolutePath, task.cwd)
 
 		const sharedMessageProps: ClineSayTool = {
 			tool: fileExists ? "editedExistingFile" : "newFileCreated",

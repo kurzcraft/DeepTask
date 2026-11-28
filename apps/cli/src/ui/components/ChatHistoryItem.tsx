@@ -215,9 +215,11 @@ function ChatHistoryItem({ message }: ChatHistoryItemProps) {
 				</Box>
 			)
 		case "tool": {
-			// Special rendering for update_todo_list tool - show full TODO list
+			// Special rendering for bind_task_progress / legacy update_todo_list - show full TODO list
 			if (
-				(message.toolName === "update_todo_list" || message.toolName === "updateTodoList") &&
+				(message.toolName === "bind_task_progress" ||
+					message.toolName === "update_todo_list" ||
+					message.toolName === "updateTodoList") &&
 				message.todos &&
 				message.todos.length > 0
 			) {

@@ -6,7 +6,6 @@ import { CoalesceLatestWork } from "./helpers/coalesceLatestWork" // kilocode_ch
 import { clineMessagesSnapshotCursor, shouldPostClineMessages } from "./helpers/clineMessagesSnapshot" // kilocode_change
 import { IncrementalImageOmitter } from "../../shared/incrementalImageOmit" // kilocode_change
 
-
 import { Anthropic } from "@anthropic-ai/sdk"
 import delay from "delay"
 import axios from "axios"
@@ -1219,10 +1218,13 @@ export class ClineProvider
 				abandoned: task.abandoned,
 				isStreaming: task.isStreaming,
 				// Command/tool waits keep the task loop active after HTTP streaming ends.
+				// A live shell also counts: clicking a wait-command chat used to
+				// drop the rail spinner because isStreaming was already false.
 				isActivelyRunning:
-					typeof task.isActivelyRunningTaskLoop === "function"
+					(typeof task.isActivelyRunningTaskLoop === "function"
 						? task.isActivelyRunningTaskLoop()
-						: task.isStreaming === true,
+						: task.isStreaming === true) ||
+					(this.activeCommandExecutionsByTask?.get(task.taskId)?.length ?? 0) > 0,
 			}))
 		const remote = this._liveTaskCoordinator
 			? this._liveTaskCoordinator.listRemoteTasks().map((task) => ({
@@ -1293,10 +1295,11 @@ export class ClineProvider
 		// completed conversation in window A kept spinning as "running" in the
 		// folder rail of newly opened windows. Remove settled tasks instead of
 		// upserting them.
+		const hasLiveCommand = (this.activeCommandExecutionsByTask?.get(task.taskId)?.length ?? 0) > 0
 		const isActive =
-			typeof task.isActivelyRunningTaskLoop === "function"
+			(typeof task.isActivelyRunningTaskLoop === "function"
 				? task.isActivelyRunningTaskLoop()
-				: task.isStreaming === true
+				: task.isStreaming === true) || hasLiveCommand
 		const isActivelyRunning = !task.abort && !task.abandoned && isActive === true
 		if (!isActivelyRunning) {
 			void this.liveTaskCoordinator
@@ -2156,8 +2159,7 @@ export class ClineProvider
 				message.type === "parallelSessionMessageUpdated") &&
 			message.clineMessage
 		) {
-			const sessionKey =
-				message.type === "messageUpdated" ? "" : (message.parallelSessionId ?? "")
+			const sessionKey = message.type === "messageUpdated" ? "" : (message.parallelSessionId ?? "")
 			message = {
 				...message,
 				clineMessage: this.incrementalImageOmitter.omitUnchanged(
@@ -2583,34 +2585,10 @@ export class ClineProvider
 		if (!task) return
 		// kilocode_change end
 
-		const { forceRebuild = false } = options
-
-		// Determine if we need to rebuild using the previous configuration snapshot
-		const prevConfig = task.apiConfiguration
-		const prevProvider = prevConfig?.apiProvider
-		const prevModelId = prevConfig ? getModelId(prevConfig) : undefined
-		const prevToolProtocol = prevConfig?.toolProtocol
-		const newProvider = providerSettings.apiProvider
-		const newModelId = getModelId(providerSettings)
-		const newToolProtocol = providerSettings.toolProtocol
-
-		const needsRebuild =
-			forceRebuild ||
-			prevProvider !== newProvider ||
-			prevModelId !== newModelId ||
-			prevToolProtocol !== newToolProtocol
-
-		if (needsRebuild) {
-			// Use updateApiConfiguration which handles both API handler rebuild and parser sync.
-			// This is important when toolProtocol changes - the assistantMessageParser needs to be
-			// created/destroyed to match the new protocol (XML vs native).
-			// Note: updateApiConfiguration is declared async but has no actual async operations,
-			// so we can safely call it without awaiting.
-			task.updateApiConfiguration(providerSettings)
-		} else {
-			// No rebuild needed, just sync apiConfiguration
-			;(task as any).apiConfiguration = providerSettings
-		}
+		// Always rebuild via updateApiConfiguration. Handlers snapshot options at
+		// construction (OpenAI/Responses read this.options in getModel()); assigning
+		// task.apiConfiguration alone left reasoningEffort frozen on the live client.
+		task.updateApiConfiguration(providerSettings)
 	}
 
 	getProviderProfileEntries(): ProviderSettingsEntry[] {

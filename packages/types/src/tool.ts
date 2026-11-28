@@ -48,6 +48,7 @@ export const toolNames = [
 	"condense",
 	"delete_file",
 	// kilocode_change end
+	"bind_task_progress",
 	"update_todo_list",
 	"run_slash_command",
 	"generate_image",

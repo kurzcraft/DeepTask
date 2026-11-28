@@ -126,8 +126,8 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 
 			// The progress file is user-visible durable state. Do not mutate a pending
 			// item merely because completion was requested; it must already be checked
-			// by explicit task work before this gate can pass. Only the model's explicit
-			// update_todo_list call may change Todo state.
+			// by explicit task work before this gate can pass. Native todos follow the
+			// bound EXTRA/task file; bind_task_progress only binds or rebinds that file.
 
 			const preventCompletionWithOpenTodos = vscode.workspace
 				.getConfiguration(Package.name)
@@ -149,14 +149,14 @@ export class AttemptCompletionTool extends BaseTool<"attempt_completion"> {
 			// and immediately calling attempt_completion. Reject that until a real work
 			// tool has run in this continuation turn. Once real work has happened, render
 			// the final-looking result as normal assistant text without ending Deeptask.
-		if (task.shouldRejectPrematureActiveContinuationCompletion()) {
-			task.consecutiveMistakeCount++
-			task.recordToolError("attempt_completion")
-			// kilocode_change: one increment per real rejected attempt — powers the
-			// circuit breaker that stands the gate down after repeated retries so
-			// the turn can never dead-loop without answering the user.
-			task.recordPrematureCompletionRejection()
-			pushToolResult(
+			if (task.shouldRejectPrematureActiveContinuationCompletion()) {
+				task.consecutiveMistakeCount++
+				task.recordToolError("attempt_completion")
+				// kilocode_change: one increment per real rejected attempt — powers the
+				// circuit breaker that stands the gate down after repeated retries so
+				// the turn can never dead-loop without answering the user.
+				task.recordPrematureCompletionRejection()
+				pushToolResult(
 					formatResponse.toolError(
 						"Do not claim the continued task is complete yet. Continue carrying out the user's latest instruction with concrete tool work and verification before attempting completion. Acceptance must target the latest instruction, not an older summary or completed task.",
 					),

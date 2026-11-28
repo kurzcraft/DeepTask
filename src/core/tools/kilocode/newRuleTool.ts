@@ -63,7 +63,7 @@ export async function newRuleTool(
 
 	// Determine if the path is outside the workspace
 	const fullPath = relPath ? path.resolve(cline.cwd, removeClosingTag("path", relPath)) : ""
-	const isOutsideWorkspace = isPathOutsideWorkspace(fullPath)
+	const isOutsideWorkspace = isPathOutsideWorkspace(fullPath, cline.cwd)
 
 	const sharedMessageProps: ClineSayTool = {
 		tool: fileExists ? "editedExistingFile" : "newFileCreated",

@@ -327,6 +327,88 @@ describe("webviewMessageHandler - image mentions", () => {
 		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
 	})
 
+	it("drops a headless yesButton without askTs for an already auto-approved tool ask", async () => {
+		// A1 agent-runtime / CLI approve buttons omit askTs. After auto-approve
+		// settles the tool ask, that empty click must not become continue+cancelTask.
+		vi.mocked(resolveImageMentions).mockResolvedValueOnce({ text: "", images: [] })
+		const mockHandleWebviewAskResponse = vi.fn()
+		const mockClearStaleWebviewAskResponse = vi.fn()
+		const mockClearQueue = vi.fn()
+		const mockContinueTaskFromUserMessage = vi.fn()
+		const answeredAsk = {
+			ts: 200,
+			type: "ask",
+			ask: "tool",
+			text: JSON.stringify({ tool: "readFile", path: "src/app.py" }),
+			isAnswered: true,
+			partial: false,
+		}
+		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
+			cwd: "/mock/workspace",
+			rooIgnoreController: undefined,
+			getPendingWebviewAskTs: vi.fn().mockReturnValue(undefined),
+			hasPendingWebviewAskResponse: vi.fn().mockReturnValue(false),
+			isActivelyRunningTaskLoop: vi.fn().mockReturnValue(true),
+			findMessageByTimestamp: vi.fn().mockReturnValue(undefined),
+			clineMessages: [answeredAsk],
+			handleWebviewAskResponse: mockHandleWebviewAskResponse,
+			clearStaleWebviewAskResponse: mockClearStaleWebviewAskResponse,
+			messageQueueService: { clear: mockClearQueue },
+			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
+		} as any)
+
+		await webviewMessageHandler(mockClineProvider, {
+			type: "askResponse",
+			askResponse: "yesButtonClicked",
+			images: [],
+		})
+
+		expect(mockHandleWebviewAskResponse).not.toHaveBeenCalled()
+		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
+		expect(mockClearStaleWebviewAskResponse).toHaveBeenCalledTimes(1)
+		expect(mockClearQueue).toHaveBeenCalledTimes(1)
+		expect(mockClineProvider.postStateToWebview).toHaveBeenCalled()
+	})
+
+	it("drops a headless yesButton without askTs while a live tool loop is still running", async () => {
+		vi.mocked(resolveImageMentions).mockResolvedValueOnce({ text: "", images: [] })
+		const mockHandleWebviewAskResponse = vi.fn()
+		const mockClearStaleWebviewAskResponse = vi.fn()
+		const mockClearQueue = vi.fn()
+		const mockContinueTaskFromUserMessage = vi.fn()
+		const liveToolAsk = {
+			ts: 201,
+			type: "ask",
+			ask: "tool",
+			text: JSON.stringify({ tool: "listFilesTopLevel", path: "." }),
+			partial: false,
+		}
+		vi.mocked(mockClineProvider.getCurrentTask).mockReturnValue({
+			cwd: "/mock/workspace",
+			rooIgnoreController: undefined,
+			getPendingWebviewAskTs: vi.fn().mockReturnValue(undefined),
+			hasPendingWebviewAskResponse: vi.fn().mockReturnValue(false),
+			isActivelyRunningTaskLoop: vi.fn().mockReturnValue(true),
+			findMessageByTimestamp: vi.fn().mockReturnValue(undefined),
+			clineMessages: [liveToolAsk],
+			handleWebviewAskResponse: mockHandleWebviewAskResponse,
+			clearStaleWebviewAskResponse: mockClearStaleWebviewAskResponse,
+			messageQueueService: { clear: mockClearQueue },
+			continueTaskFromUserMessage: mockContinueTaskFromUserMessage,
+		} as any)
+
+		await webviewMessageHandler(mockClineProvider, {
+			type: "askResponse",
+			askResponse: "yesButtonClicked",
+			images: [],
+		})
+
+		expect(mockHandleWebviewAskResponse).not.toHaveBeenCalled()
+		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
+		expect(mockClearStaleWebviewAskResponse).toHaveBeenCalledTimes(1)
+		expect(mockClearQueue).toHaveBeenCalledTimes(1)
+	})
+
 	it("resumes after API-key edit when a late Continue targets an already-marked resume_task row", async () => {
 		// Returning from settings after fixing an API key often re-clicks Resume on a
 		// row that was briefly marked answered. That click must still continue work,
@@ -467,11 +549,9 @@ describe("webviewMessageHandler - image mentions", () => {
 			askTs: 100,
 		})
 
-		expect(mockHandleWebviewAskResponse).toHaveBeenCalledWith(
-			"messageResponse",
-			"please continue the work",
-			["data:image/png;base64,from-mention"],
-		)
+		expect(mockHandleWebviewAskResponse).toHaveBeenCalledWith("messageResponse", "please continue the work", [
+			"data:image/png;base64,from-mention",
+		])
 		expect(mockContinueTaskFromUserMessage).not.toHaveBeenCalled()
 		expect(mockClearStaleWebviewAskResponse).not.toHaveBeenCalled()
 	})
@@ -2424,10 +2504,7 @@ describe("webviewMessageHandler - message dialog preferences", () => {
 			const overwriteClineMessages = vi.fn().mockResolvedValue(undefined)
 			const freezeHistoryPersistenceForBranchReplacement = vi.fn()
 			const targetMessage = { type: "say", say: "completion_result", ts: 500, text: "old summary" }
-			const clineMessages = [
-				{ type: "say", say: "user_feedback", ts: 400, text: "question" },
-				targetMessage,
-			]
+			const clineMessages = [{ type: "say", say: "user_feedback", ts: 400, text: "question" }, targetMessage]
 			// API history has drifted: no assistant entry matches ts 500 nor the payload.
 			const apiConversationHistory = [
 				{ role: "user", ts: 400, content: [{ type: "text", text: "question" }] },

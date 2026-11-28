@@ -46,10 +46,16 @@ export class DiffViewProvider {
 		this.taskRef = new WeakRef(task)
 	}
 
+	// kilocode_change: follow the live task cwd after switchWorkspace. The
+	// constructor snapshot would keep writing into the previous worktree.
+	private get activeCwd(): string {
+		return this.taskRef.deref()?.cwd ?? this.cwd
+	}
+
 	async open(relPath: string): Promise<void> {
 		this.relPath = relPath
 		const fileExists = this.editType === "modify"
-		const absolutePath = path.resolve(this.cwd, relPath)
+		const absolutePath = path.resolve(this.activeCwd, relPath)
 		this.isEditing = true
 
 		// If the file is already open, ensure it's not dirty before getting its
@@ -230,7 +236,7 @@ export class DiffViewProvider {
 			return { newProblemsMessage: undefined, userEdits: undefined, finalContent: undefined }
 		}
 
-		const absolutePath = path.resolve(this.cwd, this.relPath)
+		const absolutePath = path.resolve(this.activeCwd, this.relPath)
 		const updatedDocument = this.activeDiffEditor.document
 		const editedContent = updatedDocument.getText()
 
@@ -285,7 +291,7 @@ export class DiffViewProvider {
 				[
 					vscode.DiagnosticSeverity.Error, // only including errors since warnings can be distracting (if user wants to fix warnings they can use the @problems mention)
 				],
-				this.cwd,
+				this.activeCwd,
 				includeDiagnosticMessages,
 				maxDiagnosticMessages,
 			) // Will be empty string if no errors.
@@ -341,6 +347,11 @@ export class DiffViewProvider {
 		if (!this.relPath) {
 			throw new Error("No file path available in DiffViewProvider")
 		}
+
+		// kilocode_change: VS Code watchers can miss in-process writes. Project
+		// EXTRA/task (and finished/) changes into native todos immediately after
+		// a successful save, without waiting for a later update_todo_list.
+		task.notifyTaskProgressFileChanged?.(this.relPath)
 
 		// Only send user_feedback_diff if userEdits exists
 		if (this.userEdits) {
@@ -433,7 +444,7 @@ export class DiffViewProvider {
 
 		const fileExists = this.editType === "modify"
 		const updatedDocument = this.activeDiffEditor.document
-		const absolutePath = path.resolve(this.cwd, this.relPath)
+		const absolutePath = path.resolve(this.activeCwd, this.relPath)
 
 		if (!fileExists) {
 			if (updatedDocument.isDirty) {
@@ -519,7 +530,7 @@ export class DiffViewProvider {
 			)
 		}
 
-		const uri = vscode.Uri.file(path.resolve(this.cwd, this.relPath))
+		const uri = vscode.Uri.file(path.resolve(this.activeCwd, this.relPath))
 
 		// If this diff editor is already open (ie if a previous write file was
 		// interrupted) then we should activate that instead of opening a new
@@ -728,7 +739,7 @@ export class DiffViewProvider {
 		userEdits: string | undefined
 		finalContent: string | undefined
 	}> {
-		const absolutePath = path.resolve(this.cwd, relPath)
+		const absolutePath = path.resolve(this.activeCwd, relPath)
 
 		// kilocode_change start: In CLI mode, skip VSCode-specific operations (diagnostics are mocked)
 		const skipVscodeOps = process.env.KILO_CLI_MODE === "true"
@@ -791,7 +802,7 @@ export class DiffViewProvider {
 			const newProblems = await diagnosticsToProblemsString(
 				getNewDiagnostics(this.preDiagnostics, postDiagnostics),
 				[vscode.DiagnosticSeverity.Error],
-				this.cwd,
+				this.activeCwd,
 				includeDiagnosticMessages,
 				maxDiagnosticMessages,
 			)

@@ -282,6 +282,7 @@ function buildGatekeeperPrompt(
 			}
 			break
 		}
+		case "bind_task_progress":
 		case "update_todo_list":
 		case "list_code_definition_names":
 		case "list_files":
@@ -323,7 +324,7 @@ CORE PRINCIPLES:
 	- These cannot cause harm
 
 2. TASK MANAGEMENT OPERATIONS ARE SAFE
-	- update_todo_list: Always safe, just tracks task progress
+	- bind_task_progress: Always safe, binds native todos to an EXTRA/task Markdown file
 	- These are internal state management, not file operations
 
 3. WRITE OPERATIONS WITHIN WORKSPACE ARE GENERALLY SAFE

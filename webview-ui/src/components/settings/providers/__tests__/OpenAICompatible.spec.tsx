@@ -71,8 +71,8 @@ vi.mock("@src/components/ui", () => ({
 
 // Mock other components
 vi.mock("../../ModelPicker", () => ({
-	ModelPicker: ({ models }: any) => (
-		<div data-testid="model-picker">
+	ModelPicker: ({ models, autoOpenSignal }: any) => (
+		<div data-testid="model-picker" data-auto-open-signal={String(autoOpenSignal ?? 0)}>
 			Model Picker
 			{models && Object.keys(models).map((modelId) => <span key={modelId}>{modelId}</span>)}
 		</div>
@@ -115,6 +115,8 @@ describe("OpenAICompatible Component - includeMaxTokens checkbox", () => {
 		allowAll: true,
 		providers: {},
 	}
+	const getMessageHandler = () =>
+		[...vi.mocked(useEvent).mock.calls].reverse().find(([eventName]) => eventName === "message")?.[1]
 
 	beforeEach(() => {
 		vi.clearAllMocks()
@@ -381,7 +383,7 @@ describe("OpenAICompatible Component - includeMaxTokens checkbox", () => {
 				/>,
 			)
 
-			const messageHandler = vi.mocked(useEvent).mock.calls.find(([eventName]) => eventName === "message")?.[1]
+			const messageHandler = getMessageHandler()
 			expect(messageHandler).toBeDefined()
 			act(() => {
 				messageHandler?.({
@@ -442,7 +444,7 @@ describe("OpenAICompatible Component - includeMaxTokens checkbox", () => {
 				},
 			})
 
-			const messageHandler = vi.mocked(useEvent).mock.calls.find(([eventName]) => eventName === "message")?.[1]
+			const messageHandler = getMessageHandler()
 			expect(messageHandler).toBeDefined()
 			act(() => {
 				messageHandler?.({
@@ -491,7 +493,7 @@ describe("OpenAICompatible Component - includeMaxTokens checkbox", () => {
 
 			fireEvent.click(screen.getByText("settings:common.detect"))
 
-			const messageHandler = vi.mocked(useEvent).mock.calls.find(([eventName]) => eventName === "message")?.[1]
+			const messageHandler = getMessageHandler()
 			expect(messageHandler).toBeDefined()
 			act(() => {
 				messageHandler?.({
@@ -515,6 +517,231 @@ describe("OpenAICompatible Component - includeMaxTokens checkbox", () => {
 					contextWindow: 128000,
 				}),
 			)
+		})
+	})
+
+	describe("Automatic model catalog refresh", () => {
+		beforeEach(() => {
+			vi.useFakeTimers()
+		})
+
+		afterEach(() => {
+			vi.useRealTimers()
+		})
+
+		it("requests models after credentials settle and keeps the configured custom model selectable", () => {
+			const apiConfiguration: Partial<ProviderSettings> = {
+				openAiBaseUrl: "https://api.example.com/v1",
+				openAiApiKey: "test-key",
+				openAiModelId: "gpt-6-astra",
+			}
+
+			render(
+				<OpenAICompatible
+					apiConfiguration={apiConfiguration as ProviderSettings}
+					setApiConfigurationField={mockSetApiConfigurationField}
+					organizationAllowList={mockOrganizationAllowList}
+				/>,
+			)
+
+			act(() => {
+				vi.advanceTimersByTime(250)
+			})
+
+			expect(mockPostMessage).toHaveBeenCalledWith({
+				type: "requestOpenAiModels",
+				values: {
+					baseUrl: "https://api.example.com/v1",
+					apiKey: "test-key",
+					openAiHeaders: {},
+				},
+			})
+			expect(screen.getByText("gpt-6-astra")).toBeInTheDocument()
+		})
+
+		it("ignores catalog responses from a different base URL", () => {
+			const apiConfiguration: Partial<ProviderSettings> = {
+				openAiBaseUrl: "https://api.example.com/v1",
+				openAiApiKey: "test-key",
+				openAiModelId: "gpt-6-astra",
+			}
+
+			render(
+				<OpenAICompatible
+					apiConfiguration={apiConfiguration as ProviderSettings}
+					setApiConfigurationField={mockSetApiConfigurationField}
+					organizationAllowList={mockOrganizationAllowList}
+				/>,
+			)
+
+			const messageHandler = getMessageHandler()
+			expect(messageHandler).toBeDefined()
+			act(() => {
+				messageHandler?.({
+					data: {
+						type: "openAiModels",
+						openAiModels: ["other-model"],
+						values: { baseUrl: "https://other.example.com/v1" },
+					},
+				} as MessageEvent)
+			})
+
+			expect(screen.queryByText("other-model")).not.toBeInTheDocument()
+			expect(screen.getByText("gpt-6-astra")).toBeInTheDocument()
+		})
+
+		it("refreshes the catalog when switching to another OpenAI Compatible profile", () => {
+			const firstProfile: Partial<ProviderSettings> = {
+				openAiBaseUrl: "https://first.example.com/v1",
+				openAiApiKey: "first-key",
+				openAiModelId: "first-model",
+			}
+			const secondProfile: Partial<ProviderSettings> = {
+				openAiBaseUrl: "https://second.example.com/v1",
+				openAiApiKey: "second-key",
+				openAiModelId: "second-model",
+			}
+
+			const { rerender } = render(
+				<OpenAICompatible
+					apiConfiguration={firstProfile as ProviderSettings}
+					setApiConfigurationField={mockSetApiConfigurationField}
+					organizationAllowList={mockOrganizationAllowList}
+				/>,
+			)
+
+			act(() => {
+				vi.advanceTimersByTime(250)
+			})
+			mockPostMessage.mockClear()
+
+			rerender(
+				<OpenAICompatible
+					apiConfiguration={secondProfile as ProviderSettings}
+					setApiConfigurationField={mockSetApiConfigurationField}
+					organizationAllowList={mockOrganizationAllowList}
+				/>,
+			)
+
+			act(() => {
+				vi.advanceTimersByTime(250)
+			})
+
+			expect(mockPostMessage).toHaveBeenCalledWith({
+				type: "requestOpenAiModels",
+				values: {
+					baseUrl: "https://second.example.com/v1",
+					apiKey: "second-key",
+					openAiHeaders: {},
+				},
+			})
+			expect(screen.getByText("second-model")).toBeInTheDocument()
+		})
+
+		it("opens the model picker after a matching catalog arrives and keeps a custom model selectable", () => {
+			const apiConfiguration: Partial<ProviderSettings> = {
+				openAiBaseUrl: "https://api.example.com/v1",
+				openAiApiKey: "test-key",
+				openAiModelId: "gpt-6-astra",
+			}
+
+			render(
+				<OpenAICompatible
+					apiConfiguration={apiConfiguration as ProviderSettings}
+					setApiConfigurationField={mockSetApiConfigurationField}
+					organizationAllowList={mockOrganizationAllowList}
+				/>,
+			)
+
+			expect(screen.getByTestId("model-picker")).toHaveAttribute("data-auto-open-signal", "0")
+			expect(screen.getByText("gpt-6-astra")).toBeInTheDocument()
+
+			const messageHandler = getMessageHandler()
+			expect(messageHandler).toBeDefined()
+			act(() => {
+				messageHandler?.({
+					data: {
+						type: "openAiModels",
+						openAiModels: ["remote-model", "gpt-6-astra"],
+						values: { baseUrl: "https://api.example.com/v1" },
+					},
+				} as MessageEvent)
+			})
+
+			expect(screen.getByTestId("model-picker")).toHaveAttribute("data-auto-open-signal", "1")
+			expect(screen.getByText("gpt-6-astra")).toBeInTheDocument()
+			expect(screen.getByText("remote-model")).toBeInTheDocument()
+
+			act(() => {
+				messageHandler?.({
+					data: {
+						type: "openAiModels",
+						openAiModels: ["remote-model", "gpt-6-astra", "another-model"],
+						values: { baseUrl: "https://api.example.com/v1" },
+					},
+				} as MessageEvent)
+			})
+
+			expect(screen.getByTestId("model-picker")).toHaveAttribute("data-auto-open-signal", "1")
+			expect(screen.getByText("another-model")).toBeInTheDocument()
+		})
+
+		it("opens the picker again after switching to another inactive OpenAI Compatible profile", () => {
+			const firstProfile: Partial<ProviderSettings> = {
+				openAiBaseUrl: "https://first.example.com/v1",
+				openAiApiKey: "first-key",
+				openAiModelId: "first-model",
+			}
+			const secondProfile: Partial<ProviderSettings> = {
+				openAiBaseUrl: "https://second.example.com/v1",
+				openAiApiKey: "second-key",
+				openAiModelId: "second-model",
+			}
+
+			const { rerender } = render(
+				<OpenAICompatible
+					apiConfiguration={firstProfile as ProviderSettings}
+					setApiConfigurationField={mockSetApiConfigurationField}
+					organizationAllowList={mockOrganizationAllowList}
+				/>,
+			)
+
+			const firstHandler = getMessageHandler()
+			expect(firstHandler).toBeDefined()
+			act(() => {
+				firstHandler?.({
+					data: {
+						type: "openAiModels",
+						openAiModels: ["first-remote"],
+						values: { baseUrl: "https://first.example.com/v1" },
+					},
+				} as MessageEvent)
+			})
+			expect(screen.getByTestId("model-picker")).toHaveAttribute("data-auto-open-signal", "1")
+
+			rerender(
+				<OpenAICompatible
+					apiConfiguration={secondProfile as ProviderSettings}
+					setApiConfigurationField={mockSetApiConfigurationField}
+					organizationAllowList={mockOrganizationAllowList}
+				/>,
+			)
+
+			const secondHandler = getMessageHandler()
+			expect(secondHandler).toBeDefined()
+			act(() => {
+				secondHandler?.({
+					data: {
+						type: "openAiModels",
+						openAiModels: ["second-remote"],
+						values: { baseUrl: "https://second.example.com/v1" },
+					},
+				} as MessageEvent)
+			})
+
+			expect(screen.getByTestId("model-picker")).toHaveAttribute("data-auto-open-signal", "2")
+			expect(screen.getByText("second-model")).toBeInTheDocument()
+			expect(screen.getByText("second-remote")).toBeInTheDocument()
 		})
 	})
 	// kilocode_change end

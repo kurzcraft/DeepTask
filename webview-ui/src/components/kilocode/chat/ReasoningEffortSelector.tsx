@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import { SelectDropdown, type DropdownOption } from "@/components/ui"
-import { reasoningEfforts, type ModelInfo, type ProviderSettings } from "@roo-code/types"
+import { openAiModelInfoSaneDefaults, reasoningEfforts, type ModelInfo, type ProviderSettings } from "@roo-code/types"
 import { vscode } from "@src/utils/vscode"
 import { useAppTranslation } from "@src/i18n/TranslationContext"
 import { cn } from "@src/lib/utils"
@@ -65,16 +65,33 @@ export const ReasoningEffortSelector = ({
 			return
 		}
 		const next = selected as ReasoningEffortOption
-		if (apiConfiguration.reasoningEffort === next && apiConfiguration.enableReasoningEffort === (next !== "disable")) {
+		const enabled = next !== "disable"
+		if (apiConfiguration.reasoningEffort === next && apiConfiguration.enableReasoningEffort === enabled) {
 			return
 		}
+		const isOpenAiCompatible =
+			apiConfiguration.apiProvider === "openai" || apiConfiguration.apiProvider === "openai-responses"
+		const currentCustomInfo = apiConfiguration.openAiCustomModelInfo ?? openAiModelInfoSaneDefaults
+		const openAiCustomModelInfo = !isOpenAiCompatible
+			? apiConfiguration.openAiCustomModelInfo
+			: enabled
+				? {
+						...currentCustomInfo,
+						supportsReasoningEffort: currentCustomInfo.supportsReasoningEffort ?? true,
+						reasoningEffort: next,
+					}
+				: (() => {
+						const { reasoningEffort: _removed, ...rest } = currentCustomInfo
+						return rest
+					})()
 		vscode.postMessage({
 			type: "upsertApiConfiguration",
 			text: currentApiConfigName,
 			apiConfiguration: {
 				...apiConfiguration,
-				enableReasoningEffort: next !== "disable",
+				enableReasoningEffort: enabled,
 				reasoningEffort: next,
+				...(isOpenAiCompatible ? { openAiCustomModelInfo } : {}),
 			},
 		})
 	}

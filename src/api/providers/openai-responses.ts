@@ -110,7 +110,7 @@ export class OpenAiCompatibleResponsesHandler extends BaseProvider implements Si
 			model: string
 			input: Array<{ role: "user" | "assistant"; content: any[] } | { type: string; content: string }>
 			stream: boolean
-			reasoning?: { summary?: "auto" }
+			reasoning?: { effort?: string; summary?: "auto" }
 			text?: { verbosity: string }
 			temperature?: number
 			max_output_tokens?: number
@@ -128,13 +128,26 @@ export class OpenAiCompatibleResponsesHandler extends BaseProvider implements Si
 			parallel_tool_calls?: boolean
 		}
 
+		// kilocode_change start: send the chat/settings effort. Off maps to
+		// effort "none" because omitting reasoning lets Grok/xAI keep thinking.
+		const reasoningEffort = model.reasoningEffort
+		const reasoning = reasoningEffort
+			? {
+					effort: reasoningEffort,
+					...(this.options.enableResponsesReasoningSummary && reasoningEffort !== "none"
+						? { summary: "auto" as const }
+						: {}),
+				}
+			: undefined
+		// kilocode_change end
+
 		const body: ResponsesRequestBody = {
 			model: model.id,
 			input: formattedInput,
 			stream: true,
 			store: false,
 			instructions: systemPrompt,
-			...(this.options.enableResponsesReasoningSummary ? { reasoning: { summary: "auto" as const } } : {}),
+			...(reasoning ? { reasoning, include: ["reasoning.encrypted_content"] } : {}),
 			...(model.info.supportsTemperature !== false &&
 				typeof this.options.modelTemperature === "number" && {
 					temperature: this.options.modelTemperature,
@@ -490,10 +503,17 @@ export class OpenAiCompatibleResponsesHandler extends BaseProvider implements Si
 
 	override getModel() {
 		const id = this.options.openAiModelId ?? ""
+		// kilocode_change start: honor chat/settings reasoningEffort even when the
+		// custom model catalog never declared supportsReasoningEffort.
 		const info: ModelInfo = {
 			...NATIVE_TOOL_DEFAULTS,
+			supportsReasoningEffort: true,
 			...(this.options.openAiCustomModelInfo ?? openAiModelInfoSaneDefaults),
 		}
+		if (info.supportsReasoningEffort === undefined) {
+			info.supportsReasoningEffort = true
+		}
+		// kilocode_change end
 		const params = getModelParams({ format: "openai", modelId: id, model: info, settings: this.options })
 		return { id, info, ...params }
 	}

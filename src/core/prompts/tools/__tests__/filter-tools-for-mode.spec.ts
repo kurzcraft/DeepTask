@@ -333,7 +333,7 @@ describe("filterNativeToolsForMode", () => {
 		expect(toolNames).toContain("access_mcp_resource")
 	})
 
-	it("should exclude update_todo_list when todoListEnabled is false", () => {
+	it("should exclude bind_task_progress when todoListEnabled is false", () => {
 		const codeMode: ModeConfig = {
 			slug: "code",
 			name: "Code",
@@ -344,8 +344,8 @@ describe("filterNativeToolsForMode", () => {
 		const mockTodoTool: OpenAI.Chat.ChatCompletionTool = {
 			type: "function",
 			function: {
-				name: "update_todo_list",
-				description: "Update todo list",
+				name: "bind_task_progress",
+				description: "Bind task progress",
 				parameters: {},
 			},
 		}
@@ -364,6 +364,7 @@ describe("filterNativeToolsForMode", () => {
 			undefined,
 		)
 		const toolNames = filtered.map((t) => ("function" in t ? t.function.name : ""))
+		expect(toolNames).not.toContain("bind_task_progress")
 		expect(toolNames).not.toContain("update_todo_list")
 	})
 

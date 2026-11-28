@@ -189,8 +189,9 @@ export const getModelsByProvider = ({
 				defaultModel: mistralDefaultModelId,
 			}
 		}
-		case "openai": {
-			// TODO(catrielmuller): Support the fetch here
+		case "openai":
+		case "openai-responses": {
+			// Catalog comes from requestOpenAiModels → dynamicProviderModels.
 			return {
 				models: {},
 				defaultModel: "",
@@ -359,14 +360,17 @@ export const getOptionsForProvider = (provider: ProviderName, apiConfiguration?:
 
 export const useProviderModels = (apiConfiguration?: ProviderSettings) => {
 	const provider = apiConfiguration?.apiProvider || "anthropic"
+	const isOpenAiCompatible = provider === "openai" || provider === "openai-responses"
 
 	const { kilocodeDefaultModel, dynamicProviderModels } = useExtensionState()
+
+	const openAiHeadersKey = JSON.stringify(apiConfiguration?.openAiHeaders ?? {})
 
 	useEffect(() => {
 		switch (provider) {
 			case "openai":
 			case "openai-responses":
-				if (apiConfiguration?.openAiBaseUrl && apiConfiguration.openAiApiKey) {
+				if (apiConfiguration?.openAiBaseUrl) {
 					vscode.postMessage({
 						type: "requestOpenAiModels",
 						values: {
@@ -391,7 +395,7 @@ export const useProviderModels = (apiConfiguration?: ProviderSettings) => {
 		provider,
 		apiConfiguration?.openAiBaseUrl,
 		apiConfiguration?.openAiApiKey,
-		apiConfiguration?.openAiHeaders,
+		openAiHeadersKey,
 		apiConfiguration?.ollamaBaseUrl,
 		apiConfiguration?.lmStudioBaseUrl,
 	])
@@ -412,11 +416,30 @@ export const useProviderModels = (apiConfiguration?: ProviderSettings) => {
 			deepSeekApiKey: apiConfiguration?.deepSeekApiKey,
 			deepSeekBaseUrl: apiConfiguration?.deepSeekBaseUrl,
 		},
-		{ provider: provider === "deepseek" ? "deepseek" : undefined },
+		{
+			provider: provider === "deepseek" ? "deepseek" : undefined,
+			// OpenAI-compatible catalogs come from requestOpenAiModels, not the
+			// router directory. Fetching "all" router models here would gray out
+			// the chat selector on timeout/error even when a model is already set.
+			enabled: !isOpenAiCompatible,
+		},
 	)
 
 	const options = getOptionsForProvider(provider, apiConfiguration)
-	const dynamicModels = dynamicProviderModels[provider]
+	const dynamicModels = isOpenAiCompatible
+		? (dynamicProviderModels[provider] ?? dynamicProviderModels.openai)
+		: dynamicProviderModels[provider]
+	const selectedOpenAiModelId = isOpenAiCompatible ? apiConfiguration?.openAiModelId : undefined
+	const seededOpenAiModels =
+		selectedOpenAiModelId && !(dynamicModels && selectedOpenAiModelId in dynamicModels)
+			? {
+					[selectedOpenAiModelId]: {
+						displayName: selectedOpenAiModelId,
+						contextWindow: 0,
+						supportsPromptCache: false,
+					},
+				}
+			: {}
 
 	const { models: configuredModels, defaultModel } =
 		apiConfiguration && typeof routerModels.data !== "undefined"
@@ -437,6 +460,7 @@ export const useProviderModels = (apiConfiguration?: ProviderSettings) => {
 	// directory is additive because providers can expose models absent from the
 	// bundle, while the static catalog remains the offline fallback.
 	const models = {
+		...seededOpenAiModels,
 		...(configuredModels ?? {}),
 		...(dynamicModels ?? {}),
 	}
@@ -444,8 +468,8 @@ export const useProviderModels = (apiConfiguration?: ProviderSettings) => {
 	return {
 		provider,
 		providerModels: models as ModelRecord,
-		providerDefaultModel: defaultModel,
-		isLoading: routerModels.isLoading,
-		isError: routerModels.isError,
+		providerDefaultModel: defaultModel || selectedOpenAiModelId || "",
+		isLoading: isOpenAiCompatible ? false : routerModels.isLoading,
+		isError: isOpenAiCompatible ? false : routerModels.isError,
 	}
 }

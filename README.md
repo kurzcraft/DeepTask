@@ -35,7 +35,7 @@
   <a href="#架构与可信度">架构</a>
 </p>
 
-> **Deeptask 9.3.8** 折叠 command/MCP 序列后再投影：host 已把每条 `command_output` 截到 8k，但 ChatView 曾把这些块无上限拼进 command 行并缓存拼接串，长 wait-command 会话在投影之后仍会涨。折叠后的 command 现在停在 8k 尾 / 历史 120 字；磁盘与模型 I/O 仍是全文。证伪条件：折叠后的 command 行仍超过 8k 且历史行仍超过 120 字，即推翻此修复。
+> **Deeptask 9.3.8** native 待办绑定 `EXTRA/task` Markdown（`bind_task_progress`），聊天显示「已绑定」而非「已更新」；light 文件改写后 native 回退已绑定路径刷新。折叠 command/MCP 后再投影：折叠后的 command 停在 8k 尾 / 历史 120 字。证伪：绑定 light 后改清单 native 仍显示旧快照，或折叠 command 仍超 8k。
 >
 > **9.3.6** 历史命令默认折叠：只有当前最后一条命令自动展开，历史行用 `txt` 跳过 Shiki；diff 高亮走同一 skip 门。聊天主体是一条连续完整历史的 Virtuoso 列表，不再用 64 行滑窗换页。**9.3.5** 把 host→webview 转录压成 compact 形状，禁止把超大 JSON 在第 3000 字符处切开。**9.3.4** 在 postState 前墓碑化历史行。
 

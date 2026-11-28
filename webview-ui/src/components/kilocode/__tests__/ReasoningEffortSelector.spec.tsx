@@ -124,6 +124,72 @@ describe("ReasoningEffortSelector", () => {
 		})
 	})
 
+	test("writes OpenAI Compatible custom model effort when a level is selected", async () => {
+		renderSelector({
+			apiConfiguration: {
+				apiProvider: "openai",
+				openAiModelId: "grok-4.6",
+				openAiCustomModelInfo: { contextWindow: 256_000, supportsPromptCache: false },
+			},
+		})
+
+		await openAndSelect("settings:providers.reasoningEffort.high")
+
+		expect(vscode.postMessage).toHaveBeenCalledWith({
+			type: "upsertApiConfiguration",
+			text: "default",
+			apiConfiguration: {
+				...baseApiConfiguration,
+				apiProvider: "openai",
+				openAiModelId: "grok-4.6",
+				openAiCustomModelInfo: {
+					contextWindow: 256_000,
+					supportsPromptCache: false,
+					supportsReasoningEffort: true,
+					reasoningEffort: "high",
+				},
+				enableReasoningEffort: true,
+				reasoningEffort: "high",
+			},
+		})
+	})
+
+	test("clears OpenAI Compatible custom model effort when off is selected", async () => {
+		renderSelector({
+			apiConfiguration: {
+				apiProvider: "openai-responses",
+				openAiModelId: "grok-4.6",
+				reasoningEffort: "high",
+				enableReasoningEffort: true,
+				openAiCustomModelInfo: {
+					contextWindow: 256_000,
+					supportsPromptCache: false,
+					supportsReasoningEffort: true,
+					reasoningEffort: "high",
+				},
+			},
+		})
+
+		await openAndSelect("settings:providers.reasoningEffort.off")
+
+		expect(vscode.postMessage).toHaveBeenCalledWith({
+			type: "upsertApiConfiguration",
+			text: "default",
+			apiConfiguration: {
+				...baseApiConfiguration,
+				apiProvider: "openai-responses",
+				openAiModelId: "grok-4.6",
+				reasoningEffort: "disable",
+				enableReasoningEffort: false,
+				openAiCustomModelInfo: {
+					contextWindow: 256_000,
+					supportsPromptCache: false,
+					supportsReasoningEffort: true,
+				},
+			},
+		})
+	})
+
 	test("does not resend when the selection is unchanged", async () => {
 		renderSelector({ apiConfiguration: { reasoningEffort: "high", enableReasoningEffort: true } })
 

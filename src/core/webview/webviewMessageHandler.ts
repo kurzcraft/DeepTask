@@ -1501,23 +1501,38 @@ export const webviewMessageHandler = async (
 					task &&
 					!hasPendingAsk &&
 					!hasMessagePayload &&
-					(message.askResponse === "yesButtonClicked" || message.askResponse === "noButtonClicked") &&
-					message.askTs !== undefined
+					(message.askResponse === "yesButtonClicked" || message.askResponse === "noButtonClicked")
 				) {
 					// kilocode_change start
 					// Auto-approved tool asks can leave a brief window where the webview still
 					// shows Approve. A late click for that already-settled *tool* ask must be
 					// dropped, not rewritten into an empty "continue" user message.
+					// Headless runners (A1 agent-runtime) often omit askTs; resolve the last
+					// ask row in that case. Sending continue while the tool loop is still
+					// active parks the empty payload and cancelTask()s the live turn.
 					//
 					// Do NOT drop resume_task / api_req_failed / mistake_limit_reached the same
 					// way: after an API-key edit the user often returns and clicks Continue on a
 					// row that was brieflyked answered during a failed race. Dropping those
 					// clicks clears the webview buttons and freezes the chat with no recovery.
-					const answeredAsk =
-						task.findMessageByTimestamp?.(message.askTs) ??
-						task.clineMessages?.find((clineMessage) => clineMessage.ts === message.askTs)
+					const messages = task.clineMessages ?? []
+					let answeredAsk =
+						message.askTs !== undefined
+							? (task.findMessageByTimestamp?.(message.askTs) ??
+								messages.find((clineMessage) => clineMessage.ts === message.askTs))
+							: undefined
+					if (answeredAsk === undefined) {
+						for (let index = messages.length - 1; index >= 0; index--) {
+							if (messages[index]?.type === "ask") {
+								answeredAsk = messages[index]
+								break
+							}
+						}
+					}
 					const isDropOnlyAutoApprovedToolAsk =
-						answeredAsk?.type === "ask" && answeredAsk.isAnswered === true && answeredAsk.ask === "tool"
+						answeredAsk?.type === "ask" &&
+						answeredAsk.ask === "tool" &&
+						(answeredAsk.isAnswered === true || task.isActivelyRunningTaskLoop?.() === true)
 					if (isDropOnlyAutoApprovedToolAsk) {
 						task.clearStaleWebviewAskResponse()
 						task.messageQueueService.clear()
@@ -2294,7 +2309,8 @@ export const webviewMessageHandler = async (
 			break
 		}
 		case "requestOpenAiModels":
-			if (message?.values?.baseUrl && message?.values?.apiKey) {
+			// kilocode_change start: fetch with baseUrl even without a key, and echo it back
+			if (message?.values?.baseUrl) {
 				const openAiModels = await getOpenAiModels(
 					message?.values?.baseUrl,
 					message?.values?.apiKey,
@@ -2305,8 +2321,10 @@ export const webviewMessageHandler = async (
 					type: "openAiModels",
 					openAiModels,
 					openAiModelInfos: openAiModels.modelInfos,
+					values: { baseUrl: message.values.baseUrl },
 				})
 			}
+			// kilocode_change end
 
 			break
 		case "requestVsCodeLmModels":

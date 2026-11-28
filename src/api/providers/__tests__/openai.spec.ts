@@ -375,7 +375,7 @@ describe("OpenAiHandler", () => {
 			expect(callArgs.reasoning_effort).toBe("high")
 		})
 
-		it("should not include reasoning_effort when reasoning effort is disabled", async () => {
+		it("should send reasoning_effort none when reasoning effort is disabled", async () => {
 			const noReasoningOptions: ApiHandlerOptions = {
 				...mockOptions,
 				enableReasoningEffort: false,
@@ -383,13 +383,63 @@ describe("OpenAiHandler", () => {
 			}
 			const noReasoningHandler = new OpenAiHandler(noReasoningOptions)
 			const stream = noReasoningHandler.createMessage(systemPrompt, messages)
-			// Consume the stream to trigger the API call
 			for await (const _chunk of stream) {
 			}
-			// Assert the mockCreate was called without reasoning_effort
 			expect(mockCreate).toHaveBeenCalled()
 			const callArgs = mockCreate.mock.calls[0][0]
-			expect(callArgs.reasoning_effort).toBeUndefined()
+			expect(callArgs.reasoning_effort).toBe("none")
+		})
+
+		it("should include reasoning_effort from chat settings when custom model info omits capability", async () => {
+			const reasoningHandler = new OpenAiHandler({
+				...mockOptions,
+				enableReasoningEffort: true,
+				reasoningEffort: "high",
+				openAiCustomModelInfo: {
+					contextWindow: 128_000,
+					supportsPromptCache: false,
+				},
+			})
+			const stream = reasoningHandler.createMessage(systemPrompt, messages)
+			for await (const _chunk of stream) {
+			}
+			expect(mockCreate).toHaveBeenCalled()
+			expect(mockCreate.mock.calls[0][0].reasoning_effort).toBe("high")
+		})
+
+		it("should send reasoning_effort low when the selector chooses low without capability metadata", async () => {
+			const reasoningHandler = new OpenAiHandler({
+				...mockOptions,
+				enableReasoningEffort: true,
+				reasoningEffort: "low",
+				openAiCustomModelInfo: {
+					contextWindow: 128_000,
+					supportsPromptCache: false,
+				},
+			})
+			const stream = reasoningHandler.createMessage(systemPrompt, messages)
+			for await (const _chunk of stream) {
+			}
+			expect(mockCreate).toHaveBeenCalled()
+			expect(mockCreate.mock.calls[0][0].reasoning_effort).toBe("low")
+		})
+
+		it("should send reasoning_effort none when the selector turns reasoning off", async () => {
+			const noReasoningHandler = new OpenAiHandler({
+				...mockOptions,
+				enableReasoningEffort: false,
+				reasoningEffort: "disable",
+				openAiCustomModelInfo: {
+					contextWindow: 128_000,
+					supportsPromptCache: false,
+					reasoningEffort: "high",
+				},
+			})
+			const stream = noReasoningHandler.createMessage(systemPrompt, messages)
+			for await (const _chunk of stream) {
+			}
+			expect(mockCreate).toHaveBeenCalled()
+			expect(mockCreate.mock.calls[0][0].reasoning_effort).toBe("none")
 		})
 
 		it("should include max_tokens when includeMaxTokens is true", async () => {

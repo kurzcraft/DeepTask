@@ -105,6 +105,7 @@ import { buildNativeToolsArrayWithRestrictions } from "./build-tools"
 // core modules
 import { ToolRepetitionDetector } from "../tools/ToolRepetitionDetector"
 import { parseMarkdownChecklist, restoreTodoListForTask } from "../tools/UpdateTodoListTool"
+import { isActiveTaskProgressMarkdownPath, isTaskProgressMarkdownPath } from "../tools/helpers/taskProgressLimits"
 import { FileContextTracker } from "../context-tracking/FileContextTracker"
 import { RooIgnoreController } from "../ignore/RooIgnoreController"
 import { RooProtectedController } from "../protect/RooProtectedController"
@@ -491,8 +492,10 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	private taskApiConfigReady: Promise<void>
 
 	// kilocode_change start
-	private taskProgressFileWatcher?: vscode.FileSystemWatcher
+	private taskProgressFileWatchers: vscode.FileSystemWatcher[] = []
+	private taskProgressSaveListener?: vscode.Disposable
 	private taskProgressRefreshInFlight?: Promise<void>
+	private taskProgressRefreshQueued = false
 	private taskProgressFilePath?: string
 	private taskProgressInstanceId?: string
 	// kilocode_change end
@@ -834,7 +837,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 
 		this.rooIgnoreController = new RooIgnoreController(this.cwd)
 		this.rooProtectedController = new RooProtectedController(this.cwd)
-		this.fileContextTracker = new FileContextTracker(provider, this.taskId)
+		this.fileContextTracker = new FileContextTracker(provider, this.taskId, () => this.cwd)
 
 		this.rooIgnoreController.initialize().catch((error) => {
 			console.error("Failed to initialize RooIgnoreController:", error)
@@ -1842,8 +1845,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	// the inbox marker is on disk. Never confirm from in-memory pushToolResult.
 	private async confirmPendingSubagentInboxDelivery(messages: Array<{ content?: unknown }>): Promise<void> {
 		const pending = this.pendingSubagentInboxDelivery
-		const pendingConfirmed =
-			pending?.childSessionIds.filter((id) => messagesContainInboxMarker(messages, id)) ?? []
+		const pendingConfirmed = pending?.childSessionIds.filter((id) => messagesContainInboxMarker(messages, id)) ?? []
 		if (pendingConfirmed.length === 0 && !this.globalStoragePath) {
 			return
 		}
@@ -2915,7 +2917,7 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			return
 		}
 
-		if (["attempt_completion", "update_todo_list"].includes(toolName)) {
+		if (["attempt_completion", "bind_task_progress", "update_todo_list"].includes(toolName)) {
 			return
 		}
 
@@ -3063,28 +3065,31 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 			? this.getTodoContentSignature(this.todoList)
 			: undefined
 		// The host records only the routing gate. The model must explicitly author
-		// milestones with update_todo_list; no feedback text becomes a Todo here.
+		// milestones in EXTRA/task Markdown, then bind native todos; no feedback
+		// text becomes a Todo here.
 		this.requiresProgressListExpansion = this.isLikelyActionableContinuation(continuationText)
 	}
 
 	public shouldRequireProgressListExpansion(): boolean {
 		// Any continuation that set the expansion flag must keep the hard gate,
 		// including DeepTask soft-completion turns where the model otherwise
-		// restates old completions without calling update_todo_list.
+		// restates old completions without binding native todos to EXTRA/task.
 		return this.requiresProgressListExpansion
 	}
 
 	public getProgressListExpansionRequiredMessage(protocol?: string): string {
 		const protocolHint =
-			protocol === "native" ? "Call the native tool update_todo_list now." : "Use the update_todo_list tool now."
+			protocol === "native"
+				? "Call the native tool bind_task_progress now."
+				: "Use the bind_task_progress tool now."
 
 		return `[ERROR] You must expand the progress list before any other work.
 
 CRITICAL:
 1. Before the first native TODO synchronization, write the authoritative EXTRA/task Markdown checklist and read it back to verify its marker and items.
 2. During that preparation, only write_to_file and read_file on that EXTRA/task checklist are allowed.
-3. Then call update_todo_list to project the verified checklist into native state.
-4. Do NOT restate, summarize, edit project files, execute commands, or call attempt_completion before update_todo_list succeeds.
+3. Then call bind_task_progress once to bind native todos to that file. Call it again only to rebind a different root or light file.
+4. Do NOT restate, summarize, edit project files, execute commands, or call attempt_completion before bind_task_progress succeeds.
 5. Do NOT reply with plain text only.
 
 ${protocolHint}
@@ -3667,7 +3672,10 @@ ${protocolHint}
 					lastMatchingPartial.progressStatus = progressStatus
 					// kilocode_change start
 					if (options.metadata) {
-						lastMatchingPartial.metadata = Object.assign(lastMatchingPartial.metadata ?? {}, options.metadata)
+						lastMatchingPartial.metadata = Object.assign(
+							lastMatchingPartial.metadata ?? {},
+							options.metadata,
+						)
 					}
 					// kilocode_change end
 
@@ -3787,8 +3795,8 @@ ${protocolHint}
 
 		// The todo list is already set in the constructor if initialTodos were provided
 		// No need to add any messages - the todoList property is already set. The
-		// focused task file is written only after the model judges new work and calls
-		// update_todo_list.
+		// focused task file is written only after the model judges new work and
+		// binds native todos with bind_task_progress.
 
 		await this.providerRef.deref()?.postStateToWebview()
 
@@ -3898,8 +3906,8 @@ ${protocolHint}
 		this.clineMessages = await this.getSavedClineMessages()
 		// kilocode_change start
 		// Rehydrate the persisted checklist before a resumed user message establishes
-		// its model-judged work turn. The existing file is read for context; it is not
-		// rewritten until the model submits an agent-authored update_todo_list call.
+		// its model-judged work turn. The existing file is read for context; native
+		// todos follow that file after bind_task_progress, not a checklist payload.
 		restoreTodoListForTask(this)
 		// kilocode_change end
 
@@ -4445,12 +4453,7 @@ ${protocolHint}
 		}
 
 		// kilocode_change start
-		try {
-			this.taskProgressFileWatcher?.dispose()
-			this.taskProgressFileWatcher = undefined
-		} catch (error) {
-			console.error("Error disposing task progress file watcher:", error)
-		}
+		this.disposeTaskProgressFileWatchers()
 		// kilocode_change end
 
 		// Dispose message queue and remove event listeners.
@@ -5761,14 +5764,9 @@ ${protocolHint}
 					const assistantContent = shouldUseXmlParser
 						? [
 								...antThinkingContent,
-								...(assistantMessage
-									? [{ type: "text" as const, text: assistantMessage }]
-									: []),
+								...(assistantMessage ? [{ type: "text" as const, text: assistantMessage }] : []),
 							]
-						: buildNativeAssistantApiContent(
-								this.assistantMessageContent,
-								antThinkingContent,
-							)
+						: buildNativeAssistantApiContent(this.assistantMessageContent, antThinkingContent)
 
 					await this.addToApiConversationHistory(
 						{ role: "assistant", content: assistantContent },
@@ -7381,7 +7379,7 @@ ${protocolHint}
 			}
 			throw new Error(
 				`No verified task progress file for host task ${this.taskId}. ` +
-					"Write the authoritative EXTRA/task Markdown checklist first, read it back to verify its marker and items, then retry update_todo_list.",
+					"Write the authoritative EXTRA/task Markdown checklist first, read it back to verify its marker and items, then retry bind_task_progress.",
 			)
 		}
 		// kilocode_change end
@@ -7407,28 +7405,76 @@ ${protocolHint}
 			.join("\n")
 	}
 
+	private disposeTaskProgressFileWatchers(): void {
+		for (const watcher of this.taskProgressFileWatchers) {
+			try {
+				watcher.dispose()
+			} catch (error) {
+				console.error("Error disposing task progress file watcher:", error)
+			}
+		}
+		this.taskProgressFileWatchers = []
+		try {
+			this.taskProgressSaveListener?.dispose()
+		} catch (error) {
+			console.error("Error disposing task progress save listener:", error)
+		}
+		this.taskProgressSaveListener = undefined
+	}
+
 	private setupTaskProgressFileWatcher(): void {
-		// kilocode_change start: a RelativePattern glob that contains `/`
-		// (e.g. EXTRA/task/*.md) is compiled as a recursive tree watch of
-		// `this.cwd`. Watch only the task-progress directory's direct *.md
-		// children so node_modules/.git are not pinned into inotify.
-		const pattern = new vscode.RelativePattern(path.join(this.cwd, "EXTRA", "task"), "*.md")
-		this.taskProgressFileWatcher = vscode.workspace.createFileSystemWatcher(pattern, false, false, false)
+		// kilocode_change start: watch EXTRA/task/*.md, EXTRA/task/<title>/*.md
+		// (light files), and EXTRA/task/finished/*.md. Manual editor saves of
+		// nested light files must project into native todos without waiting
+		// for bind_task_progress. Also listen to onDidSaveTextDocument because
+		// some editors do not fire FileSystemWatcher onDidChange for in-place
+		// saves of already-open documents.
+		this.disposeTaskProgressFileWatchers()
 		const refresh = () => this.queueTaskProgressFileRefresh()
-		this.taskProgressFileWatcher.onDidCreate(refresh)
-		this.taskProgressFileWatcher.onDidChange(refresh)
-		this.taskProgressFileWatcher.onDidDelete(refresh)
+		const taskDir = path.join(this.cwd, "EXTRA", "task")
+		this.taskProgressFileWatchers = [
+			vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(taskDir, "*.md"), false, false, false),
+			vscode.workspace.createFileSystemWatcher(
+				new vscode.RelativePattern(taskDir, "*/*.md"),
+				false,
+				false,
+				false,
+			),
+			vscode.workspace.createFileSystemWatcher(
+				new vscode.RelativePattern(path.join(taskDir, "finished"), "*.md"),
+				false,
+				false,
+				false,
+			),
+		]
+		for (const watcher of this.taskProgressFileWatchers) {
+			watcher.onDidCreate(refresh)
+			watcher.onDidChange(refresh)
+			watcher.onDidDelete(refresh)
+		}
+		this.taskProgressSaveListener = vscode.workspace.onDidSaveTextDocument((document) => {
+			const relPath = path.relative(this.cwd, document.uri.fsPath)
+			this.notifyTaskProgressFileChanged(relPath)
+		})
 		// kilocode_change end
 	}
 
-	private queueTaskProgressFileRefresh(): void {
-		if (this.taskProgressRefreshInFlight) return
+	public queueTaskProgressFileRefresh(): void {
+		if (this.taskProgressRefreshInFlight) {
+			this.taskProgressRefreshQueued = true
+			return
+		}
+		this.taskProgressRefreshQueued = false
 		this.taskProgressRefreshInFlight = this.refreshNativeTodoListFromTaskProgressFile()
 			.catch((error) => {
 				console.error(`[Task#${this.taskId}] Failed to refresh native todos from task progress file:`, error)
 			})
 			.finally(() => {
 				this.taskProgressRefreshInFlight = undefined
+				if (this.taskProgressRefreshQueued) {
+					this.taskProgressRefreshQueued = false
+					this.queueTaskProgressFileRefresh()
+				}
 			})
 	}
 
@@ -7438,13 +7484,48 @@ ${protocolHint}
 		// workspace's parent-owned checklist; the watcher must not project the
 		// parent's file into the child's native todo state.
 		if (this.isChildAgent) return
-		const progressPath = await this.findOwnedTaskProgressFilePath()
-		if (!progressPath) return
-		const content = await fsp.readFile(progressPath, "utf8")
-		const fileTodos = parseMarkdownChecklist(content)
-		if (fileTodos.length === 0) return
-		this.todoList = fileTodos
+		let progressPath: string | undefined
+		try {
+			progressPath = await this.findOwnedTaskProgressFilePath()
+		} catch (error) {
+			console.error(
+				`[Task#${this.taskId}] Failed to resolve EXTRA/task binding for native refresh:`,
+				error instanceof Error ? error.message : String(error),
+			)
+			progressPath = this.resolveBoundTaskProgressPathForRefresh()
+		}
+		if (!progressPath) {
+			progressPath = this.resolveBoundTaskProgressPathForRefresh()
+		}
+		if (progressPath) {
+			const content = await fsp.readFile(progressPath, "utf8")
+			const fileTodos = parseMarkdownChecklist(content)
+			if (fileTodos.length === 0) return
+			this.todoList = fileTodos
+			await this.providerRef.deref()?.postStateToWebview()
+			return
+		}
+		// After the model archives a fully-completed checklist, there is no
+		// active EXTRA/task file left. Project the in-memory items as completed
+		// so the native UI does not keep unchecked boxes from the last active
+		// snapshot.
+		if ((this.todoList?.length ?? 0) === 0) return
+		this.todoList = this.todoList!.map((todo) => ({ ...todo, status: "completed" as const }))
 		await this.providerRef.deref()?.postStateToWebview()
+	}
+
+	public notifyTaskProgressFileChanged(relPath?: string): void {
+		if (this.isChildAgent) return
+		if (relPath && !isTaskProgressMarkdownPath(this.cwd, relPath)) return
+		this.queueTaskProgressFileRefresh()
+	}
+
+	private resolveBoundTaskProgressPathForRefresh(): string | undefined {
+		if (!this.taskProgressFilePath) return undefined
+		const boundPath = path.resolve(this.cwd, this.taskProgressFilePath)
+		const relativeBoundPath = path.relative(this.cwd, boundPath)
+		if (!isActiveTaskProgressMarkdownPath(this.cwd, relativeBoundPath)) return undefined
+		return boundPath
 	}
 
 	private async hasActiveTaskProgressFile(): Promise<boolean> {
@@ -7455,8 +7536,102 @@ ${protocolHint}
 		return content.match(/<!--\s*deeptask-task-id:([^>]+?)\s*-->/)?.[1]?.trim()
 	}
 
+	/** Host taskId or a later `taskId:<non-empty suffix>` instance. Foreign persisted IDs are not owned. */
+	private isOwnedTaskProgressIdentity(identity: string | undefined): boolean {
+		return this.matchesHostTaskProgressIdentity(identity)
+	}
+
+	private matchesHostTaskProgressIdentity(identity: string | undefined): identity is string {
+		if (!identity || !this.taskId) return false
+		if (identity === this.taskId) return true
+		// Require an explicit instance separator so host `task-1` cannot own
+		// `task-10:...`, and reject an empty suffix (`task-1:`).
+		const prefix = `${this.taskId}:`
+		return identity.startsWith(prefix) && identity.length > prefix.length && !/\s/.test(identity)
+	}
+
+	private isNestedLightTaskProgressPath(progressPath: string): boolean {
+		const relative = path
+			.relative(path.join(this.cwd, "EXTRA", "task"), progressPath)
+			.split(path.sep)
+			.join("/")
+		return (
+			Boolean(relative) &&
+			!relative.startsWith("..") &&
+			relative.includes("/") &&
+			!relative.startsWith("finished/")
+		)
+	}
+
+	/**
+	 * Bind native todos to an EXTRA/task Markdown file, then project that file.
+	 * Omit path to keep the current binding (or discover the unique owned root).
+	 * Pass a different root or light file to rebind a multi-file checklist.
+	 */
+	public async bindTaskProgressFile(requestedPath?: string): Promise<TodoItem[]> {
+		if (this.isChildAgent) {
+			return this.todoList ?? []
+		}
+
+		const requested = requestedPath?.trim()
+		if (!requested) {
+			return this.syncTaskProgressWithTodoList()
+		}
+
+		if (!isActiveTaskProgressMarkdownPath(this.cwd, requested)) {
+			throw new Error(
+				`Cannot bind host task ${this.taskId} to ${requested}. ` +
+					"Pass an active EXTRA/task Markdown file (root checklist or a light file under EXTRA/task/<title>/).",
+			)
+		}
+
+		const absolutePath = path.resolve(this.cwd, requested)
+		const relativePath = path.relative(this.cwd, absolutePath)
+		const content = await fsp.readFile(absolutePath, "utf8")
+		const fileTodos = parseMarkdownChecklist(content)
+		if (fileTodos.length === 0) {
+			throw new Error(`The task progress file has no Markdown checklist: ${relativePath}`)
+		}
+
+		const identity = this.getTaskProgressIdentity(content)
+		const isLightFile = this.isNestedLightTaskProgressPath(absolutePath)
+		if (isLightFile) {
+			if (identity) {
+				throw new Error(
+					`Light files MUST NOT contain deeptask-task-id: ${relativePath}. ` +
+						"Keep the marker on the root pointer and rebind native todos to the light file by path.",
+				)
+			}
+		} else if (!this.matchesHostTaskProgressIdentity(identity)) {
+			throw new Error(
+				`Cannot bind host task ${this.taskId} to ${relativePath}: marker ${identity ?? "(missing)"} is not this host.`,
+			)
+		}
+
+		const nextIdentity = identity ?? this.taskId
+		if (this.taskProgressFilePath !== relativePath || this.taskProgressInstanceId !== nextIdentity) {
+			await this.persistTaskProgressBinding(absolutePath, nextIdentity)
+		}
+		return fileTodos
+	}
+
 	private async persistTaskProgressBinding(progressPath: string, identity: string): Promise<void> {
-		this.taskProgressFilePath = path.relative(this.cwd, progressPath)
+		const relativePath = path.relative(this.cwd, progressPath)
+		if (!isActiveTaskProgressMarkdownPath(this.cwd, relativePath)) {
+			throw new Error(`Task ${this.taskId} has an invalid task progress file binding: ${relativePath}`)
+		}
+		const isLightFile = this.isNestedLightTaskProgressPath(progressPath)
+		if (!isLightFile && !this.matchesHostTaskProgressIdentity(identity)) {
+			throw new Error(
+				`Refusing to bind host task ${this.taskId} to foreign progress identity ${identity} at ${progressPath}`,
+			)
+		}
+		if (isLightFile && identity && !this.matchesHostTaskProgressIdentity(identity)) {
+			throw new Error(
+				`Refusing to bind host task ${this.taskId} to foreign progress identity ${identity} at ${progressPath}`,
+			)
+		}
+		this.taskProgressFilePath = relativePath
 		this.taskProgressInstanceId = identity
 		const provider = this.providerRef?.deref()
 		const historyItem = provider?.getTaskHistory?.().find((item) => item.id === this.taskId)
@@ -7491,26 +7666,32 @@ ${protocolHint}
 				throw new Error(`Task ${this.taskId} has an incomplete task progress binding`)
 			}
 			const boundPath = path.resolve(this.cwd, this.taskProgressFilePath)
+			const relativeBoundPath = path.relative(this.cwd, boundPath)
 			const isArchivedBinding =
 				boundPath.startsWith(`${finishedTaskDirectory}${path.sep}`) && path.extname(boundPath) === ".md"
 			if (isArchivedBinding) {
 				// Archived checklists are historical records, never active bindings. Clear
 				// the durable identity and continue discovering the current active file.
 				await this.clearTaskProgressBinding()
-			} else if (path.dirname(boundPath) !== taskDirectory || path.extname(boundPath) !== ".md") {
+			} else if (!isActiveTaskProgressMarkdownPath(this.cwd, relativeBoundPath)) {
 				throw new Error(`Task ${this.taskId} has an invalid task progress file binding`)
 			}
 			if (!isArchivedBinding) {
 				try {
 					const content = await fsp.readFile(boundPath, "utf8")
-					if (this.getTaskProgressIdentity(content) !== this.taskProgressInstanceId) {
-						// The model may have corrected the marker after a failed first sync.
-						// Treat that persisted identity drift like a stale binding and
-						// rediscover the authoritative active checklist below.
-						await this.clearTaskProgressBinding()
-					} else {
+					const identity = this.getTaskProgressIdentity(content)
+					const isLightFile = this.isNestedLightTaskProgressPath(boundPath)
+					const ownedIdentity = this.matchesHostTaskProgressIdentity(identity)
+					const hasChecklist = parseMarkdownChecklist(content).length > 0
+					// Root files keep the host marker. Light files under EXTRA/task/<title>/
+					// must not contain deeptask-task-id; they stay bound by path once chosen.
+					if (hasChecklist && (ownedIdentity || (isLightFile && !identity))) {
+						if (ownedIdentity && identity !== this.taskProgressInstanceId) {
+							await this.persistTaskProgressBinding(boundPath, identity)
+						}
 						return boundPath
 					}
+					await this.clearTaskProgressBinding()
 				} catch (error) {
 					if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
 					// A removed binding is no longer authoritative. Continue into
@@ -7529,6 +7710,9 @@ ${protocolHint}
 				const candidateContent = await fsp.readFile(candidatePath, "utf8")
 				const identity = this.getTaskProgressIdentity(candidateContent)
 				if (!identity || parseMarkdownChecklist(candidateContent).length === 0) continue
+				// kilocode_change: never adopt another conversation's checklist. A
+				// unique foreign marker (e.g. a sibling Qoder file) is not this host.
+				if (!this.matchesHostTaskProgressIdentity(identity)) continue
 				activeCandidates.push({ path: candidatePath, identity })
 			}
 		} catch (error) {
@@ -7541,25 +7725,33 @@ ${protocolHint}
 				.join(", ")
 			throw new Error(`Multiple active task progress files belong to host task ${this.taskId}: ${details}`)
 		}
-		// First binding is intentionally independent of host/Task IDs. The file was
-		// authored and read back by the model; uniqueness is the only safe ownership
-		// signal before durable binding exists. Later lookups remain strict above.
 		const match = activeCandidates[0]
 		if (match) await this.persistTaskProgressBinding(match.path, match.identity)
 		return match?.path
 	}
 
 	/**
-	 * Returns every unchecked task-progress checklist item under the current
-	 * workspace. The `finished` archive is intentionally excluded: completed
-	 * task records belong there and must not block unrelated future work.
+	 * Returns unchecked checklist items owned by this host. Foreign EXTRA/task
+	 * files (other conversations sharing the folder) and the `finished` archive
+	 * must not block completion. Light files live under EXTRA/task/<stem>/ of
+	 * an owned root checklist.
 	 */
 	async getIncompleteTaskProgressItems(): Promise<string[]> {
 		const taskDirectory = path.join(this.cwd, "EXTRA", "task")
 		const finishedTaskDirectory = path.join(taskDirectory, "finished")
 		const incompleteItems: string[] = []
+		const ownedLightDirectories = new Set<string>()
 
-		const collect = async (directory: string): Promise<void> => {
+		const collectIncompleteLines = (entryPath: string, content: string): void => {
+			for (const line of content.split(/\r?\n/)) {
+				const match = line.match(/^\s*(?:[-*+]\s+)?\[\s*([ -])\s*\]\s+(.+)$/)
+				if (match) {
+					incompleteItems.push(`${path.relative(taskDirectory, entryPath)}: ${match[2]}`)
+				}
+			}
+		}
+
+		const collectLightDirectory = async (directory: string): Promise<void> => {
 			let entries: fs.Dirent[]
 			try {
 				entries = await fsp.readdir(directory, { withFileTypes: true })
@@ -7567,30 +7759,43 @@ ${protocolHint}
 				if ((error as NodeJS.ErrnoException).code === "ENOENT") return
 				throw error
 			}
-
 			for (const entry of entries) {
 				const entryPath = path.join(directory, entry.name)
 				if (entry.isDirectory()) {
-					if (entryPath === finishedTaskDirectory) {
-						continue
-					}
-					await collect(entryPath)
+					if (entryPath === finishedTaskDirectory) continue
+					await collectLightDirectory(entryPath)
 					continue
 				}
 				if (!entry.isFile() || !entry.name.endsWith(".md")) continue
-
 				const content = await fsp.readFile(entryPath, "utf8")
-				const lines = content.split(/\r?\n/)
-				for (const line of lines) {
-					const match = line.match(/^\s*(?:[-*+]\s+)?\[\s*([ -])\s*\]\s+(.+)$/)
-					if (match) {
-						incompleteItems.push(`${path.relative(taskDirectory, entryPath)}: ${match[2]}`)
-					}
-				}
+				const identity = this.getTaskProgressIdentity(content)
+				if (identity && !this.isOwnedTaskProgressIdentity(identity)) continue
+				collectIncompleteLines(entryPath, content)
 			}
 		}
 
-		await collect(taskDirectory)
+		let rootEntries: fs.Dirent[]
+		try {
+			rootEntries = await fsp.readdir(taskDirectory, { withFileTypes: true })
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return incompleteItems
+			throw error
+		}
+
+		for (const entry of rootEntries) {
+			const entryPath = path.join(taskDirectory, entry.name)
+			if (entry.isDirectory()) continue
+			if (!entry.isFile() || !entry.name.endsWith(".md")) continue
+			const content = await fsp.readFile(entryPath, "utf8")
+			const identity = this.getTaskProgressIdentity(content)
+			if (!this.matchesHostTaskProgressIdentity(identity)) continue
+			collectIncompleteLines(entryPath, content)
+			ownedLightDirectories.add(path.join(taskDirectory, path.parse(entry.name).name))
+		}
+
+		for (const lightDirectory of ownedLightDirectories) {
+			await collectLightDirectory(lightDirectory)
+		}
 		return incompleteItems
 	}
 
@@ -7629,7 +7834,13 @@ ${protocolHint}
 			console.error("Failed to initialize RooIgnoreController:", error)
 		})
 		this.rooProtectedController = new RooProtectedController(this.cwd)
+		this.disposeTaskProgressFileWatchers()
+		this.setupTaskProgressFileWatcher()
 		const provider = this.providerRef.deref()
+		const manager = provider?.parallelManager
+		if (manager && typeof manager.syncSessionWorkspace === "function") {
+			await manager.syncSessionWorkspace(this.taskId, nextWorkspacePath)
+		}
 		provider?.syncLiveTask?.(this)
 		if (provider?.shouldBroadcastTaskToChat?.(this) !== false) {
 			provider?.postStateToWebview().catch(() => undefined)

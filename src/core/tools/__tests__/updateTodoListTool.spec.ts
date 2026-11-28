@@ -3,21 +3,28 @@ import { parseMarkdownChecklist, updateTodoListTool } from "../UpdateTodoListToo
 import { TodoItem } from "@roo-code/types"
 import { Task } from "../../task/Task"
 
-describe("updateTodoListTool", () => {
-	it("rejects an all-completed checklist during a new feedback work turn", async () => {
+describe("bindTaskProgressTool", () => {
+	const actionableTodos: TodoItem[] = [
+		{ id: "1", content: "修复反馈路由", status: "in_progress" },
+		{ id: "2", content: "验证新任务响应", status: "pending" },
+	]
+
+	it("rejects an all-completed bound checklist during a new feedback work turn", async () => {
 		const pushToolResult = vi.fn()
 		const task = {
 			consecutiveMistakeCount: 0,
 			recordToolError: vi.fn(),
 			didToolFailInCurrentTurn: false,
-			normalizeTodoListForActiveContinuation: vi.fn((todos: TodoItem[]) => todos),
-			syncTaskProgressWithTodoList: vi.fn().mockResolvedValue(undefined),
+			bindTaskProgressFile: vi.fn().mockResolvedValue([
+				{ id: "1", content: "研究问题本质", status: "completed" },
+				{ id: "2", content: "汇总安装位置、skill 内容和测试结论", status: "completed" },
+			]),
 			shouldRequireProgressListExpansion: vi.fn().mockReturnValue(true),
 			hasActionableProgressListForContinuation: vi.fn().mockReturnValue(false),
 			markProgressListExpandedForContinuation: vi.fn(),
 		} as unknown as Task
 
-		await updateTodoListTool.execute({ todos: "[x] 研究问题本质\n[x] 汇总安装位置、skill 内容和测试结论" }, task, {
+		await updateTodoListTool.execute({}, task, {
 			askApproval: vi.fn().mockResolvedValue(true),
 			handleError: vi.fn(),
 			pushToolResult,
@@ -25,52 +32,20 @@ describe("updateTodoListTool", () => {
 			toolProtocol: "xml",
 		})
 
-		expect(task.normalizeTodoListForActiveContinuation).not.toHaveBeenCalled()
+		expect(task.bindTaskProgressFile).toHaveBeenCalledWith(undefined)
 		expect(task.markProgressListExpandedForContinuation).not.toHaveBeenCalled()
 		expect(pushToolResult).toHaveBeenCalledWith(expect.stringContaining("new user work turn"))
-		expect(pushToolResult).toHaveBeenCalledWith(expect.stringContaining("The todos parameter must be ONE string"))
+		expect(pushToolResult).toHaveBeenCalledWith(expect.stringContaining("call bind_task_progress"))
 	})
 
-	// kilocode_change: wrong-format payloads (plain text array / JSON objects)
-	// must fail fast with the exact expected format instead of an empty projection.
-	it("rejects non-empty input that parses to zero checklist items with a format hint", async () => {
-		const pushToolResult = vi.fn()
-		const task = {
-			consecutiveMistakeCount: 0,
-			recordToolError: vi.fn(),
-			didToolFailInCurrentTurn: false,
-			syncTaskProgressWithTodoList: vi.fn(),
-		} as unknown as Task
-
-		await updateTodoListTool.execute(
-			{ todos: '["诊断①：子代理输出截断", "修复①：子代理结果完整回传"]' },
-			task,
-			{
-				askApproval: vi.fn().mockResolvedValue(true),
-				handleError: vi.fn(),
-				pushToolResult,
-				removeClosingTag: vi.fn(),
-				toolProtocol: "xml",
-			},
-		)
-
-		expect(pushToolResult).toHaveBeenCalledWith(
-			expect.stringContaining("The todos parameter contained no parseable checklist items"),
-		)
-		expect(pushToolResult).toHaveBeenCalledWith(expect.stringContaining("- [ ] pending text"))
-		expect(task.recordToolError).toHaveBeenCalledWith("update_todo_list")
-		expect(task.syncTaskProgressWithTodoList).not.toHaveBeenCalled()
-	})
-
-	it("returns a model-visible synchronization error without updating native state", async () => {
+	it("returns a model-visible binding error without updating native state", async () => {
 		const pushToolResult = vi.fn()
 		const handleError = vi.fn()
 		const task = {
 			consecutiveMistakeCount: 0,
 			recordToolError: vi.fn(),
 			didToolFailInCurrentTurn: false,
-			normalizeTodoListForActiveContinuation: vi.fn((todos: TodoItem[]) => todos),
-			syncTaskProgressWithTodoList: vi
+			bindTaskProgressFile: vi
 				.fn()
 				.mockRejectedValue(new Error("No verified task progress file for host task host-1")),
 			shouldRequireProgressListExpansion: vi.fn().mockReturnValue(false),
@@ -78,7 +53,7 @@ describe("updateTodoListTool", () => {
 			markProgressListExpandedForContinuation: vi.fn(),
 		} as unknown as Task
 
-		await updateTodoListTool.execute({ todos: "[-] 写入权威任务文件" }, task, {
+		await updateTodoListTool.execute({}, task, {
 			askApproval: vi.fn().mockResolvedValue(true),
 			handleError,
 			pushToolResult,
@@ -87,32 +62,30 @@ describe("updateTodoListTool", () => {
 		})
 
 		expect(pushToolResult).toHaveBeenCalledWith(
-			expect.stringContaining("Task progress synchronization failed: No verified task progress file"),
+			expect.stringContaining("Task progress binding failed: No verified task progress file"),
 		)
-		expect(task.recordToolError).toHaveBeenCalledWith("update_todo_list")
+		expect(task.recordToolError).toHaveBeenCalledWith("bind_task_progress")
 		expect(task.didToolFailInCurrentTurn).toBe(true)
 		expect(task.markProgressListExpandedForContinuation).not.toHaveBeenCalled()
 		expect(handleError).not.toHaveBeenCalled()
 	})
 
-	it("writes concrete milestones to the task file before synchronizing the native list", async () => {
+	it("binds the current EXTRA/task file once and projects native todos from that file", async () => {
 		const pushToolResult = vi.fn()
 		const postStateToWebview = vi.fn().mockResolvedValue(undefined)
 		const task = {
 			consecutiveMistakeCount: 0,
 			recordToolError: vi.fn(),
 			didToolFailInCurrentTurn: false,
-			normalizeTodoListForActiveContinuation: vi.fn((todos: TodoItem[]) => todos),
 			providerRef: { deref: () => ({ postStateToWebview }) },
 			todoList: [{ id: "old", content: "previous native state", status: "completed" }],
+			bindTaskProgressFile: vi.fn().mockResolvedValue(actionableTodos),
 			syncTaskProgressWithTodoList: vi.fn().mockImplementation(async (todos: TodoItem[]) => {
 				expect((task as any).todoList).toEqual([
 					{ id: "old", content: "previous native state", status: "completed" },
 				])
-				expect(todos).toEqual([
-					{ id: expect.any(String), content: "修复反馈路由", status: "in_progress" },
-					{ id: expect.any(String), content: "验证新任务响应", status: "pending" },
-				])
+				expect(todos).toEqual(actionableTodos)
+				return todos
 			}),
 			shouldRequireProgressListExpansion: vi.fn().mockReturnValue(true),
 			hasActionableProgressListForContinuation: vi.fn().mockReturnValue(true),
@@ -120,7 +93,7 @@ describe("updateTodoListTool", () => {
 			ask: undefined,
 		} as unknown as Task
 
-		await updateTodoListTool.execute({ todos: "[-] 修复反馈路由\n[ ] 验证新任务响应" }, task, {
+		await updateTodoListTool.execute({}, task, {
 			askApproval: vi.fn().mockResolvedValue(true),
 			handleError: vi.fn(),
 			pushToolResult,
@@ -128,10 +101,42 @@ describe("updateTodoListTool", () => {
 			toolProtocol: "xml",
 		})
 
+		expect(task.bindTaskProgressFile).toHaveBeenCalledWith(undefined)
 		expect(task.syncTaskProgressWithTodoList).toHaveBeenCalledOnce()
 		expect(task.markProgressListExpandedForContinuation).toHaveBeenCalled()
 		expect(postStateToWebview).toHaveBeenCalledOnce()
-		expect(pushToolResult).toHaveBeenCalledWith(expect.stringContaining("Todo list updated successfully"))
+		expect(pushToolResult).toHaveBeenCalledWith(expect.stringContaining("Native todos now follow"))
+		expect(pushToolResult).toHaveBeenCalledWith(expect.stringContaining("rebind a different root or light file"))
+	})
+
+	it("rebinds native todos to a different light file in a multi-file checklist", async () => {
+		const pushToolResult = vi.fn()
+		const postStateToWebview = vi.fn().mockResolvedValue(undefined)
+		const lightPath = "EXTRA/task/my-task/light-file.md"
+		const task = {
+			consecutiveMistakeCount: 0,
+			recordToolError: vi.fn(),
+			didToolFailInCurrentTurn: false,
+			providerRef: { deref: () => ({ postStateToWebview }) },
+			todoList: [],
+			bindTaskProgressFile: vi.fn().mockResolvedValue(actionableTodos),
+			syncTaskProgressWithTodoList: vi.fn().mockResolvedValue(actionableTodos),
+			shouldRequireProgressListExpansion: vi.fn().mockReturnValue(false),
+			hasActionableProgressListForContinuation: vi.fn().mockReturnValue(true),
+			markProgressListExpandedForContinuation: vi.fn(),
+			ask: undefined,
+		} as unknown as Task
+
+		await updateTodoListTool.execute({ path: lightPath }, task, {
+			askApproval: vi.fn().mockResolvedValue(true),
+			handleError: vi.fn(),
+			pushToolResult,
+			removeClosingTag: vi.fn(),
+			toolProtocol: "xml",
+		})
+
+		expect(task.bindTaskProgressFile).toHaveBeenCalledWith(lightPath)
+		expect(pushToolResult).toHaveBeenCalledWith(expect.stringContaining(lightPath))
 	})
 })
 

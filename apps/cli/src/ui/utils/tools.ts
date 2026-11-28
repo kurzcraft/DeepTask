@@ -190,10 +190,11 @@ export function formatToolOutput(toolInfo: Record<string, unknown>): string {
 			return `📋 Creating subtask${taskMode ? ` in ${taskMode} mode` : ""}`
 		}
 
+		case "bind_task_progress":
 		case "update_todo_list":
 		case "updateTodoList": {
 			// Special marker - actual rendering is handled by TodoChangeDisplay component
-			return "☑ TODO list updated"
+			return "☑ Task progress bound"
 		}
 
 		default: {

@@ -3,12 +3,7 @@ import { Task } from "../task/Task"
 import { formatResponse } from "../prompts/responses"
 import { BaseTool, ToolCallbacks } from "./BaseTool"
 import type { ToolUse } from "../../shared/tools"
-import {
-	getModelId,
-	isProviderName,
-	modelIdKeysByProvider,
-	isTypicalProvider,
-} from "@roo-code/types"
+import { getModelId, isProviderName, modelIdKeysByProvider, isTypicalProvider } from "@roo-code/types"
 import type { ProviderSettings, ProviderSettingsWithId, ProviderName } from "@roo-code/types"
 
 interface ManageProviderProfileParams {
@@ -20,11 +15,26 @@ interface ManageProviderProfileParams {
 	api_key?: string
 	base_url?: string
 	reasoning_effort?: string
-	settings?: Record<string, unknown>
+	settings?: string | Record<string, unknown> | null
 	reason?: string
 }
 
 const REASONING_LEVELS = ["disable", "none", "minimal", "low", "medium", "high", "xhigh"] as const
+
+function parseSettingsPayload(raw: string | Record<string, unknown> | null | undefined): Record<string, unknown> {
+	if (!raw) return {}
+	if (typeof raw === "object" && !Array.isArray(raw)) return raw
+	if (typeof raw !== "string") return {}
+	try {
+		const parsed = JSON.parse(raw)
+		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+			return parsed as Record<string, unknown>
+		}
+	} catch {
+		return {}
+	}
+	return {}
+}
 
 /**
  * Map provider-specific baseUrl / apiKey field names.
@@ -90,17 +100,8 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 	readonly name = "manage_provider_profile" as const
 
 	parseLegacy(params: Partial<Record<string, string>>): ManageProviderProfileParams {
-		let settings: Record<string, unknown> | undefined
-		if (params.settings) {
-			try {
-				const parsed = JSON.parse(params.settings)
-				if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-					settings = parsed as Record<string, unknown>
-				}
-			} catch {
-				settings = undefined
-			}
-		}
+		const parsedSettings = parseSettingsPayload(params.settings)
+		const settings = Object.keys(parsedSettings).length > 0 ? parsedSettings : undefined
 		return {
 			action: (params.action as ManageProviderProfileParams["action"]) || "",
 			profile_name: params.profile_name || undefined,
@@ -127,10 +128,7 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 		await task.ask("tool", partialMessage, block.partial).catch(() => {})
 	}
 
-	private async approve(
-		callbacks: ToolCallbacks,
-		payload: Record<string, unknown>,
-	): Promise<boolean> {
+	private async approve(callbacks: ToolCallbacks, payload: Record<string, unknown>): Promise<boolean> {
 		return callbacks.askApproval("tool", JSON.stringify({ tool: "manageProviderProfile", ...payload }))
 	}
 
@@ -179,13 +177,28 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 										Object.fromEntries(
 											Object.entries(rest).filter(
 												([k]) =>
-													!["enableReasoningEffort", "reasoningEffort", "modelMaxTokens", "modelMaxThinkingTokens", "modelTemperature", "verbosity", "toolProtocol"].includes(k),
+													![
+														"enableReasoningEffort",
+														"reasoningEffort",
+														"modelMaxTokens",
+														"modelMaxThinkingTokens",
+														"modelTemperature",
+														"verbosity",
+														"toolProtocol",
+													].includes(k),
 											),
 										),
 									),
 								}
 							} catch {
-								return { name: entry.name, id: entry.id, apiProvider: entry.apiProvider, modelId: entry.modelId, current: entry.name === currentProfileName, error: "unreadable" }
+								return {
+									name: entry.name,
+									id: entry.id,
+									apiProvider: entry.apiProvider,
+									modelId: entry.modelId,
+									current: entry.name === currentProfileName,
+									error: "unreadable",
+								}
 							}
 						}),
 					)
@@ -201,7 +214,9 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 					if (!name) {
 						task.consecutiveMistakeCount++
 						task.recordToolError("manage_provider_profile")
-						pushToolResult(await task.sayAndCreateMissingParamError("manage_provider_profile", "profile_name"))
+						pushToolResult(
+							await task.sayAndCreateMissingParamError("manage_provider_profile", "profile_name"),
+						)
 						return
 					}
 					const providerName = params.provider?.trim()
@@ -225,12 +240,16 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 					if (await manager.getProfile({ name }).catch(() => null)) {
 						task.consecutiveMistakeCount++
 						task.recordToolError("manage_provider_profile")
-						pushToolResult(formatResponse.toolError(`Profile "${name}" already exists. Use action "update" to modify it.`))
+						pushToolResult(
+							formatResponse.toolError(
+								`Profile "${name}" already exists. Use action "update" to modify it.`,
+							),
+						)
 						return
 					}
 
 					// Build settings: raw settings first, then typed convenience params win.
-					const settings: Record<string, unknown> = { ...(params.settings ?? {}) }
+					const settings: Record<string, unknown> = { ...parseSettingsPayload(params.settings) }
 					settings.apiProvider = providerName
 					if (modelId) {
 						const modelKey = isTypicalProvider(providerName)
@@ -245,7 +264,17 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 					if (params.base_url && fieldMap?.baseUrl) settings[fieldMap.baseUrl] = params.base_url
 					this.applyReasoning(settings, params.reasoning_effort)
 
-					if (!(await this.approve(callbacks, { action: "create", profile: name, provider: providerName, modelId, hasApiKey: !!params.api_key || !!(params.settings as Record<string, unknown> | undefined)?.apiKey, reason: params.reason }))) {
+					if (
+						!(await this.approve(callbacks, {
+							action: "create",
+							profile: name,
+							provider: providerName,
+							modelId,
+							hasApiKey:
+								!!params.api_key || !!(params.settings as Record<string, unknown> | undefined)?.apiKey,
+							reason: params.reason,
+						}))
+					) {
 						return
 					}
 
@@ -253,7 +282,11 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 					if (!id) {
 						task.didToolFailInCurrentTurn = true
 						task.recordToolError("manage_provider_profile")
-						pushToolResult(formatResponse.toolError(`Failed to save profile "${name}". Check the extension output channel for details.`))
+						pushToolResult(
+							formatResponse.toolError(
+								`Failed to save profile "${name}". Check the extension output channel for details.`,
+							),
+						)
 						return
 					}
 					task.consecutiveMistakeCount = 0
@@ -268,14 +301,20 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 					if (!name) {
 						task.consecutiveMistakeCount++
 						task.recordToolError("manage_provider_profile")
-						pushToolResult(await task.sayAndCreateMissingParamError("manage_provider_profile", "profile_name"))
+						pushToolResult(
+							await task.sayAndCreateMissingParamError("manage_provider_profile", "profile_name"),
+						)
 						return
 					}
 					const existing = await manager.getProfile({ name }).catch(() => null)
 					if (!existing) {
 						task.consecutiveMistakeCount++
 						task.recordToolError("manage_provider_profile")
-						pushToolResult(formatResponse.toolError(`Profile "${name}" not found. Use action "list" to see available profiles or "create" to add it.`))
+						pushToolResult(
+							formatResponse.toolError(
+								`Profile "${name}" not found. Use action "list" to see available profiles or "create" to add it.`,
+							),
+						)
 						return
 					}
 
@@ -283,7 +322,11 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 					const settings: Record<string, unknown> = { ...stored }
 					const changed: string[] = []
 
-					if (params.provider && isProviderName(params.provider) && params.provider !== settings.apiProvider) {
+					if (
+						params.provider &&
+						isProviderName(params.provider) &&
+						params.provider !== settings.apiProvider
+					) {
 						settings.apiProvider = params.provider
 						changed.push(`provider=${params.provider}`)
 					}
@@ -298,7 +341,11 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 							settings[modelKey] = params.model_id
 							changed.push(`model=${params.model_id}`)
 						} else {
-							pushToolResult(formatResponse.toolError(`Provider "${effectiveProvider}" does not expose a direct model-id field; pass it via settings instead.`))
+							pushToolResult(
+								formatResponse.toolError(
+									`Provider "${effectiveProvider}" does not expose a direct model-id field; pass it via settings instead.`,
+								),
+							)
 							return
 						}
 					}
@@ -311,21 +358,33 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 						settings[fieldMap.baseUrl] = params.base_url
 						changed.push(`base_url=${params.base_url}`)
 					}
-					if (params.settings && Object.keys(params.settings).length > 0) {
-						for (const [k, v] of Object.entries(params.settings)) settings[k] = v
-						changed.push(`settings keys: ${Object.keys(params.settings).join(", ")}`)
+					const extraSettings = parseSettingsPayload(params.settings)
+					if (Object.keys(extraSettings).length > 0) {
+						for (const [k, v] of Object.entries(extraSettings)) settings[k] = v
+						changed.push(`settings keys: ${Object.keys(extraSettings).join(", ")}`)
 					}
 					if (params.reasoning_effort !== undefined) {
 						const before = `${settings.enableReasoningEffort ?? "(unset)"} / ${settings.reasoningEffort ?? "(unset)"}`
 						this.applyReasoning(settings, params.reasoning_effort)
-						changed.push(`reasoning: ${before} -> ${settings.enableReasoningEffort} / ${settings.reasoningEffort}`)
+						changed.push(
+							`reasoning: ${before} -> ${settings.enableReasoningEffort} / ${settings.reasoningEffort}`,
+						)
 					}
 					if (changed.length === 0) {
-						pushToolResult(`No changes specified for profile "${name}". Provide model_id / api_key / base_url / reasoning_effort / settings.`)
+						pushToolResult(
+							`No changes specified for profile "${name}". Provide model_id / api_key / base_url / reasoning_effort / settings.`,
+						)
 						return
 					}
 
-					if (!(await this.approve(callbacks, { action: "update", profile: name, changes: changed, reason: params.reason }))) {
+					if (
+						!(await this.approve(callbacks, {
+							action: "update",
+							profile: name,
+							changes: changed,
+							reason: params.reason,
+						}))
+					) {
 						return
 					}
 
@@ -333,7 +392,11 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 					if (!savedId) {
 						task.didToolFailInCurrentTurn = true
 						task.recordToolError("manage_provider_profile")
-						pushToolResult(formatResponse.toolError(`Failed to save profile "${name}". Check the extension output channel for details.`))
+						pushToolResult(
+							formatResponse.toolError(
+								`Failed to save profile "${name}". Check the extension output channel for details.`,
+							),
+						)
 						return
 					}
 					task.consecutiveMistakeCount = 0
@@ -355,7 +418,9 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 					if (params.reasoning_effort === undefined) {
 						task.consecutiveMistakeCount++
 						task.recordToolError("manage_provider_profile")
-						pushToolResult(await task.sayAndCreateMissingParamError("manage_provider_profile", "reasoning_effort"))
+						pushToolResult(
+							await task.sayAndCreateMissingParamError("manage_provider_profile", "reasoning_effort"),
+						)
 						return
 					}
 					const level = params.reasoning_effort.trim()
@@ -380,7 +445,14 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 					const settings: Record<string, unknown> = { ...stored }
 					this.applyReasoning(settings, level)
 
-					if (!(await this.approve(callbacks, { action: "set_reasoning", profile: name, reasoningEffort: level, reason: params.reason }))) {
+					if (
+						!(await this.approve(callbacks, {
+							action: "set_reasoning",
+							profile: name,
+							reasoningEffort: level,
+							reason: params.reason,
+						}))
+					) {
 						return
 					}
 
@@ -405,7 +477,9 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 					if (!name || !newName) {
 						task.consecutiveMistakeCount++
 						task.recordToolError("manage_provider_profile")
-						pushToolResult(formatResponse.toolError("rename requires both profile_name (old) and new_name."))
+						pushToolResult(
+							formatResponse.toolError("rename requires both profile_name (old) and new_name."),
+						)
 						return
 					}
 					if (name === newName) {
@@ -426,7 +500,14 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 						return
 					}
 
-					if (!(await this.approve(callbacks, { action: "rename", profile: name, newName, reason: params.reason }))) {
+					if (
+						!(await this.approve(callbacks, {
+							action: "rename",
+							profile: name,
+							newName,
+							reason: params.reason,
+						}))
+					) {
 						return
 					}
 
@@ -436,7 +517,9 @@ export class ManageProviderProfileTool extends BaseTool<"manage_provider_profile
 						await provider.activateProviderProfile({ name: newName })
 					}
 					task.consecutiveMistakeCount = 0
-					pushToolResult(`Renamed provider profile "${name}" -> "${newName}"${name === currentProfileName ? " (active profile re-activated under the new name)" : ""}.`)
+					pushToolResult(
+						`Renamed provider profile "${name}" -> "${newName}"${name === currentProfileName ? " (active profile re-activated under the new name)" : ""}.`,
+					)
 					return
 				}
 

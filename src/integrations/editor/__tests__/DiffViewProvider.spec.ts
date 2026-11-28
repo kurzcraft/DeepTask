@@ -117,6 +117,11 @@ describe("DiffViewProvider", () => {
 
 		// Create a mock Task instance
 		mockTask = {
+			cwd: mockCwd,
+			notifyTaskProgressFileChanged: vi.fn(),
+			apiConfiguration: {},
+			api: { getModel: vi.fn().mockReturnValue({ info: {} }) },
+			taskToolProtocol: undefined,
 			providerRef: {
 				deref: vi.fn().mockReturnValue({
 					getState: vi.fn().mockResolvedValue({
@@ -577,6 +582,20 @@ describe("DiffViewProvider", () => {
 			expect((diffViewProvider as any).relPath).toBe("test.ts")
 			expect((diffViewProvider as any).newProblemsMessage).toBe("")
 			expect((diffViewProvider as any).userEdits).toBeUndefined()
+		})
+	})
+
+	describe("live cwd and write-success projection", () => {
+		it("resolves files against the live task cwd after switchWorkspace", async () => {
+			mockTask.cwd = "/new/worktree"
+			await diffViewProvider.saveDirectly("EXTRA/task/current.md", "content", false, false)
+			expect(path.resolve).toHaveBeenCalledWith("/new/worktree", "EXTRA/task/current.md")
+		})
+
+		it("notifies the task after a successful EXTRA/task write", async () => {
+			;(diffViewProvider as any).relPath = "EXTRA/task/OCCUPANCY.md"
+			await diffViewProvider.pushToolWriteResult(mockTask, mockCwd, false)
+			expect(mockTask.notifyTaskProgressFileChanged).toHaveBeenCalledWith("EXTRA/task/OCCUPANCY.md")
 		})
 	})
 

@@ -10,9 +10,7 @@ vi.mock("fs/promises")
 vi.mock("../../../../services/roo-config", () => ({
 	getGlobalRooDirectory: vi.fn().mockReturnValue("/fake/cwd/.kilocode"),
 	getProjectRooDirectoryForCwd: vi.fn().mockImplementation((cwd: string) => `${cwd}/.kilocode`),
-	getRooDirectoriesForCwd: vi
-		.fn()
-		.mockImplementation((cwd: string) => ["/fake/cwd/.kilocode", `${cwd}/.kilocode`]),
+	getRooDirectoriesForCwd: vi.fn().mockImplementation((cwd: string) => ["/fake/cwd/.kilocode", `${cwd}/.kilocode`]),
 	getAllRooDirectoriesForCwd: vi
 		.fn()
 		.mockImplementation(async (cwd: string) => ["/fake/cwd/.kilocode", `${cwd}/.kilocode`]),
@@ -1094,13 +1092,14 @@ describe("addCustomInstructions", () => {
 		expect(result).toContain("do not rewrite the marker or repeat the same stale request")
 		expect(result).toContain("Never add a `deeptask-native-todo-list` section")
 		expect(result).toContain("exact top-to-bottom projection of every checklist item")
-		expect(result).toContain("the native projection must preserve the file's item order, text, status, and indentation-derived depth")
+		expect(result).toContain(
+			"the native projection must preserve the file's item order, text, status, and indentation-derived depth",
+		)
 		expect(result).toContain("Keep one task's evolving checklist in its same Markdown file")
 		expect(result).toContain("Every later executable request in the same conversation")
 		expect(result).toContain("reuse the focused active file and its exact marker")
 		expect(result).not.toContain("unique host-prefixed instance ID in the form host-task-id:work-instance-id")
 		expect(result).toContain("appropriately indented Markdown checklist children")
-		expect(result).toContain("Before completion, check every checklist item in the task Markdown")
 		expect(result).toContain("Do not create task progress files in the workspace root")
 		expect(result).toContain("do not repeat task-start actions such as querying Obsidian or other long-term memory")
 		expect(result).toContain("smallest independently verifiable subtask granularity")
@@ -1109,9 +1108,13 @@ describe("addCustomInstructions", () => {
 		expect(result).toContain(
 			"Also update promptly when a tool fails, a blocker appears, or a material decision changes the plan",
 		)
-		expect(result).toContain("Before completion, check every checklist item in the task Markdown")
-		expect(result).toContain("move the fully completed Markdown into EXTRA/task/finished/")
+		expect(result).toContain("Before completion, check every checklist item in THIS host's task Markdown")
+		expect(result).toContain("move that fully completed Markdown into EXTRA/task/finished/")
+		expect(result).toContain("Sibling conversations' EXTRA/task files must not block this host")
 		expect(result).toContain(
+			"Completion is prohibited only while this host's own active checklist still contains a pending or in-progress item",
+		)
+		expect(result).not.toContain(
 			"Completion is prohibited while any Markdown outside EXTRA/task/finished/ contains a pending or in-progress checklist item",
 		)
 		expect(result).toContain("This uses the same workspace artifact layout as EXTRA/bash/")

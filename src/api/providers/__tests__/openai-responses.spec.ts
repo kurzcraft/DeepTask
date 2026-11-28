@@ -100,4 +100,50 @@ describe("OpenAiCompatibleResponsesHandler", () => {
 			}),
 		)
 	})
+
+	it("includes reasoning.effort from chat settings when custom model info omits capability", async () => {
+		mockResponsesCreate.mockResolvedValue({
+			[Symbol.asyncIterator]: async function* () {},
+		})
+		const handler = new OpenAiCompatibleResponsesHandler({
+			openAiApiKey: "test-key",
+			openAiModelId: "grok-4.6",
+			enableReasoningEffort: true,
+			reasoningEffort: "high",
+		} satisfies ApiHandlerOptions)
+
+		for await (const _chunk of handler.createMessage(systemPrompt, messages)) {
+		}
+
+		expect(mockResponsesCreate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				reasoning: expect.objectContaining({ effort: "high" }),
+				include: ["reasoning.encrypted_content"],
+			}),
+			expect.anything(),
+		)
+	})
+
+	it("sends reasoning.effort none when the selector turns reasoning off", async () => {
+		mockResponsesCreate.mockResolvedValue({
+			[Symbol.asyncIterator]: async function* () {},
+		})
+		const handler = new OpenAiCompatibleResponsesHandler({
+			openAiApiKey: "test-key",
+			openAiModelId: "grok-4.6",
+			enableReasoningEffort: false,
+			reasoningEffort: "disable",
+			openAiCustomModelInfo: {
+				contextWindow: 256_000,
+				supportsPromptCache: false,
+				reasoningEffort: "high",
+			},
+		} satisfies ApiHandlerOptions)
+
+		for await (const _chunk of handler.createMessage(systemPrompt, messages)) {
+		}
+
+		const body = mockResponsesCreate.mock.calls[0][0]
+		expect(body.reasoning).toEqual({ effort: "none" })
+	})
 })

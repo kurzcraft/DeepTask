@@ -766,6 +766,7 @@ const ApiOptions = ({
 
 			{(selectedProvider === "openai" || selectedProvider === "openai-responses") /* kilocode_change */ && (
 				<OpenAICompatible
+					key={currentApiConfigName ?? selectedProvider} // kilocode_change: remount on inactive profile switch
 					apiConfiguration={apiConfiguration}
 					setApiConfigurationField={setApiConfigurationField}
 					organizationAllowList={organizationAllowList}

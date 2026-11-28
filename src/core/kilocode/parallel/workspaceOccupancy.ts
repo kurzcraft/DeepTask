@@ -39,6 +39,21 @@ export interface WorkspaceOccupant {
 	label?: string
 }
 
+export function taskOccupiesWorkspace(task: {
+	abort?: boolean
+	abandoned?: boolean
+	isStreaming?: boolean
+	isActivelyRunning?: boolean
+}): boolean {
+	// Interrupted or abandoned tasks never occupy. Idle stacked tasks that are
+	// not streaming and not in an active tool/command loop also do not occupy:
+	// a cancelled/waiting conversation must not eject later work from the cwd.
+	if (task.abort || task.abandoned) {
+		return false
+	}
+	return task.isActivelyRunning === true || task.isStreaming === true
+}
+
 export interface OccupancyInputs {
 	workspacePath: string
 	conversations: ParallelConversation[]
@@ -80,10 +95,10 @@ export function collectWorkspaceOccupants(params: OccupancyInputs): WorkspaceOcc
 		occupants.push(occupant)
 	}
 
-	// Stacked tasks occupy even while waiting for the user. Streaming-only
-	// occupancy let a later conversation join an idle first conversation's
-	// cwd; once both ran, each saw the other as an occupant.
-	const liveTasks = params.runningTasks.filter((task) => !task.abort && !task.abandoned)
+	// Occupancy is live inference or an active tool/command loop only.
+	// Interrupted tasks and idle stacked conversations (waiting, cancelled,
+	// not streaming) must not occupy the cwd.
+	const liveTasks = params.runningTasks.filter(taskOccupiesWorkspace)
 	const liveById = new Map(liveTasks.map((task) => [task.taskId, task]))
 
 	for (const conversation of params.conversations) {

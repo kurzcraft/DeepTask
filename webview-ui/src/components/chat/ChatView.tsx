@@ -22,7 +22,7 @@ import { getApiMetricsIncremental, type TokenUsageIncrementalCache } from "@roo/
 import { filterVisibleMessages, filterVisibleMessagesIncremental } from "./visibleMessages"
 import { getAllModes } from "@roo/modes"
 import { ProfileValidator } from "@roo/ProfileValidator"
-import { getLatestTodo } from "@roo/todo"
+import { getPreferredTodos } from "@roo/todo"
 
 import { safeJsonParse } from "@roo/core"
 
@@ -219,19 +219,9 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	// kilocode_change end
 
 	const latestTodos = useMemo(() => {
-		// First check if we have initial todos from the state (for new subtasks)
-		if (currentTaskTodos && currentTaskTodos.length > 0) {
-			// Check if there are any todo updates in messages
-			const messageBasedTodos = getLatestTodo(messages)
-			// If there are message-based todos, they take precedence (user has updated them)
-			if (messageBasedTodos && messageBasedTodos.length > 0) {
-				return messageBasedTodos
-			}
-			// Otherwise use the initial todos from state
-			return currentTaskTodos
-		}
-		// Fall back to extracting from messages
-		return getLatestTodo(messages)
+		// Bound EXTRA/task projection is authoritative. Historical updateTodoList
+		// messages are only a fallback when no bound native list has been published.
+		return getPreferredTodos(currentTaskTodos, messages)
 	}, [messages, currentTaskTodos])
 
 	// kilocode_change: the host message history is the only rendered source of truth.
@@ -247,11 +237,7 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 	const visibleOutputRef = useRef<ClineMessage[]>([])
 	const apiMetricsCacheRef = useRef<TokenUsageIncrementalCache | undefined>(undefined)
 	const modifiedMessages = useMemo(() => {
-		const folded = foldCommandsForDisplay(
-			messages,
-			commandFoldInputRef.current,
-			commandFoldOutputRef.current,
-		)
+		const folded = foldCommandsForDisplay(messages, commandFoldInputRef.current, commandFoldOutputRef.current)
 		commandFoldInputRef.current = messages
 		commandFoldOutputRef.current = folded
 		return combineApiRequests(folded)
@@ -2017,14 +2003,8 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 		return result
 	}, [isCondensing, visibleMessages, isBrowserSessionMessage])
 
-	const chatRowListMeta = useMemo(
-		() => buildChatRowListMeta(bodyModifiedMessages),
-		[bodyModifiedMessages],
-	)
-	const previousTodosByTs = useMemo(
-		() => buildPreviousTodosByTs(bodyModifiedMessages),
-		[bodyModifiedMessages],
-	)
+	const chatRowListMeta = useMemo(() => buildChatRowListMeta(bodyModifiedMessages), [bodyModifiedMessages])
+	const previousTodosByTs = useMemo(() => buildPreviousTodosByTs(bodyModifiedMessages), [bodyModifiedMessages])
 	const collapsedBannerCount = clineMessagesTombstoned
 
 	// scrolling
@@ -2866,37 +2846,37 @@ const ChatViewComponent: React.ForwardRefRenderFunction<ChatViewRef, ChatViewPro
 										data={groupedMessages}
 										computeItemKey={(_index, message) => message.ts}
 										itemContent={itemContent}
-									followOutput={(isAtBottom: boolean) => {
-										if (pinnedJumpTsRef.current != null) {
-											return false
-										}
-										return isAtBottom || stickyFollowRef.current
-									}}
-									// kilocode_change: cover same-message streaming and asynchronous Markdown reflow
-									totalListHeightChanged={keepFollowingOutput}
-									atBottomStateChange={(isAtBottom: boolean) => {
+										followOutput={(isAtBottom: boolean) => {
+											if (pinnedJumpTsRef.current != null) {
+												return false
+											}
+											return isAtBottom || stickyFollowRef.current
+										}}
+										// kilocode_change: cover same-message streaming and asynchronous Markdown reflow
+										totalListHeightChanged={keepFollowingOutput}
+										atBottomStateChange={(isAtBottom: boolean) => {
 											isAtBottomRef.current = isAtBottom
 											setIsAtBottom(isAtBottom)
 											if (!isAtBottom) {
 												setShowScrollToBottom(true)
 												return
 											}
-										pinnedJumpTsRef.current = null
-										stickyFollowRef.current = true
-										setShowScrollToBottom(false)
-									}}
-									atBottomThreshold={10}
-									initialTopMostItemIndex={(() => {
-										const pinnedTs = pinnedJumpTsRef.current
-										const pinnedIndex =
-											pinnedTs == null
-												? -1
-												: groupedMessages.findIndex((message) => message.ts === pinnedTs)
-										if (pinnedIndex >= 0) {
-											return { index: pinnedIndex, align: pinAlignRef.current }
-										}
-										return Math.max(0, groupedMessages.length - 1)
-									})()}
+											pinnedJumpTsRef.current = null
+											stickyFollowRef.current = true
+											setShowScrollToBottom(false)
+										}}
+										atBottomThreshold={10}
+										initialTopMostItemIndex={(() => {
+											const pinnedTs = pinnedJumpTsRef.current
+											const pinnedIndex =
+												pinnedTs == null
+													? -1
+													: groupedMessages.findIndex((message) => message.ts === pinnedTs)
+											if (pinnedIndex >= 0) {
+												return { index: pinnedIndex, align: pinAlignRef.current }
+											}
+											return Math.max(0, groupedMessages.length - 1)
+										})()}
 									/>
 								</div>
 							</div>

@@ -310,11 +310,7 @@ describe("ClineProvider - API Handler Rebuild Guard", () => {
 				),
 			})
 
-			const result = await provider.switchProviderProfileWithPreflight(
-				"target-config",
-				task,
-				"openai/gpt-4.1",
-			)
+			const result = await provider.switchProviderProfileWithPreflight("target-config", task, "openai/gpt-4.1")
 
 			expect(result.ok).toBe(false)
 			expect((provider as any).providerSettingsManager.saveConfig).not.toHaveBeenCalled()
@@ -367,11 +363,7 @@ describe("ClineProvider - API Handler Rebuild Guard", () => {
 				),
 			})
 
-			const result = await provider.switchProviderProfileWithPreflight(
-				"target-config",
-				task,
-				"openai/gpt-4.1",
-			)
+			const result = await provider.switchProviderProfileWithPreflight("target-config", task, "openai/gpt-4.1")
 
 			expect(result).toEqual({ ok: true, modelId: "openai/gpt-4.1" })
 			expect((provider as any).providerSettingsManager.saveConfig).toHaveBeenCalledWith(
@@ -437,6 +429,44 @@ describe("ClineProvider - API Handler Rebuild Guard", () => {
 			expect((mockTask as any).apiConfiguration.openRouterModelId).toBe("openai/gpt-4")
 			expect((mockTask as any).apiConfiguration.rateLimitSeconds).toBe(5)
 			expect((mockTask as any).apiConfiguration.modelTemperature).toBe(0.7)
+		})
+
+		test("calls updateApiConfiguration when only reasoningEffort changes", async () => {
+			const mockTask = new Task({
+				...defaultTaskOptions,
+				apiConfiguration: {
+					apiProvider: "openai-responses",
+					openAiModelId: "grok-4.6",
+					enableReasoningEffort: true,
+					reasoningEffort: "high",
+				},
+			})
+			mockTask.api = {
+				getModel: vi.fn().mockReturnValue({
+					id: "grok-4.6",
+					info: { contextWindow: 256000 },
+				}),
+			} as any
+
+			await provider.addClineToStack(mockTask)
+
+			await provider.upsertProviderProfile(
+				"test-config",
+				{
+					apiProvider: "openai-responses",
+					openAiModelId: "grok-4.6",
+					enableReasoningEffort: true,
+					reasoningEffort: "low",
+				},
+				true,
+			)
+
+			expect(mockTask.updateApiConfiguration).toHaveBeenCalledWith(
+				expect.objectContaining({
+					reasoningEffort: "low",
+					enableReasoningEffort: true,
+				}),
+			)
 		})
 
 		test("calls updateApiConfiguration when provider changes", async () => {

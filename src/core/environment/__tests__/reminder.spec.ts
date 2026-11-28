@@ -6,7 +6,7 @@ describe("formatReminderSection", () => {
 		const text = formatReminderSection([], { requireProgressListExpansion: true })
 		expect(text).toContain("CRITICAL: A new user instruction just arrived")
 		expect(text).toContain("first inspect EXTRA/task and write/read that checklist")
-		expect(text).toContain("then call `update_todo_list`")
+		expect(text).toContain("then call `bind_task_progress`")
 		expect(text).toContain("Shrinks and status-only updates on an already-over-limit file are allowed")
 		expect(text).toContain("do not invent extra native items")
 		expect(text).not.toContain("Discard finished old milestones")

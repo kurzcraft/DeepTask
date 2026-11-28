@@ -35,7 +35,7 @@
   <a href="#architecture-and-trust">Architecture</a>
 </p>
 
-> **Deeptask 9.3.8** re-projects the webview transcript after folding command/MCP sequences. Host already 8k-truncates each `command_output` chunk, but ChatView concatenated those chunks with no cap and cached the joined string, so a long wait-command session still grew after projection. Folded commands now stay at the 8k tail / 120-char historical bound; storage and model I/O stay full. Falsification condition: a folded command row still exceeds 8k and a historical row still exceeds 120 chars, refutes this fix.
+> **Deeptask 9.3.8** binds native todos to `EXTRA/task` Markdown via `bind_task_progress`. Chat copy says the list was bound, not updated. After a light-file edit, native refresh falls back to the already-bound path. Folded command/MCP rows stay at the 8k tail / 120-char historical bound. Falsification: a bound light file changes and native still shows the previous bind snapshot, or a folded command still exceeds 8k.
 >
 > **9.3.6** keeps historical command output collapsed: only the live last command auto-expands, historical rows render as `txt` so Shiki is skipped, and the chat body is one continuous Virtuoso list (not 64-row sliding pages). **9.3.5** compact the host→webview transcript and stop slicing oversized JSON at char 3000. **9.3.4** tombstones historical rows before postState.
 

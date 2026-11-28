@@ -135,8 +135,8 @@ describe("File-Based Custom System Prompt", () => {
 		const fileCustomSystemPrompt = "Custom system prompt from file"
 		// When called with utf-8 encoding, return a string
 		mockedFs.readFile.mockImplementation((filePath, options) => {
-			// kilocode_change
-			if (toPosix(filePath).includes(`.kilocode/system-prompt-${defaultModeSlug}`) && options === "utf-8") {
+			// kilocode_change: loader resolves .deeptask > .kilocode > .roo
+			if (toPosix(filePath).includes(`system-prompt-${defaultModeSlug}`) && options === "utf-8") {
 				return Promise.resolve(fileCustomSystemPrompt)
 			}
 			return Promise.reject({ code: "ENOENT" })
@@ -165,6 +165,8 @@ describe("File-Based Custom System Prompt", () => {
 		const expectedMode = getModeBySlug(defaultModeSlug) || modes[0]
 		expect(prompt).toContain(expectedMode.roleDefinition)
 		expect(prompt).toContain(fileCustomSystemPrompt)
+		expect(prompt).toContain("PROGRESSIVE THINKING")
+		expect(prompt).toContain("Each thought must be strictly incremental")
 
 		// Should not contain any of the default sections
 		expect(prompt).not.toContain("CAPABILITIES")
@@ -175,8 +177,8 @@ describe("File-Based Custom System Prompt", () => {
 		// Mock the readFile to return content from a file
 		const fileCustomSystemPrompt = "Custom system prompt from file"
 		mockedFs.readFile.mockImplementation((filePath, options) => {
-			// kilocode_change
-			if (toPosix(filePath).includes(`.kilocode/system-prompt-${defaultModeSlug}`) && options === "utf-8") {
+			// kilocode_change: loader resolves .deeptask > .kilocode > .roo
+			if (toPosix(filePath).includes(`system-prompt-${defaultModeSlug}`) && options === "utf-8") {
 				return Promise.resolve(fileCustomSystemPrompt)
 			}
 			return Promise.reject({ code: "ENOENT" })
@@ -212,6 +214,8 @@ describe("File-Based Custom System Prompt", () => {
 		// Should contain custom role definition and file-based system prompt
 		expect(prompt).toContain(customRoleDefinition)
 		expect(prompt).toContain(fileCustomSystemPrompt)
+		expect(prompt).toContain("PROGRESSIVE THINKING")
+		expect(prompt).toContain("Each thought must be strictly incremental")
 
 		// Should not contain any of the default sections
 		expect(prompt).not.toContain("CAPABILITIES")

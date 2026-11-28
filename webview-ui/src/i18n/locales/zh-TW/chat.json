@@ -508,7 +508,7 @@
 	"todo": {
 		"partial": "已完成 {{completed}}／{{total}} 個待辦事項",
 		"complete": "已完成 {{total}} 個待辦事項",
-		"updated": "已更新待辦事項清單",
+		"updated": "已綁定待辦事項清單",
 		"completed": "已完成",
 		"started": "已開始"
 	},

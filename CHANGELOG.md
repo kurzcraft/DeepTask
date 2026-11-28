@@ -4,8 +4,12 @@
 
 ### Patch Changes
 
+- Keep the OpenAI Compatible chat model selector usable when the router directory is empty or failing. Catalogs now come from `requestOpenAiModels`; the chat picker seeds the configured `openAiModelId`, settings auto-open the local dropdown after credentials settle, and catalogs fetched for an inactive profile cannot overwrite the active chat list.
 - Re-project the webview transcript after folding command/MCP sequences. Host already 8k-truncates each `command_output` chunk, but ChatView concatenated those chunks with no cap and cached the joined string, so a long wait-command session grew after projection. Folded commands now stay at the 8k tail / 120-char historical bound; storage and model I/O stay full.
 - Keep `execute_command` running when the integrated terminal cannot handshake. A late OSC `633;A`, a broken default profile, or `shellIntegrationDisabled` now falls back to child-process execution instead of returning "Command was not executed". The per-command flag is written onto `Terminal.setShellIntegrationDisabled()` before `runCommand()`, so a tool-layer retry actually skips the 5s wait.
+- Native todos bind to an EXTRA/task Markdown file through `bind_task_progress` instead of receiving a checklist payload. Call it once after the file exists; call it again only to rebind a different root or light file. `update_todo_list` remains an alias. Manual editor saves of nested light files under `EXTRA/task/<title>/` now project into native todos without waiting for another bind. Chat copy says the list was bound, not updated. Native refresh falls back to the already-bound light file if discovery throws, so the header cannot keep a stale bind snapshot.
+- Honor the chat reasoning-effort selector for OpenAI Compatible and OpenAI Compatible (Responses). Changing effort rebuilds the live handler so the next request is not frozen on the previous options. Off sends `reasoning_effort`/`reasoning.effort` `none` instead of omitting the field (Grok/xAI keep thinking when the field is absent). User-selected levels such as `low` are sent even when the model catalog omits capability metadata. `manage_provider_profile.settings` is a JSON string so OpenAI strict schemas stay valid.
+- Keep the folder-rail running spinner on a wait-command conversation. Live shells count as actively running, and broadcast upgrades a stale completed session instead of skipping it.
 
 ## 9.3.7
 
@@ -70,7 +74,6 @@
 - Align the keep window with the newest real user instruction so condensation cannot drop the latest continuation.
 
 ## 9.3.2
-
 
 ### Patch Changes
 
@@ -334,7 +337,6 @@
 - Update the bilingual README, packaged Marketplace introduction, installation commands, and release notes for 9.1.2.
 
 ## 9.1.1
-
 
 ### Patch Changes
 

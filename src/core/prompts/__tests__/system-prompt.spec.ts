@@ -278,6 +278,30 @@ describe("SYSTEM_PROMPT", () => {
 		expect(prompt).toContain("more than 2 physical lines")
 	})
 
+	it("requires progressive thinking instead of repeating the same analysis", async () => {
+		const prompt = await SYSTEM_PROMPT(
+			mockContext,
+			"/test/path",
+			false,
+			undefined,
+			undefined,
+			undefined,
+			defaultModeSlug,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			experiments,
+			true,
+		)
+
+		expect(prompt).toContain("PROGRESSIVE THINKING")
+		expect(prompt).toContain("not a prompt-evolution request")
+		expect(prompt).toContain("Do not repeat the same analysis")
+		expect(prompt).toContain("Each thought must be strictly incremental")
+		expect(prompt).toContain("must take a different action instead of paraphrasing the same plan")
+	})
+
 	it("should include browser actions when supportsImages is true", async () => {
 		const prompt = await SYSTEM_PROMPT(
 			mockContext,
@@ -627,7 +651,7 @@ describe("SYSTEM_PROMPT", () => {
 		expect(prompt.indexOf(modes[0].roleDefinition)).toBeLessThan(prompt.indexOf("TOOL USE"))
 	})
 
-	it("should exclude update_todo_list tool when todoListEnabled is false", async () => {
+	it("should exclude bind_task_progress tool when todoListEnabled is false", async () => {
 		const settings = {
 			maxConcurrentFileReads: 5,
 			todoListEnabled: false,
@@ -657,11 +681,11 @@ describe("SYSTEM_PROMPT", () => {
 		)
 
 		// Should not contain the tool description
-		expect(prompt).not.toContain("## update_todo_list")
+		expect(prompt).not.toContain("## bind_task_progress")
 		// Mode instructions will still reference the tool with a fallback to markdown
 	})
 
-	it("should include update_todo_list tool when todoListEnabled is true", async () => {
+	it("should include bind_task_progress tool when todoListEnabled is true", async () => {
 		const settings = {
 			maxConcurrentFileReads: 5,
 			todoListEnabled: true,
@@ -690,11 +714,11 @@ describe("SYSTEM_PROMPT", () => {
 			settings, // settings
 		)
 
-		expect(prompt).toContain("update_todo_list")
-		expect(prompt).toContain("## update_todo_list")
+		expect(prompt).toContain("bind_task_progress")
+		expect(prompt).toContain("## bind_task_progress")
 	})
 
-	it("should include update_todo_list tool when todoListEnabled is undefined", async () => {
+	it("should include bind_task_progress tool when todoListEnabled is undefined", async () => {
 		const settings = {
 			maxConcurrentFileReads: 5,
 			todoListEnabled: true,
@@ -723,8 +747,8 @@ describe("SYSTEM_PROMPT", () => {
 			settings, // settings
 		)
 
-		expect(prompt).toContain("update_todo_list")
-		expect(prompt).toContain("## update_todo_list")
+		expect(prompt).toContain("bind_task_progress")
+		expect(prompt).toContain("## bind_task_progress")
 	})
 
 	it("should include XML tool instructions when disableXmlToolInstructions is false (default)", async () => {
@@ -991,15 +1015,15 @@ describe("SYSTEM_PROMPT", () => {
 		expect(enabledPrompt).toContain("light files MUST NOT contain deeptask-task-id")
 		expect(enabledPrompt).not.toContain("about >80 lines")
 		expect(enabledPrompt).not.toContain("longer than 80 lines")
-		expect(enabledPrompt).toContain("every checklist item must be done")
+		expect(enabledPrompt).toContain("every item in THIS host's checklist")
 		expect(enabledPrompt).toContain("ordinary feedback, and edited resends are not new task starts")
 		expect(enabledPrompt).toContain("independently verifiable subtasks, not tool calls")
 		expect(enabledPrompt).toContain("Multiple tools in one subtask do not need repeated progress-file writes")
 		expect(enabledPrompt).toContain("Do not batch status transitions")
-		expect(enabledPrompt).toContain("move the Markdown to EXTRA/task/finished/")
-		expect(enabledPrompt).toContain(
-			"any Markdown outside EXTRA/task/finished/ has pending/in-progress items",
-		)
+		expect(enabledPrompt).toContain("move that Markdown to EXTRA/task/finished/")
+		expect(enabledPrompt).toContain("Sibling conversations' EXTRA/task files must not block this host")
+		expect(enabledPrompt).toContain("this host's own active checklist still has pending/in-progress items")
+		expect(enabledPrompt).not.toContain("any Markdown outside EXTRA/task/finished/ has pending/in-progress items")
 		expect(enabledPrompt).toContain("Update promptly on tool failure, blockers, plan changes")
 		expect(enabledPrompt).toContain("current workspace's `EXTRA/bash/` directory")
 		expect(enabledPrompt).toContain("current workspace's `EXTRA/output/` directory")

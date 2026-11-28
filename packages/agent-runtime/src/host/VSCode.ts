@@ -1327,6 +1327,14 @@ export class WorkspaceAPI {
 	private _onDidOpenTextDocument = new EventEmitter<TextDocument>()
 	private _onDidChangeTextDocument = new EventEmitter<TextDocumentChangeEvent>()
 	private _onDidCloseTextDocument = new EventEmitter<TextDocument>()
+	// kilocode_change start: WorkspaceTracker/file-watcher subscribe to these
+	// during activate. Missing them throws `onDidCreateFiles is not a function`,
+	// activate returns null, webview never becomes ready, and CLI newTask queues forever.
+	private _onDidCreateFiles = new EventEmitter<FileCreateEvent>()
+	private _onDidDeleteFiles = new EventEmitter<FileDeleteEvent>()
+	private _onDidRenameFiles = new EventEmitter<FileRenameEvent>()
+	private _onDidSaveTextDocument = new EventEmitter<TextDocument>()
+	// kilocode_change end
 	private workspacePath: string
 	private context: ExtensionContext
 
@@ -1401,6 +1409,24 @@ export class WorkspaceAPI {
 	onDidCloseTextDocument(listener: (event: TextDocument) => void): Disposable {
 		return this._onDidCloseTextDocument.event(listener)
 	}
+
+	// kilocode_change start
+	onDidCreateFiles(listener: (event: FileCreateEvent) => void): Disposable {
+		return this._onDidCreateFiles.event(listener)
+	}
+
+	onDidDeleteFiles(listener: (event: FileDeleteEvent) => void): Disposable {
+		return this._onDidDeleteFiles.event(listener)
+	}
+
+	onDidRenameFiles(listener: (event: FileRenameEvent) => void): Disposable {
+		return this._onDidRenameFiles.event(listener)
+	}
+
+	onDidSaveTextDocument(listener: (event: TextDocument) => void): Disposable {
+		return this._onDidSaveTextDocument.event(listener)
+	}
+	// kilocode_change end
 
 	getConfiguration(section?: string): WorkspaceConfiguration {
 		return new MockWorkspaceConfiguration(section, this.context)
@@ -1607,6 +1633,18 @@ export class WorkspaceAPI {
 	registerTextDocumentContentProvider(_scheme: string, _provider: TextDocumentContentProvider): Disposable {
 		return { dispose: () => {} }
 	}
+}
+
+export interface FileCreateEvent {
+	readonly files: readonly Uri[]
+}
+
+export interface FileDeleteEvent {
+	readonly files: readonly Uri[]
+}
+
+export interface FileRenameEvent {
+	readonly files: ReadonlyArray<{ oldUri: Uri; newUri: Uri }>
 }
 
 export interface WorkspaceFolder {

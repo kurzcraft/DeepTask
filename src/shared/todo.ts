@@ -32,3 +32,14 @@ export function getLatestTodo(clineMessages: ClineMessage[]): TodoItem[] {
 		return []
 	}
 }
+
+/**
+ * Native todos follow the bound EXTRA/task file. Historical updateTodoList
+ * messages are only a fallback when no bound projection has been published.
+ */
+export function getPreferredTodos(currentTaskTodos: TodoItem[] | undefined, clineMessages: ClineMessage[]): TodoItem[] {
+	if (currentTaskTodos && currentTaskTodos.length > 0) {
+		return currentTaskTodos
+	}
+	return getLatestTodo(clineMessages)
+}

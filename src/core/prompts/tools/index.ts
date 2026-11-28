@@ -86,6 +86,7 @@ const toolDescriptionMap: Record<string, (args: ToolArgs) => string | undefined>
 	delete_file: (args) => getDeleteFileDescription(args), // kilocode_change
 	apply_diff: (args) =>
 		args.diffStrategy ? args.diffStrategy.getToolDescription({ cwd: args.cwd, toolOptions: args.toolOptions }) : "",
+	bind_task_progress: (args) => getUpdateTodoListDescription(args),
 	update_todo_list: (args) => getUpdateTodoListDescription(args),
 	run_slash_command: () => getRunSlashCommandDescription(),
 	generate_image: (args) => getGenerateImageDescription(args),
@@ -190,8 +191,9 @@ export function getToolDescriptionsForMode(
 	}
 	// kilocode_change end
 
-	// Conditionally exclude update_todo_list if disabled in settings
+	// Conditionally exclude bind_task_progress if disabled in settings
 	if (settings?.todoListEnabled === false) {
+		tools.delete("bind_task_progress")
 		tools.delete("update_todo_list")
 	}
 

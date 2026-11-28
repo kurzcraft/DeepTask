@@ -127,8 +127,13 @@ export const getOpenAiReasoning = ({
 	reasoningEffort,
 	settings,
 }: GetModelReasoningOptions): OpenAiReasoningParams | undefined => {
+	// Relays (Grok/xAI) keep thinking on when reasoning_effort is omitted.
+	// An explicit off must send "none", not drop the field.
+	if (settings?.enableReasoningEffort === false || reasoningEffort === "disable") {
+		return { reasoning_effort: "none" as OpenAI.Chat.ChatCompletionCreateParams["reasoning_effort"] }
+	}
 	if (!shouldUseReasoningEffort({ model, settings })) return undefined
-	if (reasoningEffort === "disable" || !reasoningEffort) return undefined
+	if (!reasoningEffort) return undefined
 
 	// Include "none" | "minimal" | "low" | "medium" | "high" literally
 	return {

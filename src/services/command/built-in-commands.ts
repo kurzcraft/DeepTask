@@ -38,7 +38,7 @@ Please analyze this codebase and create an AGENTS.md file containing:
   </purpose>
   
   <todo_list_creation>
-    If the update_todo_list tool is available, create a todo list with these focused analysis steps:
+    If the bind_task_progress tool is available, write these focused analysis steps into EXTRA/task Markdown, then call bind_task_progress once so native todos follow that file:
     
      1. Check for existing AGENTS.md files
        CRITICAL - Check these EXACT paths IN THE PROJECT ROOT:
@@ -98,7 +98,7 @@ Please analyze this codebase and create an AGENTS.md file containing:
         - If creating new: Follow the non-obvious-only principle
         - Create mode-specific files in .kilocode/rules-*/ directories (IN PROJECT ROOT)
        
-    Note: If update_todo_list is not available, proceed with the analysis workflow directly without creating a todo list.
+    Note: If bind_task_progress is not available, proceed with the analysis workflow directly without creating a todo list.
   </todo_list_creation>
 </initialization>
 

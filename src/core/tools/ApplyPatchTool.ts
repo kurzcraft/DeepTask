@@ -137,7 +137,7 @@ export class ApplyPatchTool extends BaseTool<"apply_patch"> {
 		}
 
 		const newContent = change.newContent || ""
-		const isOutsideWorkspace = isPathOutsideWorkspace(absolutePath)
+		const isOutsideWorkspace = isPathOutsideWorkspace(absolutePath, task.cwd)
 
 		// Initialize diff view for new file
 		task.diffViewProvider.editType = "create"
@@ -227,7 +227,7 @@ export class ApplyPatchTool extends BaseTool<"apply_patch"> {
 			return
 		}
 
-		const isOutsideWorkspace = isPathOutsideWorkspace(absolutePath)
+		const isOutsideWorkspace = isPathOutsideWorkspace(absolutePath, task.cwd)
 
 		const sharedMessageProps: ClineSayTool = {
 			tool: "appliedDiff",
@@ -260,6 +260,7 @@ export class ApplyPatchTool extends BaseTool<"apply_patch"> {
 		}
 
 		task.didEditFile = true
+		task.notifyTaskProgressFileChanged?.(relPath)
 		pushToolResult(`Successfully deleted ${relPath}`)
 		task.processQueuedMessages()
 	}
@@ -287,7 +288,7 @@ export class ApplyPatchTool extends BaseTool<"apply_patch"> {
 
 		const originalContent = change.originalContent || ""
 		const newContent = change.newContent || ""
-		const isOutsideWorkspace = isPathOutsideWorkspace(absolutePath)
+		const isOutsideWorkspace = isPathOutsideWorkspace(absolutePath, task.cwd)
 
 		// Initialize diff view
 		task.diffViewProvider.editType = "modify"
@@ -372,7 +373,7 @@ export class ApplyPatchTool extends BaseTool<"apply_patch"> {
 			}
 
 			// Check if destination path is outside workspace
-			const isMoveOutsideWorkspace = isPathOutsideWorkspace(moveAbsolutePath)
+			const isMoveOutsideWorkspace = isPathOutsideWorkspace(moveAbsolutePath, task.cwd)
 			if (isMoveOutsideWorkspace) {
 				task.consecutiveMistakeCount++
 				task.recordToolError("apply_patch")

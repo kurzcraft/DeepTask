@@ -14,16 +14,16 @@ export function formatReminderSection(
 			"REMINDERS",
 			"",
 			"CRITICAL: A new user instruction just arrived. Do NOT restate or summarize previously completed work.",
-			"If no authoritative EXTRA/task Markdown checklist exists, first inspect EXTRA/task and write/read that checklist, then call `update_todo_list`.",
+			"If no authoritative EXTRA/task Markdown checklist exists, first inspect EXTRA/task and write/read that checklist, then call `bind_task_progress`.",
 			"During checklist preparation, do not edit project files, execute commands, browse, or call attempt_completion.",
-			"After the file is written and read back, call `update_todo_list` to project the verified checklist into native state before real work.",
-			"Add concrete new milestones to the EXTRA/task Markdown first (split into light files if a write would grow past 30 lines / 4 levels). Shrinks and status-only updates on an already-over-limit file are allowed. Then project that exact file into `update_todo_list`; do not invent extra native items.",
+			"After the file is written and read back, call `bind_task_progress` once to bind native todos to that file. Call it again only to rebind a different root or light file.",
+			"Add concrete new milestones to the EXTRA/task Markdown first (split into light files if a write would grow past 30 lines / 4 levels). Shrinks and status-only updates on an already-over-limit file are allowed. Native todos follow the bound file; do not invent extra native items.",
 			"",
 		].join("\n")
 	}
 
 	if (!todoList || todoList.length === 0) {
-		return "You have not created a todo list yet. Create one with `update_todo_list` if your task is complicated or involves multiple steps."
+		return "Native todos are not bound yet. Write the EXTRA/task Markdown checklist first, then call `bind_task_progress` once. Call it again only to rebind a different root or light file."
 	}
 	const statusMap: Record<TodoStatus, string> = {
 		pending: "Pending",
@@ -50,7 +50,7 @@ export function formatReminderSection(
 
 	lines.push(
 		"",
-		"IMPORTANT: When task status changes, remember to call the `update_todo_list` tool to update your progress.",
+		"IMPORTANT: Edit the bound EXTRA/task Markdown when status changes. Native todos follow that file. Call `bind_task_progress` again only to rebind a different root or light file.",
 		"",
 	)
 	return lines.join("\n")

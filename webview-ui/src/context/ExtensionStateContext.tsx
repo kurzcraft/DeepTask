@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react" // kilocode_change: useRef
 import type { ModelRecord } from "@roo/api"
 
 import {
@@ -303,7 +303,10 @@ export const ExtensionMessageSliceContext = createContext<ExtensionMessageSlice 
 const boundTranscriptProjector: BoundTranscriptProjector = createBoundTranscriptProjector()
 // kilocode_change end
 
-export const mergeExtensionState = (prevState: ExtensionState | WebviewState, newState: ExtensionState): WebviewState => {
+export const mergeExtensionState = (
+	prevState: ExtensionState | WebviewState,
+	newState: ExtensionState,
+): WebviewState => {
 	const {
 		customModePrompts: prevCustomModePrompts,
 		experiments: prevExperiments,
@@ -487,6 +490,10 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 	const [currentCheckpoint, setCurrentCheckpoint] = useState<string>()
 	const [extensionRouterModels, setExtensionRouterModels] = useState<RouterModels | undefined>(undefined)
 	const [dynamicProviderModels, setDynamicProviderModels] = useState<Partial<Record<string, ModelRecord>>>({})
+	// kilocode_change start: ignore OpenAI catalogs fetched for inactive profiles
+	const activeOpenAiBaseUrlRef = useRef(state.apiConfiguration?.openAiBaseUrl)
+	activeOpenAiBaseUrlRef.current = state.apiConfiguration?.openAiBaseUrl
+	// kilocode_change end
 	// kilocode_change start
 	const [globalRules, setGlobalRules] = useState<ClineRulesToggles>({})
 	const [localRules, setLocalRules] = useState<ClineRulesToggles>({})
@@ -528,27 +535,24 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 					const newState = message.state!
 					// kilocode_change: preserve parallel slices through merges
 					setState((prevState) => mergeExtensionState(prevState, newState))
-				// kilocode_change: incremental state posts omit clineMessages when
-				// the host transcript cursor is unchanged. Do not treat a missing
-				// field as an empty conversation.
-				if (newState.clineMessages !== undefined) {
-					// Compact the resident transcript to row 0 + stubs + tail.
-					// Host already omitted historical rows; this also bounds
-					// messageUpdated appends that would otherwise grow the array.
-					setHostTombstonedCount(newState.clineMessagesTombstoned)
-					setClineMessages(
-						boundTranscriptProjector.project(
-							newState.clineMessages,
-							newState.clineMessagesTombstoned,
-						),
-					)
-				}
-				if (newState.userMessageRail !== undefined) {
-					setUserMessageRail(newState.userMessageRail)
-				}
-				if (newState.transcriptLength !== undefined) {
-					setTranscriptLength(newState.transcriptLength)
-				}
+					// kilocode_change: incremental state posts omit clineMessages when
+					// the host transcript cursor is unchanged. Do not treat a missing
+					// field as an empty conversation.
+					if (newState.clineMessages !== undefined) {
+						// Compact the resident transcript to row 0 + stubs + tail.
+						// Host already omitted historical rows; this also bounds
+						// messageUpdated appends that would otherwise grow the array.
+						setHostTombstonedCount(newState.clineMessagesTombstoned)
+						setClineMessages(
+							boundTranscriptProjector.project(newState.clineMessages, newState.clineMessagesTombstoned),
+						)
+					}
+					if (newState.userMessageRail !== undefined) {
+						setUserMessageRail(newState.userMessageRail)
+					}
+					if (newState.transcriptLength !== undefined) {
+						setTranscriptLength(newState.transcriptLength)
+					}
 					setShowWelcome(!checkExistKey(newState.apiConfiguration))
 					setDidHydrateState(true)
 					// Update alwaysAllowFollowupQuestions if present in state message
@@ -594,18 +598,18 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 						parallelConversations: conversations,
 						parallelActiveConversationId: message.parallelActiveConversationId,
 					}))
-				// Keep messages only for sessions that still exist.
-				setParallelSessionMessages((prevMessages) =>
-					Object.fromEntries(
-						Object.entries(prevMessages).filter(([id]) =>
-							sessions.some((session) => session.sessionId === id),
+					// Keep messages only for sessions that still exist.
+					setParallelSessionMessages((prevMessages) =>
+						Object.fromEntries(
+							Object.entries(prevMessages).filter(([id]) =>
+								sessions.some((session) => session.sessionId === id),
+							),
 						),
-					),
-				)
-				// kilocode_change: release per-session transcript projectors for
-				// removed subagent sessions so their identity caches don't leak.
-				pruneParallelProjectors(sessions.map((session) => session.sessionId))
-				break
+					)
+					// kilocode_change: release per-session transcript projectors for
+					// removed subagent sessions so their identity caches don't leak.
+					pruneParallelProjectors(sessions.map((session) => session.sessionId))
+					break
 				}
 				case "parallelSessionMessage":
 				case "parallelSessionMessageUpdated": {
@@ -741,6 +745,13 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 					break
 				}
 				case "openAiModels": {
+					// kilocode_change start: keep the chat catalog on the active profile
+					const responseBaseUrl = message.values?.baseUrl as string | undefined
+					const activeBaseUrl = activeOpenAiBaseUrlRef.current
+					if (responseBaseUrl && activeBaseUrl && responseBaseUrl !== activeBaseUrl) {
+						break
+					}
+					// kilocode_change end
 					const models = Object.fromEntries(
 						(message.openAiModels ?? []).map((modelId) => [
 							modelId,
@@ -822,212 +833,222 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 
 	const contextValue = useMemo<ExtensionSettingsContextType>(
 		() => ({
-		...state,
-		reasoningBlockCollapsed: state.reasoningBlockCollapsed ?? true,
-		didHydrateState,
-		showWelcome,
-		theme,
-		mcpServers,
-		mcpMarketplaceCatalog, // kilocode_change
-		currentCheckpoint,
-		filePaths,
-		openedTabs,
-		// kilocode_change start
-		globalRules,
-		localRules,
-		globalWorkflows,
-		localWorkflows,
-		// kilocode_change end
-		commands,
-		soundVolume: state.soundVolume,
-		ttsSpeed: state.ttsSpeed,
-		fuzzyMatchThreshold: state.fuzzyMatchThreshold,
-		writeDelayMs: state.writeDelayMs,
-		screenshotQuality: state.screenshotQuality,
-		routerModels: extensionRouterModels,
-		dynamicProviderModels,
-		cloudIsAuthenticated: state.cloudIsAuthenticated ?? false,
-		cloudOrganizations: state.cloudOrganizations ?? [],
-		organizationSettingsVersion: state.organizationSettingsVersion ?? -1,
-		marketplaceItems,
-		marketplaceInstalledMetadata,
-		profileThresholds: state.profileThresholds ?? {},
-		alwaysAllowFollowupQuestions,
-		followupAutoApproveTimeoutMs,
-		remoteControlEnabled: state.remoteControlEnabled ?? false,
-		taskSyncEnabled: state.taskSyncEnabled,
-		featureRoomoteControlEnabled: state.featureRoomoteControlEnabled ?? false,
-		setExperimentEnabled: (id, enabled) =>
-			setState((prevState) => ({ ...prevState, experiments: { ...prevState.experiments, [id]: enabled } })),
-		setApiConfiguration,
-		setCustomInstructions: (value) => setState((prevState) => ({ ...prevState, customInstructions: value })),
-		setAlwaysAllowReadOnly: (value) => setState((prevState) => ({ ...prevState, alwaysAllowReadOnly: value })),
-		setAlwaysAllowReadOnlyOutsideWorkspace: (value) =>
-			setState((prevState) => ({ ...prevState, alwaysAllowReadOnlyOutsideWorkspace: value })),
-		setAlwaysAllowWrite: (value) => setState((prevState) => ({ ...prevState, alwaysAllowWrite: value })),
-		setAlwaysAllowWriteOutsideWorkspace: (value) =>
-			setState((prevState) => ({ ...prevState, alwaysAllowWriteOutsideWorkspace: value })),
-		setAlwaysAllowDelete: (value) => setState((prevState) => ({ ...prevState, alwaysAllowDelete: value })), // kilocode_change
-		setAlwaysAllowExecute: (value) => setState((prevState) => ({ ...prevState, alwaysAllowExecute: value })),
-		setAlwaysAllowBrowser: (value) => setState((prevState) => ({ ...prevState, alwaysAllowBrowser: value })),
-		setAlwaysAllowMcp: (value) => setState((prevState) => ({ ...prevState, alwaysAllowMcp: value })),
-		setAlwaysAllowModeSwitch: (value) => setState((prevState) => ({ ...prevState, alwaysAllowModeSwitch: value })),
-		setAlwaysAllowProviderProfileSwitch: (value) =>
-			setState((prevState) => ({ ...prevState, alwaysAllowProviderProfileSwitch: value })), // kilocode_change
-		setAlwaysAllowSubtasks: (value) => setState((prevState) => ({ ...prevState, alwaysAllowSubtasks: value })),
-		setAlwaysAllowFollowupQuestions,
-		setFollowupAutoApproveTimeoutMs: (value) =>
-			setState((prevState) => ({ ...prevState, followupAutoApproveTimeoutMs: value })),
-		setShowAnnouncement: (value) => setState((prevState) => ({ ...prevState, shouldShowAnnouncement: value })),
-		setAllowedCommands: (value) => setState((prevState) => ({ ...prevState, allowedCommands: value })),
-		setDeniedCommands: (value) => setState((prevState) => ({ ...prevState, deniedCommands: value })),
-		setAllowedMaxRequests: (value) => setState((prevState) => ({ ...prevState, allowedMaxRequests: value })),
-		setAllowedMaxCost: (value) => setState((prevState) => ({ ...prevState, allowedMaxCost: value })),
-		setSoundEnabled: (value) => setState((prevState) => ({ ...prevState, soundEnabled: value })),
-		setSoundVolume: (value) => setState((prevState) => ({ ...prevState, soundVolume: value })),
-		setTtsEnabled: (value) => setState((prevState) => ({ ...prevState, ttsEnabled: value })),
-		setTtsSpeed: (value) => setState((prevState) => ({ ...prevState, ttsSpeed: value })),
-		setDiffEnabled: (value) => setState((prevState) => ({ ...prevState, diffEnabled: value })),
-		setEnableCheckpoints: (value) => setState((prevState) => ({ ...prevState, enableCheckpoints: value })),
-		setTaskProgressFileEnabled: (value) =>
-			setState((prevState) => ({ ...prevState, taskProgressFileEnabled: value })), // kilocode_change
-		setCheckpointTimeout: (value) => setState((prevState) => ({ ...prevState, checkpointTimeout: value })),
-		setBrowserViewportSize: (value: string) =>
-			setState((prevState) => ({ ...prevState, browserViewportSize: value })),
-		setFuzzyMatchThreshold: (value) => setState((prevState) => ({ ...prevState, fuzzyMatchThreshold: value })),
-		setWriteDelayMs: (value) => setState((prevState) => ({ ...prevState, writeDelayMs: value })),
-		setScreenshotQuality: (value) => setState((prevState) => ({ ...prevState, screenshotQuality: value })),
-		setTerminalOutputLineLimit: (value) =>
-			setState((prevState) => ({ ...prevState, terminalOutputLineLimit: value })),
-		setTerminalOutputCharacterLimit: (value) =>
-			setState((prevState) => ({ ...prevState, terminalOutputCharacterLimit: value })),
-		setTerminalCompletedTerminalLimitEnabled: (value) =>
-			setState((prevState) => ({ ...prevState, terminalCompletedTerminalLimitEnabled: value })),
-		setTerminalCompletedTerminalLimit: (value) =>
-			setState((prevState) => ({ ...prevState, terminalCompletedTerminalLimit: value })),
-		setTerminalShellIntegrationTimeout: (value) =>
-			setState((prevState) => ({ ...prevState, terminalShellIntegrationTimeout: value })),
-		setTerminalShellIntegrationDisabled: (value) =>
-			setState((prevState) => ({ ...prevState, terminalShellIntegrationDisabled: value })),
-		setTerminalZdotdir: (value) => setState((prevState) => ({ ...prevState, terminalZdotdir: value })),
-		setMcpEnabled: (value) => setState((prevState) => ({ ...prevState, mcpEnabled: value })),
-		setEnableMcpServerCreation: (value) =>
-			setState((prevState) => ({ ...prevState, enableMcpServerCreation: value })),
-		setRemoteControlEnabled: (value) => setState((prevState) => ({ ...prevState, remoteControlEnabled: value })),
-		setTaskSyncEnabled: (value) => setState((prevState) => ({ ...prevState, taskSyncEnabled: value }) as any),
-		setFeatureRoomoteControlEnabled: (value) =>
-			setState((prevState) => ({ ...prevState, featureRoomoteControlEnabled: value })),
-		setCurrentApiConfigName: (value) => setState((prevState) => ({ ...prevState, currentApiConfigName: value })),
-		setListApiConfigMeta,
-		setMode: (value: Mode) => setState((prevState) => ({ ...prevState, mode: value })),
-		setCustomModePrompts: (value) => setState((prevState) => ({ ...prevState, customModePrompts: value })),
-		setCustomSupportPrompts: (value) => setState((prevState) => ({ ...prevState, customSupportPrompts: value })),
-		setEnhancementApiConfigId: (value) =>
-			setState((prevState) => ({ ...prevState, enhancementApiConfigId: value })),
-		// kilocode_change start
-		markNotificationAsDismissed: (notificationId) => {
-			setState((prevState) => {
-				return {
-					...prevState,
-					dismissedNotificationIds: [notificationId, ...(prevState.dismissedNotificationIds || [])],
-				}
-			})
-		},
-		setGhostServiceSettings: (value) => setState((prevState) => ({ ...prevState, ghostServiceSettings: value })),
-		setCommitMessageApiConfigId: (value) =>
-			setState((prevState) => ({ ...prevState, commitMessageApiConfigId: value })),
-		setShowAutoApproveMenu: (value) => setState((prevState) => ({ ...prevState, showAutoApproveMenu: value })),
-		setShowTaskTimeline: (value) => setState((prevState) => ({ ...prevState, showTaskTimeline: value })),
-		setSendMessageOnEnter: (value) => setState((prevState) => ({ ...prevState, sendMessageOnEnter: value })), // kilocode_change
-		setHideCostBelowThreshold: (value) =>
-			setState((prevState) => ({ ...prevState, hideCostBelowThreshold: value })),
-		setHoveringTaskTimeline: (value) => setState((prevState) => ({ ...prevState, hoveringTaskTimeline: value })),
-		setShowTimestamps: (value) => setState((prevState) => ({ ...prevState, showTimestamps: value })),
-		setShowDiffStats: (value) => setState((prevState) => ({ ...prevState, showDiffStats: value })), // kilocode_change
-		setYoloMode: (value) => setState((prevState) => ({ ...prevState, yoloMode: value })), // kilocode_change
-		// kilocode_change end
-		setAutoApprovalEnabled: (value) => setState((prevState) => ({ ...prevState, autoApprovalEnabled: value })),
-		setCustomModes: (value) => setState((prevState) => ({ ...prevState, customModes: value })),
-		setMaxOpenTabsContext: (value) => setState((prevState) => ({ ...prevState, maxOpenTabsContext: value })),
-		setMaxWorkspaceFiles: (value) => setState((prevState) => ({ ...prevState, maxWorkspaceFiles: value })),
-		setBrowserToolEnabled: (value) => setState((prevState) => ({ ...prevState, browserToolEnabled: value })),
-		setTelemetrySetting: (value) => setState((prevState) => ({ ...prevState, telemetrySetting: value })),
-		setShowRooIgnoredFiles: (value) => setState((prevState) => ({ ...prevState, showRooIgnoredFiles: value })),
-		setEnableSubfolderRules: (value) => setState((prevState) => ({ ...prevState, enableSubfolderRules: value })),
-		setRemoteBrowserEnabled: (value) => setState((prevState) => ({ ...prevState, remoteBrowserEnabled: value })),
-		setAwsUsePromptCache: (value) => setState((prevState) => ({ ...prevState, awsUsePromptCache: value })),
-		setMaxReadFileLine: (value) => setState((prevState) => ({ ...prevState, maxReadFileLine: value })),
-		setMaxImageFileSize: (value) => setState((prevState) => ({ ...prevState, maxImageFileSize: value })),
-		setMaxTotalImageSize: (value) => setState((prevState) => ({ ...prevState, maxTotalImageSize: value })),
-		setPinnedApiConfigs: (value) => setState((prevState) => ({ ...prevState, pinnedApiConfigs: value })),
-		setTerminalCompressProgressBar: (value) =>
-			setState((prevState) => ({ ...prevState, terminalCompressProgressBar: value })),
-		togglePinnedApiConfig: (configId) =>
-			setState((prevState) => {
-				const currentPinned = prevState.pinnedApiConfigs || {}
-				const newPinned = {
-					...currentPinned,
-					[configId]: !currentPinned[configId],
-				}
+			...state,
+			reasoningBlockCollapsed: state.reasoningBlockCollapsed ?? true,
+			didHydrateState,
+			showWelcome,
+			theme,
+			mcpServers,
+			mcpMarketplaceCatalog, // kilocode_change
+			currentCheckpoint,
+			filePaths,
+			openedTabs,
+			// kilocode_change start
+			globalRules,
+			localRules,
+			globalWorkflows,
+			localWorkflows,
+			// kilocode_change end
+			commands,
+			soundVolume: state.soundVolume,
+			ttsSpeed: state.ttsSpeed,
+			fuzzyMatchThreshold: state.fuzzyMatchThreshold,
+			writeDelayMs: state.writeDelayMs,
+			screenshotQuality: state.screenshotQuality,
+			routerModels: extensionRouterModels,
+			dynamicProviderModels,
+			cloudIsAuthenticated: state.cloudIsAuthenticated ?? false,
+			cloudOrganizations: state.cloudOrganizations ?? [],
+			organizationSettingsVersion: state.organizationSettingsVersion ?? -1,
+			marketplaceItems,
+			marketplaceInstalledMetadata,
+			profileThresholds: state.profileThresholds ?? {},
+			alwaysAllowFollowupQuestions,
+			followupAutoApproveTimeoutMs,
+			remoteControlEnabled: state.remoteControlEnabled ?? false,
+			taskSyncEnabled: state.taskSyncEnabled,
+			featureRoomoteControlEnabled: state.featureRoomoteControlEnabled ?? false,
+			setExperimentEnabled: (id, enabled) =>
+				setState((prevState) => ({ ...prevState, experiments: { ...prevState.experiments, [id]: enabled } })),
+			setApiConfiguration,
+			setCustomInstructions: (value) => setState((prevState) => ({ ...prevState, customInstructions: value })),
+			setAlwaysAllowReadOnly: (value) => setState((prevState) => ({ ...prevState, alwaysAllowReadOnly: value })),
+			setAlwaysAllowReadOnlyOutsideWorkspace: (value) =>
+				setState((prevState) => ({ ...prevState, alwaysAllowReadOnlyOutsideWorkspace: value })),
+			setAlwaysAllowWrite: (value) => setState((prevState) => ({ ...prevState, alwaysAllowWrite: value })),
+			setAlwaysAllowWriteOutsideWorkspace: (value) =>
+				setState((prevState) => ({ ...prevState, alwaysAllowWriteOutsideWorkspace: value })),
+			setAlwaysAllowDelete: (value) => setState((prevState) => ({ ...prevState, alwaysAllowDelete: value })), // kilocode_change
+			setAlwaysAllowExecute: (value) => setState((prevState) => ({ ...prevState, alwaysAllowExecute: value })),
+			setAlwaysAllowBrowser: (value) => setState((prevState) => ({ ...prevState, alwaysAllowBrowser: value })),
+			setAlwaysAllowMcp: (value) => setState((prevState) => ({ ...prevState, alwaysAllowMcp: value })),
+			setAlwaysAllowModeSwitch: (value) =>
+				setState((prevState) => ({ ...prevState, alwaysAllowModeSwitch: value })),
+			setAlwaysAllowProviderProfileSwitch: (value) =>
+				setState((prevState) => ({ ...prevState, alwaysAllowProviderProfileSwitch: value })), // kilocode_change
+			setAlwaysAllowSubtasks: (value) => setState((prevState) => ({ ...prevState, alwaysAllowSubtasks: value })),
+			setAlwaysAllowFollowupQuestions,
+			setFollowupAutoApproveTimeoutMs: (value) =>
+				setState((prevState) => ({ ...prevState, followupAutoApproveTimeoutMs: value })),
+			setShowAnnouncement: (value) => setState((prevState) => ({ ...prevState, shouldShowAnnouncement: value })),
+			setAllowedCommands: (value) => setState((prevState) => ({ ...prevState, allowedCommands: value })),
+			setDeniedCommands: (value) => setState((prevState) => ({ ...prevState, deniedCommands: value })),
+			setAllowedMaxRequests: (value) => setState((prevState) => ({ ...prevState, allowedMaxRequests: value })),
+			setAllowedMaxCost: (value) => setState((prevState) => ({ ...prevState, allowedMaxCost: value })),
+			setSoundEnabled: (value) => setState((prevState) => ({ ...prevState, soundEnabled: value })),
+			setSoundVolume: (value) => setState((prevState) => ({ ...prevState, soundVolume: value })),
+			setTtsEnabled: (value) => setState((prevState) => ({ ...prevState, ttsEnabled: value })),
+			setTtsSpeed: (value) => setState((prevState) => ({ ...prevState, ttsSpeed: value })),
+			setDiffEnabled: (value) => setState((prevState) => ({ ...prevState, diffEnabled: value })),
+			setEnableCheckpoints: (value) => setState((prevState) => ({ ...prevState, enableCheckpoints: value })),
+			setTaskProgressFileEnabled: (value) =>
+				setState((prevState) => ({ ...prevState, taskProgressFileEnabled: value })), // kilocode_change
+			setCheckpointTimeout: (value) => setState((prevState) => ({ ...prevState, checkpointTimeout: value })),
+			setBrowserViewportSize: (value: string) =>
+				setState((prevState) => ({ ...prevState, browserViewportSize: value })),
+			setFuzzyMatchThreshold: (value) => setState((prevState) => ({ ...prevState, fuzzyMatchThreshold: value })),
+			setWriteDelayMs: (value) => setState((prevState) => ({ ...prevState, writeDelayMs: value })),
+			setScreenshotQuality: (value) => setState((prevState) => ({ ...prevState, screenshotQuality: value })),
+			setTerminalOutputLineLimit: (value) =>
+				setState((prevState) => ({ ...prevState, terminalOutputLineLimit: value })),
+			setTerminalOutputCharacterLimit: (value) =>
+				setState((prevState) => ({ ...prevState, terminalOutputCharacterLimit: value })),
+			setTerminalCompletedTerminalLimitEnabled: (value) =>
+				setState((prevState) => ({ ...prevState, terminalCompletedTerminalLimitEnabled: value })),
+			setTerminalCompletedTerminalLimit: (value) =>
+				setState((prevState) => ({ ...prevState, terminalCompletedTerminalLimit: value })),
+			setTerminalShellIntegrationTimeout: (value) =>
+				setState((prevState) => ({ ...prevState, terminalShellIntegrationTimeout: value })),
+			setTerminalShellIntegrationDisabled: (value) =>
+				setState((prevState) => ({ ...prevState, terminalShellIntegrationDisabled: value })),
+			setTerminalZdotdir: (value) => setState((prevState) => ({ ...prevState, terminalZdotdir: value })),
+			setMcpEnabled: (value) => setState((prevState) => ({ ...prevState, mcpEnabled: value })),
+			setEnableMcpServerCreation: (value) =>
+				setState((prevState) => ({ ...prevState, enableMcpServerCreation: value })),
+			setRemoteControlEnabled: (value) =>
+				setState((prevState) => ({ ...prevState, remoteControlEnabled: value })),
+			setTaskSyncEnabled: (value) => setState((prevState) => ({ ...prevState, taskSyncEnabled: value }) as any),
+			setFeatureRoomoteControlEnabled: (value) =>
+				setState((prevState) => ({ ...prevState, featureRoomoteControlEnabled: value })),
+			setCurrentApiConfigName: (value) =>
+				setState((prevState) => ({ ...prevState, currentApiConfigName: value })),
+			setListApiConfigMeta,
+			setMode: (value: Mode) => setState((prevState) => ({ ...prevState, mode: value })),
+			setCustomModePrompts: (value) => setState((prevState) => ({ ...prevState, customModePrompts: value })),
+			setCustomSupportPrompts: (value) =>
+				setState((prevState) => ({ ...prevState, customSupportPrompts: value })),
+			setEnhancementApiConfigId: (value) =>
+				setState((prevState) => ({ ...prevState, enhancementApiConfigId: value })),
+			// kilocode_change start
+			markNotificationAsDismissed: (notificationId) => {
+				setState((prevState) => {
+					return {
+						...prevState,
+						dismissedNotificationIds: [notificationId, ...(prevState.dismissedNotificationIds || [])],
+					}
+				})
+			},
+			setGhostServiceSettings: (value) =>
+				setState((prevState) => ({ ...prevState, ghostServiceSettings: value })),
+			setCommitMessageApiConfigId: (value) =>
+				setState((prevState) => ({ ...prevState, commitMessageApiConfigId: value })),
+			setShowAutoApproveMenu: (value) => setState((prevState) => ({ ...prevState, showAutoApproveMenu: value })),
+			setShowTaskTimeline: (value) => setState((prevState) => ({ ...prevState, showTaskTimeline: value })),
+			setSendMessageOnEnter: (value) => setState((prevState) => ({ ...prevState, sendMessageOnEnter: value })), // kilocode_change
+			setHideCostBelowThreshold: (value) =>
+				setState((prevState) => ({ ...prevState, hideCostBelowThreshold: value })),
+			setHoveringTaskTimeline: (value) =>
+				setState((prevState) => ({ ...prevState, hoveringTaskTimeline: value })),
+			setShowTimestamps: (value) => setState((prevState) => ({ ...prevState, showTimestamps: value })),
+			setShowDiffStats: (value) => setState((prevState) => ({ ...prevState, showDiffStats: value })), // kilocode_change
+			setYoloMode: (value) => setState((prevState) => ({ ...prevState, yoloMode: value })), // kilocode_change
+			// kilocode_change end
+			setAutoApprovalEnabled: (value) => setState((prevState) => ({ ...prevState, autoApprovalEnabled: value })),
+			setCustomModes: (value) => setState((prevState) => ({ ...prevState, customModes: value })),
+			setMaxOpenTabsContext: (value) => setState((prevState) => ({ ...prevState, maxOpenTabsContext: value })),
+			setMaxWorkspaceFiles: (value) => setState((prevState) => ({ ...prevState, maxWorkspaceFiles: value })),
+			setBrowserToolEnabled: (value) => setState((prevState) => ({ ...prevState, browserToolEnabled: value })),
+			setTelemetrySetting: (value) => setState((prevState) => ({ ...prevState, telemetrySetting: value })),
+			setShowRooIgnoredFiles: (value) => setState((prevState) => ({ ...prevState, showRooIgnoredFiles: value })),
+			setEnableSubfolderRules: (value) =>
+				setState((prevState) => ({ ...prevState, enableSubfolderRules: value })),
+			setRemoteBrowserEnabled: (value) =>
+				setState((prevState) => ({ ...prevState, remoteBrowserEnabled: value })),
+			setAwsUsePromptCache: (value) => setState((prevState) => ({ ...prevState, awsUsePromptCache: value })),
+			setMaxReadFileLine: (value) => setState((prevState) => ({ ...prevState, maxReadFileLine: value })),
+			setMaxImageFileSize: (value) => setState((prevState) => ({ ...prevState, maxImageFileSize: value })),
+			setMaxTotalImageSize: (value) => setState((prevState) => ({ ...prevState, maxTotalImageSize: value })),
+			setPinnedApiConfigs: (value) => setState((prevState) => ({ ...prevState, pinnedApiConfigs: value })),
+			setTerminalCompressProgressBar: (value) =>
+				setState((prevState) => ({ ...prevState, terminalCompressProgressBar: value })),
+			togglePinnedApiConfig: (configId) =>
+				setState((prevState) => {
+					const currentPinned = prevState.pinnedApiConfigs || {}
+					const newPinned = {
+						...currentPinned,
+						[configId]: !currentPinned[configId],
+					}
 
-				// If the config is now unpinned, remove it from the object
-				if (!newPinned[configId]) {
-					delete newPinned[configId]
-				}
+					// If the config is now unpinned, remove it from the object
+					if (!newPinned[configId]) {
+						delete newPinned[configId]
+					}
 
-				return { ...prevState, pinnedApiConfigs: newPinned }
-			}),
-		setHistoryPreviewCollapsed: (value) =>
-			setState((prevState) => ({ ...prevState, historyPreviewCollapsed: value })),
-		setReasoningBlockCollapsed: (value) =>
-			setState((prevState) => ({ ...prevState, reasoningBlockCollapsed: value })),
-		enterBehavior: state.enterBehavior ?? "send",
-		setEnterBehavior: (value) => setState((prevState) => ({ ...prevState, enterBehavior: value })),
-		setHasOpenedModeSelector: (value) => setState((prevState) => ({ ...prevState, hasOpenedModeSelector: value })),
-		hasCompletedOnboarding: state.hasCompletedOnboarding, // kilocode_change
-		setHasCompletedOnboarding: (value) =>
-			setState((prevState) => ({ ...prevState, hasCompletedOnboarding: value })), // kilocode_change
-		setAutoCondenseContext: (value) => setState((prevState) => ({ ...prevState, autoCondenseContext: value })),
-		setAutoCondenseContextPercent: (value) =>
-			setState((prevState) => ({ ...prevState, autoCondenseContextPercent: value })),
-		setCondensingApiConfigId: (value) => setState((prevState) => ({ ...prevState, condensingApiConfigId: value })),
-		setCustomCondensingPrompt: (value) =>
-			setState((prevState) => ({ ...prevState, customCondensingPrompt: value })),
-		setYoloGatekeeperApiConfigId: (value) =>
-			setState((prevState) => ({ ...prevState, yoloGatekeeperApiConfigId: value })), // kilocode_change: AI gatekeeper for YOLO mode
-		setProfileThresholds: (value) => setState((prevState) => ({ ...prevState, profileThresholds: value })),
-		// kilocode_change start
-		setSystemNotificationsEnabled: (value) =>
-			setState((prevState) => ({ ...prevState, systemNotificationsEnabled: value })),
-		dismissedNotificationIds: state.dismissedNotificationIds || [], // kilocode_change
-		// kilocode_change end
-		includeDiagnosticMessages: state.includeDiagnosticMessages,
-		setIncludeDiagnosticMessages: (value) => {
-			setState((prevState) => ({ ...prevState, includeDiagnosticMessages: value }))
-		},
-		maxDiagnosticMessages: state.maxDiagnosticMessages,
-		setMaxDiagnosticMessages: (value) => {
-			setState((prevState) => ({ ...prevState, maxDiagnosticMessages: value }))
-		},
-		// kilocode_change start - Auto-purge setters
-		setAutoPurgeEnabled: (value) => setState((prevState) => ({ ...prevState, autoPurgeEnabled: value })),
-		setAutoPurgeDefaultRetentionDays: (value) =>
-			setState((prevState) => ({ ...prevState, autoPurgeDefaultRetentionDays: value })),
-		setAutoPurgeFavoritedTaskRetentionDays: (value) =>
-			setState((prevState) => ({ ...prevState, autoPurgeFavoritedTaskRetentionDays: value })),
-		setAutoPurgeCompletedTaskRetentionDays: (value) =>
-			setState((prevState) => ({ ...prevState, autoPurgeCompletedTaskRetentionDays: value })),
-		setAutoPurgeIncompleteTaskRetentionDays: (value) =>
-			setState((prevState) => ({ ...prevState, autoPurgeIncompleteTaskRetentionDays: value })),
-		setAutoPurgeLastRunTimestamp: (value) =>
-			setState((prevState) => ({ ...prevState, autoPurgeLastRunTimestamp: value })),
-		// kilocode_change end
-		includeTaskHistoryInEnhance,
-		setIncludeTaskHistoryInEnhance,
-		includeCurrentTime,
-		setIncludeCurrentTime,
-		includeCurrentCost,
-		setIncludeCurrentCost,
+					return { ...prevState, pinnedApiConfigs: newPinned }
+				}),
+			setHistoryPreviewCollapsed: (value) =>
+				setState((prevState) => ({ ...prevState, historyPreviewCollapsed: value })),
+			setReasoningBlockCollapsed: (value) =>
+				setState((prevState) => ({ ...prevState, reasoningBlockCollapsed: value })),
+			enterBehavior: state.enterBehavior ?? "send",
+			setEnterBehavior: (value) => setState((prevState) => ({ ...prevState, enterBehavior: value })),
+			setHasOpenedModeSelector: (value) =>
+				setState((prevState) => ({ ...prevState, hasOpenedModeSelector: value })),
+			hasCompletedOnboarding: state.hasCompletedOnboarding, // kilocode_change
+			setHasCompletedOnboarding: (value) =>
+				setState((prevState) => ({ ...prevState, hasCompletedOnboarding: value })), // kilocode_change
+			setAutoCondenseContext: (value) => setState((prevState) => ({ ...prevState, autoCondenseContext: value })),
+			setAutoCondenseContextPercent: (value) =>
+				setState((prevState) => ({ ...prevState, autoCondenseContextPercent: value })),
+			setCondensingApiConfigId: (value) =>
+				setState((prevState) => ({ ...prevState, condensingApiConfigId: value })),
+			setCustomCondensingPrompt: (value) =>
+				setState((prevState) => ({ ...prevState, customCondensingPrompt: value })),
+			setYoloGatekeeperApiConfigId: (value) =>
+				setState((prevState) => ({ ...prevState, yoloGatekeeperApiConfigId: value })), // kilocode_change: AI gatekeeper for YOLO mode
+			setProfileThresholds: (value) => setState((prevState) => ({ ...prevState, profileThresholds: value })),
+			// kilocode_change start
+			setSystemNotificationsEnabled: (value) =>
+				setState((prevState) => ({ ...prevState, systemNotificationsEnabled: value })),
+			dismissedNotificationIds: state.dismissedNotificationIds || [], // kilocode_change
+			// kilocode_change end
+			includeDiagnosticMessages: state.includeDiagnosticMessages,
+			setIncludeDiagnosticMessages: (value) => {
+				setState((prevState) => ({ ...prevState, includeDiagnosticMessages: value }))
+			},
+			maxDiagnosticMessages: state.maxDiagnosticMessages,
+			setMaxDiagnosticMessages: (value) => {
+				setState((prevState) => ({ ...prevState, maxDiagnosticMessages: value }))
+			},
+			// kilocode_change start - Auto-purge setters
+			setAutoPurgeEnabled: (value) => setState((prevState) => ({ ...prevState, autoPurgeEnabled: value })),
+			setAutoPurgeDefaultRetentionDays: (value) =>
+				setState((prevState) => ({ ...prevState, autoPurgeDefaultRetentionDays: value })),
+			setAutoPurgeFavoritedTaskRetentionDays: (value) =>
+				setState((prevState) => ({ ...prevState, autoPurgeFavoritedTaskRetentionDays: value })),
+			setAutoPurgeCompletedTaskRetentionDays: (value) =>
+				setState((prevState) => ({ ...prevState, autoPurgeCompletedTaskRetentionDays: value })),
+			setAutoPurgeIncompleteTaskRetentionDays: (value) =>
+				setState((prevState) => ({ ...prevState, autoPurgeIncompleteTaskRetentionDays: value })),
+			setAutoPurgeLastRunTimestamp: (value) =>
+				setState((prevState) => ({ ...prevState, autoPurgeLastRunTimestamp: value })),
+			// kilocode_change end
+			includeTaskHistoryInEnhance,
+			setIncludeTaskHistoryInEnhance,
+			includeCurrentTime,
+			setIncludeCurrentTime,
+			includeCurrentCost,
+			setIncludeCurrentCost,
 		}),
 		[
 			state,
@@ -1060,7 +1081,9 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 
 	return (
 		<ExtensionStateContext.Provider value={contextValue}>
-			<ExtensionMessageSliceContext.Provider value={messageSlice}>{children}</ExtensionMessageSliceContext.Provider>
+			<ExtensionMessageSliceContext.Provider value={messageSlice}>
+				{children}
+			</ExtensionMessageSliceContext.Provider>
 		</ExtensionStateContext.Provider>
 	)
 }

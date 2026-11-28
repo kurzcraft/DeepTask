@@ -30,7 +30,7 @@ import { createManageProviderProfileTool } from "./manage_provider_profile"
 // kilocode_change start: agent-managed modes
 import { createManageModeTool } from "./manage_mode"
 // kilocode_change end
-import updateTodoList from "./update_todo_list"
+import bindTaskProgress from "./bind_task_progress"
 import writeToFile from "./write_to_file"
 
 import deleteFile from "./kilocode/delete_file"
@@ -125,7 +125,7 @@ export function getNativeTools(options: NativeToolsOptions = {}): OpenAI.Chat.Ch
 		// kilocode_change start: agent-managed modes
 		createManageModeTool(),
 		// kilocode_change end
-		updateTodoList,
+		bindTaskProgress,
 		writeToFile,
 	] satisfies OpenAI.Chat.ChatCompletionTool[]
 }

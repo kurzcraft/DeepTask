@@ -340,4 +340,35 @@ describe("ModelSelector", () => {
 			})
 		})
 	})
+
+	test("keeps OpenAI Compatible dropdown enabled when only the configured model is seeded", () => {
+		mockUseGroupedModelIds.mockReturnValue({
+			preferredModelIds: [],
+			restModelIds: ["gpt-6-astra"],
+		})
+		mockUseProviderModels.mockReturnValue({
+			provider: "openai",
+			providerModels: {
+				"gpt-6-astra": { displayName: "gpt-6-astra" },
+			},
+			providerDefaultModel: "gpt-6-astra",
+			isLoading: false,
+			isError: false,
+		})
+
+		render(
+			<ModelSelector
+				currentApiConfigName="beikun"
+				apiConfiguration={{
+					apiProvider: "openai",
+					openAiModelId: "gpt-6-astra",
+					profileType: "chat",
+				}}
+				fallbackText="openai:gpt-6-astra"
+			/>,
+		)
+
+		expect(screen.getByTestId("dropdown-trigger")).toBeInTheDocument()
+		expect(screen.queryByText("openai:gpt-6-astra")).not.toBeInTheDocument()
+	})
 })

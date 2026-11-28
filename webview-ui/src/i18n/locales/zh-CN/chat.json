@@ -516,7 +516,7 @@
 	"todo": {
 		"partial": "已完成 {{completed}} / {{total}} 个待办事项",
 		"complete": "已完成 {{total}} 个待办事项",
-		"updated": "已更新待办事项列表",
+		"updated": "已绑定待办事项列表",
 		"completed": "已完成",
 		"started": "已开始"
 	},

@@ -14,10 +14,7 @@ import { sanitizeUnifiedDiff, computeDiffStats } from "../diff/stats"
 import type { ToolUse } from "../../shared/tools"
 
 import { BaseTool, ToolCallbacks } from "./BaseTool"
-import {
-	getTaskProgressWriteLimitError,
-	isActiveTaskProgressMarkdownPath,
-} from "./helpers/taskProgressLimits" // kilocode_change: EXTRA/task growth gate
+import { getTaskProgressWriteLimitError, isActiveTaskProgressMarkdownPath } from "./helpers/taskProgressLimits" // kilocode_change: EXTRA/task growth gate
 
 interface SearchReplaceOperation {
 	search: string
@@ -211,7 +208,7 @@ export class SearchAndReplaceTool extends BaseTool<"search_and_replace"> {
 
 			const sanitizedDiff = sanitizeUnifiedDiff(diff)
 			const diffStats = computeDiffStats(sanitizedDiff) || undefined
-			const isOutsideWorkspace = isPathOutsideWorkspace(absolutePath)
+			const isOutsideWorkspace = isPathOutsideWorkspace(absolutePath, task.cwd)
 
 			const sharedMessageProps: ClineSayTool = {
 				tool: "appliedDiff",
@@ -316,7 +313,7 @@ export class SearchAndReplaceTool extends BaseTool<"search_and_replace"> {
 
 		// relPath is guaranteed non-null after hasPathStabilized
 		const absolutePath = path.resolve(task.cwd, relPath!)
-		const isOutsideWorkspace = isPathOutsideWorkspace(absolutePath)
+		const isOutsideWorkspace = isPathOutsideWorkspace(absolutePath, task.cwd)
 
 		const sharedMessageProps: ClineSayTool = {
 			tool: "appliedDiff",

@@ -3,6 +3,7 @@ import { createVSCodeAPIMock, type IdentityInfo, type ExtensionContext } from ".
 import { logs } from "../utils/logger.js"
 import type { ExtensionMessage, WebviewMessage, ExtensionState, ModeConfig } from "../types/index.js"
 import { argsToMessage } from "../utils/safe-stringify.js"
+import { registeredWebviewViewIds, resolveCliWebviewProvider } from "./resolve-cli-webview-provider.js" // kilocode_change
 
 export interface ExtensionHostOptions {
 	workspacePath: string
@@ -341,18 +342,21 @@ export class ExtensionHost extends EventEmitter {
 				await this.handleWebviewLaunch()
 			}
 
-			// Forward message directly to the webview provider instead of emitting event
-			// This prevents duplicate handling (event listener + direct call)
-			const webviewProvider = this.webviewProviders.get("kilo-code.SidebarProvider")
+			// Forward to whichever SidebarProvider the extension actually registered.
+			// DeepTask uses `deeptask.SidebarProvider`; upstream Kilo still uses
+			// `kilo-code.SidebarProvider`. Hardcoding either viewId drops IPC after ready.
+			// kilocode_change start
+			const webviewProvider = resolveCliWebviewProvider(this.webviewProviders)
 
 			if (webviewProvider && typeof webviewProvider.handleCLIMessage === "function") {
 				await webviewProvider.handleCLIMessage(message)
 			} else {
 				logs.warn(
-					`No webview provider found or handleCLIMessage not available for: ${message.type}`,
+					`No webview provider found or handleCLIMessage not available for: ${message.type} (registered: ${registeredWebviewViewIds(this.webviewProviders).join(", ") || "none"})`,
 					"ExtensionHost",
 				)
 			}
+			// kilocode_change end
 
 			// Handle local state updates for CLI display after forwarding
 			await this.handleLocalStateUpdates(message)

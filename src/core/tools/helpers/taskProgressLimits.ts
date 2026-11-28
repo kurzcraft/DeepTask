@@ -51,7 +51,7 @@ export function countTaskProgressNestingLevels(content: string | undefined | nul
 	return maxLevel
 }
 
-export function isActiveTaskProgressMarkdownPath(cwd: string, relPath: string | undefined | null): boolean {
+export function isTaskProgressMarkdownPath(cwd: string, relPath: string | undefined | null): boolean {
 	if (!cwd || !relPath) {
 		return false
 	}
@@ -67,12 +67,19 @@ export function isActiveTaskProgressMarkdownPath(cwd: string, relPath: string | 
 		return false
 	}
 
-	const posix = relativeToTask.split(path.sep).join("/")
-	if (posix === "finished" || posix.startsWith("finished/")) {
+	return true
+}
+
+export function isActiveTaskProgressMarkdownPath(cwd: string, relPath: string | undefined | null): boolean {
+	if (!cwd || !relPath || !isTaskProgressMarkdownPath(cwd, relPath)) {
 		return false
 	}
 
-	return true
+	const posix = path
+		.relative(path.resolve(cwd, "EXTRA", "task"), path.resolve(cwd, relPath))
+		.split(path.sep)
+		.join("/")
+	return posix !== "finished" && !posix.startsWith("finished/")
 }
 
 export function isTaskProgressWriteGrowingOverflow(args: {

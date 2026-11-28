@@ -303,8 +303,9 @@ export function filterNativeToolsForMode(
 	}
 	// kilocode_change end
 
-	// Conditionally exclude update_todo_list if disabled in settings
+	// Conditionally exclude bind_task_progress if disabled in settings
 	if (settings?.todoListEnabled === false) {
+		allowedToolNames.delete("bind_task_progress")
 		allowedToolNames.delete("update_todo_list")
 	}
 
@@ -408,7 +409,7 @@ export function isToolAllowedInMode(
 				codeIndexManager.isInitialized
 			)
 		}
-		if (toolName === "update_todo_list") {
+		if (toolName === "bind_task_progress" || toolName === "update_todo_list") {
 			return settings?.todoListEnabled !== false
 		}
 		if (toolName === "generate_image") {

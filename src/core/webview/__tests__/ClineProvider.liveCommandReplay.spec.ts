@@ -96,6 +96,28 @@ describe("ClineProvider live-command registry (fix 6)", () => {
 		provider.replayFocusedTaskLiveCommands()
 		expect(postMessageToWebview).not.toHaveBeenCalled()
 	})
+
+	it("counts a wait-command task as actively running even when the loop is idle", () => {
+		const waitTask = {
+			taskId: "task-wait",
+			cwd: "/repo",
+			abort: false,
+			abandoned: false,
+			isStreaming: false,
+			isActivelyRunningTaskLoop: () => false,
+		}
+		provider.clineStack = [waitTask]
+		provider._liveTaskCoordinator = undefined
+		provider.trackCommandExecutionStatus("task-wait", "e-wait", "started")
+
+		const live = provider.getLiveTasks()
+		expect(live).toEqual([
+			expect.objectContaining({
+				taskId: "task-wait",
+				isActivelyRunning: true,
+			}),
+		])
+	})
 })
 
 describe("ClineProvider commandExecutionStatus chat isolation", () => {
@@ -178,7 +200,6 @@ describe("handleModeSwitch targets the focused conversation (fix 7A)", () => {
 			listConfig: vi.fn().mockResolvedValue([]),
 		}
 		provider.telemetry = { captureModeSwitch: vi.fn() }
-
 		;(focusedTask as any).emit = vi.fn()
 
 		await provider.handleModeSwitch("code" as any)

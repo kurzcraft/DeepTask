@@ -92,8 +92,9 @@ export function getToolDisplayName(toolName: string): string {
 		askFollowupQuestion: "Question",
 
 		// TODO operations
-		update_todo_list: "Update TODO List",
-		updateTodoList: "Update TODO List",
+		bind_task_progress: "Bind Task Progress",
+		update_todo_list: "Bind Task Progress",
+		updateTodoList: "Bind Task Progress",
 	}
 
 	return displayNames[toolName] || toolName
@@ -149,6 +150,7 @@ export function getToolIconName(toolName: string): IconName {
 		askFollowupQuestion: "question",
 
 		// TODO operations
+		bind_task_progress: "check",
 		update_todo_list: "check",
 		updateTodoList: "check",
 	}

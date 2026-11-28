@@ -564,11 +564,11 @@ describe("gatekeeper", () => {
 				)
 			})
 
-			it("should pre-approve update_todo_list", async () => {
-				const result = await evaluateGatekeeperApproval(mockTask as Task, "update_todo_list", {})
+			it("should pre-approve bind_task_progress", async () => {
+				const result = await evaluateGatekeeperApproval(mockTask as Task, "bind_task_progress", {})
 
 				expect(result).toBe(true)
-				// update_todo_list is pre-approved, so streamResponseFromHandler should not be called
+				// bind_task_progress is pre-approved, so streamResponseFromHandler should not be called
 				const { streamResponseFromHandler } = await import("../../../../utils/single-completion-handler")
 				expect(streamResponseFromHandler).not.toHaveBeenCalled()
 			})

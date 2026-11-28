@@ -226,8 +226,12 @@ export function useMessageHandlers({ nonInteractive }: UseMessageHandlersOptions
 						// Extract structured toolData for rich rendering
 						toolData = extractToolData(toolInfo)
 
-						// Special handling for update_todo_list tool - extract todos
-						if (toolName === "update_todo_list" || toolName === "updateTodoList") {
+						// Special handling for bind_task_progress / legacy update_todo_list - extract todos
+						if (
+							toolName === "bind_task_progress" ||
+							toolName === "update_todo_list" ||
+							toolName === "updateTodoList"
+						) {
 							const parsedTodos = parseTodosFromToolInfo(toolInfo)
 							if (parsedTodos && parsedTodos.length > 0) {
 								todos = parsedTodos

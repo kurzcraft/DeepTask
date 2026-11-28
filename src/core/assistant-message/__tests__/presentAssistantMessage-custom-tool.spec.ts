@@ -194,9 +194,9 @@ describe("presentAssistantMessage - Custom Tool Recording", () => {
 				{
 					type: "tool_use",
 					id: toolCallId,
-					name: "update_todo_list",
-					nativeArgs: { todos: "- [-] Reproduce failure" },
-					params: { todos: "- [-] Reproduce failure" },
+					name: "bind_task_progress",
+					nativeArgs: {},
+					params: {},
 					partial: false,
 				},
 			]
@@ -205,10 +205,7 @@ describe("presentAssistantMessage - Custom Tool Recording", () => {
 
 			await expect(presentAssistantMessage(mockTask)).resolves.toBeUndefined()
 
-			expect(mockTask.say).toHaveBeenCalledWith(
-				"error",
-				expect.stringContaining("No active task progress file"),
-			)
+			expect(mockTask.say).toHaveBeenCalledWith("error", expect.stringContaining("No active task progress file"))
 			expect(mockTask.pushToolResultToUserContent).toHaveBeenCalledWith(
 				expect.objectContaining({
 					type: "tool_result",
@@ -228,9 +225,9 @@ describe("presentAssistantMessage - Custom Tool Recording", () => {
 				{
 					type: "tool_use",
 					id: toolCallId,
-					name: "update_todo_list",
-					nativeArgs: { todos: "- [-] Reproduce failure" },
-					params: { todos: "- [-] Reproduce failure" },
+					name: "bind_task_progress",
+					nativeArgs: {},
+					params: {},
 					partial: false,
 				},
 			]
@@ -259,9 +256,9 @@ describe("presentAssistantMessage - Custom Tool Recording", () => {
 			{
 				type: "tool_use",
 				id: toolCallId,
-				name: "update_todo_list",
-				nativeArgs: { todos: "- [-] Reproduce failure" },
-				params: { todos: "- [-] Reproduce failure" },
+				name: "bind_task_progress",
+				nativeArgs: {},
+				params: {},
 				partial: false,
 			},
 		]
@@ -280,7 +277,7 @@ describe("presentAssistantMessage - Custom Tool Recording", () => {
 		expect(JSON.parse(toolResult.content)).toEqual(
 			expect.objectContaining({
 				status: "error",
-				error: expect.stringContaining("Do not use update_todo_list yet"),
+				error: expect.stringContaining("Do not use bind_task_progress yet"),
 			}),
 		)
 		expect(mockTask.userMessageContentReady).toBe(true)
@@ -388,9 +385,9 @@ describe("presentAssistantMessage - Custom Tool Recording", () => {
 			vi.mocked(customToolRegistry.get).mockReturnValue({
 				name: "late_custom_tool",
 				description: "Returns after the watchdog has failed",
-				execute: vi.fn().mockImplementation(
-					() => new Promise((resolve) => setTimeout(() => resolve("late success"), 40)),
-				),
+				execute: vi
+					.fn()
+					.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve("late success"), 40))),
 			})
 
 			try {
@@ -431,9 +428,11 @@ describe("presentAssistantMessage - Custom Tool Recording", () => {
 			vi.mocked(customToolRegistry.get).mockReturnValue({
 				name: "waiting_custom_tool",
 				description: "Completes after a user approval wait",
-				execute: vi.fn().mockImplementation(
-					() => new Promise((resolve) => setTimeout(() => resolve("approved result"), 30)),
-				),
+				execute: vi
+					.fn()
+					.mockImplementation(
+						() => new Promise((resolve) => setTimeout(() => resolve("approved result"), 30)),
+					),
 			})
 
 			try {

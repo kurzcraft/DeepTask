@@ -305,6 +305,53 @@ describe("ParallelManager conversations", () => {
 		expect(message?.parallelActiveConversationId).toBe(created.id)
 	})
 
+	test("broadcast upgrades a stale completed session when the live task is still running", async () => {
+		const store = new Map<string, unknown>()
+		const posted: ExtensionMessage[] = []
+		const liveTasks = [
+			{
+				taskId: "task-wait",
+				cwd: "/repo",
+				abort: false,
+				abandoned: false,
+				isStreaming: false,
+				isActivelyRunning: true,
+			},
+		]
+		const provider = {
+			context: { globalState: makeStorage(store) },
+			postMessageToWebview: async (message: ExtensionMessage) => {
+				posted.push(message)
+			},
+			getLiveTasks: () => liveTasks,
+		} as unknown as ConstructorParameters<typeof ParallelManager>[0]
+		const manager = new ParallelManager(provider, new WorkspaceRegistry(makeStorage(store) as never))
+		await manager.createConversation("/repo", { sessionId: "task-wait", title: "wait cmd" })
+		;(
+			manager as unknown as { sessions: Map<string, { info: Record<string, unknown>; messages: unknown[] }> }
+		).sessions.set("task-wait", {
+			info: {
+				sessionId: "task-wait",
+				taskId: "task-wait",
+				parentTaskId: "parent",
+				label: "wait cmd",
+				task: "wait cmd",
+				status: "completed",
+				startedAt: 1,
+				endedAt: 2,
+			},
+			messages: [],
+		})
+		posted.length = 0
+		await manager.broadcast()
+		const message = posted.find((entry) => entry.type === "parallelSessionsUpdated")
+		const session = message?.parallelSessions?.find(
+			(entry) => entry.sessionId === "task-wait" || entry.taskId === "task-wait",
+		)
+		expect(session?.status).toBe("running")
+		expect(session?.endedAt).toBeUndefined()
+	})
+
 	test("setConversationArchived hides from the default list but remains in broadcast", async () => {
 		const { manager, posted } = setup()
 		const created = await manager.createConversation("/repo", { title: "keep" })
@@ -469,7 +516,7 @@ describe("ParallelManager conversations", () => {
 		expect(occupants.some((occupant) => occupant.id === first.id)).toBe(true)
 	})
 
-	test("occupantsOf still isolates a later conversation from an idle stacked sibling", async () => {
+	test("occupantsOf does not isolate a later conversation from an idle stacked sibling", async () => {
 		const store = new Map<string, unknown>()
 		const liveTasks = [{ taskId: "task-1", cwd: "/repo", abort: false, abandoned: false, isStreaming: false }]
 		const provider = {
@@ -479,12 +526,12 @@ describe("ParallelManager conversations", () => {
 		} as unknown as ConstructorParameters<typeof ParallelManager>[0]
 		const manager = new ParallelManager(provider, new WorkspaceRegistry(makeStorage(store) as never))
 		await manager.registerMainFolder("/repo")
-		const first = await manager.createConversation("/repo", { sessionId: "task-1", title: "idle" })
+		await manager.createConversation("/repo", { sessionId: "task-1", title: "idle" })
 		const second = await manager.createConversation("/repo")
 
-		expect(await manager.isWorkspaceOccupied("/repo", { conversationId: second.id })).toBe(true)
+		expect(await manager.isWorkspaceOccupied("/repo", { conversationId: second.id })).toBe(false)
 		const occupants = await manager.occupantsOf("/repo", { conversationId: second.id })
-		expect(occupants.some((occupant) => occupant.id === first.id)).toBe(true)
+		expect(occupants).toEqual([])
 	})
 
 	test("broadcast hydrates persisted workspaces on window open", async () => {
@@ -1053,9 +1100,9 @@ describe("ParallelManager conversations", () => {
 				pattern: "*",
 			},
 		])
-		expect(targets.every((target) => !target.pattern.includes("/") && !target.watchBase.endsWith("/deeptask"))).toBe(
-			true,
-		)
+		expect(
+			targets.every((target) => !target.pattern.includes("/") && !target.watchBase.endsWith("/deeptask")),
+		).toBe(true)
 		expect(targets[0].watchBase.endsWith("/.kilocode/worktrees")).toBe(true)
 	})
 })

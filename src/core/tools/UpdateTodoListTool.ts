@@ -7,87 +7,66 @@ import crypto from "crypto"
 import { TodoItem, TodoStatus, todoStatusSchema } from "@roo-code/types"
 import { getLatestTodo } from "../../shared/todo"
 
-interface UpdateTodoListParams {
-	todos: string
+interface BindTaskProgressParams {
+	path?: string
 }
 
 let approvedTodoList: TodoItem[] | undefined = undefined
 
-export class UpdateTodoListTool extends BaseTool<"update_todo_list"> {
-	readonly name = "update_todo_list" as const
+export class BindTaskProgressTool extends BaseTool<"bind_task_progress"> {
+	readonly name = "bind_task_progress" as const
 
-	parseLegacy(params: Partial<Record<string, string>>): UpdateTodoListParams {
+	parseLegacy(params: Partial<Record<string, string>>): BindTaskProgressParams {
 		return {
-			todos: params.todos || "",
+			path: params.path?.trim() || undefined,
 		}
 	}
 
-	async execute(params: UpdateTodoListParams, task: Task, callbacks: ToolCallbacks): Promise<void> {
-		const { pushToolResult, handleError, askApproval, toolProtocol } = callbacks
+	async execute(params: BindTaskProgressParams, task: Task, callbacks: ToolCallbacks): Promise<void> {
+		const { pushToolResult, handleError, askApproval } = callbacks
+		const requestedPath = params.path?.trim() || undefined
 
 		try {
-			const todosRaw = params.todos
-
-			let todos: TodoItem[]
+			let boundTodos: TodoItem[]
 			try {
-				todos = parseMarkdownChecklist(todosRaw || "")
-			} catch {
+				boundTodos = await task.bindTaskProgressFile(requestedPath)
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error)
 				task.consecutiveMistakeCount++
-				task.recordToolError("update_todo_list")
+				task.recordToolError("bind_task_progress")
 				task.didToolFailInCurrentTurn = true
-				pushToolResult(formatResponse.toolError(`${MARKDOWN_FORMAT_HINT} (parse error)`))
+				pushToolResult(formatResponse.toolError(`Task progress binding failed: ${message}`))
 				return
 			}
 
-			// kilocode_change: non-empty input that yields zero checklist items is
-			// almost always a wrong format (plain text array, JSON objects, prose).
-			// Failing fast with the exact expected format makes the retry succeed
-			// on the next attempt instead of silently projecting an empty list.
-			if (todosRaw.trim().length > 0 && todos.length === 0) {
-				task.consecutiveMistakeCount++
-				task.recordToolError("update_todo_list")
-				task.didToolFailInCurrentTurn = true
-				pushToolResult(
-					formatResponse.toolError(
-						`The todos parameter contained no parseable checklist items. ${MARKDOWN_FORMAT_HINT}`,
-					),
-				)
-				return
-			}
-
-			const { valid, error } = validateTodos(todos)
+			const { valid, error } = validateTodos(boundTodos)
 			if (!valid) {
 				task.consecutiveMistakeCount++
-				task.recordToolError("update_todo_list")
+				task.recordToolError("bind_task_progress")
 				task.didToolFailInCurrentTurn = true
-				pushToolResult(formatResponse.toolError(error || "todos parameter validation failed"))
+				pushToolResult(formatResponse.toolError(error || "bound checklist validation failed"))
 				return
 			}
 
-			let normalizedTodos: TodoItem[] = todos.map((t) => ({
+			let normalizedTodos: TodoItem[] = boundTodos.map((t) => ({
 				id: t.id,
 				content: t.content,
 				status: normalizeStatus(t.status),
-				...(t.depth ? { depth: t.depth } : {}), // kilocode_change
+				...(t.depth ? { depth: t.depth } : {}),
 			}))
-			// kilocode_change start
+			const requiresActionableExpansion = task.shouldRequireProgressListExpansion()
 			const requestedAllCompleted =
 				normalizedTodos.length > 0 && normalizedTodos.every((todo) => todo.status === "completed")
-			const requiresActionableExpansion = task.shouldRequireProgressListExpansion()
-			// A post-completion user message starts a new work turn. Never convert an
-			// all-completed checklist into a fake in-progress item: that replays the old
-			// task and gives the model a misleading completion-shaped acknowledgement.
 			if (requiresActionableExpansion && requestedAllCompleted) {
 				pushToolResult(
 					formatResponse.toolError(
-						`This is a new user work turn. An all-completed checklist is not a new task. Replace the old checklist with concrete unfinished milestones for the latest instruction and mark the first new milestone in_progress. ${MARKDOWN_FORMAT_HINT}`,
+						"This is a new user work turn. An all-completed checklist is not a new task. Write concrete unfinished milestones into the EXTRA/task Markdown first, then call bind_task_progress.",
 					),
 				)
 				return
 			}
 			const hasActionableExpansion =
 				!requiresActionableExpansion || task.hasActionableProgressListForContinuation(normalizedTodos)
-			// kilocode_change end
 
 			const approvalMsg = JSON.stringify({
 				tool: "updateTodoList",
@@ -97,7 +76,7 @@ export class UpdateTodoListTool extends BaseTool<"update_todo_list"> {
 			approvedTodoList = cloneDeep(normalizedTodos)
 			const didApprove = await askApproval("tool", approvalMsg)
 			if (!didApprove) {
-				pushToolResult("User declined to update the todoList.")
+				pushToolResult("User declined to bind the task progress file.")
 				return
 			}
 
@@ -114,63 +93,50 @@ export class UpdateTodoListTool extends BaseTool<"update_todo_list"> {
 				)
 			}
 
-			// kilocode_change start
-			// The model must write and verify the authoritative file before this native
-			// projection. A missing or invalid binding is a recoverable tool error, not a
-			// reason to leave the task waiting without model-visible feedback.
 			let synchronizedTodos: TodoItem[]
 			try {
 				synchronizedTodos = await setTodoListForTask(task, normalizedTodos)
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error)
 				task.consecutiveMistakeCount++
-				task.recordToolError("update_todo_list")
+				task.recordToolError("bind_task_progress")
 				task.didToolFailInCurrentTurn = true
 				pushToolResult(formatResponse.toolError(`Task progress synchronization failed: ${message}`))
 				return
 			}
 			task.markProgressListExpandedForContinuation(synchronizedTodos)
-			// kilocode_change end
 
 			if (isTodoListChanged) {
-				const md = todoListToMarkdown(normalizedTodos)
-				pushToolResult(formatResponse.toolResult("User edits todo:\n\n" + md))
+				pushToolResult(formatResponse.toolResult("User edits todo:\n\n" + todoListToMarkdown(normalizedTodos)))
 			} else if (requiresActionableExpansion && !hasActionableExpansion) {
-				// Recap/summary-only checklists do not count as expanding the new task.
-				// Keep the gate closed and force a real new milestone list.
 				pushToolResult(
 					formatResponse.toolError(
-						`Progress list expansion is still required. Do not add summary/recap items about previously completed work. Replace the list with concrete unfinished milestones for the user's latest instruction and mark the first new actionable item in_progress. ${MARKDOWN_FORMAT_HINT}`,
+						"Progress list expansion is still required. Write concrete unfinished milestones into the EXTRA/task Markdown first, then call bind_task_progress.",
 					),
 				)
 			} else {
-				pushToolResult(formatResponse.toolResult("Todo list updated successfully."))
+				const boundPath = requestedPath || "the currently bound EXTRA/task file"
+				pushToolResult(
+					formatResponse.toolResult(
+						`Native todos now follow ${boundPath}. Call bind_task_progress again only to rebind a different root or light file.`,
+					),
+				)
 			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error)
 			task.consecutiveMistakeCount++
-			task.recordToolError("update_todo_list")
+			task.recordToolError("bind_task_progress")
 			task.didToolFailInCurrentTurn = true
-			pushToolResult(formatResponse.toolError(`update_todo_list failed: ${message}`))
-			await handleError("update todo list", error instanceof Error ? error : new Error(message))
+			pushToolResult(formatResponse.toolError(`bind_task_progress failed: ${message}`))
+			await handleError("bind task progress", error instanceof Error ? error : new Error(message))
 		}
 	}
 
-	override async handlePartial(task: Task, block: ToolUse<"update_todo_list">): Promise<void> {
-		const todosRaw = block.params.todos
-
-		// Parse the markdown checklist to maintain consistent format with execute()
-		let todos: TodoItem[]
-		try {
-			todos = parseMarkdownChecklist(todosRaw || "")
-		} catch {
-			// If parsing fails during partial, send empty array
-			todos = []
-		}
-
+	override async handlePartial(task: Task, block: ToolUse<"bind_task_progress">): Promise<void> {
 		const approvalMsg = JSON.stringify({
 			tool: "updateTodoList",
-			todos: todos,
+			todos: task.todoList ?? [],
+			path: block.params.path,
 		})
 		await task.ask("tool", approvalMsg, block.partial).catch(() => {})
 	}
@@ -289,11 +255,6 @@ export function setPendingTodoList(todos: TodoItem[]) {
 	approvedTodoList = todos
 }
 
-// kilocode_change: shared format hint appended to every update_todo_list rejection
-// so the exact expected input shape is visible at the point of failure.
-const MARKDOWN_FORMAT_HINT =
-	"The todos parameter must be ONE string containing a markdown checklist, one item per line, each line formatted exactly like `- [ ] pending text`, `- [-] in-progress text`, or `- [x] completed text`. Do NOT pass an array of objects, plain text lines, or JSON."
-
 function validateTodos(todos: any[]): { valid: boolean; error?: string } {
 	if (!Array.isArray(todos)) return { valid: false, error: "todos must be an array" }
 	for (const [i, t] of todos.entries()) {
@@ -309,4 +270,5 @@ function validateTodos(todos: any[]): { valid: boolean; error?: string } {
 	return { valid: true }
 }
 
-export const updateTodoListTool = new UpdateTodoListTool()
+export const bindTaskProgressTool = new BindTaskProgressTool()
+export const updateTodoListTool = bindTaskProgressTool

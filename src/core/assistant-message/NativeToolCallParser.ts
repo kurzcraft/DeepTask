@@ -531,11 +531,9 @@ export class NativeToolCallParser {
 				break
 			// kilocode_change end
 
-			case "update_todo_list":
-				if (partialArgs.todos !== undefined) {
-					nativeArgs = {
-						todos: partialArgs.todos,
-					}
+			case "bind_task_progress":
+				nativeArgs = {
+					path: typeof partialArgs.path === "string" ? partialArgs.path : undefined,
 				}
 				break
 
@@ -858,12 +856,10 @@ export class NativeToolCallParser {
 					break
 				// kilocode_change end
 
-				case "update_todo_list":
-					if (args.todos !== undefined) {
-						nativeArgs = {
-							todos: args.todos,
-						} as NativeArgsFor<TName>
-					}
+				case "bind_task_progress":
+					nativeArgs = {
+						path: typeof args.path === "string" ? args.path : undefined,
+					} as NativeArgsFor<TName>
 					break
 
 				case "write_to_file":

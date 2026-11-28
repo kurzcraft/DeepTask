@@ -239,6 +239,7 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 				messages: deepseekReasoner
 					? convertToR1Format([{ role: "user", content: systemPrompt }, ...messages])
 					: [systemMessage, ...convertToOpenAiMessages(messages)],
+				...(reasoning && reasoning),
 				...(metadata?.tools && { tools: this.convertToolsForOpenAI(metadata.tools) }),
 				...(metadata?.tool_choice && { tool_choice: metadata.tool_choice }),
 				...(metadata?.toolProtocol === "native" &&
@@ -315,10 +316,18 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 		// Ensure OpenAI-compatible models default to supporting native tool calling.
 		// This is required for [`Task.attemptApiRequest()`](src/core/task/Task.ts:3817) to
 		// include tool definitions in the request.
+		// kilocode_change start: honor chat/settings reasoningEffort even when the
+		// custom model catalog never declared supportsReasoningEffort. Relays still
+		// accept reasoning_effort; omitting it made the selector a no-op.
 		const info: ModelInfo = {
 			...NATIVE_TOOL_DEFAULTS,
+			supportsReasoningEffort: true,
 			...(this.options.openAiCustomModelInfo ?? openAiModelInfoSaneDefaults),
 		}
+		if (info.supportsReasoningEffort === undefined) {
+			info.supportsReasoningEffort = true
+		}
+		// kilocode_change end
 		const params = getModelParams({ format: "openai", modelId: id, model: info, settings: this.options })
 		return { id, info, ...params }
 	}
@@ -363,7 +372,7 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 		messages: Anthropic.Messages.MessageParam[],
 		metadata?: ApiHandlerCreateMessageMetadata,
 	): ApiStream {
-		const modelInfo = this.getModel().info
+		const { info: modelInfo, reasoning } = this.getModel()
 		const methodIsAzureAiInference = this._isAzureAiInference(this.options.openAiBaseUrl)
 
 		if (this.options.openAiStreamingEnabled ?? true) {
@@ -380,7 +389,8 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 				],
 				stream: true,
 				...(isGrokXAI ? {} : { stream_options: { include_usage: true } }),
-				reasoning_effort: modelInfo.reasoningEffort as "low" | "medium" | "high" | undefined,
+				// kilocode_change: use the resolved user/settings effort, not the catalog default.
+				...(reasoning && reasoning),
 				temperature: undefined,
 				...(metadata?.tools && { tools: this.convertToolsForOpenAI(metadata.tools) }),
 				...(metadata?.tool_choice && { tool_choice: metadata.tool_choice }),
@@ -416,7 +426,8 @@ export class OpenAiHandler extends BaseProvider implements SingleCompletionHandl
 					},
 					...convertToOpenAiMessages(messages),
 				],
-				reasoning_effort: modelInfo.reasoningEffort as "low" | "medium" | "high" | undefined,
+				// kilocode_change: use the resolved user/settings effort, not the catalog default.
+				...(reasoning && reasoning),
 				temperature: undefined,
 				...(metadata?.tools && { tools: this.convertToolsForOpenAI(metadata.tools) }),
 				...(metadata?.tool_choice && { tool_choice: metadata.tool_choice }),
@@ -692,7 +703,9 @@ export async function getOpenAiModels(
 				: Array.isArray(response.data)
 					? response.data
 					: []
-		const modelsArray = models.map((model: any) => model.id).filter((id: unknown): id is string => typeof id === "string")
+		const modelsArray = models
+			.map((model: any) => model.id)
+			.filter((id: unknown): id is string => typeof id === "string")
 		const result = [...new Set<string>(modelsArray)] as OpenAiModelsResult
 		const modelInfos: Record<string, ModelInfo> = {}
 

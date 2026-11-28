@@ -256,4 +256,24 @@ describe("ModelPicker", () => {
 			expect(screen.queryByText(errorMessage)).not.toBeInTheDocument()
 		})
 	})
+
+	it("opens the dropdown when autoOpenSignal increments after a catalog refresh", async () => {
+		const { rerender } = render(
+			<QueryClientProvider client={queryClient}>
+				<ModelPicker {...defaultProps} autoOpenSignal={0} />
+			</QueryClientProvider>,
+		)
+
+		expect(screen.getByTestId("model-picker-button")).toHaveAttribute("aria-expanded", "false")
+
+		await act(async () => {
+			rerender(
+				<QueryClientProvider client={queryClient}>
+					<ModelPicker {...defaultProps} autoOpenSignal={1} />
+				</QueryClientProvider>,
+			)
+		})
+
+		expect(screen.getByTestId("model-picker-button")).toHaveAttribute("aria-expanded", "true")
+	})
 })

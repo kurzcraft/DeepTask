@@ -163,7 +163,7 @@ export type NativeToolArgs = {
 		api_key?: string
 		base_url?: string
 		reasoning_effort?: string
-		settings?: Record<string, unknown>
+		settings?: string | Record<string, unknown> | null
 		reason?: string
 	}
 	// kilocode_change end
@@ -183,7 +183,8 @@ export type NativeToolArgs = {
 		reason?: string
 	}
 	// kilocode_change end
-	update_todo_list: { todos: string }
+	bind_task_progress: { path?: string }
+	update_todo_list: { path?: string; todos?: string }
 	use_mcp_tool: { server_name: string; tool_name: string; arguments?: Record<string, unknown> }
 	write_to_file: { path: string; content: string }
 	// kilocode_change start: parallel subagents & workspaces
@@ -441,6 +442,7 @@ export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
 	// kilocode_change end
 	new_rule: "create new rule",
 	codebase_search: "codebase search",
+	bind_task_progress: "bind task progress",
 	update_todo_list: "update todo list",
 	run_slash_command: "run slash command",
 	generate_image: "generate images",
@@ -512,7 +514,7 @@ export const ALWAYS_AVAILABLE_TOOLS: ToolName[] = [
 	// kilocode_change: new_task removed in 9.2.4 — merged into dispatch_subagents
 	"report_bug",
 	"condense", // kilocode_Change
-	"update_todo_list",
+	"bind_task_progress",
 	"run_slash_command",
 	// kilocode_change start: parallel subagents & workspaces
 	"dispatch_subagents",
@@ -534,6 +536,7 @@ export const ALWAYS_AVAILABLE_TOOLS: ToolName[] = [
  */
 export const TOOL_ALIASES: Record<string, ToolName> = {
 	write_file: "write_to_file",
+	update_todo_list: "bind_task_progress",
 } as const
 
 export type DiffResult =

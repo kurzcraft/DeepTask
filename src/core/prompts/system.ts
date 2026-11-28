@@ -79,7 +79,7 @@ Work items: treat direct requests, defect reports, negative feedback, and fix/im
 
 Track independently verifiable subtasks, not tool calls. Mark in_progress before starting; mark completed after verification; sync both stores. Do not batch status transitions. Multiple tools in one subtask do not need repeated progress-file writes. Timeouts, API failures, rejected commits/pushes/releases become explicit checklist errors with a durable log and bounded recovery. Update promptly on tool failure, blockers, plan changes, or new user feedback.
 
-Before completion, every checklist item must be done, then move the Markdown to EXTRA/task/finished/. Completion is prohibited while any Markdown outside EXTRA/task/finished/ has pending/in-progress items; this postpones only current-work completion and must never ignore a later user request.
+Before completion, every item in THIS host's checklist (the EXTRA/task file whose deeptask-task-id matches the current host task ID, plus its light files) must be done, then move that Markdown to EXTRA/task/finished/. Sibling conversations' EXTRA/task files must not block this host. Completion is prohibited only while this host's own active checklist still has pending/in-progress items; this postpones only current-work completion and must never ignore a later user request.
 
 Sync invariant: plain feedback reuses the focused file and must not create a new file or top-level todo. After every actionable user message: milestone in the file first, then native TODO from that exact checklist.`
 }
@@ -100,6 +100,19 @@ All commands are script-first and durably logged:
 - Do not use inline heredocs, nested shell programs, or very long command chains in execute_command; put that content in the script file.
 - For commands that intentionally remain running (servers, watchers, training), start them through a script with durable logging, state that they are long-running, and inspect the log file in later steps.
 - If terminal output is empty, truncated, delayed, or the completion status is uncertain, do not blindly rerun the operation. Read the durable log and any generated status file first.`
+}
+
+function getProgressiveThinkingInstructions(): string {
+	return `====
+
+PROGRESSIVE THINKING
+
+This is a runtime work rule for every mode, not a prompt-evolution request and not a reason to edit mode YAML.
+
+- Do not repeat the same analysis, occupancy recap, file-search loop, or "continue from here" plan. Restating known facts is not progress.
+- Each thought must be strictly incremental: it must produce a new fact, a code/test/config change, a failing-then-fixed experiment, or a materially different next action.
+- If the previous turn did not change the world (no write, no test, no new evidence), the next turn must take a different action instead of paraphrasing the same plan.
+- Thinking is a means to an edit or a tool result. Do not spend a turn only re-deriving a conclusion already in context.`
 }
 // kilocode_change end
 
@@ -213,6 +226,8 @@ ${getSystemInfoSection(cwd)}
 
 ${getReliableCommandExecutionInstructions()}
 
+${getProgressiveThinkingInstructions()}
+
 ${getObjectiveSection()}
 
 ${await addCustomInstructions(baseInstructions, globalCustomInstructions || "", cwd, mode, {
@@ -315,6 +330,7 @@ ${customInstructions}`
 		if (clineProviderState?.taskProgressFileEnabled) {
 			prompt += `\n\n${getTaskProgressFileInstructions(taskId)}`
 		}
+		prompt += `\n\n${getProgressiveThinkingInstructions()}`
 		// kilocode_change end
 
 		return prompt

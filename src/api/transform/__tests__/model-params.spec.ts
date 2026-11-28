@@ -609,7 +609,7 @@ describe("getModelParams", () => {
 			expect(result.reasoning).toEqual({ reasoning_effort: "none" })
 		})
 
-		it("should omit reasoning for 'disable' selection", () => {
+		it("should map 'disable' to none for openai format", () => {
 			const model: ModelInfo = {
 				...baseModel,
 				supportsReasoningEffort: true,
@@ -617,11 +617,12 @@ describe("getModelParams", () => {
 
 			const result = getModelParams({
 				...openaiParams,
-				settings: { reasoningEffort: "disable" as any },
+				settings: { reasoningEffort: "disable" as any, enableReasoningEffort: false },
 				model,
 			})
 
-			expect(result.reasoningEffort).toBeUndefined()
+			expect(result.reasoningEffort).toBe("none")
+			expect(result.reasoning).toEqual({ reasoning_effort: "none" })
 		})
 
 		it("should include 'minimal' and 'none' for openrouter format", () => {

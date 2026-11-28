@@ -1590,7 +1590,17 @@ export class ParallelManager {
 			if (!isActivelyRunning) {
 				continue
 			}
-			if (sessions.some((session) => session.sessionId === task.taskId || session.taskId === task.taskId)) {
+			const existing = sessions.find(
+				(session) => session.sessionId === task.taskId || session.taskId === task.taskId,
+			)
+			if (existing) {
+				// kilocode_change: a live task (including a wait-command loop)
+				// must upgrade a stale completed/cancelled session. Skipping
+				// here used to hide the rail spinner after clicking that chat.
+				if (existing.status !== "running") {
+					existing.status = "running"
+					existing.endedAt = undefined
+				}
 				continue
 			}
 			const conversation = this.conversationForSession(task.taskId)

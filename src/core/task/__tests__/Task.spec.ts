@@ -188,6 +188,9 @@ vi.mock("../../environment/getEnvironmentDetails", () => ({
 }))
 
 vi.mock("../../ignore/RooIgnoreController")
+vi.mock("../../protect/RooProtectedController", () => ({
+	RooProtectedController: vi.fn().mockImplementation((cwd: string) => ({ cwd, dispose: vi.fn() })),
+}))
 
 vi.mock("../../condense", async (importOriginal) => {
 	const actual = (await importOriginal()) as any
@@ -2685,7 +2688,13 @@ describe("Queued message processing after condense", () => {
 		const task = Object.create(Task.prototype) as Task
 		;(task as any).workspacePath = "/mock/workspace/path"
 		;(task as any).latestUserContinuationFocus = "只认旧的任务清单 bug 修复"
-		task.todoList = [{ id: "mirror", content: "in-memory mirror should not be serialized when file exists", status: "in_progress" }]
+		task.todoList = [
+			{
+				id: "mirror",
+				content: "in-memory mirror should not be serialized when file exists",
+				status: "in_progress",
+			},
+		]
 		const oldMilestone = "旧里程碑-头部条目-可能被截断丢弃"
 		const newestMilestone = `最新里程碑-尾部条目-${"细节".repeat(30)}-必须保留`
 		const fileContent = [
@@ -3153,9 +3162,11 @@ describe("Queued message processing after condense", () => {
 		})
 		const uiMessages = [{ type: "say", say: "text", text: "mirror transcript", ts: 1 }]
 		const savedCline = vi.spyOn(task as any, "getSavedClineMessages").mockResolvedValue(uiMessages)
-		const savedApi = vi.spyOn(task as any, "getSavedApiConversationHistory").mockResolvedValue([
-			{ role: "user", content: [{ type: "text", text: "must not load for hydrate" }], ts: 1 },
-		])
+		const savedApi = vi
+			.spyOn(task as any, "getSavedApiConversationHistory")
+			.mockResolvedValue([
+				{ role: "user", content: [{ type: "text", text: "must not load for hydrate" }], ts: 1 },
+			])
 
 		await task.hydratePersistedMessages()
 
@@ -4998,33 +5009,39 @@ describe("task progress completion barrier", () => {
 		vi.mocked(fs.readFile).mockReset()
 	})
 
-	it("collects every pending and in-progress checklist item from nested Markdown task files", async () => {
+	it("collects incomplete items from the host-owned checklist and its light files only", async () => {
 		const taskDirectory = "/workspace/EXTRA/task"
 		vi.mocked(fs.readdir).mockImplementation(async (directory) => {
 			if (directory === taskDirectory) {
 				return [
 					{ name: "release.md", isDirectory: () => false, isFile: () => true },
-					{ name: "nested", isDirectory: () => true, isFile: () => false },
+					{ name: "foreign.md", isDirectory: () => false, isFile: () => true },
+					{ name: "release", isDirectory: () => true, isFile: () => false },
 				] as any
 			}
-			if (directory === path.join(taskDirectory, "nested")) {
+			if (directory === path.join(taskDirectory, "release")) {
 				return [{ name: "validation.md", isDirectory: () => false, isFile: () => true }] as any
 			}
 			return [] as any
 		})
 		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
-			if (filePath === path.join(taskDirectory, "release.md")) {
-				return "- [x] packaged\n- [ ] publish release\n"
+			const target = String(filePath)
+			if (target === path.join(taskDirectory, "release.md")) {
+				return "<!-- deeptask-task-id:task-1 -->\n- [x] packaged\n- [ ] publish release\n"
+			}
+			if (target === path.join(taskDirectory, "foreign.md")) {
+				return "<!-- deeptask-task-id:other-host -->\n- [ ] another conversation\n"
 			}
 			return "- [-] run VSCodium validation\n- [x] verified\n"
 		})
 
 		const task = Object.create(Task.prototype) as Task
 		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
 
 		await expect(task.getIncompleteTaskProgressItems()).resolves.toEqual([
 			"release.md: publish release",
-			"nested/validation.md: run VSCodium validation",
+			"release/validation.md: run VSCodium validation",
 		])
 	})
 
@@ -5045,13 +5062,14 @@ describe("task progress completion barrier", () => {
 		})
 		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
 			if (filePath === path.join(taskDirectory, "active.md")) {
-				return "- [ ] active verification\n"
+				return "<!-- deeptask-task-id:task-1 -->\n- [ ] active verification\n"
 			}
 			throw new Error("The archive file must not be read")
 		})
 
 		const task = Object.create(Task.prototype) as Task
 		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
 
 		await expect(task.getIncompleteTaskProgressItems()).resolves.toEqual(["active.md: active verification"])
 		await expect(task.getIncompleteTaskProgressItems()).resolves.not.toContain(
@@ -5072,9 +5090,9 @@ describe("task progress completion barrier", () => {
 		})
 		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
 			if (filePath === path.join(taskDirectory, "task-task-1.md")) {
-				return "<!-- deeptask-active-work-item -->\n- [-] generated current work\n- [ ] user-owned follow-up\n"
+				return "<!-- deeptask-task-id:task-1 -->\n- [-] generated current work\n- [ ] user-owned follow-up\n"
 			}
-			return "- [ ] another task is open\n"
+			return "<!-- deeptask-task-id:other-host -->\n- [ ] another task is open\n"
 		})
 
 		const task = Object.create(Task.prototype) as Task
@@ -5084,7 +5102,6 @@ describe("task progress completion barrier", () => {
 		await expect(task.getIncompleteTaskProgressItems()).resolves.toEqual([
 			"task-task-1.md: generated current work",
 			"task-task-1.md: user-owned follow-up",
-			"other.md: another task is open",
 		])
 	})
 
@@ -5183,7 +5200,7 @@ describe("task progress completion barrier", () => {
 			{ name: "active.md", isDirectory: () => false, isFile: () => true },
 		] as any)
 		vi.mocked(fs.readFile).mockResolvedValue(
-			"# Active\n\n<!-- deeptask-task-id:unrelated-host-id -->\n- [-] active work\n",
+			"# Active\n\n<!-- deeptask-task-id:task-active -->\n- [-] active work\n",
 		)
 
 		await expect((task as any).hasActiveTaskProgressFile()).resolves.toBe(true)
@@ -5228,24 +5245,55 @@ describe("task progress completion barrier", () => {
 		expect(fs.writeFile).not.toHaveBeenCalled()
 	})
 
-	it("binds a single first checklist even when its host marker differs from the Task UUID", async () => {
-		const progressPath = path.resolve("/workspace/EXTRA/task/first-request.md")
+	it("does not adopt a unique foreign checklist whose marker is not this host", async () => {
 		vi.mocked(fs.readdir).mockResolvedValue([
-			{ name: "first-request.md", isDirectory: () => false, isFile: () => true },
+			{ name: "qoder.md", isDirectory: () => false, isFile: () => true },
 		] as any)
-		vi.mocked(fs.readFile).mockResolvedValue("<!-- deeptask-task-id:019fe361-host -->\n- [-] first request\n")
+		vi.mocked(fs.readFile).mockResolvedValue(
+			"<!-- deeptask-task-id:01a1fed6-foreign -->\n- [-] qoder resume evidence\n",
+		)
 		const task = Object.create(Task.prototype) as Task
 		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
-		Object.defineProperty(task, "taskId", { value: "internal-task-uuid" })
+		Object.defineProperty(task, "taskId", { value: "01a1906a-host" })
 		Object.defineProperty(task, "providerRef", {
 			value: { deref: () => ({ getTaskHistory: () => [] }) },
 		})
 
 		await expect(
-			task.syncTaskProgressWithTodoList([{ id: "1", content: "first request", status: "in_progress" }]),
-		).resolves.toMatchObject([{ content: "first request", status: "in_progress" }])
-		expect((task as any).taskProgressFilePath).toBe(path.relative("/workspace", progressPath))
-		expect((task as any).taskProgressInstanceId).toBe("019fe361-host")
+			task.syncTaskProgressWithTodoList([{ id: "1", content: "occupancy fix", status: "in_progress" }]),
+		).rejects.toThrow("No verified task progress file for host task 01a1906a-host")
+		expect((task as any).taskProgressFilePath).toBeUndefined()
+		expect(fs.writeFile).not.toHaveBeenCalled()
+	})
+
+	it("does not treat a sibling Qoder checklist as this host's completion barrier", async () => {
+		const taskDirectory = "/workspace/EXTRA/task"
+		vi.mocked(fs.readdir).mockImplementation(async (directory) => {
+			if (directory === taskDirectory) {
+				return [
+					{ name: "QODER_RESUME_EVIDENCE.md", isDirectory: () => false, isFile: () => true },
+					{ name: "OCCUPANCY_COMPLETION_CWD.md", isDirectory: () => false, isFile: () => true },
+				] as any
+			}
+			return [] as any
+		})
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			const target = String(filePath)
+			if (target === path.join(taskDirectory, "QODER_RESUME_EVIDENCE.md")) {
+				return "<!-- deeptask-task-id:01a1fed6-foreign -->\n- [-] qoder resume evidence\n- [ ] run 50 A1\n"
+			}
+			if (target === path.join(taskDirectory, "OCCUPANCY_COMPLETION_CWD.md")) {
+				return "<!-- deeptask-task-id:01a1906a-host -->\n- [x] occupancy filter\n- [-] completion gate\n"
+			}
+			throw new Error(`unexpected read: ${target}`)
+		})
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "01a1906a-host" })
+
+		await expect(task.getIncompleteTaskProgressItems()).resolves.toEqual([
+			"OCCUPANCY_COMPLETION_CWD.md: completion gate",
+		])
 	})
 
 	it("accepts a host-prefixed work instance ID for a later request in the same conversation", async () => {
@@ -5298,40 +5346,96 @@ describe("task progress completion barrier", () => {
 		expect(fs.writeFile).not.toHaveBeenCalled()
 	})
 
-	it("restores a persisted old-host binding without rewriting the checklist", async () => {
-		const progressPath = path.resolve("/workspace/EXTRA/task/old-host.md")
+	it("drops a persisted foreign checklist and rebinds to this host's file", async () => {
+		const qoderPath = path.resolve("/workspace/EXTRA/task/QODER_RESUME_EVIDENCE.md")
+		const occupancyPath = path.resolve("/workspace/EXTRA/task/OCCUPANCY_COMPLETION_CWD.md")
 		const updateTaskHistory = vi.fn().mockResolvedValue([])
+		const historyItem = { id: "01a1906a-host", task: "occupancy" }
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "QODER_RESUME_EVIDENCE.md", isDirectory: () => false, isFile: () => true },
+			{ name: "OCCUPANCY_COMPLETION_CWD.md", isDirectory: () => false, isFile: () => true },
+		] as any)
 		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
-			if (path.resolve(String(filePath)) === progressPath) {
-				return "<!-- deeptask-task-id:old-host-id -->\n- [-] continue old work\n"
+			const resolved = path.resolve(String(filePath))
+			if (resolved === qoderPath) {
+				return "<!-- deeptask-task-id:01a1fed6-foreign -->\n- [-] qoder resume evidence\n"
+			}
+			if (resolved === occupancyPath) {
+				return "<!-- deeptask-task-id:01a1906a-host -->\n- [-] occupancy cwd fix\n"
 			}
 			return "[]"
 		})
 		const task = Object.create(Task.prototype) as Task
 		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
-		Object.defineProperty(task, "taskId", { value: "new-host-id" })
-		Object.defineProperty(task, "taskProgressFilePath", { value: "EXTRA/task/old-host.md", writable: true })
-		Object.defineProperty(task, "taskProgressInstanceId", { value: "old-host-id", writable: true })
+		Object.defineProperty(task, "taskId", { value: "01a1906a-host" })
+		Object.defineProperty(task, "taskProgressFilePath", {
+			value: "EXTRA/task/QODER_RESUME_EVIDENCE.md",
+			writable: true,
+		})
+		Object.defineProperty(task, "taskProgressInstanceId", { value: "01a1fed6-foreign", writable: true })
 		Object.defineProperty(task, "providerRef", {
-			value: { deref: () => ({ getTaskHistory: () => [], updateTaskHistory }) },
+			value: {
+				deref: () => ({ getTaskHistory: () => [historyItem], updateTaskHistory }),
+			},
 		})
 		vi.mocked(fs.writeFile).mockClear()
 
 		await expect(
-			task.syncTaskProgressWithTodoList([{ id: "1", content: "continue old work", status: "in_progress" }]),
-		).resolves.toMatchObject([{ content: "continue old work", status: "in_progress" }])
+			task.syncTaskProgressWithTodoList([{ id: "1", content: "qoder resume evidence", status: "in_progress" }]),
+		).resolves.toMatchObject([{ content: "occupancy cwd fix", status: "in_progress" }])
 		expect(fs.writeFile).not.toHaveBeenCalled()
-		expect(updateTaskHistory).not.toHaveBeenCalled()
+		expect((task as any).taskProgressFilePath).toBe("EXTRA/task/OCCUPANCY_COMPLETION_CWD.md")
+		expect((task as any).taskProgressInstanceId).toBe("01a1906a-host")
+		expect(updateTaskHistory).toHaveBeenNthCalledWith(1, {
+			...historyItem,
+			taskProgressFilePath: undefined,
+			taskProgressInstanceId: undefined,
+		})
+		expect(updateTaskHistory).toHaveBeenNthCalledWith(2, {
+			...historyItem,
+			taskProgressFilePath: "EXTRA/task/OCCUPANCY_COMPLETION_CWD.md",
+			taskProgressInstanceId: "01a1906a-host",
+		})
+	})
+
+	it("does not restore a persisted foreign binding when this host has no checklist", async () => {
+		const qoderPath = path.resolve("/workspace/EXTRA/task/QODER_RESUME_EVIDENCE.md")
+		const updateTaskHistory = vi.fn().mockResolvedValue([])
+		const historyItem = { id: "01a1906a-host", task: "occupancy" }
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "QODER_RESUME_EVIDENCE.md", isDirectory: () => false, isFile: () => true },
+		] as any)
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			if (path.resolve(String(filePath)) === qoderPath) {
+				return "<!-- deeptask-task-id:01a1fed6-foreign -->\n- [-] qoder resume evidence\n"
+			}
+			return "[]"
+		})
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "01a1906a-host" })
+		Object.defineProperty(task, "taskProgressFilePath", {
+			value: "EXTRA/task/QODER_RESUME_EVIDENCE.md",
+			writable: true,
+		})
+		Object.defineProperty(task, "taskProgressInstanceId", { value: "01a1fed6-foreign", writable: true })
+		Object.defineProperty(task, "providerRef", {
+			value: {
+				deref: () => ({ getTaskHistory: () => [historyItem], updateTaskHistory }),
+			},
+		})
+
+		await expect(
+			task.syncTaskProgressWithTodoList([{ id: "1", content: "occupancy fix", status: "in_progress" }]),
+		).rejects.toThrow("No verified task progress file for host task 01a1906a-host")
+		expect((task as any).taskProgressFilePath).toBeUndefined()
+		expect(fs.writeFile).not.toHaveBeenCalled()
 	})
 
 	it("rebinds after the model corrects a persisted marker in the same file", async () => {
-		const progressPath = path.resolve("/workspace/EXTRA/task/current.md")
 		const updateTaskHistory = vi.fn().mockResolvedValue([])
 		const historyItem = { id: "task-1", task: "continue" }
-		vi.mocked(fs.readdir).mockResolvedValue([
-			{ name: "current.md", isDirectory: () => false, isFile: () => true },
-		] as any)
-		vi.mocked(fs.readFile).mockResolvedValue("<!-- deeptask-task-id:corrected-host -->\n- [-] continue work\n")
+		vi.mocked(fs.readFile).mockResolvedValue("<!-- deeptask-task-id:task-1:corrected -->\n- [-] continue work\n")
 		const task = Object.create(Task.prototype) as Task
 		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
 		Object.defineProperty(task, "taskId", { value: "task-1" })
@@ -5347,16 +5451,12 @@ describe("task progress completion barrier", () => {
 			{ content: "continue work", status: "in_progress" },
 		])
 		expect((task as any).taskProgressFilePath).toBe("EXTRA/task/current.md")
-		expect((task as any).taskProgressInstanceId).toBe("corrected-host")
-		expect(updateTaskHistory).toHaveBeenNthCalledWith(1, {
-			...historyItem,
-			taskProgressFilePath: undefined,
-			taskProgressInstanceId: undefined,
-		})
-		expect(updateTaskHistory).toHaveBeenNthCalledWith(2, {
+		expect((task as any).taskProgressInstanceId).toBe("task-1:corrected")
+		expect(updateTaskHistory).toHaveBeenCalledOnce()
+		expect(updateTaskHistory).toHaveBeenCalledWith({
 			...historyItem,
 			taskProgressFilePath: "EXTRA/task/current.md",
-			taskProgressInstanceId: "corrected-host",
+			taskProgressInstanceId: "task-1:corrected",
 		})
 	})
 
@@ -5373,7 +5473,7 @@ describe("task progress completion barrier", () => {
 				throw Object.assign(new Error("missing archived binding"), { code: "ENOENT" })
 			}
 			if (path.resolve(String(filePath)) === activePath) {
-				return "<!-- deeptask-task-id:host-task-id -->\n- [-] resume current work\n"
+				return "<!-- deeptask-task-id:task-1 -->\n- [-] resume current work\n"
 			}
 			return "[]"
 		})
@@ -5395,7 +5495,7 @@ describe("task progress completion barrier", () => {
 			task.syncTaskProgressWithTodoList([{ id: "1", content: "stale", status: "pending" }]),
 		).resolves.toMatchObject([{ content: "resume current work", status: "in_progress" }])
 		expect((task as any).taskProgressFilePath).toBe("EXTRA/task/current.md")
-		expect((task as any).taskProgressInstanceId).toBe("host-task-id")
+		expect((task as any).taskProgressInstanceId).toBe("task-1")
 		expect(updateTaskHistory).toHaveBeenNthCalledWith(1, {
 			...historyItem,
 			taskProgressFilePath: undefined,
@@ -5404,7 +5504,7 @@ describe("task progress completion barrier", () => {
 		expect(updateTaskHistory).toHaveBeenNthCalledWith(2, {
 			...historyItem,
 			taskProgressFilePath: "EXTRA/task/current.md",
-			taskProgressInstanceId: "host-task-id",
+			taskProgressInstanceId: "task-1",
 		})
 	})
 
@@ -5418,7 +5518,7 @@ describe("task progress completion barrier", () => {
 		] as any)
 		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
 			if (path.resolve(String(filePath)) === activePath) {
-				return "<!-- deeptask-task-id:next-work -->\n- [-] continue after archive\n"
+				return "<!-- deeptask-task-id:task-1:next-work -->\n- [-] continue after archive\n"
 			}
 			if (path.resolve(String(filePath)) === archivedPath) {
 				return "<!-- deeptask-task-id:old-work -->\n- [x] archived work\n"
@@ -5443,7 +5543,7 @@ describe("task progress completion barrier", () => {
 			{ content: "continue after archive", status: "in_progress" },
 		])
 		expect((task as any).taskProgressFilePath).toBe("EXTRA/task/current.md")
-		expect((task as any).taskProgressInstanceId).toBe("next-work")
+		expect((task as any).taskProgressInstanceId).toBe("task-1:next-work")
 		expect(updateTaskHistory).toHaveBeenNthCalledWith(1, {
 			...historyItem,
 			taskProgressFilePath: undefined,
@@ -5470,6 +5570,313 @@ describe("task progress completion barrier", () => {
 		).rejects.toThrow("Multiple active task progress files belong to host task task-1")
 		expect(fs.unlink).not.toHaveBeenCalled()
 		expect(fs.writeFile).not.toHaveBeenCalled()
+	})
+
+	it("does not treat a longer taskId prefix as this host", async () => {
+		vi.mocked(fs.readdir).mockResolvedValue([
+			{ name: "other.md", isDirectory: () => false, isFile: () => true },
+		] as any)
+		vi.mocked(fs.readFile).mockResolvedValue("<!-- deeptask-task-id:task-10:work -->\n- [-] other host\n")
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+
+		await expect(
+			task.syncTaskProgressWithTodoList([{ id: "1", content: "mine", status: "in_progress" }]),
+		).rejects.toThrow("No verified task progress file for host task task-1")
+		expect(fs.writeFile).not.toHaveBeenCalled()
+	})
+
+	it("rejects an empty instance suffix and foreign prefixes as host identity", () => {
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+
+		expect((task as any).matchesHostTaskProgressIdentity("task-1")).toBe(true)
+		expect((task as any).matchesHostTaskProgressIdentity("task-1:work-2")).toBe(true)
+		expect((task as any).matchesHostTaskProgressIdentity("task-1:")).toBe(false)
+		expect((task as any).matchesHostTaskProgressIdentity("task-1: ")).toBe(false)
+		expect((task as any).matchesHostTaskProgressIdentity("task-10")).toBe(false)
+		expect((task as any).matchesHostTaskProgressIdentity("task-10:work")).toBe(false)
+	})
+
+	it("refuses to persist a foreign progress identity", async () => {
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+
+		await expect(
+			(task as any).persistTaskProgressBinding("/workspace/EXTRA/task/qoder.md", "01a1fed6-foreign"),
+		).rejects.toThrow("Refusing to bind host task task-1 to foreign progress identity")
+	})
+
+	it("rebinds native todos to a light file without a host marker", async () => {
+		const lightPath = path.resolve("/workspace/EXTRA/task/my-task/light-file.md")
+		const updateTaskHistory = vi.fn().mockResolvedValue([])
+		const historyItem = { id: "task-1", task: "split" }
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			if (path.resolve(String(filePath)) === lightPath) {
+				return "- [-] validate light file\n- [ ] remaining work\n"
+			}
+			return "[]"
+		})
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "isChildAgent", { value: false })
+		Object.defineProperty(task, "taskProgressFilePath", {
+			value: "EXTRA/task/my-task.md",
+			writable: true,
+		})
+		Object.defineProperty(task, "taskProgressInstanceId", { value: "task-1", writable: true })
+		Object.defineProperty(task, "providerRef", {
+			value: {
+				deref: () => ({ getTaskHistory: () => [historyItem], updateTaskHistory }),
+			},
+		})
+
+		await expect(task.bindTaskProgressFile("EXTRA/task/my-task/light-file.md")).resolves.toMatchObject([
+			{ content: "validate light file", status: "in_progress" },
+			{ content: "remaining work", status: "pending" },
+		])
+		expect((task as any).taskProgressFilePath).toBe("EXTRA/task/my-task/light-file.md")
+		expect((task as any).taskProgressInstanceId).toBe("task-1")
+		expect(updateTaskHistory).toHaveBeenCalledWith({
+			...historyItem,
+			taskProgressFilePath: "EXTRA/task/my-task/light-file.md",
+			taskProgressInstanceId: "task-1",
+		})
+	})
+
+	it("rejects a light file that still contains deeptask-task-id", async () => {
+		const lightPath = path.resolve("/workspace/EXTRA/task/my-task/light-file.md")
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			if (path.resolve(String(filePath)) === lightPath) {
+				return "<!-- deeptask-task-id:task-1 -->\n- [-] invalid light marker\n"
+			}
+			return "[]"
+		})
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "isChildAgent", { value: false })
+		Object.defineProperty(task, "taskProgressFilePath", { value: "EXTRA/task/my-task.md", writable: true })
+		Object.defineProperty(task, "taskProgressInstanceId", { value: "task-1", writable: true })
+
+		await expect(task.bindTaskProgressFile("EXTRA/task/my-task/light-file.md")).rejects.toThrow(
+			"Light files MUST NOT contain deeptask-task-id",
+		)
+		expect((task as any).taskProgressFilePath).toBe("EXTRA/task/my-task.md")
+	})
+
+	it("rebinds native todos back to the parent root pointer", async () => {
+		const rootPath = path.resolve("/workspace/EXTRA/task/my-task.md")
+		const updateTaskHistory = vi.fn().mockResolvedValue([])
+		const historyItem = { id: "task-1", task: "split" }
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			if (path.resolve(String(filePath)) === rootPath) {
+				return "<!-- deeptask-task-id:task-1 -->\n- [x] split complete\n- [-] resume parent checklist\n"
+			}
+			return "[]"
+		})
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "isChildAgent", { value: false })
+		Object.defineProperty(task, "taskProgressFilePath", {
+			value: "EXTRA/task/my-task/light-file.md",
+			writable: true,
+		})
+		Object.defineProperty(task, "taskProgressInstanceId", { value: "task-1", writable: true })
+		Object.defineProperty(task, "providerRef", {
+			value: {
+				deref: () => ({ getTaskHistory: () => [historyItem], updateTaskHistory }),
+			},
+		})
+
+		await expect(task.bindTaskProgressFile("EXTRA/task/my-task.md")).resolves.toMatchObject([
+			{ content: "split complete", status: "completed" },
+			{ content: "resume parent checklist", status: "in_progress" },
+		])
+		expect((task as any).taskProgressFilePath).toBe("EXTRA/task/my-task.md")
+		expect((task as any).taskProgressInstanceId).toBe("task-1")
+		expect(updateTaskHistory).toHaveBeenCalledWith({
+			...historyItem,
+			taskProgressFilePath: "EXTRA/task/my-task.md",
+			taskProgressInstanceId: "task-1",
+		})
+	})
+
+	it("rejects binding a foreign root checklist", async () => {
+		const foreignPath = path.resolve("/workspace/EXTRA/task/foreign.md")
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			if (path.resolve(String(filePath)) === foreignPath) {
+				return "<!-- deeptask-task-id:other-host -->\n- [-] sibling work\n"
+			}
+			return "[]"
+		})
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "isChildAgent", { value: false })
+		Object.defineProperty(task, "taskProgressFilePath", { value: "EXTRA/task/my-task.md", writable: true })
+		Object.defineProperty(task, "taskProgressInstanceId", { value: "task-1", writable: true })
+
+		await expect(task.bindTaskProgressFile("EXTRA/task/foreign.md")).rejects.toThrow(
+			"Cannot bind host task task-1 to EXTRA/task/foreign.md",
+		)
+		expect((task as any).taskProgressFilePath).toBe("EXTRA/task/my-task.md")
+	})
+
+	it("omits path to keep or discover the current EXTRA/task binding", async () => {
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "isChildAgent", { value: false })
+		const sync = vi
+			.spyOn(task, "syncTaskProgressWithTodoList")
+			.mockResolvedValue([{ id: "1", content: "current bound item", status: "in_progress" }])
+
+		await expect(task.bindTaskProgressFile()).resolves.toMatchObject([
+			{ content: "current bound item", status: "in_progress" },
+		])
+		expect(sync).toHaveBeenCalledOnce()
+		expect(sync).toHaveBeenCalledWith()
+	})
+
+	it("marks every native todo completed after the owned checklist is archived", async () => {
+		const postStateToWebview = vi.fn().mockResolvedValue(undefined)
+		vi.mocked(fs.readdir).mockResolvedValue([] as any)
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "isChildAgent", { value: false })
+		Object.defineProperty(task, "providerRef", {
+			value: { deref: () => ({ postStateToWebview }) },
+		})
+		task.todoList = [
+			{ id: "a", content: "packaged", status: "completed" },
+			{ id: "b", content: "still open in native UI", status: "in_progress" },
+		]
+
+		await task.refreshNativeTodoListFromTaskProgressFile()
+
+		expect(task.todoList).toEqual([
+			{ id: "a", content: "packaged", status: "completed" },
+			{ id: "b", content: "still open in native UI", status: "completed" },
+		])
+		expect(postStateToWebview).toHaveBeenCalledOnce()
+	})
+
+	it("refreshes native todos from a bound light file even if discovery throws", async () => {
+		const lightPath = path.resolve("/workspace/EXTRA/task/LOCAL_VSIX_INSTALL/github-push.md")
+		const postStateToWebview = vi.fn().mockResolvedValue(undefined)
+		vi.mocked(fs.readFile).mockImplementation(async (filePath) => {
+			if (path.resolve(String(filePath)) === lightPath) {
+				return "# GitHub 推送\n\n- [-] 去掉 bind 后聊天里的「已更新待办事项列表」文案\n- [ ] 推送 kurzcraft/DeepTask\n"
+			}
+			return "[]"
+		})
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "isChildAgent", { value: false })
+		Object.defineProperty(task, "taskProgressFilePath", {
+			value: "EXTRA/task/LOCAL_VSIX_INSTALL/github-push.md",
+			writable: true,
+		})
+		Object.defineProperty(task, "taskProgressInstanceId", { value: "task-1", writable: true })
+		Object.defineProperty(task, "providerRef", {
+			value: { deref: () => ({ postStateToWebview }) },
+		})
+		vi.spyOn(task as any, "findOwnedTaskProgressFilePath").mockRejectedValue(
+			new Error("Task task-1 has an incomplete task progress binding"),
+		)
+		task.todoList = [{ id: "stale", content: "修复 native 投影：文件已 [x] 仍显示未完成", status: "in_progress" }]
+
+		await task.refreshNativeTodoListFromTaskProgressFile()
+
+		expect(task.todoList.map((todo) => todo.content)).toEqual([
+			"去掉 bind 后聊天里的「已更新待办事项列表」文案",
+			"推送 kurzcraft/DeepTask",
+		])
+		expect(postStateToWebview).toHaveBeenCalledOnce()
+	})
+
+	it("queues a native projection refresh when an EXTRA/task markdown file changes", () => {
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "isChildAgent", { value: false })
+		const queue = vi.spyOn(task, "queueTaskProgressFileRefresh").mockImplementation(() => undefined)
+
+		task.notifyTaskProgressFileChanged("EXTRA/task/OCCUPANCY.md")
+		task.notifyTaskProgressFileChanged("src/core/task/Task.ts")
+
+		expect(queue).toHaveBeenCalledOnce()
+	})
+
+	it("queues a native projection refresh when a nested light EXTRA/task file changes", () => {
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "isChildAgent", { value: false })
+		const queue = vi.spyOn(task, "queueTaskProgressFileRefresh").mockImplementation(() => undefined)
+
+		task.notifyTaskProgressFileChanged("EXTRA/task/LOCAL_VSIX_INSTALL/github-push.md")
+
+		expect(queue).toHaveBeenCalledOnce()
+	})
+
+	it("watches nested light EXTRA/task markdown and editor saves", () => {
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/workspace" })
+		Object.defineProperty(task, "taskProgressFileWatchers", { value: [], writable: true })
+		Object.defineProperty(task, "taskProgressSaveListener", { value: undefined, writable: true })
+		const queue = vi.spyOn(task, "queueTaskProgressFileRefresh").mockImplementation(() => undefined)
+		;(task as any).setupTaskProgressFileWatcher()
+
+		expect(vscode.workspace.createFileSystemWatcher).toHaveBeenCalledWith(
+			expect.objectContaining({ base: path.join("/workspace", "EXTRA", "task"), pattern: "*/*.md" }),
+			false,
+			false,
+			false,
+		)
+		expect(vscode.workspace.onDidSaveTextDocument).toHaveBeenCalled()
+		const saveHandler = vi.mocked(vscode.workspace.onDidSaveTextDocument).mock.calls.at(-1)?.[0]
+		saveHandler?.({ uri: { fsPath: "/workspace/EXTRA/task/LOCAL_VSIX_INSTALL/github-push.md" } } as any)
+		expect(queue).toHaveBeenCalled()
+	})
+
+	it("rebinds progress watchers and session cwd when the conversation switches workspace", async () => {
+		const syncSessionWorkspace = vi.fn().mockResolvedValue(undefined)
+		const syncLiveTask = vi.fn()
+		const postStateToWebview = vi.fn().mockResolvedValue(undefined)
+		const task = Object.create(Task.prototype) as Task
+		Object.defineProperty(task, "workspacePath", { value: "/old", writable: true })
+		Object.defineProperty(task, "taskId", { value: "task-1" })
+		Object.defineProperty(task, "taskProgressFileWatchers", { value: [], writable: true })
+		Object.defineProperty(task, "rooIgnoreController", {
+			value: { dispose: vi.fn(), initialize: vi.fn().mockResolvedValue(undefined) },
+			writable: true,
+		})
+		Object.defineProperty(task, "providerRef", {
+			value: {
+				deref: () => ({
+					parallelManager: { syncSessionWorkspace },
+					syncLiveTask,
+					shouldBroadcastTaskToChat: () => true,
+					postStateToWebview,
+				}),
+			},
+		})
+		const disposeSpy = vi.spyOn(task as any, "disposeTaskProgressFileWatchers")
+		const setupSpy = vi.spyOn(task as any, "setupTaskProgressFileWatcher").mockImplementation(() => undefined)
+
+		await task.switchWorkspace("/new/worktree")
+
+		expect(task.cwd).toBe("/new/worktree")
+		expect(disposeSpy).toHaveBeenCalledOnce()
+		expect(setupSpy).toHaveBeenCalledOnce()
+		expect(syncSessionWorkspace).toHaveBeenCalledWith("task-1", "/new/worktree")
+		expect(syncLiveTask).toHaveBeenCalledWith(task)
 	})
 })
 

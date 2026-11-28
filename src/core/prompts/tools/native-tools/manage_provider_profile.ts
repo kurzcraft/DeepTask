@@ -30,7 +30,7 @@ export function createManageProviderProfileTool(
 				"update: patch model_id/api_key/base_url/reasoning/settings on an existing profile. " +
 				"set_reasoning: set reasoning_effort on a profile (defaults to the active one). " +
 				"rename: profile_name -> new_name. " +
-				"settings is a JSON object merged into the raw provider settings for provider-specific fields not covered above.",
+				"settings is a JSON string of raw ProviderSettings fields (null when unused); OpenAI strict mode forbids free-form objects.",
 			strict: true,
 			parameters: {
 				type: "object",
@@ -42,7 +42,8 @@ export function createManageProviderProfileTool(
 					},
 					profile_name: {
 						type: ["string", "null"],
-						description: "Target profile name (required for create/update/rename; optional for set_reasoning = active profile)",
+						description:
+							"Target profile name (required for create/update/rename; optional for set_reasoning = active profile)",
 					},
 					new_name: {
 						type: ["string", "null"],
@@ -50,11 +51,13 @@ export function createManageProviderProfileTool(
 					},
 					provider: {
 						type: ["string", "null"],
-						description: "Provider id for create/update, e.g. anthropic | openai | openai-responses | deepseek | openrouter | ollama | lmstudio | gemini | zai | groq",
+						description:
+							"Provider id for create/update, e.g. anthropic | openai | openai-responses | deepseek | openrouter | ollama | lmstudio | gemini | zai | groq",
 					},
 					model_id: {
 						type: ["string", "null"],
-						description: "Exact model ID to set (create requires it; only set when the user explicitly requested that exact model)",
+						description:
+							"Exact model ID to set (create requires it; only set when the user explicitly requested that exact model)",
 					},
 					api_key: {
 						type: ["string", "null"],
@@ -70,16 +73,27 @@ export function createManageProviderProfileTool(
 						description: REASONING_DESC,
 					},
 					settings: {
-						type: ["object", "null"],
-						description: 'Raw provider-settings JSON merged last, e.g. {"modelMaxTokens": 8192, "modelTemperature": 0.2}. Keys must be valid ProviderSettings field names.',
-						additionalProperties: true,
+						type: ["string", "null"],
+						description:
+							'JSON string of raw ProviderSettings fields merged last, e.g. {"modelMaxTokens": 8192, "modelTemperature": 0.2}. Pass null when unused. OpenAI strict mode forbids free-form objects.',
 					},
 					reason: {
 						type: ["string", "null"],
 						description: "Why this profile change is needed (shown to the user for approval)",
 					},
 				},
-				required: ["action", "profile_name", "new_name", "provider", "model_id", "api_key", "base_url", "reasoning_effort", "settings", "reason"],
+				required: [
+					"action",
+					"profile_name",
+					"new_name",
+					"provider",
+					"model_id",
+					"api_key",
+					"base_url",
+					"reasoning_effort",
+					"settings",
+					"reason",
+				],
 				additionalProperties: false,
 			},
 		},

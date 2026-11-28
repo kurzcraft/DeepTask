@@ -65,6 +65,7 @@ interface ModelPickerProps {
 	errorMessage?: string
 	simplifySettings?: boolean
 	hidePricing?: boolean
+	autoOpenSignal?: number // kilocode_change: open after a freshly fetched catalog arrives
 }
 
 export const ModelPicker = ({
@@ -78,10 +79,24 @@ export const ModelPicker = ({
 	// organizationAllowList, // kilocode_change: unused
 	errorMessage,
 	simplifySettings,
+	autoOpenSignal, // kilocode_change
 }: ModelPickerProps) => {
 	const { t } = useAppTranslation()
 
 	const [open, setOpen] = useState(false)
+	// kilocode_change start: auto-open after a catalog refresh
+	const lastAutoOpenSignalRef = useRef<number | undefined>(undefined)
+	useEffect(() => {
+		if (autoOpenSignal == null || autoOpenSignal <= 0) {
+			return
+		}
+		if (lastAutoOpenSignalRef.current === autoOpenSignal) {
+			return
+		}
+		lastAutoOpenSignalRef.current = autoOpenSignal
+		setOpen(true)
+	}, [autoOpenSignal])
+	// kilocode_change end
 	const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false)
 	const isInitialized = useRef(false)
 	const searchInputRef = useRef<HTMLInputElement>(null)

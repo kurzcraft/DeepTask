@@ -253,7 +253,7 @@ export class ReadFileTool extends BaseTool<"read_file"> {
 				const batchFiles = filesToApprove.map((fileResult) => {
 					const relPath = fileResult.path
 					const fullPath = path.resolve(task.cwd, relPath)
-					const isOutsideWorkspace = isPathOutsideWorkspace(fullPath)
+					const isOutsideWorkspace = isPathOutsideWorkspace(fullPath, task.cwd)
 
 					let lineSnippet = ""
 					if (fileResult.lineRanges && fileResult.lineRanges.length > 0) {
@@ -335,7 +335,7 @@ export class ReadFileTool extends BaseTool<"read_file"> {
 				const fileResult = filesToApprove[0]
 				const relPath = fileResult.path
 				const fullPath = path.resolve(task.cwd, relPath)
-				const isOutsideWorkspace = isPathOutsideWorkspace(fullPath)
+				const isOutsideWorkspace = isPathOutsideWorkspace(fullPath, task.cwd)
 				const { maxReadFileLine = 500 /*kilocode_change*/ } = (await task.providerRef.deref()?.getState()) ?? {}
 
 				let lineSnippet = ""
@@ -872,7 +872,7 @@ export class ReadFileTool extends BaseTool<"read_file"> {
 		const sharedMessageProps: ClineSayTool = {
 			tool: "readFile",
 			path: getReadablePath(task.cwd, filePath),
-			isOutsideWorkspace: filePath ? isPathOutsideWorkspace(fullPath) : false,
+			isOutsideWorkspace: filePath ? isPathOutsideWorkspace(fullPath, task.cwd) : false,
 		}
 		const partialMessage = JSON.stringify({
 			...sharedMessageProps,

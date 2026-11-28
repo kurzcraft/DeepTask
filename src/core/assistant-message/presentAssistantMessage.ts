@@ -510,6 +510,7 @@ export async function presentAssistantMessage(cline: Task) {
 							return `[${block.name} to '${block.params.mode_slug}'${block.params.reason ? ` because: ${block.params.reason}` : ""}]`
 						case "codebase_search": // Add case for the new tool
 							return `[${block.name} for '${block.params.query}']`
+						case "bind_task_progress":
 						case "update_todo_list":
 							return `[${block.name}]`
 						// kilocode_change: new_task tool removed in 9.2.4 — merged into
@@ -894,7 +895,7 @@ export async function presentAssistantMessage(cline: Task) {
 					const rawIncludedTools = modelInfo?.info?.includedTools
 					const { resolveToolAlias } = await import("../prompts/tools/filter-tools-for-mode")
 					const includedTools = rawIncludedTools?.map((tool) => resolveToolAlias(tool))
-	
+
 					// kilocode_change start: validate against THIS task's locked mode,
 					// not the provider's global state.mode. All Tasks in a window
 					// share one ClineProvider, and focusing a conversation (e.g. the
@@ -912,7 +913,7 @@ export async function presentAssistantMessage(cline: Task) {
 						// global-state fallback for that early window only.
 					}
 					// kilocode_change end
-	
+
 					try {
 						validateToolUse(
 							block.name as ToolName,
@@ -1015,7 +1016,7 @@ export async function presentAssistantMessage(cline: Task) {
 					cline.recordToolError(block.name)
 					pushToolResult(
 						formatResponse.toolError(
-							`Do not use ${block.name} yet. Your first tool call after a new user instruction must be update_todo_list to expand or replace the progress list for the new work. Do not restate prior completed items; create the new checklist first.`,
+							`Do not use ${block.name} yet. Write unfinished milestones into the EXTRA/task Markdown first, then call bind_task_progress once to bind native todos to that file. Call it again only to rebind a different root or light file.`,
 							toolProtocol,
 						),
 					)
@@ -1045,8 +1046,9 @@ export async function presentAssistantMessage(cline: Task) {
 									toolProtocol,
 								})
 								break
+							case "bind_task_progress":
 							case "update_todo_list":
-								await updateTodoListTool.handle(cline, block as ToolUse<"update_todo_list">, {
+								await updateTodoListTool.handle(cline, block as ToolUse<"bind_task_progress">, {
 									askApproval,
 									handleError,
 									pushToolResult,
@@ -1271,45 +1273,45 @@ export async function presentAssistantMessage(cline: Task) {
 									toolProtocol,
 								})
 								break
-						case "switch_provider_profile":
-							await switchProviderProfileTool.handle(
-								cline,
-								block as ToolUse<"switch_provider_profile">,
-								{
+							case "switch_provider_profile":
+								await switchProviderProfileTool.handle(
+									cline,
+									block as ToolUse<"switch_provider_profile">,
+									{
+										askApproval,
+										handleError,
+										pushToolResult,
+										removeClosingTag,
+										toolProtocol,
+									},
+								)
+								break
+							// kilocode_change start: agent-managed provider profiles
+							case "manage_provider_profile":
+								await manageProviderProfileTool.handle(
+									cline,
+									block as ToolUse<"manage_provider_profile">,
+									{
+										askApproval,
+										handleError,
+										pushToolResult,
+										removeClosingTag,
+										toolProtocol,
+									},
+								)
+								break
+							// kilocode_change end
+							// kilocode_change start: agent-managed modes
+							case "manage_mode":
+								await manageModeTool.handle(cline, block as ToolUse<"manage_mode">, {
 									askApproval,
 									handleError,
 									pushToolResult,
 									removeClosingTag,
 									toolProtocol,
-								},
-							)
-							break
-						// kilocode_change start: agent-managed provider profiles
-						case "manage_provider_profile":
-							await manageProviderProfileTool.handle(
-								cline,
-								block as ToolUse<"manage_provider_profile">,
-								{
-									askApproval,
-									handleError,
-									pushToolResult,
-									removeClosingTag,
-									toolProtocol,
-								},
-							)
-							break
-						// kilocode_change end
-						// kilocode_change start: agent-managed modes
-						case "manage_mode":
-							await manageModeTool.handle(cline, block as ToolUse<"manage_mode">, {
-								askApproval,
-								handleError,
-								pushToolResult,
-								removeClosingTag,
-								toolProtocol,
-							})
-							break
-						// kilocode_change end
+								})
+								break
+							// kilocode_change end
 							// kilocode_change: new_task tool removed in 9.2.4 — dispatch_subagents
 							// is now the single default subtask tool (1..N tasks). Historical
 							// transcripts replaying a new_task tool_use get an explicit error.

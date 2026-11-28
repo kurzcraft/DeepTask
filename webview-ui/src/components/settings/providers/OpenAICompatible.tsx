@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useState, useCallback, useEffect, useMemo, useRef } from "react"
 import { useEvent } from "react-use"
 import { Checkbox } from "vscrui"
 import { VSCodeButton, VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
@@ -55,7 +55,10 @@ export const OpenAICompatible = ({
 	const [azureApiVersionSelected, setAzureApiVersionSelected] = useState(!!apiConfiguration?.azureApiVersion)
 
 	const [openAiModels, setOpenAiModels] = useState<Record<string, ModelInfo> | null>(null)
+	const [modelPickerAutoOpenSignal, setModelPickerAutoOpenSignal] = useState(0)
 	const pendingContextDetectionModelIdRef = useRef<string | null>(null)
+	const autoOpenRequestKeyRef = useRef("")
+	const lastAutoOpenedRequestKeyRef = useRef("")
 
 	const [customHeaders, setCustomHeaders] = useState<[string, string][]>(() => {
 		const headers = apiConfiguration?.openAiHeaders || {}
@@ -119,6 +122,45 @@ export const OpenAICompatible = ({
 		[setApiConfigurationField],
 	)
 
+	const openAiBaseUrl = apiConfiguration?.openAiBaseUrl
+	const openAiApiKey = apiConfiguration?.openAiApiKey
+	const openAiHeaders = apiConfiguration?.openAiHeaders
+	const openAiHeadersKey = JSON.stringify(openAiHeaders ?? {})
+	const openAiModelId = apiConfiguration?.openAiModelId
+	autoOpenRequestKeyRef.current = `${openAiBaseUrl ?? ""}|${openAiApiKey ?? ""}|${openAiHeadersKey}`
+
+	useEffect(() => {
+		if (!openAiBaseUrl) {
+			setOpenAiModels(null)
+			return
+		}
+
+		setOpenAiModels(null)
+		const timer = window.setTimeout(() => {
+			vscode.postMessage({
+				type: "requestOpenAiModels",
+				values: {
+					baseUrl: openAiBaseUrl,
+					apiKey: openAiApiKey,
+					openAiHeaders: openAiHeaders || {},
+				},
+			})
+		}, 250)
+
+		return () => window.clearTimeout(timer)
+	}, [openAiBaseUrl, openAiApiKey, openAiHeadersKey])
+
+	const modelsForPicker = useMemo(() => {
+		const catalog = openAiModels ?? {}
+		if (openAiModelId && !(openAiModelId in catalog)) {
+			return {
+				...catalog,
+				[openAiModelId]: openAiModelInfoSaneDefaults,
+			}
+		}
+		return Object.keys(catalog).length > 0 ? catalog : openAiModels
+	}, [openAiModels, openAiModelId])
+
 	// kilocode_change start: Detect context from the current OpenAI-compatible API when available.
 	const applyDetectedModelInfo = useCallback(
 		(modelInfo: ModelInfo) => {
@@ -165,30 +207,45 @@ export const OpenAICompatible = ({
 	])
 	// kilocode_change end
 
-	const onMessage = useCallback((event: MessageEvent) => {
-		const message: ExtensionMessage = event.data
+	const onMessage = useCallback(
+		(event: MessageEvent) => {
+			const message: ExtensionMessage = event.data
 
-		switch (message.type) {
-			case "openAiModels": {
-				const updatedModels = message.openAiModels ?? []
-				const modelInfos = Object.fromEntries(
-					updatedModels.map((item) => [item, message.openAiModelInfos?.[item] || openAiModelInfoSaneDefaults]),
-				)
-				setOpenAiModels(modelInfos)
-
-				const pendingContextDetectionModelId = pendingContextDetectionModelIdRef.current
-				if (pendingContextDetectionModelId) {
-					applyDetectedModelInfo(
-						message.openAiModelInfos?.[pendingContextDetectionModelId] ||
-							openAiNativeModels[pendingContextDetectionModelId as keyof typeof openAiNativeModels] ||
-							deeptaskOpenAiCompatibleDefaults,
+			switch (message.type) {
+				case "openAiModels": {
+					const responseBaseUrl = message.values?.baseUrl as string | undefined
+					if (responseBaseUrl && openAiBaseUrl && responseBaseUrl !== openAiBaseUrl) {
+						break
+					}
+					const updatedModels = message.openAiModels ?? []
+					const modelInfos = Object.fromEntries(
+						updatedModels.map((item) => [
+							item,
+							message.openAiModelInfos?.[item] || openAiModelInfoSaneDefaults,
+						]),
 					)
-					pendingContextDetectionModelIdRef.current = null
+					setOpenAiModels(modelInfos)
+					const requestKey = autoOpenRequestKeyRef.current
+					if (updatedModels.length > 0 && requestKey && lastAutoOpenedRequestKeyRef.current !== requestKey) {
+						lastAutoOpenedRequestKeyRef.current = requestKey
+						setModelPickerAutoOpenSignal((value) => value + 1)
+					}
+
+					const pendingContextDetectionModelId = pendingContextDetectionModelIdRef.current
+					if (pendingContextDetectionModelId) {
+						applyDetectedModelInfo(
+							message.openAiModelInfos?.[pendingContextDetectionModelId] ||
+								openAiNativeModels[pendingContextDetectionModelId as keyof typeof openAiNativeModels] ||
+								deeptaskOpenAiCompatibleDefaults,
+						)
+						pendingContextDetectionModelIdRef.current = null
+					}
+					break
 				}
-				break
 			}
-		}
-	}, [applyDetectedModelInfo])
+		},
+		[applyDetectedModelInfo, openAiBaseUrl],
+	)
 
 	useEvent("message", onMessage)
 
@@ -214,13 +271,14 @@ export const OpenAICompatible = ({
 				apiConfiguration={apiConfiguration}
 				setApiConfigurationField={setApiConfigurationField}
 				defaultModelId="gpt-4o"
-				models={openAiModels}
+				models={modelsForPicker}
 				modelIdKey="openAiModelId"
 				serviceName="OpenAI"
 				serviceUrl="https://platform.openai.com"
 				organizationAllowList={organizationAllowList}
 				errorMessage={modelValidationError}
 				simplifySettings={simplifySettings}
+				autoOpenSignal={modelPickerAutoOpenSignal}
 			/>
 			<R1FormatSetting
 				onChange={handleInputChange("openAiR1FormatEnabled", noTransform)}

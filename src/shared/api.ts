@@ -93,8 +93,13 @@ export const shouldUseReasoningEffort = ({
 		return !!selectedEffort
 	}
 
+	// Relays/custom OpenAI-compat models often omit capability metadata.
+	// An explicit user selection (settings.reasoningEffort) must still be sent.
+	if (settings?.reasoningEffort && settings.reasoningEffort !== "disable") {
+		return true
+	}
+
 	// Not explicitly supported: only allow when the model itself defines a default effort
-	// Ignore settings-only selections when capability is absent/false
 	const modelDefaultEffort = (model as any).reasoningEffort as
 		| "none"
 		| "minimal"

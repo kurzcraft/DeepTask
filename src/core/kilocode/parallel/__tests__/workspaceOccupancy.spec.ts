@@ -63,11 +63,50 @@ describe("collectWorkspaceOccupants", () => {
 		expect(occupants).toEqual([])
 	})
 
-	test("idle stacked tasks still occupy so a later conversation is isolated", () => {
+	test("idle stacked tasks that are not streaming do not occupy the workspace", () => {
 		const occupants = collectWorkspaceOccupants({
 			workspacePath: "/repo",
 			conversations: [conversation()],
 			runningTasks: [{ taskId: "task-1", cwd: "/repo", isStreaming: false }],
+			runningSubagents: [],
+			workspaces: [],
+			except: { conversationId: "cv-new" },
+		})
+		expect(occupants).toEqual([])
+	})
+
+	test("an interrupted task that is not inferring does not occupy the workspace", () => {
+		const occupants = collectWorkspaceOccupants({
+			workspacePath: "/repo",
+			conversations: [conversation()],
+			runningTasks: [
+				{
+					taskId: "task-1",
+					cwd: "/repo",
+					abort: true,
+					isStreaming: false,
+					isActivelyRunning: false,
+				},
+			],
+			runningSubagents: [],
+			workspaces: [],
+			except: { conversationId: "cv-new" },
+		})
+		expect(occupants).toEqual([])
+	})
+
+	test("an active tool/command loop still occupies after HTTP streaming ends", () => {
+		const occupants = collectWorkspaceOccupants({
+			workspacePath: "/repo",
+			conversations: [conversation()],
+			runningTasks: [
+				{
+					taskId: "task-1",
+					cwd: "/repo",
+					isStreaming: false,
+					isActivelyRunning: true,
+				},
+			],
 			runningSubagents: [],
 			workspaces: [],
 			except: { conversationId: "cv-new" },
